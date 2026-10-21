@@ -158,16 +158,35 @@ out.push('typedef struct { u32 model; float m[12]; } stage_draw_t;');
  * its RED/GREEN/BLUE trims (+0x10..0x12), which make_lay_col_256_tbl puts
  * into ARRAY_NUM_RED/GREEN/BLUE.
  * cyc: the record's list at +0xB8, (colorxlat row, frame-counter shift) pairs
- * ending in a zero row, which sub_2435C rotates once a frame. */
+ * ending in a zero row, which sub_2435C rotates once a frame.
+ * tpd: the block a stage hands move_tpd_req once a frame (see TPD below), for
+ * the model it replaces texture headers or points on. */
+out.push('typedef struct { u16 kind, model, n, words; const short *v; } tpd_t;');
 out.push('typedef struct { const char *name; u32 texset; u32 ndraws; const stage_draw_t *draws; cx_run_t cx; const u32 *mat; u16 bg; float bright; short vx, vy;');
-out.push('                 u16 cset; u8 tint[3]; const u16 *cyc; } stage_t;\n');
+out.push('                 u16 cset; u8 tint[3]; const u16 *cyc; tpd_t tpd; } stage_t;\n');
 {
     /* color_intensity's TST_*_ADD and TST_*_MUL, the same for every stage. */
     const C = stf.rom.game.colors;
     out.push(`static const u8 tst_add[3] = {${C.add.join(', ')}}, tst_mul[3] = {${C.mul.join(', ')}};\n`);
 }
+/*
+ * move_tpd_req's blocks, in StF's program ROM (which the board replaces, so
+ * they are baked): a count, a word length, then the entries. A kind 1 block
+ * goes through tpd_move, which sends each (v, u) texture point plus the
+ * request's offsets, and set_obj_tpd draws the model with it in place of the
+ * model's own points. A kind 2 block goes through transmap_change, which sends
+ * each face's four-word texture header with the request's value as th1 (the
+ * lumabase), and set_obj_thd draws the model with it in place of its headers.
+ *   South Island (stage_num 0, also 13 and 14, which the board does not have):
+ *     send_st01_sea_thd, from camera_init, dword_AF678 for the sea, model 555.
+ *   Aurora Icefield: aurora_init's continuation, aurora_borealis_data for the
+ *     aurora, model 1604 (aurora_disp draws it twice, standing and reflected).
+ */
+const TPD = { 0: { kind: 2, model: 555, addr: 0xaf678 }, 2: { kind: 1, model: 1604, addr: 0x758fc } };
+/* The board's stages: South Island and Aurora Icefield. */
+const STAGE_SLOTS = [0, 2];
 const stages = [];
-stf.stages.forEach((st, n) => {
+stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
     const list = buildStageDisplayList(st, frames).filter((e) => !e.extra && !e.points);
     out.push(`static const stage_draw_t stage${n}_draws[${list.length}] = {`);
     for (const e of list) out.push(`  {${e.model}, {${boardOf(mul(scale, composeOps(opsAt(e, 0)))).map(f32).join(',')}}},`);
@@ -178,8 +197,16 @@ stf.stages.forEach((st, n) => {
     const cv = stf.rom.mainCpuView, mt = cv.getUint32(0x909e0 + st.slot * 4, true);
     out.push(`static const u32 stage${n}_mat[32] = {${Array.from({ length: 32 }, (_, i) => `0x${cv.getUint32(mt + i * 4, true).toString(16)}u`).join(',')}};`);
     out.push(`static const u16 stage${n}_cyc[] = {${[...st.colorCycles.flatMap((c) => [c.row, c.shift]), 0].join(', ')}};`);
+    let tpd = '{0, 0, 0, 0, 0}';
+    if (TPD[st.slot]) {
+        const t = TPD[st.slot], cv = stf.rom.mainCpuView;
+        const count = cv.getUint16(t.addr, true), words = cv.getUint16(t.addr + 2, true);
+        const v = Array.from({ length: count * (t.kind === 1 ? 2 : 4) }, (_, i) => cv.getInt16(t.addr + 4 + i * 2, true));
+        out.push(`static const short stage${n}_tpd[] = {${v.join(',')}};`);
+        tpd = `{${t.kind}, ${t.model}, ${count}, ${words}, stage${n}_tpd}`;
+    }
     const tint = st.tint.map((t) => Math.round(t * 128)).join(', ');
-    stages.push(`{"${st.name}", ${st.texSets.at(-1)}, ${list.length}, stage${n}_draws, {0, 28, 0, 64, stage${n}_cx}, stage${n}_mat, 0x${st.bgColor555.toString(16)}, ${f32(st.bright)}, ${st.vecter[0]}, ${st.vecter[1]}, ${st.texSet[1]}, {${tint}}, stage${n}_cyc}`);
+    stages.push(`{"${st.name}", ${st.texSets.at(-1)}, ${list.length}, stage${n}_draws, {0, 28, 0, 64, stage${n}_cx}, stage${n}_mat, 0x${st.bgColor555.toString(16)}, ${f32(st.bright)}, ${st.vecter[0]}, ${st.vecter[1]}, ${st.texSet[1]}, {${tint}}, stage${n}_cyc, ${tpd}}`);
     console.log('stage', n, st.name, 'set', st.texSets.at(-1), 'draws', list.length);
 });
 /* A palette colour shows each 5-bit component through colorxlat row c at

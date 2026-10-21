@@ -32,11 +32,16 @@ static void mat_mul(mat_t *a, const mat_t *b, const float *c) {
         a->t[j] = b->r[j] * c[9] + b->r[3 + j] * c[10] + b->r[6 + j] * c[11] + b->t[j];
 }
 
-/* Submit one model-table object under the matrix m (model -> camera). */
-static void submit_mat(u32 model, const mat_t *m) {
+/* Submit one model-table object under the matrix m (model -> camera). With
+ * ov nonzero, word ow of the model's header (0 its texture points, 1 its
+ * texture headers) is ov instead, as set_obj_tpd and set_obj_thd do. */
+static void submit_mat_ov(u32 model, const mat_t *m, u32 ow, u32 ov) {
     volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
-    volatile const u32 *hdr = (volatile const u32 *)(M2_MODEL_TABLE + model * 16u);
+    volatile const u32 *mh = (volatile const u32 *)(M2_MODEL_TABLE + model * 16u);
+    u32 hdr[4];
     int i;
+    for (i = 0; i < 4; i++) hdr[i] = mh[i];
+    if (ov) hdr[ow] = ov;
     *cf = COP_WMATRIX;
     for (i = 0; i < 9; i++) *cf = m2_obj_fb(m->r[i]);
     for (i = 0; i < 3; i++) *cf = m2_obj_fb(m->t[i]);
@@ -51,6 +56,8 @@ static void submit_mat(u32 model, const mat_t *m) {
       { u32 ep = *(volatile u32 *)COP_WPOS_REG;
         *(volatile u32 *)(GEO_BUFFERRAM + (ep & 0x0001FFFCu)) = GEO_OP_END; } }
 }
+
+static void submit_mat(u32 model, const mat_t *m) { submit_mat_ov(model, m, 0u, 0u); }
 
 typedef struct { const pose_anim_t *anim; float x; int face; u32 frame; } fighter_t;
 
@@ -115,12 +122,47 @@ static void draw_fighter(const fighter_t *f, u32 p) {
     }
 }
 
+/* StF's frame_counter (see stage_col_cycle). */
+static u32 frame_counter;
+
+/* move_tpd_req and move_tpd_send: once a frame a stage hands move_tpd_req a
+ * block, and move_tpd_send uploads what its handler makes of it to the
+ * rasterizer's texture RAM at GEO_PROGRAM_START + 0x1000 (GEO op 4), before
+ * the draws. Kind 1 (tpd_move, Aurora Icefield's aurora_init): each (v, u)
+ * texture point plus (((0 - frame_counter) << 2) & 0x7FF, 0), so the aurora
+ * slides half a texel a frame. Kind 2 (transmap_change, South Island's
+ * send_st01_sea_thd): each face's texture header with th1, the lumabase, set
+ * to ((frame_counter >> 1) & 63) + 7, so the sea walks luma bands 7..70, which
+ * are its palette slots rotated one step further each. The stage's model is
+ * then drawn with that address in place of its own points (set_obj_tpd) or
+ * headers (set_obj_thd). */
+#define TPD_ADDR (GEO_TEXRAM_BIT | 0x5000u)
+
+static void move_tpd_send(const tpd_t *t) {
+    volatile u32 *fifo = (volatile u32 *)M2_GEOFIFO_ADDR;
+    const short *v = t->v;
+    u32 i;
+    if (t->kind == 0u) return;
+    *fifo = GEO_OP_TEXDATA; *fifo = TPD_ADDR; *fifo = t->words;
+    if (t->kind == 1u) {
+        int g1 = (int)(((0u - frame_counter) << 2) & 0x7FFu);
+        for (i = 0; i < t->n; i++, v += 2) { *fifo = (u32)(v[0] + g1); *fifo = (u32)(int)v[1]; }
+    } else {
+        u32 luma = ((frame_counter >> 1) & 63u) + 7u;
+        for (i = 0; i < t->n; i++, v += 4) {
+            *fifo = (u16)v[0]; *fifo = luma; *fifo = (u16)v[2]; *fifo = (u16)v[3];
+        }
+    }
+}
+
 static void draw_stage(const stage_t *st) {
     mat_t m;
-    u32 i;
+    u32 i, model;
     for (i = 0; i < st->ndraws; i++) {
         mat_mul(&m, &cam, st->draws[i].m);
-        submit_mat(st->draws[i].model, &m);
+        model = st->draws[i].model;
+        if (st->tpd.kind != 0u && model == st->tpd.model) submit_mat_ov(model, &m, st->tpd.kind == 1u ? 0u : 1u, TPD_ADDR);
+        else submit_mat(model, &m);
     }
 }
 
@@ -147,7 +189,6 @@ static void cx_put(const cx_run_t *c) {
  * Casino Night's rows 14, 16 and 19. */
 #define STF_STAGE_COL_PTR 0x02101010u
 static u16 array_num[3][256];
-static u32 frame_counter;
 
 static void make_lay_col_256_tbl(const stage_t *st) {
     u32 ch, x;
@@ -304,6 +345,7 @@ int main(void) {
         m2_obj_frame_setup();
         send_materials(stages[stage].mat);
         m2_geo_fifo_light(m2_obj_fb(light[0]), m2_obj_fb(light[1]), m2_obj_fb(light[2]));
+        move_tpd_send(&stages[stage].tpd);
         draw_stage(&stages[stage]);
         for (i = 0; i < 2u; i++) { draw_fighter(&fs[i], i); fs[i].frame++; }
         *(volatile u32 *)ZCLIP_REG = 0xFFFF00FFu;

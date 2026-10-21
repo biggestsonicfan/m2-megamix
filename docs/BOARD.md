@@ -135,6 +135,50 @@ columns, then the translation, the layout `pose.js` uses) and drawn with op
   2335) are identical. Over 8 counts the waterfall's band moves on by 8
   slots, e.g. (161, 178, 213) to (101, 144, 213) and (188, 196, 213) to
   (126, 161, 213).
+- Sea and aurora: these are not colour cycles. Each frame StF queues
+  requests with `move_tpd_req` (at `0x5019BC`). It returns where the data
+  will land, `0x805000` (texture RAM word 0x5000, bit 23), and
+  `move_tpd_send` sends it there with GEO op 4. Then a model is drawn
+  with one word of its header replaced: `set_obj_tpd` replaces word 0,
+  the texture points, and `set_obj_thd` replaces word 1, the texture
+  header.
+  - South Island's sea: `camera_init` calls `send_st01_sea_thd` (stage_num
+    0, 13 and 14; 15 has its own). It queues the 12 headers at `0xAF678`
+    through `transmap_change`, which sends each one's four words with the
+    second word replaced by `((frame_counter >> 1) & 63) + 7`, the luma
+    base. `ground_disp` then draws the sea plate (model 555) with
+    `set_obj_thd`.
+  - Aurora Icefield's aurora: `aurora_init` queues the 36 (v, u) points
+    at `0x758FC` through `tpd_move`, which sends each as two 32-bit words,
+    with v + `((0 - frame_counter) << 2) & 0x7FF`. `aurora_disp` draws
+    model 1604 with `set_obj_tpd`.
+  
+  The bake keeps each block and its model (`stage_t.tpd`). The board's
+  `move_tpd_send` sends it after the light and swaps the word in
+  `draw_stage`.
+
+  Check: throwaway board builds with real StF's camera from its intro
+  fly-in (no fighters drawn), with the counter held at the value real StF
+  used, beside real snapshots, both 496×384. The real captures have every
+  tile layer off, so StF's HUD is not drawn: a write tap sets each layer's
+  disable bit (bit 15 of its vscroll word, tile RAM words 0x5004..0x5007).
+  - South Island's sea: 8,940 of 9,906 sea pixels are identical (luma band
+    46). One band on, only 4,829 are. At a second frame, 14,698 of 16,317
+    match (band 49), against 6,716 one band on. The pixels that differ are
+    scattered one-texel steps where the camera grazes the plane far away.
+    One band step moves the sea's texels down the band's ramp, e.g. (38,
+    170, 213) to (48, 161, 196), (48, 161, 196) to (30, 161, 196) and
+    (21, 161, 213) to (13, 144, 213). That changes 5,672 of 9,906 sea
+    pixels.
+  - Aurora Icefield's aurora: of the pixels that change with the counter,
+    32,680 of 32,971 are identical (count 827) and 29,853 of 30,009 (count
+    851). Eight counts either side, only about 6,500 and 5,900 are. Eight
+    counts slide the texture points 32 v units, which moves the bands
+    along: (0, 0, 30) to (0, 0, 13), (0, 0, 48) to (0, 0, 30), and (0, 21,
+    73) to (0, 0, 48).
+
+  From the board's fixed camera the sea is out of view, and so is the
+  aurora: it is only seen in StF's intro fly-in.
 - Materials: StF's `camera_init` sends the stage's 32 material words (prog
   `0x909E0` + stage slot × 4) as GEO texture parameters every frame, each with
   its coefficient from `flt_90BA0`. `m2_obj_frame_setup` fills all 32 with one
@@ -144,10 +188,12 @@ columns, then the translation, the layout `pose.js` uses) and drawn with op
 ## Where it stands
 
 Two fighters (button 1 cycles each player's: Sonic, Honey, Eggman) stand
-facing each other and play their stance motion at 30 fps, on one of StF's
-nine stages (player 1's button 2 cycles them), drawn from StF's stage records
-with its textures, colours, materials, light and colour cycling. South Island matches StF's own
-picture closely.
+facing each other and play their stance motion at 30 fps, on one of two of
+StF's stages, South Island and Aurora Icefield (player 1's button 2 switches
+between them). The stages are drawn from StF's stage records with its
+textures, colours, materials, light, colour cycling, and the sea and
+aurora. South Island matches StF's own picture closely. Further stages will
+come from VF2 and Fighting Vipers.
 
 Known gaps:
 
@@ -157,10 +203,10 @@ Known gaps:
   slot 0 of the select table at 0xDACAC to 0x0F) draw player 2 as the board
   does: Sonic dark grey, and Honey blonde, with purple fur, a blue dress, a
   blue hairband and white barrettes.
-- South Island's sea plate (model 555) does not scroll. It is not a
-  colour cycle: `send_st01_sea_thd` gives it a texture header per frame
-  whose luma base is `((frame_counter >> 1) & 63) + 7` (noclip's
-  TECHNICAL.md, "The ocean").
+- Aurora Icefield seen from real StF's intro camera (frame 84 of the stage,
+  a24 2247, a26 −28455): the board draws a large light-blue shape across
+  the middle of the picture, and real StF does not draw it. Not yet
+  traced.
 - No camera of StF's, no shadows.
 
 ## Plan
