@@ -323,7 +323,9 @@ Limits of the measurement: it sees only draws that go through the model
 table. Meshes the game builds in polygon RAM, or draws by a mesh pointer
 it kept, are not counted. Attract and select screens (modes 0–8) are not
 part of a fight and were left out. They still need the old set 1, which
-stays in ROM.
+stays in ROM. With Akira packed, the attract story draws from pages 3, 15,
+16 and 18 and Fang's select pose from page 19; see "Attract and select with
+the seven pages".
 
 ## Akira packed into the seven pages
 
@@ -386,8 +388,8 @@ Set 1 is uploaded once, at boot, and nothing uploads it again. In a MAME run
 times: set 1 at frame 6 (boot), set 2 at frame 36, set 16 for attract, and set 2 for the
 fight's stage (frame 752). A fight never reads set 1's list. Its sheet 1 holds
 what the boot upload put there. So the edit can't apply to fights only.
-It also changes the seven slots on the attract and select screens, which
-were not checked.
+It also changes the seven slots on the attract and select screens; see
+"Attract and select with the seven pages" below.
 
 The edit (made by `tools/pack-akira.mjs`, in memory; `--out` writes the bytes):
 
@@ -414,6 +416,51 @@ the `main_data` and `textures` regions before boot:
   what was packed (152,768 halfwords, 141,221 of them changed). Nothing
   outside the seven slots differs. Inside them, only the 134 level 5–9
   halfwords above differ.
+
+### Attract and select with the seven pages
+
+Both screens draw from them. With the patch loaded, the opening story in
+attract draws from pages 3, 15, 16 and 18, and Fang's pose on the character
+select screen from page 19. Pages 12 and 21 are not drawn by either screen.
+
+How it was traced (shared MAME, `sfight`): `tools/mame/screen-pages.lua`
+logs the model-table reads per screen (`m<mode>.s<sub>.st<stage>`, as
+`fight-models.lua`) and hashes every frame. It ran twice with the same
+inputs: once with the `pack-akira.mjs --out` blobs written into the regions
+before boot, once without. `tools/mame/seven-pages.mjs` decodes each model
+read and lists the ones whose faces sample one of the seven slots on
+sheet 1. (Against `docs/data/stf-fight-models.txt` it finds none, as above.)
+
+- Attract: 45,000 frames with no input, more than one full cycle (≈28,300
+  frames: the story, then demo fights on all eight stages 0–7 with their
+  screens between). The screen differs from the unpatched run in 3,436
+  frames, every one of them in mode 3, sub 5 (the opening story; it starts
+  each cycle and runs ≈2,240 frames). No other attract screen, demo fight
+  included, differs or reads a model that samples the seven pages.
+- Select: a coin at frame 1000, Start at 1100, then P1 Right every 120
+  frames, so the cursor stops on all eight characters (≈1,370 frames in
+  mode 7, then the fight). 16 frames differ, all while Fang is shown.
+
+| screen | page (slot on sheet 1) | models | what changes on screen |
+|--|--|--|--|
+| attract, opening story (m3.s5) | 3 (0, 768) | 3362, 3363, 3375–3381, 3386, 3397, 3400–3405 (256×256 tile) | Metal Sonic in front of the Death Egg, story frames ≈130–205 |
+| attract, opening story | 15 (768, 768) | 3461–3464, 3469–3472 (256×256) | Death Egg shots that alternate every frame, ≈225–320 |
+| attract, opening story | 16 (1024, 0) | 2895, 2981–2991 (128×128 at (1152, 128)) | Eggman's scene, ≈320–790 |
+| attract, opening story | 18 (1280, 0) | 2901, 2902 (256×64 at (1280, 0)) | same scene, drawn with 2895 |
+| attract, opening story | 18 | 230 (five tiles, 64×64 to 256×64, from (1280, 64)) | the "Caution! Single seater" scene, ≈855 to the end of the story |
+| select (m7) | 19 (1280, 256) | 427 (64×64 at (1344, 448)) | Fang's pose: a few pixels by his hand, the first 16 frames after the cursor reaches him |
+
+Story frames are counted from the start of sub 5. The other seven select
+characters (Sonic, Tails, Bean, Bark, Espio, Amy, Knuckles) read no model
+that samples the seven pages, and their frames are identical. In the attract
+story, the frames that differ are the ones where these models are read
+(frames reading none of them are identical); a few frames reading them are
+also identical, where the model is off screen or covered.
+
+Limits: the model list sees only draws through the model table (the frame
+hash sees everything, and agrees). Models the decoder can't read (1–13 per
+screen, polygon-RAM meshes) are not attributed, but no frame outside the
+rows above differs. Mode 1/2 (boot, warning) never differs.
 
 ### Where his tiles went
 
