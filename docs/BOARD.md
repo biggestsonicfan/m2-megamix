@@ -284,6 +284,43 @@ same frame of the stance motion (278), all sixteen part positions in the rob
   4,963 (13 newly wrong), and the frames are 179,775 and 184,355 pixels
   identical to StF's, the throwaway's counts.
 
+## The fight
+
+The rounds run on StF's own code, lifted by `tools/lift-stf.py`; the board
+sets up what StF's game loop would have set up around it.
+
+- Contact: `coli_init` runs as a task at each round start, and `rob_init`
+  points rob+0x1D00 at the fighter's ball list. The 0x3B copro op (fighter
+  against fighter) takes its masks from the rob+0x1D14 tables, which
+  `decide_coli_kind` picks from `off_1008`. That table's eight pointers run
+  on past its label through `off_1010` into `off_1018`, so the lifter keeps
+  such tables whole (`RUN_ON`). Without that, player 2's table was garbage
+  and the fighters passed through each other.
+- Walls: op 0x70 (`area_coli`, the distances at rob+0x650) reads the ring
+  size from stage_x (0x50A00C, 8.0) and stage_soko (0x50A010, -100.0), as
+  in the real fight RAM. With them overridden it returned 100.0 and nobody
+  stopped at the ropes.
+- Damage only lands while game_timer (0x500028, seconds << 6) is above 0.
+  The board starts it at 30 << 6 and counts it down once a frame.
+- A round ends on a KO (rob w0 bit 5, energy at +0x1AC reaching 0) or when
+  the clock runs out; the fighter with more energy takes the win
+  (p1_wins 0x50004F, p2_wins 0x500051, two to win). Three seconds later
+  the next round starts with both fighters reset.
+- HUD: StF's own `energy_disp`, `barrier_left_disp`, `time_dsp`,
+  `win_lamp_dsp` and `win_lamp_int`, with the board's game_disp block
+  (0x500834; w0 0x84800000, lamp bytes as in the real block) in g13. They
+  write StF's tiles to the FG layer; `_Scroll_Initialize` loads the CG
+  slots they need (0 at boot, 70 and 170 as `MES_ROUND_INT` does). The FG
+  layer is cleared to StF's blank tile 0x20 first.
+- Camera: StF's `camera_cont` is not lifted. The board follows the
+  fighters' midpoint the way it moves in a real fight: `camera_place`
+  scales its position by 1.6, so the midpoint in camera units is
+  0.8 * (x0 + x1); the camera backs off as the fighters part and turns to
+  face the midpoint.
+- Characters: rob+0x1B0 is the character drawn (the alternates are +26),
+  rob+0x1B1 the parent. `ADV_CPU_BATTLE_INT` sets 1B1 = 1B0 - 0x1A, and a
+  real P2 Honey alternate has 1B0 0x24, 1B1 0x0A.
+
 ## Where it stands
 
 Two fighters (button 1 cycles each player's: Sonic, Honey, Eggman) stand
@@ -292,7 +329,9 @@ facing each other and play their stance motion with StF's own motion code
 StF's stages, South Island and Aurora Icefield (player 1's button 2 switches
 between them). The stages are drawn from StF's stage records with its
 textures, colours, materials, light, colour cycling, and the sea and
-aurora. South Island matches StF's own picture closely. Further stages will
+aurora. South Island matches StF's own picture closely. They push, hit and
+knock each other down, rounds end on a KO or the clock, and StF's HUD shows
+the energy bars, the clock and the round stars (see The fight). Further stages will
 come from VF2 and Fighting Vipers.
 
 Known gaps:
@@ -306,7 +345,8 @@ Known gaps:
 - Eggman's head (model 793) takes its texture from StF's texture set 7,
   which the board does not load (it loads set 1 and the stage's), so it
   does not show.
-- No camera of StF's, no shadows.
+- No camera of StF's own (the board's follows the fighters), no shadows.
+  Near the ring's edge the near ropes cross the view.
 
 ## Plan
 

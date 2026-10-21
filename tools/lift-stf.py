@@ -34,12 +34,42 @@ import sys
 import tempfile
 
 # sub_7F0E8 ("Inits player bodies"): each character's dent pendulum constants.
-ROOTS = ['set_motion', 'calc_rob_angle', 'calc_rob_angle_cont', 'calc_unit_mat', 'smooth_int', 'sub_7F0E8']
-# Routines the board does not run (collision): `ret`.
-STUBS = ['send_init_ram_coli_data', 'set_coli_ball_data', 'rob_ball_data_make', 'send_multi_ball_R']
-ROM_LO, ROM_HI = 0xC0000, 0x100000      # copied to the same addresses
+# action_init and rob_action: a fighter's task (its moves, frame by frame);
+# sub_1D47C: rob_control's command decoder (the pad to moves); coli_init and
+# collision: the collision task (hits, damage, the walls); get_game_info:
+# the task after it (each fighter's own state, and the angle and distance to
+# the other, which the fighters turn by).
+ROOTS = ['set_motion', 'calc_rob_angle', 'calc_rob_angle_cont', 'calc_unit_mat', 'smooth_int', 'sub_7F0E8',
+         'action_init', 'rob_action', 'sub_1D47C', 'coli_init', 'collision', 'get_game_info', 'cmd_native_tail',
+         'cop_initialize_end2', '_Scroll_Initialize', 'energy_disp', 'barrier_left_disp', 'time_dsp',
+         'win_lamp_dsp', 'win_lamp_int']
+# Routines the board does not run (debug text, name plates, projectiles,
+# sound, ring scatter, Super Sonic's hair objects): `ret`.
+STUBS = ['print_mes', 'print_mes_ex', 'print_hex_w', 'debug_disp_hex', 'dsp_pattern_right',
+         'char_nameplate_dsp', 'call_projectile_routine', 'sound_request_u', 'sound_request_special',
+         'stage_contact_sound', 'ring_tobitiri_set', 'sub_1BCC0']
+# Labels the routines use as numbers (`lda loc_10000, r3` is 0x10000, `lda
+# off_1010, r13` the flag mask 0x1010); any other code label they load (a
+# task's next function, a callback) is lifted and keeps its name.
+NUMBERS = {'loc_1FFC', 'loc_2AA8', 'loc_6600', 'loc_7FF8', 'loc_8020', 'loc_8040', 'loc_BFF4', 'loc_10000',
+           'loc_20010', 'loc_78AFC', 'loc_2100', 'loc_7A00', 'loc_14060', 'sys_proc_table',
+           'off_1010', 'dword_4010', 'loc_AAA0'}
+# The tail the move tables' inline code (opcode 0x13: `lda N, g0; b 0x1EF48`)
+# branches to, after sub_1E468, unlabelled in stfdisasm.
+NATIVE_TAIL = 'cmd_native_tail', 0x1EF48, 'ld      0x1A4(g7), r15  # unreachable code'
+# Tables below 0x1000 that are tables all the same (cop_initialize_end2's
+# collision-ball pointers).
+LOW_TABLES = {'off_FE8'}
+# Tables read on past their end, into the next label's (off_1008's eight
+# pointers run through off_1010 into off_1018).
+RUN_ON = {'off_1008'}
+ROM_LO, ROM_HI = 0x80000, 0x100000      # copied to the same addresses
+ROM_BIN = 'stf_rom_80000.bin'
 RAM_LO, RAM_HI = 0x500000, 0x600000     # StF's work RAM: moved into the board's
 RAM_PAD = 0x400                          # room past the highest address a block names
+# RAM the routines reach through a base: the two fighters' motion records
+# (action_init: 0x520000 and 0x5207C8, 0x800 bytes each).
+RAM_SPANS = [(0x520000, 0x520FC8)]
 
 LABEL = re.compile(r'^([A-Za-z_.$][\w.$]*):')
 TOKEN = re.compile(r'(?<![\w.$])[A-Za-z_.$][\w.$]*')
@@ -78,6 +108,9 @@ def main():
             sets[m.group(1)] = int(m.group(2), 0)
 
     src = open(asm, encoding='latin1').read().split('\n')
+    tail, tail_at, tail_line = NATIVE_TAIL
+    src[[l.strip() for l in src].index(tail_line)] = f'{tail}: {tail_line}'
+    addr[tail] = tail_at
     labline = {}
     for i, l in enumerate(src):
         m = LABEL.match(l)
@@ -112,9 +145,15 @@ def main():
                 out.append(c)
                 if c.split()[0] in ('ret', 'b', 'bx'):
                     return out, False
-        return out, not is_data(i)
+        return out, not is_data(i) or name_at[i] in RUN_ON
     def table(t):
-        return t in labline and is_data(labline[t]) and 0x1000 <= addr.get(t, 0) < ROM_LO
+        return (t in labline and is_data(labline[t]) and t not in NUMBERS
+                and (0x1000 <= addr.get(t, 0) < ROM_LO or t in LOW_TABLES))
+    def code_ptr(t):
+        return (t in labline and not is_data(labline[t]) and t not in NUMBERS
+                and not 0x3A00 <= addr.get(t, 0) < 0x3C00 and addr.get(t, 0) >= 0x1000)
+    def base(t):
+        return t.split('+')[0].strip()
     live, todo, why = set(), [(labline[f], 'root') for f in ROOTS], {}
     stub_lines = {labline[f] for f in STUBS}
     while todo:
@@ -129,13 +168,13 @@ def main():
                 continue
             op, _, args = c.partition(' ')
             if op == '.long':
-                targets = [t.strip() for t in args.split(',')
-                           if t.strip() in labline and (not is_data(labline[t.strip()]) or table(t.strip()))]
+                targets = [base(t) for t in args.split(',')
+                           if base(t) in labline and (not is_data(labline[base(t)]) or table(base(t)))]
             elif is_branch(op):
                 targets = [target(op, args)]
             else:
                 targets = [m.group(0) for m in TOKEN.finditer(args)
-                           if table(m.group(0))]
+                           if table(m.group(0)) or (code_ptr(m.group(0)) and args[m.end():m.end() + 1] in ('', ',', ' '))]
             for t in targets:
                 if t in labline:
                     todo.append((labline[t], f'{name_at[i]}: {c}'))
@@ -153,6 +192,9 @@ def main():
         return f'STFRAM_{v:06X}'
 
     def fix_token(t, c):
+        if t in NUMBERS:
+            notes.setdefault('num', set()).add(f'{t}=0x{addr[t]:X}')
+            return f'0x{addr[t]:X}'
         if t in lifted_labels or t in STUBS:
             return t
         op, _, args = c.partition(' ')
@@ -189,6 +231,10 @@ def main():
         prev = nxt_start[i]
 
     # The RAM StF's routines name: blocks of the board's .bss.
+    for lo, hi in RAM_SPANS:
+        for v in range(lo, hi, RAM_PAD // 2):
+            ram[v] = True
+        ram[hi - 1] = True
     blocks = []
     for v in sorted(ram):
         if blocks and v - blocks[-1][1] < RAM_PAD:
@@ -221,7 +267,7 @@ def main():
         S.append(f'                .globl  {f}')
     S.append(text)
     S.append('')
-    S.append('# ---- collision: the board does not run it')
+    S.append('# ---- StF routines the board leaves out')
     for f in STUBS:
         S.append(f'{f + ":":<24}ret')
     S.append('')
@@ -233,11 +279,33 @@ def main():
         S.append(f'stf_ram_{lo:06X}: .space 0x{hi - lo:X}')
     S.append('')
     S.append('# ---- StF\'s ROM tables at their own addresses')
+    # The move tables' inline code branches to the lifted tail instead.
+    image = rom[ROM_LO:ROM_HI].ljust(ROM_HI - ROM_LO, b'\xff')
+    patches = []
+    for o in range(0, len(image), 4):
+        w = int.from_bytes(image[o:o + 4], 'little')
+        disp = w & 0xFFFFFC
+        prev = int.from_bytes(image[o - 4:o], 'little') >> 16
+        if w >> 24 == 0x08 and ROM_LO + o + disp - 0x1000000 == tail_at and prev in (0x8C80, 0x5C80):
+            patches.append(o)                       # after `lda N, g0` or `mov N, g0`
+    if not patches:
+        sys.exit(f'lift: no branches to {tail} in the move tables')
+    # A branch can't leave the section: they go through `bx` in the ROM's
+    # free space past StF's last table.
+    used = len(image.rstrip(b'\xff'))
+    tramp = (used + 0xF) & ~0xF
     S.append('                .section .stfrom,"a"')
-    S.append('                .incbin "stf_rom_c0000.bin"')
+    at = 0
+    for o, ins in sorted([(o, f'b       {tail}_far') for o in patches] + [(tramp, f'bx      {tail}')]):
+        S.append(f'                .incbin "{ROM_BIN}", 0x{at:X}, 0x{o - at:X}')
+        if ins.startswith('bx'):
+            S.append(f'{tail}_far:')
+        S.append(f'                {ins}')
+        at = o + (8 if ins.startswith('bx') else 4)
+    S.append(f'                .incbin "{ROM_BIN}", 0x{at:X}')
     S.append('')
     open(os.path.join(a.out, 'stf_motion.s'), 'w').write('\n'.join(S))
-    open(os.path.join(a.out, 'stf_rom_c0000.bin'), 'wb').write(rom[ROM_LO:ROM_HI].ljust(ROM_HI - ROM_LO, b'\xff'))
+    open(os.path.join(a.out, ROM_BIN), 'wb').write(image)
 
     H = []
     H.append('/* Generated by tools/lift-stf.py: do not edit. */')
@@ -264,6 +332,7 @@ def main():
     for i in order:
         print(f'  {name_at[i]:<28} <- {why[i]}')
     print(f'stubs: {" ".join(STUBS)}')
+    print(f'move-table branches to {tail}: {len(patches)}')
     print(f'ram blocks: {" ".join(f"{lo:06X}..{hi:06X}" for lo, hi in blocks)}')
     print(f'rom tables: {" ".join(sorted(notes.get("rom", ())))}')
     print(f'labels made numbers: {" ".join(sorted(notes.get("num", ())))}')
