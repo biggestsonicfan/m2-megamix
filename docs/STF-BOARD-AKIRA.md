@@ -153,7 +153,7 @@ what every fight samples.
 | 15 | `0xB0FE38` 0x15A0 | – | – | – | 20 (2534–2537, 2611–2614, 3422–3425, 3461–3464, 3469–3472) |
 
 Five pages are sampled by no Megamix StF fighter: 3, 6, 11, 12 and 15
-(0x418 + 0x3E8 + 0xDE8 + 0x1954 + 0x15A0 = 0x4520 bytes). The other ten carry Sonic, Honey or Eggman.
+(0x418 + 0x3E8 + 0xDE8 + 0x1954 + 0x15A0 = 0x44DC bytes). The other ten carry Sonic, Honey or Eggman.
 
 Akira's VF2 pages land on all fifteen:
 
