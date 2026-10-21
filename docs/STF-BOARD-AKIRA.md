@@ -363,9 +363,10 @@ How it is packed:
   Their entries still point at new, all-zero pages, as asked, so the copy
   draws no StF texels from any of the seven.
 - For a fight to use the copy, a texture-set pointer has to name 0x02DB9BA0.
-  It could be set 1's own entry in the set table (TEX_HEADER+0xC → 0x2301010,
-  entry 1 = 0x02B00010), swapped for fights only, or a spare set such as 11
-  (0x026A6FA0). That is step 3 and has not been done.
+  It could be set 1's own entry in the set table (TEX_HEADER+0xC → 0x02300DB0,
+  entry 1 = 0x02B00010), swapped for fights only. Or it could be one of the
+  small sets 11–15 (entry 11 = 0x026A6F90), if one of those turns out to be
+  unused. That is step 3 and has not been done.
 
 ### Where his tiles went
 
