@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.20)
 # m2-megamix's board build: a new program for the Sonic the Fighters board (Model 2B),
 # built against m2-sdk (headers, i960 boot assembly, linker script, ROM splitter).
 #
-#   node tools/bake-poses.mjs                        (board/src/poses.h, from the ROM sets)
+#   node tools/bake-board.mjs                        (board/src/poses.h, from the ROM sets)
 #   cmake -G "Unix Makefiles" -B <build> -S board
 #   make -C <build> -j2                              -> board/roms/sfight/epr-19001.15, epr-19002.16
 #
@@ -19,7 +19,7 @@ endif()
 project(m2_megamix C ASM)
 
 if(NOT EXISTS "${CMAKE_SOURCE_DIR}/src/poses.h")
-    message(FATAL_ERROR "src/poses.h is missing: run node tools/bake-poses.mjs first")
+    message(FATAL_ERROR "src/poses.h is missing: run node tools/bake-board.mjs first")
 endif()
 
 set(M2_STARTUP_ASM
