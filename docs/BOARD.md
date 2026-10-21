@@ -74,6 +74,18 @@ columns, then the translation, the layout `pose.js` uses) and drawn with op
   is what StF draws. A MAME snapshot of board Sonic in stance beside real StF's
   Sonic at round start shows the same eyes: a white patch over the face
   with the pupil at its front edge.
+- Sky and backdrop: the sky is the stage's backdrop ring (`doom_cnt`, the
+  record's four models at +0xC0), which the baked draw list already holds.
+  Behind it is the record's `stage_bg_color` (+0x16, BGR555). StF's
+  `scr_bg_int` passes it to `change_bg_color`, which writes it to pen 0x801
+  and fills a tile layer with a solid tile of that pen, and to `bg_col_set`,
+  which writes it to pen 0 of palette banks 0..63. `m2_backdrop` does the
+  same on the board's own layer, so `load_stage` calls it with the record's
+  colour. A palette colour shows each component through colorxlat row c at
+  luma 0x40 (MAME's `palette_w`), so the board also writes StF's flat band
+  there at boot (`flat_cx`); the SDK's ramp would show it far too bright.
+  Real StF and board snapshots show the same pixels: (0, 0, 188) on South
+  Island (0xF0C0) and (213, 38, 0) on Dynamite Plant (0x017F).
 - Materials: StF's `camera_init` sends the stage's 32 material words (prog
   `0x909E0` + stage slot × 4) as GEO texture parameters every frame, each with
   its coefficient from `flt_90BA0`. `m2_obj_frame_setup` fills all 32 with one
@@ -96,12 +108,12 @@ Known gaps:
   slot 0 of the select table at 0xDACAC to 0x0F) draw player 2 as the board
   does: Sonic dark grey, and Honey blonde, with purple fur, a blue dress, a
   blue hairband and white barrettes.
-- No stage colour cycling, no sky model or backdrop colour, no stage light
-  vector (the SDK's fixed light), no camera of StF's, no shadows.
+- No stage colour cycling, no stage light vector (the SDK's fixed light),
+  no camera of StF's, no shadows.
 
 ## Plan
 
-1. The stage's light and sky.
+1. The stage's light.
 2. The fight: port `js/engine.js` to C (input, commands, moves, hits,
    reactions, rounds), versus only.
 3. Motions: baking every motion takes too much room in the program ROM

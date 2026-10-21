@@ -177,11 +177,13 @@ static void send_materials(const u32 *mat) {
 }
 
 /* A stage: its texture set (each page to the bank its own origin names, as
- * StF's loader does), its colour bases and its rows of colorxlat. */
+ * StF's loader does), its colour bases, its rows of colorxlat and its
+ * backdrop colour. */
 static void load_stage(const stage_t *st) {
     u32 i;
     tex_load_set(st->texset);
     cx_put(&st->cx);
+    m2_backdrop(st->bg);                 /* scr_bg_int: the record's stage_bg_color */
     for (i = 0; i < st->ndraws; i++) m2_load_model_palette(st->draws[i].model);
 }
 
@@ -211,7 +213,7 @@ int main(void) {
     m2_init();
     m2_silicon_boot();
     m2_cam_set_focus(FOCUS);
-    m2_backdrop((u16)M2_RGB(4, 6, 12));
+    cx_put(&flat_cx);                    /* StF's flat band, which palette colours go through */
     camera_init();
     tex_load_set(SET_FIGHTERS);
     load_palettes();

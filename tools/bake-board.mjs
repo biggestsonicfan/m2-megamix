@@ -150,7 +150,9 @@ const frames = readFrameTables(stf.rom);
 const k = ARENA.stf.scale;
 const scale = [k, 0, 0, 0, 0, k, 0, 0, 0, 0, k, 0, 0, 0, 0, 1];
 out.push('typedef struct { u32 model; float m[12]; } stage_draw_t;');
-out.push('typedef struct { const char *name; u32 texset; u32 ndraws; const stage_draw_t *draws; cx_run_t cx; const u32 *mat; } stage_t;\n');
+/* bg: the record's stage_bg_color (+0x16, BGR555), which StF's scr_bg_int
+ * puts behind the 3D layer (change_bg_color, bg_col_set). */
+out.push('typedef struct { const char *name; u32 texset; u32 ndraws; const stage_draw_t *draws; cx_run_t cx; const u32 *mat; u16 bg; } stage_t;\n');
 const stages = [];
 stf.stages.forEach((st, n) => {
     const list = buildStageDisplayList(st, frames).filter((e) => !e.extra && !e.points);
@@ -162,9 +164,17 @@ stf.stages.forEach((st, n) => {
     /* set_material's 32 slots: sub_29110 picks the table by stage slot (prog 0x909E0). */
     const cv = stf.rom.mainCpuView, mt = cv.getUint32(0x909e0 + st.slot * 4, true);
     out.push(`static const u32 stage${n}_mat[32] = {${Array.from({ length: 32 }, (_, i) => `0x${cv.getUint32(mt + i * 4, true).toString(16)}u`).join(',')}};`);
-    stages.push(`{"${st.name}", ${st.texSets.at(-1)}, ${list.length}, stage${n}_draws, {0, 28, 0, 64, stage${n}_cx}, stage${n}_mat}`);
+    stages.push(`{"${st.name}", ${st.texSets.at(-1)}, ${list.length}, stage${n}_draws, {0, 28, 0, 64, stage${n}_cx}, stage${n}_mat, 0x${st.bgColor555.toString(16)}}`);
     console.log('stage', n, st.name, 'set', st.texSets.at(-1), 'draws', list.length);
 });
+/* A palette colour shows each 5-bit component through colorxlat row c at
+ * luma 0x40 (MAME's palette_w). StF fills luma 64.. with its flat band at
+ * boot, the same for every stage; the board needs only luma 0x40. */
+{
+    const cx = buildColorxlat(stf.rom, { colorSet: stf.stages[0].texSet[1], tint: stf.stages[0].tint, fighters: [] });
+    out.push(`static const u16 flat_cx_v[] = {${u16s(cxlatRun(cx, 0, 32, 64, 1))}};`);
+    out.push('static const cx_run_t flat_cx = {0, 32, 64, 1, flat_cx_v};');
+}
 out.push(`#define STAGES ${stages.length}`);
 out.push(`static const stage_t stages[STAGES] = {\n    ${stages.join(',\n    ')}\n};\n`);
 out.push('#endif');
