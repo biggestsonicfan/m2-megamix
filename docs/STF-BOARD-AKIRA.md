@@ -297,8 +297,11 @@ Kept tiles per set 1 slot (of 64; `--` is the mip area):
    0   64   16    0   --   --   --   --
 ```
 
-Six slots hold nothing a fight draws: (768, 0), (1024, 0), (1280, 0),
-(1280, 256), (0, 768) and (768, 768), i.e. set 1 pages 12, 16, 18, 19, 3 and 15.
+Seven slots hold nothing a fight draws: (768, 0), (1024, 0), (1280, 0),
+(1280, 256), (1536, 256), (0, 768) and (768, 768), i.e. set 1 pages 12, 16,
+18, 19, 21, 3 and 15. That is 448 tiles, enough for Akira's 266. Packing
+him into those seven pages would leave every StF page and material record
+alone: only his own (copied) material records get new tile fields.
 
 What the guests need, in the same units (union over each game's three,
 since they share tiles):
