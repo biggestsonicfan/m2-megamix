@@ -83,7 +83,10 @@ Known gaps:
 - Sonic's eyes are not bent to the face's eye points (`pose.js` eyePoints).
 - Player 2's part rows (7..11, luma 48..63) get the fighter's own table, as
   player 1's do. In a 1P round against the CPU, real StF leaves them at zero.
-  What it writes there in a mirror match has not been checked.
+  Mirror matches in real StF (MAME `sfight`, 2P; Honey vs Honey by setting
+  slot 0 of the select table at 0xDACAC to 0x0F) draw player 2 as the board
+  does: Sonic dark grey, and Honey blonde, with purple fur, a blue dress, a
+  blue hairband and white barrettes.
 - No stage colour cycling, no sky model or backdrop colour, no stage light
   vector (the SDK's fixed light), no camera of StF's, no shadows.
 
