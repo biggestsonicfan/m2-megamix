@@ -114,3 +114,57 @@ same format on both boards, and noclip decodes both with the same code.
 The model table's uv and material fields (VF2 entries at main_data
 `0xE1974..0xE9964`) point into VF2's own data. That data has to come
 along too. Exactly what it covers has not been traced yet.
+
+## Who samples StF set 1's pages 1–15
+
+Measured by decoding all 5103 StF models (noclip `decodeModel`) and
+attributing each textured face to the page that holds its tile's origin.
+Owners come from:
+
+- the character part lists (normal and squished, all 43 records);
+- the face-variant tables (`faceVariantOwners`, which gives a face to the
+  lowest character that names it);
+- every stage record's layer lists and display list.
+
+"Unattributed" covers models none of those name: effects, items and select
+or attract screens. Where those are drawn has not been traced.
+
+On the upload path, a stage uploads the boot set 1 plus its own g0
+(`resolveTexSets`). No other texture set, set 16 included, puts a
+full-size page at any of these 15 places. Whatever set 1 leaves there is
+what every fight samples.
+
+| page | main_data, size | Sonic / Honey / Eggman | other fighters | stages | unattributed models |
+|--|--|--|--|--|--|
+| 1 | `0xB02050` 0xFBC | Sonic, Honey and Eggman bodies and faces (P1 and P2) | 28 | slot 15 | 1988 |
+| 2 | `0xB0300C` 0x210 | Sonic and Honey faces | 15 | – | 81 |
+| 3 | `0xB0321C` 0x418 | – | Metal Sonic, Rocket Metal | – | 22 |
+| 4 | `0xB03634` 0x1250 | Honey body and faces, a Sonic face | 14 | – | 9 |
+| 5 | `0xB04884` 0x63C | Sonic and Honey faces, Honey 1674 | 14 | – | 55 |
+| 6 | `0xB04EC0` 0x3E8 | – | Tails, Amy, Bark, Bean | – | 192 |
+| 7 | `0xB052A8` 0x1478 | Eggman 793, 1373 and faces 3347–3349 | Eggman B, boss, Egg UFO | – | 2 |
+| 8 | `0xB06720` 0x1C08 | Honey body and faces, Sonic faces | 20 | – | 65 |
+| 9 | `0xB08328` 0xC2C | Honey faces | 10 | – | 9 |
+| 10 | `0xB08F54` 0x1C84 | Sonic 22, 23, 1146, 1147 and faces | 12 | – | 127 |
+| 11 | `0xB0ABD8` 0xDE8 | – | 12 (Tails, Amy, Bean, Eggman boss, Egg UFO, Egg Minion, Rocket Metal…) | – | 63 |
+| 12 | `0xB0B9C0` 0x1954 | – | Eggman boss | – | 24 |
+| 13 | `0xB0D314` 0x2334 | Sonic faces 3017–3020, 4140 (P1 and P2) | 12 | – | 46 |
+| 14 | `0xB0F648` 0x7F0 | Sonic faces 2703, 2704 (P1 and P2) | 14 | – | 49 |
+| 15 | `0xB0FE38` 0x15A0 | – | – | – | 20 (2534–2537, 2611–2614, 3422–3425, 3461–3464, 3469–3472) |
+
+Five pages are sampled by no Megamix StF fighter: 3, 6, 11, 12 and 15
+(0x418 + 0x3E8 + 0xDE8 + 0x1954 + 0x15A0 = 0x4520 bytes). The other ten carry Sonic, Honey or Eggman.
+
+Akira's VF2 pages land on all fifteen:
+
+| Akira's VF2 set | StF set 1 pages |
+|--|--|
+| 1 | 1–3 |
+| 2 | 3–11 |
+| 40 | 12–15 |
+
+So his pages cannot go in by overwrite without losing the cast's
+textures on pages 1, 2, 4, 5, 7, 8, 9, 10, 13 and 14.
+
+Page 1 is shared most widely: 1988 unattributed models sample its first
+64×64 tile, some of them with thousands of faces.
