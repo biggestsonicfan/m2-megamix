@@ -324,3 +324,120 @@ table. Meshes the game builds in polygon RAM, or draws by a mesh pointer
 it kept, are not counted. Attract and select screens (modes 0–8) are not
 part of a fight and were left out. They still need the old set 1, which
 stays in ROM.
+
+## Akira packed into the seven pages
+
+`node tools/pack-akira.mjs` builds this and checks it in memory (`--out DIR`
+writes the two patch blobs). No ROM file was changed. No StF page, page-list
+entry, model or material record is touched: the only bytes that change are
+in two runs of 0xFF.
+
+How it is packed:
+
+- His 49 distinct tiles (266 cells of 32×32) keep their power-of-two
+  sizes and stay on the 32-pixel grid. Two of them overlap in VF2, (256, 864)
+  128×32 and (288, 864) 32×32, so they move together. That leaves 48 groups.
+- The seven pages are uncompressed (type 1, header `FF FF 0A`, texels at +16)
+  and 256×256. Each holds levels 0–4, 0xAA90 bytes per page. Cells nothing
+  was packed into are 0.
+- Mip levels 5–9 of these pages are not in a raw page, so the board keeps
+  whatever was there before: 134 halfwords over the seven slots. That only
+  matters for a face drawn smaller than 1/32 of its tile.
+
+### main_data (empty run from 0xD6F1AE)
+
+| page | slot on sheet 1 | page data | copy-list entry | value |
+|--|--|--|--|--|
+| 3 | (0, 768) | 0xD6F1B0 | 0xDB9BB0 | 0x02D6F1B0 |
+| 12 | (768, 0) | 0xD79C40 | 0xDB9BD4 | 0x02D79C40 |
+| 15 | (768, 768) | 0xD846D0 | 0xDB9BE0 | 0x02D846D0 |
+| 16 | (1024, 0) | 0xD8F160 | 0xDB9BE4 | 0x02D8F160 |
+| 18 | (1280, 0) | 0xD99BF0 | 0xDB9BEC | 0x02D99BF0 |
+| 19 | (1280, 256) | 0xDA4680 | 0xDB9BF0 | 0x02DA4680 |
+| 21 | (1536, 256) | 0xDAF110 | 0xDB9BF8 | 0x02DAF110 |
+
+- The copy of set 1's page list is at 0xDB9BA0..0xDB9C04: listIdx 0, then
+  24 pointers. The other 17 entries are the same as the live list at
+  0xB00010. Its address as a pointer is 0x02DB9BA0.
+- Pages 19 and 21 came out empty, since Akira needed only 4.2 of the 7 pages.
+  Their entries still point at new, all-zero pages, as asked, so the copy
+  draws no StF texels from any of the seven.
+- For a fight to use the copy, a texture-set pointer has to name 0x02DB9BA0.
+  It could be set 1's own entry in the set table (TEX_HEADER+0xC → 0x2301010,
+  entry 1 = 0x02B00010), swapped for fights only, or a spare set such as 11
+  (0x026A6FA0). That is step 3 and has not been done.
+
+### Where his tiles went
+
+VF2 positions are sheet 1, (x, y); "→" is the new position on StF sheet 1.
+
+- **Page 3:** 128×128 (0,256)→(0,768); (128,256)→(128,768); (0,384)→(0,896); (0,896)→(128,896).
+- **Page 12:**
+  - 128×128 (128,896)→(768,0)
+  - 64×128 (192,384)→(896,0); (256,384)→(960,0); (0,512)→(768,128); (256,512)→(960,128)
+  - 128×64 (128,512)→(832,128)
+  - 64×64 (256,256)→(832,192); (192,576)→(896,192)
+- **Page 15:**
+  - 64×128 (320,512)→(768,768); (384,512)→(832,768); (448,512)→(896,768); (256,640)→(960,768); (320,640)→(768,896); (320,896)→(832,896)
+  - 64×64 (0,768)→(896,896); (64,768)→(960,896); (128,768)→(896,960); (256,768)→(960,960)
+- **Page 16:**
+  - 64×64 (0,832)→(1024,0); (64,832)→(1088,0); (128,832)→(1152,0); (192,832)→(1216,0); (384,832)→(1152,64); (448,832)→(1216,64); (448,896)→(1088,128); (448,960)→(1152,128)
+  - 128×32 (256,832)→(1024,64)
+  - 128×32 (256,864)→(1024,96), moved together with 32×32 (288,864)→(1056,96)
+  - 32×128 (384,896)→(1024,128); (416,896)→(1056,128)
+  - 64×32 (128,384)→(1216,128); (128,416)→(1216,160); (128,448)→(1088,192); (384,704)→(1088,224)
+  - 32×64 (64,512)→(1152,192); (416,640)→(1184,192); (448,640)→(1216,192); (384,768)→(1248,192)
+- **Page 18:** 64×32 (384,736)→(1280,0); (320,768)→(1344,0); (448,768)→(1408,0); (320,800)→(1472,0); 32×32 (384,640)→(1280,32); (384,672)→(1312,32).
+- **Pages 19 and 21:** nothing.
+
+### Material records and UVs (textures region, empty run from 0x78BDB8)
+
+Material and UV pointers are halfword indices into the textures ROM, not
+into main_data, so these cannot go in the 0xD6F1AE run. They use
+0x78BDC0..0x792E70 (28.8 KB) of the 0xFF run that ends at 0x800000.
+
+- Each model's material bytes are copied as VF2 has them, with th2 bits
+  0–10 (tile x/32, y/32) set to the new place. The sheet bit, the
+  microtexture bits and th0/th1/th3 are left as they were.
+- The UV bytes are copied unchanged.
+
+| model | material at | matPtr | uvPtr |
+|--|--|--|--|
+| 407 | 0x78BDC0 | 0x3C5EE0 | 0x3C5FE0 |
+| 408 | 0x78C380 | 0x3C61C0 | 0x3C62C0 |
+| 409 | 0x78C940 | 0x3C64A0 | — |
+| 410 | 0x78C950 | 0x3C64A8 | 0x3C65A0 |
+| 411 | 0x78CF40 | 0x3C67A0 | 0x3C6898 |
+| 412 | 0x78D530 | 0x3C6A98 | 0x3C6F08 |
+| 413 | 0x78F120 | 0x3C7890 | 0x3C79A0 |
+| 414 | 0x78F770 | 0x3C7BB8 | 0x3C7CC8 |
+| 416 | 0x78FDD0 | 0x3C7EE8 | 0x3C7F88 |
+| 417 | 0x790190 | 0x3C80C8 | 0x3C8168 |
+| 419 | 0x790550 | 0x3C82A8 | — |
+| 420 | 0x7908D0 | 0x3C8468 | — |
+| 421 | 0x790C50 | 0x3C8628 | 0x3C86E8 |
+| 422 | 0x7910D0 | 0x3C8868 | 0x3C8928 |
+| 2452 | 0x791550 | 0x3C8AA8 | 0x3C8BC8 |
+| 2454 | 0x791CB0 | 0x3C8E58 | 0x3C9048 |
+| 2442 | 0x7928E0 | 0x3C9470 | 0x3C9558 |
+
+Models 409, 419 and 420 have no textured faces, so they read no UVs. Their
+uvPtr is left 0.
+
+Not placed yet: his meshes (VF2 polygon ROM) and model-table entries that
+would name these pointers. The free polygon-ROM run at 0xEC2578 is where the
+meshes would go.
+
+### What was checked (in memory)
+
+- main_data and textures differ from StF's only inside the two runs.
+- Set 1 was walked through the copy (by pointing set 1 at it in memory
+  only) and compared with the live set 1:
+  - nothing differs outside the seven slots;
+  - inside them, levels 0–4 are exactly what was packed;
+  - levels 5–9 are the 134 halfwords above.
+- Each of Akira's 17 models was decoded from its VF2 mesh, using the copied
+  material and UV pointers against the patched StF. All 1963 textured faces
+  have the same tile sizes and UVs as in VF2. Every texel at levels 0–4 of
+  every face's tile matches VF2's texture RAM (sets 40, 1, 2), and every
+  tile lies inside one of the seven pages.
