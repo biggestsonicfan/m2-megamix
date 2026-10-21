@@ -258,3 +258,66 @@ only**.
 
 His page data itself has room: ~168 KB fits in the 2.6 MB 0xFF run at
 main_data `0xD6F1AE`. Texture RAM is what is short, not ROM.
+
+## A repacked set 1: what a fight draws
+
+The alternative to finding free pages is to build a new set 1: keep only
+the tiles a Megamix fight needs, pack Akira's beside them, and repoint the
+tile field (th2) of every material record whose tile moved. This section
+is step 1: which StF models a fight actually draws.
+
+`tools/mame/fight-models.lua` logs every model-table entry the i960 reads
+(main_data `0xE0004 + id*16`) under the game's mode (`0x50002A`). Mode 9 is
+the fight scene: intro, rounds, K.O. and stage clear. It ran on the shared
+MAME 28 times: P1 forced to Sonic, Honey and Eggman, each on the nine arena
+stages (0–7, 9), 6000 frames of mashing each, plus one unforced Sonic run.
+Every run reached the fight (≈3800–4400 frames in mode 9, sub 9).
+The list of model ids is in `docs/data/stf-fight-models.txt`.
+
+1053 models were read in mode 9: the cast, 53 models of other fighters
+(the CPU opponents), 259 stage models and 662 unnamed ones. 224 of the
+unnamed ones sample sheet 1.
+
+In 32×32 tiles of sheet 1 (24 slots × 64 = 1536):
+
+| what has to stay | tiles |
+|--|--|
+| Sonic, Honey, Eggman: every part and face, P1 and P2, drawn or not | 469 |
+| unnamed models a fight drew (HUD, effects, items) | 332 more |
+| stage models a fight drew | 0 (they are all on sheet 0) |
+| **kept** | **637** |
+| **free after a repack** | **899** |
+
+Kept tiles per set 1 slot (of 64; `--` is the mip area):
+
+```
+  40   64   40    0    0    0   16   64
+  45   64   28   16   20    0    0   32
+  64   16   32   16   --   --   --   --
+   0   64   16    0   --   --   --   --
+```
+
+Six slots hold nothing a fight draws: (768, 0), (1024, 0), (1280, 0),
+(1280, 256), (0, 768) and (768, 768), i.e. set 1 pages 12, 16, 18, 19, 3 and 15.
+
+What the guests need, in the same units (union over each game's three,
+since they share tiles):
+
+| guests | tiles |
+|--|--|
+| Akira (VF2) | 262 (266 with his item 2442) |
+| Akira, Sarah, Kage (VF2) | 363 |
+| Picky, Honey, Mahler (FV) | 563 |
+| all six | 926 |
+
+So Akira fits in a repacked set 1 with room to spare. All six guests
+are 27 tiles over, before packing losses. The unnamed 332 still include
+some opponent-only effects (e.g. models 818–826, 859, 860, 938, 939 were
+drawn in only 3 of 28 runs), and sheet 0 is per-stage art that has not been
+measured for slack.
+
+Limits of the measurement: it sees only draws that go through the model
+table. Meshes the game builds in polygon RAM, or draws by a mesh pointer
+it kept, are not counted. Attract and select screens (modes 0–8) are not
+part of a fight and were left out. They still need the old set 1, which
+stays in ROM.
