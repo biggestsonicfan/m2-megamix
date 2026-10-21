@@ -219,6 +219,31 @@ columns, then the translation, the layout `pose.js` uses) and drawn with op
   its coefficient from `flt_90BA0`. `m2_obj_frame_setup` fills all 32 with one
   value, so `send_materials` follows it. Without them the palms and the
   waterfall draw white.
+- Camera scale (found, not yet in the board): after the camera's turn and
+  its translate by the stage position, StF's `camera_init` sends the
+  coprocessor scale op `0x3800707` with 1.6, 1.6, 1.6 (`0x3FCCCCCD` × 3),
+  then stores the matrix (`0x21804343`). Every stage matrix StF's display
+  list carries is 1.6 times the board's. The board's camera has no scale,
+  and its positions are 0.625 times StF's. The picture has the same shape,
+  because a uniform scale projects the same. But the geometrizer transforms
+  each normal by the object matrix. On the board the normals are 0.625 as
+  long, so `dotl` and the diffuse term are 0.625 as large. The light
+  vector, mode (1), and material table are word-for-word the same on both
+  sides. Only the matrices differ.
+
+  Check: a parse of each side's display list at the Aurora intro's frame
+  84, taken when the i960 writes the read start at 0x803008. The side-3
+  cage panels (models 1125..1127) have matrix columns of length
+  1.333/1.6/1.333 in StF and 0.833/1.0/0.833 on the board. A throwaway
+  board sends StF's camera (translate by the unscaled position, then the
+  1.6 scale; the light is still built from the camera before the scale,
+  so it stays bit-identical). That makes the panel matrices match StF's to
+  within 8e-6. Of the 4,963 differing pixels in side 3's 6,801-pixel
+  footprint, it fixes 4,725, and 13 others become wrong. Most of the rest
+  are where StF's fighters stand. Whole frame, HUD off, no fighters,
+  counter held: 179,775 identical pixels at frame 84 and 184,355 at frame
+  108 (was 173,142 and 180,153). To bring it into the board, the camera and
+  the baked stage and fighter matrices have to take the 1.6 the same way.
 
 ## Where it stands
 
