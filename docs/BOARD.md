@@ -64,6 +64,16 @@ columns, then the translation, the layout `pose.js` uses) and drawn with op
   part's `p2` in `poses.h` is that model.
   Honey's white spikes are her lace barrettes. They use colour base 28
   (row 27, grey) on both sides, so they are meant to draw white.
+- Eyes: Sonic's and Honey's eyes are two models drawn on the head's matrix.
+  StF's `rob_disp_rdn_loop` (Sega's C in `m2-hle2/vendor/gems-c`) draws them
+  right after the head with `set_obj_tpd`, on the same matrix, with no turn
+  or offset of their own. The texture points it passes come from the face
+  record (`0xC533C` table, +0x10 and +0x14). For Sonic (eyes 217, 218; player 2's
+  665, 666) and Honey (3520, 3521; 2735, 2736) those points are the same,
+  byte for byte, as the eye models' own, so drawing the models as they are
+  is what StF draws. A MAME snapshot of board Sonic in stance beside real StF's
+  Sonic at round start shows the same eyes: a white patch over the face
+  with the pupil at its front edge.
 - Materials: StF's `camera_init` sends the stage's 32 material words (prog
   `0x909E0` + stage slot × 4) as GEO texture parameters every frame, each with
   its coefficient from `flt_90BA0`. `m2_obj_frame_setup` fills all 32 with one
@@ -80,7 +90,6 @@ picture closely.
 
 Known gaps:
 
-- Sonic's eyes are not bent to the face's eye points (`pose.js` eyePoints).
 - Player 2's part rows (7..11, luma 48..63) get the fighter's own table, as
   player 1's do. In a 1P round against the CPU, real StF leaves them at zero.
   Mirror matches in real StF (MAME `sfight`, 2P; Honey vs Honey by setting
