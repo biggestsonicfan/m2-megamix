@@ -15,6 +15,7 @@ stages from each of the three games, as in the browser game.
 
 ```sh
 node tools/bake-board.mjs                       # board/src/poses.h, from $ROMS_DIR's zips
+python3 tools/lift-stf.py                       # board/src/stf_motion.{s,h}, stf_rom_c0000.bin
 cmake -G "Unix Makefiles" -B <build> -S board   # m2-sdk beside this checkout
 make -C <build> -j2                             # -> board/roms/sfight/epr-19001.15, epr-19002.16
 mame sfight -rompath "board/roms;$ROMS_DIR"
@@ -24,7 +25,8 @@ MAME reports wrong checksums for the two program EPROMs; that is expected.
 `M2_HLE_GEO_OFF=1` in the environment runs MAME's real geometrizer program
 instead of its HLE; both draw the same picture.
 
-`poses.h` and `roms/` hold Sega's data and are not in git.
+`poses.h`, `stf_motion.s`, `stf_rom_c0000.bin` and `roms/` hold Sega's code
+and data and are not in git.
 
 `board/src/stf_tex_codec.h` is the SDK's `m2_tex_codec.h` with a bigger
 table B (2048 entries, not 512): StF's stage sets need up to 1178, and the
@@ -33,17 +35,37 @@ included in place of it; the SDK itself is used unchanged.
 
 ## How a fighter is drawn
 
-StF's `calc_unit_mat` builds each of the sixteen part matrices on the
-coprocessor's matrix stack and stores it (op 0x35). Here the matrices are
-solved ahead of time by the browser game's solver (noclip's `pose.js`, which
-follows the board's `calc_rob_angle_cont`), frame by frame, by
-`tools/bake-board.mjs`. On the board each part's matrix is the fighter's
-placement times the baked one, loaded with op 0x04 (`Fn_load_matrix`: three
-columns, then the translation, the layout `pose.js` uses) and drawn with op
-0x78 from the model table, as `m2_obj.h` does.
+The motions are StF's own code. `tools/lift-stf.py` lifts StF's motion
+routines out of its disassembly (`biggestsonicfan/stfdisasm`,
+`rom_code1.asm` with `include.s`) as i960 assembly, `board/src/stf_motion.s`:
+`set_motion`, `calc_rob_angle` (the frame's angles from the motion's curves,
+`get_frame_dat`, `smooth_int`'s blends), `calc_unit_mat` (the sixteen part
+matrices, built on the coprocessor's stack and stored in its slots with op
+0x35, with the dent pendulums and part scales) and `sub_7F0E8` (each
+character's pendulum constants), with every routine and table they reach.
+StF's work RAM they use becomes `.bss` blocks of the board's; StF's ROM tables
+at 0xC0000..0xFFFFF (the character records, skeletons, motion lists) are
+copied raw to the same addresses (`.stfrom`). Collision routines are stubbed.
+The coprocessor runs StF's own firmware (m2-sdk's default), so the ops are
+the ones StF sends. The code uses the i960's own floating point, as StF does:
+fine on MAME and a real board (not on a soft-float i960).
 
-- A motion's forward is +x in the board's frame; y is up in both the board's
-  frame and the camera's.
+`board/src/stf_call.s` calls a lifted routine with StF's registers (g7 the
+fighter, g8 the other one, g10..g12 the RAM and FIFO bases, g14 0). A fighter
+is StF's rob structure (0x3400 bytes) and its motion record, set up as a
+round's start sets them (the character records at +0x190/+0x1A0, the dent
+pendulums, the countdown at +0x219C). `rob_step` is one 60 Hz frame of
+`action_init`'s motion part and `play_motion`'s head: the frame on by one,
+the next motion or a `smooth_int` blend back past the end, then
+`calc_rob_angle` and `calc_unit_mat`. `draw_fighter` is `rob_disp`: under the
+camera, each part's slot (op 0x37) after a scale of (1, y, 1), drawn with op
+0x78. A fighter at yaw a faces (-sin a, cos a) in x, z.
+
+Checked against real StF (MAME `sfight`, a 2P round, Sonic vs Sonic): at the
+same frame of the stance motion (278), all sixteen part positions in the rob
+(+0x1F4) match the real board's to the last digit printed, frames 39, 41 and
+79 (the second loop).
+
 - Textures: StF texture set 1 (the fighters) and the stage's set are loaded
   by `tex_load_set`, StF's loader: each page goes to the bank its own origin
   names, and a page whose first word is nonzero is a raw page, sent as it is
@@ -265,7 +287,8 @@ columns, then the translation, the layout `pose.js` uses) and drawn with op
 ## Where it stands
 
 Two fighters (button 1 cycles each player's: Sonic, Honey, Eggman) stand
-facing each other and play their stance motion at 30 fps, on one of two of
+facing each other and play their stance motion with StF's own motion code
+(60 Hz steps, drawn at 30 fps), on one of two of
 StF's stages, South Island and Aurora Icefield (player 1's button 2 switches
 between them). The stages are drawn from StF's stage records with its
 textures, colours, materials, light, colour cycling, and the sea and
@@ -280,16 +303,18 @@ Known gaps:
   slot 0 of the select table at 0xDACAC to 0x0F) draw player 2 as the board
   does: Sonic dark grey, and Honey blonde, with purple fur, a blue dress, a
   blue hairband and white barrettes.
+- Eggman's head (model 793) takes its texture from StF's texture set 7,
+  which the board does not load (it loads set 1 and the stage's), so it
+  does not show.
 - No camera of StF's, no shadows.
 
 ## Plan
 
 1. The fight: port `js/engine.js` to C (input, commands, moves, hits,
    reactions, rounds), versus only.
-2. Motions: baking every motion takes too much room in the program ROM
-   (768 bytes a frame). Either bake per-joint angles, much smaller, or port
-   the solver to the board (`calc_rob_angle_cont` uses the coprocessor's IK,
-   op 0x6B).
+2. Motions: StF's motion code runs on the board (above), so every StF
+   motion is there. Next: the rest of `play_motion` (its motion commands,
+   such as the dent pendulums' kicks) as the fight needs them.
 3. VF2's and Fighting Vipers' fighters and stages: their models, textures
    and colours go into the data ROMs (StF's unused runs, see
    `STF-BOARD-AKIRA.md`), which then ship as new ROM files beside the
