@@ -362,11 +362,58 @@ How it is packed:
 - Pages 19 and 21 came out empty, since Akira needed only 4.2 of the 7 pages.
   Their entries still point at new, all-zero pages, as asked, so the copy
   draws no StF texels from any of the seven.
-- For a fight to use the copy, a texture-set pointer has to name 0x02DB9BA0.
-  It could be set 1's own entry in the set table (TEX_HEADER+0xC → 0x02300DB0,
-  entry 1 = 0x02B00010), swapped for fights only. Or it could be one of the
-  small sets 11–15 (entry 11 = 0x026A6F90), if one of those turns out to be
-  unused. That is step 3 and has not been done.
+- A fight reaches the copy through a copy of the set table; see
+  "Pointing set 1 at the copy" below.
+
+### Pointing set 1 at the copy (data only)
+
+Set 1's page list is found through data, not code. The program names only
+the header word that holds the set table's address:
+
+| prog | instruction | does |
+|--|--|--|
+| `0x4A988`..`0x4A994` | `mov 1,g0` … `call 0x4AAE4` | send_tex_default: `send_tex_rob(1, 0, 0)` queues set 1 |
+| `0x4AFD0` | `ld 0x230000C,r4` | TEX_HEADER+0x0C: the set table's address (data) |
+| `0x4AFD8` | `ld (r4)[r3*4],r10` | the set's page-list pointer (r3 = set number) |
+| `0x4B0CC` | | each page pointer, read from that list |
+
+`0x0230000C` is the only reference to the header word in the program ROM.
+`0x02B00010` is held only at main_data `0x300DB4`, set 1's entry in the set
+table at `0x300DB0`.
+
+Set 1 is uploaded once, at boot, and nothing uploads it again. In a MAME run
+(boot, attract, select, then a fight on stage 0), the set table is read 4
+times: set 1 at frame 6 (boot), set 2 at frame 36, set 16 for attract, and set 2 for the
+fight's stage (frame 752). A fight never reads set 1's list. Its sheet 1 holds
+what the boot upload put there. So the edit can't apply to fights only.
+It also changes the seven slots on the attract and select screens, which
+were not checked.
+
+The edit (made by `tools/pack-akira.mjs`, in memory; `--out` writes the bytes):
+
+| where | old | new |
+|--|--|--|
+| main_data `0x30000C` (TEX_HEADER+0x0C) | `0x02300DB0` | `0x02DB9C10` |
+| main_data `0xDB9C10..0xDB9C58`, empty run | 0xFF fill | copy of the 18 set-table words; entry 1 (`0xDB9C14`) = `0x02DB9BA0`, the other 17 the same as `0x300DB0` |
+
+The live set table at `0x300DB0` and the live list at `0xB00010` stay as they
+are. One word outside the empty runs changes: the header word. Changing
+`0x300DB4` itself (`0x02B00010` → `0x02DB9BA0`) would have the same effect
+without the table copy. No instruction changes.
+
+Checked in MAME (shared build, `sfight`), with the patch bytes written into
+the `main_data` and `textures` regions before boot:
+
+- Frame 6: `0x4AFD0` reads `0x02DB9C10`, `0x4AFD8` reads `0x02DB9BA0`, and
+  `0x4B0CC` reads the 24 entries of the copy. Among them are the seven new
+  pages, `0x02D6F1B0`, `0x02D79C40`, `0x02D846D0`, `0x02D8F160`, `0x02D99BF0`,
+  `0x02DA4680` and `0x02DAF110`, and their bytes are then read. The live list
+  at `0xB00010` is not read at all.
+- Texture RAM at frame 2500, in the fight (stage 0), compared with an
+  unpatched run of the same inputs: the seven slots' levels 0–4 are exactly
+  what was packed (152,768 halfwords, 141,221 of them changed). Nothing
+  outside the seven slots differs. Inside them, only the 134 level 5–9
+  halfwords above differ.
 
 ### Where his tiles went
 
@@ -431,9 +478,10 @@ meshes would go.
 
 ### What was checked (in memory)
 
-- main_data and textures differ from StF's only inside the two runs.
-- Set 1 was walked through the copy (by pointing set 1 at it in memory
-  only) and compared with the live set 1:
+- main_data and textures differ from StF's only inside the two runs, and
+  main_data in the header word `0x30000C`.
+- Set 1 was walked through the patched header and compared with the live
+  set 1:
   - nothing differs outside the seven slots;
   - inside them, levels 0–4 are exactly what was packed;
   - levels 5–9 are the 134 halfwords above.

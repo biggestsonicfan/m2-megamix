@@ -11,6 +11,13 @@
  *     main_data from 0xD6F1AE;
  *   - after them, a copy of set 1's page list whose seven entries point at those
  *     pages (the live list at 0xB00010 is left alone);
+ *   - after that, a copy of the texture-set table (TEX_HEADER+0x0C, 0x300DB0)
+ *     whose set 1 entry names the list copy, and TEX_HEADER+0x0C itself
+ *     (main_data 0x30000C) repointed at it. That word is the only one changed
+ *     outside the runs: unp_send_tex_req reads it at prog 0x4AFD0
+ *     (`ld 0x230000C,r4`, the only reference to it) and then the set's
+ *     list at 0x4AFD8 (`ld (r4)[r3*4],r10`); set 1 goes through there once,
+ *     at boot (send_tex_default, `send_tex_rob(1, 0, 0)` at 0x4A994);
  *   - copies of Akira's material records, with only th2's tile position
  *     changed, and of his UV streams, unchanged, in the empty run of the
  *     textures region from 0x78BDB8 (material and UV pointers index that
@@ -192,7 +199,14 @@ PAGES.forEach((p, i) => { pageAt[p] = PAGE0 + i * PAGE_BYTES; md.set(pageBytes(p
 const LIST_COPY = PAGE0 + PAGES.length * PAGE_BYTES;
 md.set(stf.mainData.subarray(LIST, LIST + 4 + 24 * 4), LIST_COPY);
 for (const p of PAGES) mdv.setUint32(LIST_COPY + 4 + p * 4, MAIN_DATA_BASE + pageAt[p], true);
-const MD_END = LIST_COPY + 4 + 24 * 4;
+const HDR_SETS = stf.game.texture.header + 0x0c;
+const SET_TABLE = mdv.getUint32(HDR_SETS, true) - MAIN_DATA_BASE;
+const SETS = stf.game.texture.sets;
+const TABLE_COPY = (LIST_COPY + 4 + 24 * 4 + 15) & ~15;
+md.set(stf.mainData.subarray(SET_TABLE, SET_TABLE + SETS * 4), TABLE_COPY);
+mdv.setUint32(TABLE_COPY + STF_SET * 4, MAIN_DATA_BASE + LIST_COPY, true);
+mdv.setUint32(HDR_SETS, MAIN_DATA_BASE + TABLE_COPY, true);
+const MD_END = TABLE_COPY + SETS * 4;
 if (MD_END > PAGE_RUN + PAGE_RUN_LEN) throw new Error('main_data run too small');
 
 /* ---- 4. Material and UV copies in the textures region -------------------- */
@@ -233,19 +247,20 @@ Object.defineProperty(patched, 'mainDataView', { value: mdv });
 Object.defineProperty(patched, 'textures', { value: tx });
 const problems = [];
 
-/* Only the runs changed. */
-const diffOutside = (a, b, lo, hi) => { for (let i = 0; i < a.length; i++) if ((i < lo || i >= hi) && a[i] !== b[i]) return i; return -1; };
-let d = diffOutside(stf.mainData, md, PAGE_RUN, PAGE_RUN + PAGE_RUN_LEN);
+/* Only the runs changed, and in main_data TEX_HEADER+0x0C. */
+const diffOutside = (a, b, lo, hi, skip = -1) => { for (let i = 0; i < a.length; i++) if ((i < lo || i >= hi) && (i < skip || i >= skip + 4) && a[i] !== b[i]) return i; return -1; };
+let d = diffOutside(stf.mainData, md, PAGE_RUN, PAGE_RUN + PAGE_RUN_LEN, HDR_SETS);
 if (d >= 0) problems.push(`main_data changed outside the run at ${hex(d)}`);
 d = diffOutside(stf.textures, tx, TEX_RUN, TEX_RUN + TEX_RUN_LEN);
 if (d >= 0) problems.push(`textures changed outside the run at ${hex(d)}`);
 
-/* Set 1 through the copy: the same texture RAM except inside the seven pages'
- * levels 0-4 (the copy is named in memory only, by pointing set 1 at it). */
-const setSlot = mdv.getUint32(stf.game.texture.header + 0x0c, true) - MAIN_DATA_BASE + STF_SET * 4;
-mdv.setUint32(setSlot, MAIN_DATA_BASE + LIST_COPY, true);
+/* Every other set reads the same through the table copy. */
+for (let s = 0; s < SETS; s++) if (s !== STF_SET && mdv.getUint32(TABLE_COPY + s * 4, true) !== mdv.getUint32(SET_TABLE + s * 4, true)) problems.push(`set ${s} differs in the table copy`);
+if (mdv.getUint32(SET_TABLE + STF_SET * 4, true) !== MAIN_DATA_BASE + LIST) problems.push('the live set table changed');
+
+/* Set 1 through the patched header: the same texture RAM except inside the
+ * seven pages' levels 0-4. */
 const live = texOf(buildTexram(stf, [STF_SET])), viaCopy = texOf(buildTexram(patched, [STF_SET]));
-mdv.setUint32(setSlot, MAIN_DATA_BASE + LIST, true);
 /* 1: levels 0-4 of a packed page; 2: its levels 5-9, which a raw page does
  * not write (the copy leaves there whatever was in texture RAM before). */
 const inPages = new Uint8Array(SHEET_BYTES * 2);
@@ -300,7 +315,9 @@ for (const p of PAGES) {
         console.log(`  +${c.ox},${c.oy}: ${c.members.map((t) => `${t.w}x${t.h} VF2 (${t.x},${t.y}) -> (${moved.get(key(t)).x},${moved.get(key(t)).y})`).join('; ')}`);
     }
 }
-console.log(`list copy ${hex(LIST_COPY)}..${hex(MD_END)} (pointer ${hex(MAIN_DATA_BASE + LIST_COPY)})`);
+console.log(`list copy ${hex(LIST_COPY)}..${hex(LIST_COPY + 4 + 24 * 4)} (pointer ${hex(MAIN_DATA_BASE + LIST_COPY)})`);
+console.log(`set table copy ${hex(TABLE_COPY)}..${hex(MD_END)}, entry ${STF_SET} = ${hex(MAIN_DATA_BASE + LIST_COPY)}`);
+console.log(`TEX_HEADER+0x0C main_data ${hex(HDR_SETS)}: ${hex(MAIN_DATA_BASE + SET_TABLE)} -> ${hex(MAIN_DATA_BASE + TABLE_COPY)}`);
 for (const c of copies) console.log(`model ${c.m}: mat ${c.mat !== undefined ? hex(c.mat) : '-'} matPtr ${hex(c.matPtr)} uvPtr ${hex(c.uvPtr)} (VF2 ${hex(readModelEntry(vf2, c.m).matPtr)} ${hex(readModelEntry(vf2, c.m).uvPtr)}) end ${hex(c.end)}`);
 console.log(`textures used ${hex((TEX_RUN + 15) & ~15)}..${hex(at)}`);
 console.log(`texture RAM through the copy: ${deep} halfwords of the seven pages' levels 5-9 not written (StF's own pages write them)`);
@@ -309,6 +326,7 @@ console.log(`${faces} textured faces checked; ${problems.length ? 'PROBLEMS:\n  
 if (outDir) {
     mkdirSync(outDir, { recursive: true });
     writeFileSync(join(outDir, `main_data-${PAGE0.toString(16)}.bin`), md.subarray(PAGE0, MD_END));
+    writeFileSync(join(outDir, `main_data-${HDR_SETS.toString(16)}.bin`), md.subarray(HDR_SETS, HDR_SETS + 4));
     writeFileSync(join(outDir, `textures-${((TEX_RUN + 15) & ~15).toString(16)}.bin`), tx.subarray((TEX_RUN + 15) & ~15, at));
 }
 process.exitCode = problems.length ? 1 : 0;
