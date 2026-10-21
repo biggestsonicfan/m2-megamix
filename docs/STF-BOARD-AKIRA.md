@@ -168,3 +168,93 @@ textures on pages 1, 2, 4, 5, 7, 8, 9, 10, 13 and 14.
 
 Page 1 is shared most widely: 1988 unattributed models sample its first
 64×64 tile, some of them with thousands of faces.
+
+## Free texture RAM during a fight: none
+
+Measured by walking every StF texture set's page list (all 18 numbers;
+sets 0, 11–15 and 17 are empty) and marking each 8×8 texel cell that a
+page's full-size level or mip chain writes. Then every StF model's tiles
+were matched to the 256×256 slot they sample. Owners come from the same
+lists as above.
+
+Texture RAM is two sheets of 24 full-size 256×256 slots (the lower right
+quarter of each sheet holds the mips). In a fight:
+
+- **Sheet 1**: set 1, uploaded with every stage, fills all 24 slots.
+- **Sheet 0**: the stage's own set (2–10, or 16 for the story scenes)
+  fills all 24 slots. Every stage set has 24 full pages at the same 24
+  places. No set leaves any of them out.
+
+No slot is left empty on either sheet, and every mip cell is written too.
+No texture RAM is free in any StF fight.
+
+Sheet 0 is stage art, so it is no help: each slot there is sampled by
+5 to 15 of the 17 stage records.
+
+On sheet 1, these are set 1's slots that no Megamix StF fighter (Sonic,
+Honey, Eggman, P1 or P2) samples:
+
+| set 1 page | slot (x, y) | page data, ≤ size | page-list entry | sampled by |
+|--|--|--|--|--|
+| 3 | (0, 768) | `0xB0321C` 0x418 | `0xB00020` | 3 other fighters, 22 unnamed |
+| 6 | (256, 512) | `0xB04EC0` 0x3E8 | `0xB0002C` | 8 other fighters, 192 unnamed |
+| 11 | (512, 768) | `0xB0ABD8` 0xDE8 | `0xB00040` | 12 other fighters, 63 unnamed |
+| 12 | (768, 0) | `0xB0B9C0` 0x1954 | `0xB00044` | 2 other fighters, 24 unnamed |
+| 15 | (768, 768) | `0xB0FE38` 0x15A0 | `0xB00050` | 20 unnamed |
+| 16 | (1024, 0) | `0xB113D8` 0x2C10 | `0xB00054` | 6 other fighters, 14 unnamed |
+| 18 | (1280, 0) | `0xB15930` 0x2BEC | `0xB0005C` | 2 other fighters, Tails' Lab, 149 unnamed |
+| 19 | (1280, 256) | `0xB1851C` 0x1CCC | `0xB00060` | 2 other fighters, 69 unnamed |
+| 20 | (1536, 0) | `0xB1A1E8` 0x2220 | `0xB00064` | 154 unnamed |
+| 21 | (1536, 256) | `0xB1C408` 0x224C | `0xB00068` | Flying Carpet's stage models, 4 unnamed |
+| 22 | (1792, 0) | `0xB1E654` 0x150C | `0xB0006C` | 55 unnamed |
+| 23 | (1792, 256) | `0xB1FB60` | `0xB00070` | 99 unnamed |
+
+Every one of them is still sampled by something. The other fighters,
+stage models and unnamed models (effects, items, screens) that use them
+have not been ruled out of a Megamix fight.
+
+The other set 1 slots (pages 0, 1, 2, 4, 5, 7, 8, 9, 10, 13, 14, 17)
+carry Sonic, Honey or Eggman.
+
+All page-list entries above are in set 1's list at main_data `0xB00010`
+(count word, then one u32 per page from `0xB00014`). Their origins come
+from the destination list at `0x30053C`.
+
+## Can Akira's pages go in by pointer changes alone? No
+
+A page-list entry holds only the page data's address. Where the page
+lands is set by the origin word in the destination list. Where a face
+samples is set by its material record (th2 bits 0–10: the tile's x and y,
+bit 12: the sheet), not by its UVs. Akira's material records name VF2's
+places, and those are StF set 1's pages 1–15:
+
+| Akira's VF2 page | page data (VF2 main_data) | lands on | StF set 1 page there |
+|--|--|--|--|
+| 40:0–3 | `0x7A2F24`, `0x7A2F50`, `0x7A3040`, `0x7A6EA8` | (768, 0 / 256 / 512 / 768) | 12, 13, 14, 15 |
+| 1:0–1 | `0xB00030`, `0xB0AAC0` | (0, 256 / 512) | 1, 2 |
+| 1:2 | `0xB15550`, 256×64 | (0, 768), top 64 rows | 3 |
+| 2:0 | `0xB18028`, 256×192 | (0, 832), the rest of that slot | 3 |
+| 2:1–4 | `0xB1B340` … `0xB20C70` | (256, 0 / 256 / 512 / 768) | 4, 5, 6, 7 |
+| 2:5–8 | `0xB2413C` … `0xB24C64` | (512, 0 / 256 / 512 / 768) | 8, 9, 10, 11 |
+
+(y is within sheet 1.)
+
+His 16 pages need 15 slots. Repointing an entry uploads his page where
+StF's page was, which is the overwrite already ruled out. Leaving the
+entries alone and adding his pages anywhere else puts them where his
+faces don't look. So **none of his 16 pages fits by pointer changes
+only**.
+
+- With the material records left alone, 6 of his 16 pages land on a
+  slot no Megamix StF fighter samples: 40:0 (page 12), 40:3 (page 15),
+  2:3 (page 6), 2:8 (page 11), and 1:2 with 2:0 (both on page 3). Even
+  those slots are still sampled by other fighters or unnamed models, and
+  putting him there still means repointing set 1's entries (an overwrite).
+- Moving him elsewhere means changing the tile field in each of his
+  material records (th2 bits 0–10), which is not a UV change but is not
+  a pointer change either. Even then, sheet 1 has at most 12 slots no
+  Megamix StF fighter samples, against the 15 he needs, and none of them
+  is proven unused.
+
+His page data itself has room: ~168 KB fits in the 2.6 MB 0xFF run at
+main_data `0xD6F1AE`. Texture RAM is what is short, not ROM.
