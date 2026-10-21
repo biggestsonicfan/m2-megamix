@@ -15,6 +15,11 @@ colour tables and stages. The readers are noclip's, in `vendor/noclip`
 (a submodule). Nothing is drawn that the ROMs do not hold. The menu and
 HUD are plain text, in the style of a debug menu.
 
+## On the board
+
+`board/` is the same game growing as a new program for the Sonic the Fighters
+board (Model 2B), built on m2-sdk. See `docs/BOARD.md`.
+
 ## Running
 
 ```
