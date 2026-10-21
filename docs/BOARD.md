@@ -190,9 +190,15 @@ columns, then the translation, the layout `pose.js` uses) and drawn with op
   `camera_init`) marks the walls the camera is inside of (mask at
   `0x500288`). `cage_display` draws those walls, and `cage_disp_f` draws
   the others in a later pass, when camera flag bit 0xE is set. The board
-  bakes each panel's two ends (`stage_draw_t.x0`, `x1`) and runs the same
-  test on the coprocessor in `draw_stage`. It has no passes, so it does not
-  port the mask. From inside the ring every wall is in it.
+  bakes each panel's two ends (`stage_draw_t.x0`, `x1`). In `draw_stage`
+  it sends the panel's matrix and puts both ends through op 0x29 with
+  StF's own command word (`0x14802929`). StF's `mulr` and `divr` become
+  coprocessor ops 0x15 and 0x16. Its `cmpr` against 2.0, −248 and 248
+  becomes an integer test of the result's IEEE bits: sign bit, then
+  magnitude against `0x40000000` or `0x43780000`. There is no float maths
+  or compare on the i960, and no soft-float call. The board has no
+  passes, so it does not port the mask. From inside the ring every wall
+  is in it.
 
   Check: Aurora Icefield from real StF's intro camera (frames 84 and 108
   of the stage, mask 0x0E, all cage panels drawn in the first pass). A read
@@ -204,7 +210,8 @@ columns, then the translation, the layout `pose.js` uses) and drawn with op
   picture: 19,290 pixels at frame 84 and 31,918 at frame 108, mostly
   (160, 205, 250) and (169, 202, 250). Only 79 and 12 of them matched real
   StF. With the test, the board's throwaway builds draw the same 7 panels
-  as real StF. Of those pixels, 16,915 and 25,612 now match real StF. In the
+  as real StF, and none of those pixels is (160, 205, 250) or (169, 202,
+  250) at frame 84 (11 at frame 108; real StF has 74 and 350 there). Of those pixels, 16,915 and 25,612 now match real StF. In the
   whole 496×384 frame, 173,142 and 180,153 pixels are identical (156,306
   and 154,553 before).
 - Materials: StF's `camera_init` sends the stage's 32 material words (prog

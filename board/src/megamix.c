@@ -155,41 +155,48 @@ static void move_tpd_send(const tpd_t *t) {
     }
 }
 
-/* cage_clip_m's test for one cage panel, on the coprocessor as StF does it:
- * each of the panel's two ends, (x, 0, 0) in its own frame, goes through op
- * 0x29 under its matrix (model -> camera), and gets an out-code: 0x1F when its
- * depth is 2 or less, else bit 0 when its screen x (focus * x / z) is at or
- * left of -248 and bit 1 at or right of 248. A panel whose two ends share a
- * bit is not drawn. That is what keeps a wall the camera stands just outside
- * of (Aurora Icefield's fly-in) off the screen: StF's cage_sub_check leaves
- * it to the later cage_disp_f pass, where both ends are behind the near
- * limit. */
-static u32 cage_code(float x) {
-    float p[3], sx;
-    u32 c = 0u;
-    m2_cop_m2w(x, 0.0f, 0.0f, p);
-    if (!(p[2] > 2.0f)) return 0x1Fu;
-    sx = FOCUS * p[0] / p[2];
-    if (!(sx > -248.0f)) c |= 1u;
-    if (!(sx < 248.0f)) c |= 2u;
-    return c;
+/* cage_clip_m's test for one cage panel, as StF does it: the panel's matrix
+ * (model -> camera) goes to the coprocessor, and each of its two ends, (x, 0,
+ * 0) in its own frame, goes through op 0x29. StF then takes the screen x as
+ * focus_dist_x * X / Z (mulr, divr) and gives the end an out-code: 0x1F when
+ * Z is 2.0 or less, else bit 0 when the screen x is at or left of -248 and
+ * bit 1 at or right of 248 (cmpr against 0x40000000, 0xC3780000 and
+ * 0x43780000). A panel whose two ends share a bit is not drawn. The board
+ * multiplies and divides on the coprocessor too (ops 0x15 and 0x16), and
+ * tests StF's three constants against the results' IEEE bits as integers:
+ * no float sums or compares on the i960. That is what keeps a wall the
+ * camera stands just outside of (Aurora Icefield's fly-in) off the screen:
+ * StF's cage_sub_check leaves it to the later cage_disp_f pass, where both
+ * ends are behind the near limit. */
+static u32 cage_code(volatile u32 *cf, u32 x) {
+    int X, Z, sx;
+    *cf = COP_M2W; *cf = x; *cf = 0u; *cf = 0u;
+    X = (int)*cf; (void)*cf; Z = (int)*cf;
+    if (Z <= 0x40000000) return 0x1Fu;                      /* Z <= 2.0, or negative */
+    *cf = COP_FMUL; *cf = m2_obj_fb(FOCUS); *cf = (u32)X;
+    sx = (int)*cf;
+    *cf = COP_FDIV; *cf = (u32)sx; *cf = (u32)Z;
+    sx = (int)*cf;
+    if (sx < 0) return (sx & 0x7FFFFFFF) >= 0x43780000 ? 1u : 0u;  /* <= -248.0 */
+    return sx >= 0x43780000 ? 2u : 0u;                      /* >= 248.0 */
 }
 
-static int cage_clip(const mat_t *m, float x0, float x1) {
+static int cage_clip(const mat_t *m, u32 x0, u32 x1) {
     volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
     int i;
     *cf = COP_WMATRIX;
     for (i = 0; i < 9; i++) *cf = m2_obj_fb(m->r[i]);
     for (i = 0; i < 3; i++) *cf = m2_obj_fb(m->t[i]);
-    return (cage_code(x0) & cage_code(x1)) != 0u;
+    return (cage_code(cf, x0) & cage_code(cf, x1)) != 0u;
 }
 
 static void draw_stage(const stage_t *st) {
     mat_t m;
-    u32 i, model;
+    u32 i, model, x0, x1;
     for (i = 0; i < st->ndraws; i++) {
         mat_mul(&m, &cam, st->draws[i].m);
-        if (st->draws[i].x0 < st->draws[i].x1 && cage_clip(&m, st->draws[i].x0, st->draws[i].x1)) continue;
+        x0 = m2_obj_fb(st->draws[i].x0); x1 = m2_obj_fb(st->draws[i].x1);
+        if (x0 != x1 && cage_clip(&m, x0, x1)) continue;
         model = st->draws[i].model;
         if (st->tpd.kind != 0u && model == st->tpd.model) submit_mat_ov(model, &m, st->tpd.kind == 1u ? 0u : 1u, TPD_ADDR);
         else submit_mat(model, &m);
