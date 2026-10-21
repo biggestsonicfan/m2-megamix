@@ -53,8 +53,17 @@ columns, then the translation, the layout `pose.js` uses) and drawn with op
   polygon palette ROM. The colour translation RAM (`0x01810000`) is what turns
   them into RGB, row by row: `bake-board.mjs` bakes runs of it with the browser
   game's `colors.js` (`buildColorxlat`). A stage's run is rows 0..27 with its
-  colour set and tint; a fighter's are player 1's part rows (0..4, luma 48..63)
-  and skin rows (28..29).
+  colour set and tint; a fighter's are its part rows (0..4, luma 48..63) and
+  skin rows (28..29) for player 1, and 7..11 and 30..31 for player 2.
+- Player 2: StF writes palette RAM once, at boot, so a colour base names the
+  same rows whichever side draws it. Player 2 is set apart by its own models:
+  character c's player 2 is character c + 26 (Sonic 26, Honey 41, Eggman 34),
+  whose parts line up one for one with c's and carry their own colour bases.
+  Honey's player 2 has blonde hair and a blue dress, Sonic's names part row 7
+  and draws dark grey, and Eggman's are the same models as player 1's. Each
+  part's `p2` in `poses.h` is that model.
+  Honey's white spikes are her lace barrettes. They use colour base 28
+  (row 27, grey) on both sides, so they are meant to draw white.
 - Materials: StF's `camera_init` sends the stage's 32 material words (prog
   `0x909E0` + stage slot × 4) as GEO texture parameters every frame, each with
   its coefficient from `flt_90BA0`. `m2_obj_frame_setup` fills all 32 with one
@@ -72,15 +81,15 @@ picture closely.
 Known gaps:
 
 - Sonic's eyes are not bent to the face's eye points (`pose.js` eyePoints).
-- Player 2's fighter uses player 1's part and skin rows (StF gives player 2
-  rows 7..11 and 30..31), so a different fighter on that side has wrong
-  colours (Honey's ribbon draws white against Sonic).
+- Player 2's part rows (7..11, luma 48..63) get the fighter's own table, as
+  player 1's do. In a 1P round against the CPU, real StF leaves them at zero.
+  What it writes there in a mirror match has not been checked.
 - No stage colour cycling, no sky model or backdrop colour, no stage light
   vector (the SDK's fixed light), no camera of StF's, no shadows.
 
 ## Plan
 
-1. Player 2's colour rows, the stage's light and sky.
+1. The stage's light and sky.
 2. The fight: port `js/engine.js` to C (input, commands, moves, hits,
    reactions, rounds), versus only.
 3. Motions: baking every motion takes too much room in the program ROM

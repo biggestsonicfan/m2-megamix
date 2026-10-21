@@ -84,7 +84,8 @@ static void place(mat_t *w, const fighter_t *f) {
     mat_mul(w, &cam, m);
 }
 
-static void draw_fighter(const fighter_t *f) {
+/* Player 2 (p 1) draws StF's player 2 models, as StF does. */
+static void draw_fighter(const fighter_t *f, u32 p) {
     const pose_anim_t *a = f->anim;
     const float (*mats)[12] = a->mats[f->frame % a->frames];
     mat_t w, m;
@@ -92,7 +93,7 @@ static void draw_fighter(const fighter_t *f) {
     place(&w, f);
     for (i = 0; i < a->nparts; i++) {
         mat_mul(&m, &w, mats[a->parts[i].slot]);
-        submit_mat(a->parts[i].model, &m);
+        submit_mat(p ? a->parts[i].p2 : a->parts[i].model, &m);
     }
 }
 
@@ -187,13 +188,18 @@ static void load_stage(const stage_t *st) {
 static void load_palettes(void) {
     u32 a, i;
     for (a = 0; a < POSE_ANIMS; a++)
-        for (i = 0; i < pose_anims[a].nparts; i++)
+        for (i = 0; i < pose_anims[a].nparts; i++) {
             m2_load_model_palette(pose_anims[a].parts[i].model);
+            m2_load_model_palette(pose_anims[a].parts[i].p2);
+        }
 }
 
-/* Player 1's fighter's part and skin rows (StF's player 1 rows; player 2's
- * fighter is drawn with them too for now). */
-static void load_fighter_colors(const pose_anim_t *a) { cx_put(&a->cx[0]); cx_put(&a->cx[1]); }
+/* Each player's fighter's part and skin rows: player 1's 0..4 and 28..29,
+ * player 2's 7..11 and 30..31, as StF's send_tex_col_part and skin upload. */
+static void load_fighter_colors(const pose_anim_t *p1, const pose_anim_t *p2) {
+    cx_put(&p1->cx[0]); cx_put(&p1->cx[1]);
+    cx_put(&p2->cx[2]); cx_put(&p2->cx[3]);
+}
 
 static u32 edges(u32 now, u32 *held) { u32 e = now & ~*held; *held = now; return e; }
 
@@ -210,7 +216,7 @@ int main(void) {
     tex_load_set(SET_FIGHTERS);
     load_palettes();
     load_stage(&stages[stage]);
-    load_fighter_colors(&pose_anims[pick[0]]);
+    load_fighter_colors(&pose_anims[pick[0]], &pose_anims[pick[1]]);
     for (i = 0; i < 8u; i++) { m2_frame_begin(); m2_frame_end(); }
 
     fs[0].x = -1.1f; fs[0].face = 1;  fs[0].frame = 0u;
@@ -226,13 +232,13 @@ int main(void) {
             fs[i].anim = &pose_anims[pick[i]];
         }
         if (e & 4u) { stage = (stage + 1u) % STAGES; load_stage(&stages[stage]); }
-        if (e & 5u) load_fighter_colors(fs[0].anim);
+        if (e & 7u) load_fighter_colors(fs[0].anim, fs[1].anim);
 
         m2_frame_begin();
         m2_obj_frame_setup();
         send_materials(stages[stage].mat);
         draw_stage(&stages[stage]);
-        for (i = 0; i < 2u; i++) { draw_fighter(&fs[i]); fs[i].frame++; }
+        for (i = 0; i < 2u; i++) { draw_fighter(&fs[i], i); fs[i].frame++; }
         *(volatile u32 *)ZCLIP_REG = 0xFFFF00FFu;
         m2_frame_commit();
         m2_vsync(); m2_vsync();          /* 30 fps, as StF runs */
