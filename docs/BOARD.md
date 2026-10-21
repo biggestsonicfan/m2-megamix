@@ -86,6 +86,28 @@ columns, then the translation, the layout `pose.js` uses) and drawn with op
   there at boot (`flat_cx`); the SDK's ramp would show it far too bright.
   Real StF and board snapshots show the same pixels: (0, 0, 188) on South
   Island (0xF0C0) and (213, 38, 0) on Dynamite Plant (0x017F).
+- Light: `change_scene` copies the stage record's `stage_bright` (+0x04,
+  float) and `stage_vecter_x`/`_y` (+0x08, +0x0A, angles) to `BRIGHT` and
+  `VECTER_X`/`_Y`. Every frame `camera_init` builds the light on the
+  coprocessor: identity, the camera's turn (`ang_z`, `ang_x`, `ang_y` by the
+  negated camera angles), then `ang_y` by `VECTER_Y`, `ang_x` by `VECTER_X`
+  and op 0x29 on (0, 0, `BRIGHT`). It keeps the result at `0x50108C` and sends
+  it to the geometrizer (slot 0xA0) before the stage. Each fighter gets the
+  same vector times its `rob_light` (1.0 except in a hit flash, at
+  `0x5010AC`/`0x5010B8`). The light is in the camera's frame, so it is fixed in
+  the world. In real StF on South Island, 17 samples of the light it sends,
+  taken while the camera moved, fit `Rcam · Ry(VECTER_Y) · Rx(VECTER_X) ·
+  (0, 0, BRIGHT)` to within 6e-6. The board does the same with the same
+  coprocessor ops on its own camera (`stage_light`, once a stage) and sends
+  it every frame after `m2_obj_frame_setup`, whose fixed light is one frame of
+  South Island's. The floors and skies are unlit (their light is in the
+  texture); posts, ropes, cage, cliffs and fighters are lit. Check: board
+  builds with real StF's camera at one frame (identity, the turns, `set_pos`
+  by the negated eye, scaled by the bake's 1/1.6) line up with real StF's
+  snapshot. On South Island the blue post's faces then show real StF's own
+  colours ((30, 30, 238), (17, 17, 192), (2, 2, 144); with the old light 1 of
+  663 overlapping pixels matched), and 95% of the red rope's overlapping
+  pixels are identical (64% with the old light).
 - Materials: StF's `camera_init` sends the stage's 32 material words (prog
   `0x909E0` + stage slot × 4) as GEO texture parameters every frame, each with
   its coefficient from `flt_90BA0`. `m2_obj_frame_setup` fills all 32 with one
@@ -97,7 +119,7 @@ columns, then the translation, the layout `pose.js` uses) and drawn with op
 Two fighters (button 1 cycles each player's: Sonic, Honey, Eggman) stand
 facing each other and play their stance motion at 30 fps, on one of StF's
 nine stages (player 1's button 2 cycles them), drawn from StF's stage records
-with its textures, colours and materials. South Island matches StF's own
+with its textures, colours, materials and light. South Island matches StF's own
 picture closely.
 
 Known gaps:
@@ -108,19 +130,17 @@ Known gaps:
   slot 0 of the select table at 0xDACAC to 0x0F) draw player 2 as the board
   does: Sonic dark grey, and Honey blonde, with purple fur, a blue dress, a
   blue hairband and white barrettes.
-- No stage colour cycling, no stage light vector (the SDK's fixed light),
-  no camera of StF's, no shadows.
+- No stage colour cycling, no camera of StF's, no shadows.
 
 ## Plan
 
-1. The stage's light.
-2. The fight: port `js/engine.js` to C (input, commands, moves, hits,
+1. The fight: port `js/engine.js` to C (input, commands, moves, hits,
    reactions, rounds), versus only.
-3. Motions: baking every motion takes too much room in the program ROM
+2. Motions: baking every motion takes too much room in the program ROM
    (768 bytes a frame). Either bake per-joint angles, much smaller, or port
    the solver to the board (`calc_rob_angle_cont` uses the coprocessor's IK,
    op 0x6B).
-4. VF2's and Fighting Vipers' fighters and stages: their models, textures
+3. VF2's and Fighting Vipers' fighters and stages: their models, textures
    and colours go into the data ROMs (StF's unused runs, see
    `STF-BOARD-AKIRA.md`), which then ship as new ROM files beside the
    program.

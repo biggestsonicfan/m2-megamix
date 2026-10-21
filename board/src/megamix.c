@@ -73,6 +73,24 @@ static void camera_init(void) {
     cam.t[2] = -(CAM_S * CAM_Y + CAM_C * CAM_Z);
 }
 
+/* camera_init's light, in the camera's frame: on the coprocessor, the camera's
+ * turn, then ang_y by VECTER_Y and ang_x by VECTER_X, and op 0x29 on
+ * (0, 0, BRIGHT). StF sends it to the geometrizer (slot 0xA0) before the stage
+ * and, scaled by rob_light (1.0 but in a hit flash), before each fighter. The
+ * camera here stands still, so it is built once a stage. */
+static float light[3];
+
+static void stage_light(const stage_t *st) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    int i;
+    *cf = COP_WMATRIX;
+    for (i = 0; i < 9; i++) *cf = m2_obj_fb(cam.r[i]);
+    for (i = 0; i < 3; i++) *cf = 0u;
+    *cf = COP_ANG_Y; *cf = (u32)(int)st->vy;
+    *cf = COP_ANG_X; *cf = (u32)(int)st->vx;
+    m2_cop_m2w(0.0f, 0.0f, st->bright, light);
+}
+
 /* A fighter in the world: facing +x (face 1), or turned half way round about
  * y to face -x, standing at (x, 0, 0). A motion's forward is +x in the board's
  * frame, and board and camera share y up. */
@@ -177,13 +195,14 @@ static void send_materials(const u32 *mat) {
 }
 
 /* A stage: its texture set (each page to the bank its own origin names, as
- * StF's loader does), its colour bases, its rows of colorxlat and its
- * backdrop colour. */
+ * StF's loader does), its colour bases, its rows of colorxlat, its
+ * backdrop colour and its light. */
 static void load_stage(const stage_t *st) {
     u32 i;
     tex_load_set(st->texset);
     cx_put(&st->cx);
     m2_backdrop(st->bg);                 /* scr_bg_int: the record's stage_bg_color */
+    stage_light(st);
     for (i = 0; i < st->ndraws; i++) m2_load_model_palette(st->draws[i].model);
 }
 
@@ -239,6 +258,7 @@ int main(void) {
         m2_frame_begin();
         m2_obj_frame_setup();
         send_materials(stages[stage].mat);
+        m2_geo_fifo_light(m2_obj_fb(light[0]), m2_obj_fb(light[1]), m2_obj_fb(light[2]));
         draw_stage(&stages[stage]);
         for (i = 0; i < 2u; i++) { draw_fighter(&fs[i], i); fs[i].frame++; }
         *(volatile u32 *)ZCLIP_REG = 0xFFFF00FFu;
