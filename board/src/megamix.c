@@ -61,28 +61,52 @@ static void submit_mat(u32 model, const mat_t *m) { submit_mat_ov(model, m, 0u, 
 
 typedef struct { const pose_anim_t *anim; float x; int face; u32 frame; } fighter_t;
 
-/* The camera: at (0, CAM_Y, CAM_Z), looking along +z, pitched down by an angle
- * whose sine and cosine are CAM_S and CAM_C (8 degrees). */
-#define CAM_Y 1.1f
-#define CAM_Z (-4.6f)
+/* The camera: at (0, CAM_Y, CAM_Z) in StF's units (1.6 times the board's
+ * world, whose stages are baked at StF's 1/1.6), looking along +z, pitched
+ * down by an angle whose sine and cosine are CAM_S and CAM_C (8 degrees). */
+#define CAM_Y 1.76f
+#define CAM_Z (-7.36f)
 #define CAM_S 0.139173f
 #define CAM_C 0.990268f
-static mat_t cam;
+#define STF_CAM_SCALE 0x3FCCCCCDu        /* 1.6 */
+static mat_t cam, cam_l;                 /* cam_l: before the scale, for the light */
+
+/* camera_init's matrix, with the camera's turn already in the coprocessor:
+ * set_pos by the negated position, then (after the light's copy) op 0x07
+ * with 1.6, 1.6, 1.6, as StF sends it before it stores the camera. Every
+ * stage and fighter matrix is cam times its own, as StF's are. */
+static void camera_place(const float pos[3]) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    int i;
+    *cf = COP_SET_POS;
+    for (i = 0; i < 3; i++) *cf = m2_obj_fb(pos[i]) ^ 0x80000000u;
+    *cf = COP_RMATRIX;
+    for (i = 0; i < 9; i++) cam_l.r[i] = m2_cop_gf();
+    for (i = 0; i < 3; i++) cam_l.t[i] = m2_cop_gf();
+    *cf = COP_WMATRIX;
+    for (i = 0; i < 9; i++) *cf = m2_obj_fb(cam_l.r[i]);
+    for (i = 0; i < 3; i++) *cf = m2_obj_fb(cam_l.t[i]);
+    *cf = COP_SCALE; *cf = STF_CAM_SCALE; *cf = STF_CAM_SCALE; *cf = STF_CAM_SCALE;
+    *cf = COP_RMATRIX;
+    for (i = 0; i < 9; i++) cam.r[i] = m2_cop_gf();
+    for (i = 0; i < 3; i++) cam.t[i] = m2_cop_gf();
+}
 
 static void camera_init(void) {
+    static const float turn[9] = {        /* about x: y' = c y - s z, z' = s y + c z */
+        1.0f, 0.0f, 0.0f,  0.0f, CAM_C, CAM_S,  0.0f, -CAM_S, CAM_C };
+    static const float pos[3] = { 0.0f, CAM_Y, CAM_Z };
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
     int i;
-    for (i = 0; i < 9; i++) cam.r[i] = 0.0f;
-    cam.r[0] = 1.0f;                       /* a turn about x: y' = c y - s z, z' = s y + c z */
-    cam.r[4] = CAM_C; cam.r[5] = CAM_S;
-    cam.r[7] = -CAM_S; cam.r[8] = CAM_C;
-    cam.t[0] = 0.0f;
-    cam.t[1] = -(CAM_C * CAM_Y - CAM_S * CAM_Z);
-    cam.t[2] = -(CAM_S * CAM_Y + CAM_C * CAM_Z);
+    *cf = COP_WMATRIX;
+    for (i = 0; i < 9; i++) *cf = m2_obj_fb(turn[i]);
+    for (i = 0; i < 3; i++) *cf = 0u;
+    camera_place(pos);
 }
 
 /* camera_init's light, in the camera's frame: on the coprocessor, the camera's
  * turn, then ang_y by VECTER_Y and ang_x by VECTER_X, and op 0x29 on
- * (0, 0, BRIGHT). StF sends it to the geometrizer (slot 0xA0) before the stage
+ * (0, 0, BRIGHT), from the camera before its scale. StF sends it to the geometrizer (slot 0xA0) before the stage
  * and, scaled by rob_light (1.0 but in a hit flash), before each fighter. The
  * camera here stands still, so it is built once a stage. */
 static float light[3];
@@ -91,7 +115,7 @@ static void stage_light(const stage_t *st) {
     volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
     int i;
     *cf = COP_WMATRIX;
-    for (i = 0; i < 9; i++) *cf = m2_obj_fb(cam.r[i]);
+    for (i = 0; i < 9; i++) *cf = m2_obj_fb(cam_l.r[i]);
     for (i = 0; i < 3; i++) *cf = 0u;
     *cf = COP_ANG_Y; *cf = (u32)(int)st->vy;
     *cf = COP_ANG_X; *cf = (u32)(int)st->vx;

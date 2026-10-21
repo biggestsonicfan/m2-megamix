@@ -219,7 +219,7 @@ columns, then the translation, the layout `pose.js` uses) and drawn with op
   its coefficient from `flt_90BA0`. `m2_obj_frame_setup` fills all 32 with one
   value, so `send_materials` follows it. Without them the palms and the
   waterfall draw white.
-- Camera scale (found, not yet in the board): after the camera's turn and
+- Camera scale: after the camera's turn and
   its translate by the stage position, StF's `camera_init` sends the
   coprocessor scale op `0x3800707` with 1.6, 1.6, 1.6 (`0x3FCCCCCD` × 3),
   then stores the matrix (`0x21804343`). Every stage matrix StF's display
@@ -242,8 +242,25 @@ columns, then the translation, the layout `pose.js` uses) and drawn with op
   footprint, it fixes 4,725, and 13 others become wrong. Most of the rest
   are where StF's fighters stand. Whole frame, HUD off, no fighters,
   counter held: 179,775 identical pixels at frame 84 and 184,355 at frame
-  108 (was 173,142 and 180,153). To bring it into the board, the camera and
-  the baked stage and fighter matrices have to take the 1.6 the same way.
+  108 (was 173,142 and 180,153).
+
+  In the board: `camera_place` does the same. The camera's position is in
+  StF's units (`CAM_Y` 1.76, `CAM_Z` -7.36, 1.6 times the old 1.1 and
+  -4.6), `set_pos` by its negation, then op `0x07` with 1.6 three times;
+  `cam_l`, the matrix before the scale, is what `stage_light` turns. Every
+  stage and fighter matrix is `cam` times its own, as in StF, where
+  `rob_disp` builds the fighters on the stored, scaled camera (op
+  `0x2800505`). The stage bakes keep StF's 1/1.6 (`ARENA.stf.scale`): with
+  the camera's 1.6 they come out as StF's matrices. The fighter poses are
+  not rebaked: the whole camera frame is 1.6 times what it was, which
+  projects the same, so the fighters stand where they stood and only
+  their normals change (as long as StF's). The cage cull now tests the
+  same Z as StF's. Check, the real camera path with StF's intro camera
+  in its place (HUD off, no fighters, counter held): the display list at
+  frame 84 is byte-for-byte the throwaway's (74 objects, 7 side-3 panels,
+  light `BF28A51A,BF22C62B,BECDE87B`), side 3 fixes the same 4,725 of
+  4,963 (13 newly wrong), and the frames are 179,775 and 184,355 pixels
+  identical to StF's, the throwaway's counts.
 
 ## Where it stands
 
