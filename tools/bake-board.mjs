@@ -153,8 +153,19 @@ out.push('typedef struct { u32 model; float m[12]; } stage_draw_t;');
 /* bg: the record's stage_bg_color (+0x16, BGR555), which StF's scr_bg_int
  * puts behind the 3D layer (change_bg_color, bg_col_set).
  * bright, vx, vy: stage_bright (+0x04) and stage_vecter_x/y (+0x08, +0x0A),
- * which change_scene copies to BRIGHT and VECTER_X/Y for camera_init's light. */
-out.push('typedef struct { const char *name; u32 texset; u32 ndraws; const stage_draw_t *draws; cx_run_t cx; const u32 *mat; u16 bg; float bright; short vx, vy; } stage_t;\n');
+ * which change_scene copies to BRIGHT and VECTER_X/Y for camera_init's light.
+ * cset, tint: the record's colour set (+0x0E, send_tex_col_stage's block) and
+ * its RED/GREEN/BLUE trims (+0x10..0x12), which make_lay_col_256_tbl puts
+ * into ARRAY_NUM_RED/GREEN/BLUE.
+ * cyc: the record's list at +0xB8, (colorxlat row, frame-counter shift) pairs
+ * ending in a zero row, which sub_2435C rotates once a frame. */
+out.push('typedef struct { const char *name; u32 texset; u32 ndraws; const stage_draw_t *draws; cx_run_t cx; const u32 *mat; u16 bg; float bright; short vx, vy;');
+out.push('                 u16 cset; u8 tint[3]; const u16 *cyc; } stage_t;\n');
+{
+    /* color_intensity's TST_*_ADD and TST_*_MUL, the same for every stage. */
+    const C = stf.rom.game.colors;
+    out.push(`static const u8 tst_add[3] = {${C.add.join(', ')}}, tst_mul[3] = {${C.mul.join(', ')}};\n`);
+}
 const stages = [];
 stf.stages.forEach((st, n) => {
     const list = buildStageDisplayList(st, frames).filter((e) => !e.extra && !e.points);
@@ -166,7 +177,9 @@ stf.stages.forEach((st, n) => {
     /* set_material's 32 slots: sub_29110 picks the table by stage slot (prog 0x909E0). */
     const cv = stf.rom.mainCpuView, mt = cv.getUint32(0x909e0 + st.slot * 4, true);
     out.push(`static const u32 stage${n}_mat[32] = {${Array.from({ length: 32 }, (_, i) => `0x${cv.getUint32(mt + i * 4, true).toString(16)}u`).join(',')}};`);
-    stages.push(`{"${st.name}", ${st.texSets.at(-1)}, ${list.length}, stage${n}_draws, {0, 28, 0, 64, stage${n}_cx}, stage${n}_mat, 0x${st.bgColor555.toString(16)}, ${f32(st.bright)}, ${st.vecter[0]}, ${st.vecter[1]}}`);
+    out.push(`static const u16 stage${n}_cyc[] = {${[...st.colorCycles.flatMap((c) => [c.row, c.shift]), 0].join(', ')}};`);
+    const tint = st.tint.map((t) => Math.round(t * 128)).join(', ');
+    stages.push(`{"${st.name}", ${st.texSets.at(-1)}, ${list.length}, stage${n}_draws, {0, 28, 0, 64, stage${n}_cx}, stage${n}_mat, 0x${st.bgColor555.toString(16)}, ${f32(st.bright)}, ${st.vecter[0]}, ${st.vecter[1]}, ${st.texSet[1]}, {${tint}}, stage${n}_cyc}`);
     console.log('stage', n, st.name, 'set', st.texSets.at(-1), 'draws', list.length);
 });
 /* A palette colour shows each 5-bit component through colorxlat row c at

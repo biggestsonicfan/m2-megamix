@@ -134,6 +134,49 @@ static void cx_put(const cx_run_t *c) {
                 *(volatile u16 *)(M2_COLORXLAT + ch * 0x4000u + r * 0x200u + l * 2u) = *v++;
 }
 
+/* Stage colour cycling, as StF does it. make_lay_col_256_tbl (color_intensity)
+ * builds ARRAY_NUM_RED/GREEN/BLUE: 256 entries per channel, the curve
+ * (x - 116) * mul / 37 + add, 0 at or below zero, -1 from 256, then trimmed by
+ * the stage's RED/GREEN/BLUE (* t >> 7). Once a frame, out of
+ * interrupt_wait_b, sub_2435C walks the stage record's (row, shift) list and
+ * sub_243AC refills that colorxlat row's palette slots (luma 48..63) from the
+ * stage colour block in the data ROM (pointer at 0x2101010, colour set * 0x540,
+ * (row - 14) * 0x60, 0x20 a channel), slot i taking colour
+ * ((frame_counter >> shift) + i) & 15 through the curve. That is South
+ * Island's and Canyon Cruise's shoreline and waterfall (rows 18 and 19) and
+ * Casino Night's rows 14, 16 and 19. */
+#define STF_STAGE_COL_PTR 0x02101010u
+static u16 array_num[3][256];
+static u32 frame_counter;
+
+static void make_lay_col_256_tbl(const stage_t *st) {
+    u32 ch, x;
+    for (ch = 0; ch < 3u; ch++)
+        for (x = 0; x < 256u; x++) {
+            int v = ((int)x - 116) * (int)tst_mul[ch] / 37 + (int)tst_add[ch];
+            u32 u = 0u;
+            if (v > 0) {
+                u = (u32)v;
+                if (u >= 0x100u) u = 0xFFFFFFFFu;
+                u = (u * st->tint[ch]) >> 7;
+            }
+            array_num[ch][x] = (u16)u;
+        }
+}
+
+static void stage_col_cycle(const stage_t *st) {
+    const u16 *c;
+    for (c = st->cyc; c[0] != 0u; c += 2) {
+        u32 row = c[0], ph = frame_counter >> c[1], ch, i;
+        u32 blk = *(volatile u32 *)STF_STAGE_COL_PTR + st->cset * 0x540u + (row - 14u) * 0x60u;
+        for (ch = 0; ch < 3u; ch++, blk += 0x20u) {
+            volatile u16 *o = (volatile u16 *)(M2_COLORXLAT + ch * 0x4000u + row * 0x200u + 0x60u);
+            for (i = 0; i < 16u; i++)
+                o[i] = array_num[ch][*(volatile u16 *)(blk + ((ph + i) & 15u) * 2u)];
+        }
+    }
+}
+
 /* send_beta_data: an uncompressed page, every level's texels already in
  * texram order. Two bytes of size (in 2x2 blocks, less one), a header the
  * third byte skips, then 16-byte groups: four words, whose low halves come
@@ -195,12 +238,13 @@ static void send_materials(const u32 *mat) {
 }
 
 /* A stage: its texture set (each page to the bank its own origin names, as
- * StF's loader does), its colour bases, its rows of colorxlat, its
- * backdrop colour and its light. */
+ * StF's loader does), its colour bases, its rows of colorxlat and their
+ * cycling curve, its backdrop colour and its light. */
 static void load_stage(const stage_t *st) {
     u32 i;
     tex_load_set(st->texset);
     cx_put(&st->cx);
+    make_lay_col_256_tbl(st);
     m2_backdrop(st->bg);                 /* scr_bg_int: the record's stage_bg_color */
     stage_light(st);
     for (i = 0; i < st->ndraws; i++) m2_load_model_palette(st->draws[i].model);
@@ -227,7 +271,7 @@ static u32 edges(u32 now, u32 *held) { u32 e = now & ~*held; *held = now; return
 int main(void) {
     fighter_t fs[2];
     u32 i, pick[2] = { 0u, 1u }, stage = 0u;
-    u32 held = 0u;
+    u32 held = 0u, vbl;
 
     m2_init();
     m2_silicon_boot();
@@ -240,6 +284,7 @@ int main(void) {
     load_fighter_colors(&pose_anims[pick[0]], &pose_anims[pick[1]]);
     for (i = 0; i < 8u; i++) { m2_frame_begin(); m2_frame_end(); }
 
+    vbl = frameVBL;
     fs[0].x = -1.1f; fs[0].face = 1;  fs[0].frame = 0u;
     fs[1].x =  1.1f; fs[1].face = -1; fs[1].frame = 0u;
     for (;;) {
@@ -263,7 +308,15 @@ int main(void) {
         for (i = 0; i < 2u; i++) { draw_fighter(&fs[i], i); fs[i].frame++; }
         *(volatile u32 *)ZCLIP_REG = 0xFFFF00FFu;
         m2_frame_commit();
-        m2_vsync(); m2_vsync();          /* 30 fps, as StF runs */
+        /* 30 fps, as StF runs. StF's frame_counter counts its 60 Hz loop and
+         * sub_2435C runs once a pass, after the wait for the vsync. This loop
+         * can take longer than a vsync, so the count follows the vblanks. */
+        for (i = 0; i < 2u; i++) {
+            u32 v;
+            m2_vsync();
+            v = frameVBL; frame_counter += v - vbl; vbl = v;
+            stage_col_cycle(&stages[stage]);
+        }
     }
     return 0;
 }

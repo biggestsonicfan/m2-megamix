@@ -108,6 +108,33 @@ columns, then the translation, the layout `pose.js` uses) and drawn with op
   colours ((30, 30, 238), (17, 17, 192), (2, 2, 144); with the old light 1 of
   663 overlapping pixels matched), and 95% of the red rope's overlapping
   pixels are identical (64% with the old light).
+- Colour cycling: once a frame, out of `interrupt_wait_b` (after the wait
+  for the vsync), StF's `sub_2435C` walks the stage record's list at +0xB8:
+  (colorxlat row, shift) pairs ending in a zero row. For each one,
+  `sub_243AC` refills that row's palette slots (luma 48..63, all three
+  channels) from the stage colour block in the data ROM (the pointer at
+  `0x2101010`, + colour set × 0x540 + (row − 14) × 0x60, 0x20 a channel):
+  slot i takes colour `((frame_counter >> shift) + i) & 15`, through
+  `ARRAY_NUM_RED/GREEN/BLUE`, the curve `make_lay_col_256_tbl`
+  (`color_intensity`) builds from TST_*_ADD/MUL and the stage's trims.
+  South Island and Canyon Cruise list rows 18 (shift 2) and 19 (shift 0),
+  the waterfall and the shoreline; Casino Night lists 14, 16 and 19 (shift
+  1); the other six have no list. `frame_counter` counts StF's 60 Hz loop,
+  one per frame in a fight. The board bakes each stage's list, colour set
+  and trims, builds the curve in integers on stage load, and rotates the
+  rows after each vsync. Its counter follows the vblank count (`frameVBL`),
+  because its own loop runs slower than 30 fps. Bit 5 of
+  `debug_flag` (`0x508000`) skips `sub_2435C`, so a debug-mode StF shows
+  the water standing still. Check: with the board's counter held at the
+  value real StF logged, colorxlat rows 14, 16, 18 and 19 (luma 48..63, R,
+  G, B) are the same word for word on South Island (counts 1144..1152),
+  Canyon Cruise and Casino Night (1235..1435). Throwaway board builds with
+  real StF's camera at two South Island frames (no fighters drawn) beside
+  real snapshots, both 496×384: of the pixels where both show the
+  waterfall, 14,167 of 14,170 (count 1135) and 24,358 of 24,364 (count
+  2335) are identical. Over 8 counts the waterfall's band moves on by 8
+  slots, e.g. (161, 178, 213) to (101, 144, 213) and (188, 196, 213) to
+  (126, 161, 213).
 - Materials: StF's `camera_init` sends the stage's 32 material words (prog
   `0x909E0` + stage slot × 4) as GEO texture parameters every frame, each with
   its coefficient from `flt_90BA0`. `m2_obj_frame_setup` fills all 32 with one
@@ -119,7 +146,7 @@ columns, then the translation, the layout `pose.js` uses) and drawn with op
 Two fighters (button 1 cycles each player's: Sonic, Honey, Eggman) stand
 facing each other and play their stance motion at 30 fps, on one of StF's
 nine stages (player 1's button 2 cycles them), drawn from StF's stage records
-with its textures, colours, materials and light. South Island matches StF's own
+with its textures, colours, materials, light and colour cycling. South Island matches StF's own
 picture closely.
 
 Known gaps:
@@ -130,7 +157,11 @@ Known gaps:
   slot 0 of the select table at 0xDACAC to 0x0F) draw player 2 as the board
   does: Sonic dark grey, and Honey blonde, with purple fur, a blue dress, a
   blue hairband and white barrettes.
-- No stage colour cycling, no camera of StF's, no shadows.
+- South Island's sea plate (model 555) does not scroll. It is not a
+  colour cycle: `send_st01_sea_thd` gives it a texture header per frame
+  whose luma base is `((frame_counter >> 1) & 63) + 7` (noclip's
+  TECHNICAL.md, "The ocean").
+- No camera of StF's, no shadows.
 
 ## Plan
 
