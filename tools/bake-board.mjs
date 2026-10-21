@@ -1,12 +1,11 @@
 /*
- * Bake the board build's poses and stages (board/src/poses.h).
+ * Bake the board build's fighters and stages (board/src/poses.h).
  *
- * The browser game poses a fighter with noclip's solver (vendor/noclip/js
- * pose.js), which follows the board's own calc_rob_angle_cont. This writes
- * what it solves, frame by frame, as the coprocessor's matrices: per slot a
- * column-major 3x3 and a translation, in the board's frame (pose.js toViewer
- * undone). The board program loads each one with COP op 0x04 and draws the
- * slot's model.
+ * The board poses a fighter with StF's own motion code (tools/lift-stf.py),
+ * which fills the coprocessor's part slots itself. This writes what it draws
+ * in each slot: StF's character number, and the eye models (StF's
+ * rob_disp_rdn_loop draws them on the head's slot, from the face record),
+ * which noclip's pose.js lists with the rest of the parts.
  *
  * A stage is its display list at frame 0 (noclip display.js, as the browser
  * game draws it), each entry a model and the same kind of matrix, with StF's
@@ -40,11 +39,6 @@ const OUT = process.argv[2] ?? new URL('../board/src/poses.h', import.meta.url).
 const CAST = ['SONIC', 'HONEY', 'EGGMAN'].map((n) => ROSTER.findIndex((e) => e.game === 'stf' && e.name === n));
 const ACTS = ['stance'];
 
-/* pose.js viewerMatrix, undone: column-major 4x4 with z flipped -> board r, t. */
-function boardOf(m) {
-    return [m[0], m[1], -m[2], m[4], m[5], -m[6], -m[8], -m[9], m[10], m[12], m[13], -m[14]];
-}
-
 const games = await loadNodeGames();
 const f32 = (v) => {
     const s = Math.fround(v).toPrecision(9);
@@ -56,8 +50,9 @@ out.push('#ifndef POSES_H\n#define POSES_H\n');
 out.push('typedef struct { u8 row0, rows, luma0, n; const u16 *v; } cx_run_t;');
 out.push('/* p2: player 2\'s model for the part (StF\'s character + 26). */');
 out.push('typedef struct { u16 model, slot, p2; } pose_part_t;');
-out.push('typedef struct { const char *name; u32 nparts; const pose_part_t *parts;');
-out.push('                 u32 frames; const float (*mats)[16][12]; cx_run_t cx[4]; } pose_anim_t;\n');
+out.push('/* chr: StF\'s character number (rob+0x1B0 for player 1). */');
+out.push('typedef struct { const char *name; u32 chr, nparts; const pose_part_t *parts;');
+out.push('                 cx_run_t cx[4]; } pose_anim_t;\n');
 /* A run of colorxlat: rows row0.., luma luma0..luma0+n-1, all three channels,
  * as u16s channel by channel, row by row. */
 const cxlatRun = (cx, row0, rows, luma0, n) => {
@@ -86,41 +81,34 @@ for (const r of CAST) {
     for (const a of ACTS) {
         const ref = f.act(a);
         const id = `${e.name.toLowerCase()}_${a}`;
-        const frames = ref.motion.frames;
-        let parts = null;
-        const mats = [];
-        for (let fr = 1; fr <= frames; fr++) {
-            const p = body.pose(ref, fr);
-            if (!parts) {
-                parts = partsOf(p);
-                const p2 = partsOf(body2.pose(f2.act(a), fr));
-                if (p2.length !== parts.length || p2.some((pt, i) => pt.slot !== parts[i].slot))
-                    throw new Error(`${id}: player 2's parts do not line up with player 1's`);
-                parts.forEach((pt, i) => { pt.p2 = p2[i].model; });
-            }
-            mats.push(p.mats.map(boardOf));
-        }
+        const parts = partsOf(body.pose(ref, 1));
+        const p2 = partsOf(body2.pose(f2.act(a), 1));
+        if (p2.length !== parts.length || p2.some((pt, i) => pt.slot !== parts[i].slot))
+            throw new Error(`${id}: player 2's parts do not line up with player 1's`);
+        parts.forEach((pt, i) => { pt.p2 = p2[i].model; });
         out.push(`static const pose_part_t ${id}_parts[${parts.length}] = {`);
         out.push('    ' + parts.map((pt) => `{${pt.model}, ${pt.slot}, ${pt.p2}}`).join(', '));
         out.push('};');
-        out.push(`static const float ${id}_mats[${frames}][16][12] = {`);
-        for (const fm of mats) out.push('  {' + fm.map((m) => '{' + m.map(f32).join(',') + '}').join(',\n   ') + '},');
-        out.push('};\n');
         const cx = buildColorxlat(f.rom, { fighters: [f.look.fighter] });
         out.push(`static const u16 ${id}_part[] = {${u16s(cxlatRun(cx, 0, 5, 48, 16))}};`);
         out.push(`static const u16 ${id}_skin[] = {${u16s(cxlatRun(cx, 28, 2, 0, 64))}};`);
         const cx2 = buildColorxlat(f.rom, { fighters: [-1, f.look.fighter] });
         out.push(`static const u16 ${id}_part2[] = {${u16s(cxlatRun(cx2, 7, 5, 48, 16))}};`);
         out.push(`static const u16 ${id}_skin2[] = {${u16s(cxlatRun(cx2, 30, 2, 0, 64))}};\n`);
-        anims.push(`{"${e.name} ${a}", ${parts.length}, ${id}_parts, ${frames}, ${id}_mats, ` +
+        anims.push(`{"${e.name} ${a}", ${e.index}, ${parts.length}, ${id}_parts, ` +
             `{{0, 5, 48, 16, ${id}_part}, {28, 2, 0, 64, ${id}_skin}, ` +
             `{7, 5, 48, 16, ${id}_part2}, {30, 2, 0, 64, ${id}_skin2}}}`);
-        console.log(id, 'frames', frames, 'parts', parts.length);
+        console.log(id, 'character', e.index, 'parts', parts.length);
     }
 }
 out.push(`#define POSE_ANIMS ${anims.length}`);
 out.push(`static const pose_anim_t pose_anims[POSE_ANIMS] = {\n    ${anims.join(',\n    ')}\n};\n`);
 /* ---- stages ---- */
+
+/* pose.js viewerMatrix, undone: column-major 4x4 with z flipped -> board r, t. */
+function boardOf(m) {
+    return [m[0], m[1], -m[2], m[4], m[5], -m[6], -m[8], -m[9], m[10], m[12], m[13], -m[14]];
+}
 
 /* js/render.js composeOps without three.js: column-major 4x4s, out = out * op. */
 function mul(a, b) {

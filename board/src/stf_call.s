@@ -1,0 +1,36 @@
+# stf_call.s: call one of StF's lifted routines (stf_motion.s) from C.
+#
+#   void stf_call(void (*fn)(void), void *rob, void *enemy, u32 arg);
+#
+# StF's code keeps its fixed registers: g7 the fighter (rob), g8 the other
+# fighter, g10 0x800000, g11 0x880000 and g12 0x4000 (the coprocessor FIFO is
+# (g11)[g12*1], 0x884000); its argument is g0. gcc's own g8..g13 are kept in
+# this frame's locals, which call and ret save and restore.
+
+                .text
+                .align  4
+                .globl  _stf_call
+_stf_call:
+                mov     g8, r4
+                mov     g9, r5
+                mov     g10, r6
+                mov     g11, r7
+                mov     g12, r8
+                mov     g13, r9
+                mov     g0, r10
+                mov     g1, g7
+                mov     g2, g8
+                mov     g3, g0
+                lda     0x800000, g10
+                lda     0x880000, g11
+                lda     0x4000, g12
+                mov     0, g14
+                callx   (r10)
+                mov     r4, g8
+                mov     r5, g9
+                mov     r6, g10
+                mov     r7, g11
+                mov     r8, g12
+                mov     r9, g13
+                mov     0, g14
+                ret

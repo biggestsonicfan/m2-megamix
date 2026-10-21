@@ -2,18 +2,22 @@
  * megamix.c — Fighters Megamix on the Sonic the Fighters board (Model 2B).
  *
  * A new program for the board, built on m2-sdk. Sonic the Fighters' program is
- * the map: its data ROMs stay on the board, and this draws their fighters the
- * way its calc_unit_mat does, one part matrix per slot on the coprocessor.
+ * the map: its data ROMs stay on the board, and its own motion code poses the
+ * fighters: set_motion, calc_rob_angle and calc_unit_mat, lifted from StF's
+ * program into src/stf_motion.s by tools/lift-stf.py. calc_unit_mat leaves one
+ * part matrix per slot on the coprocessor, and each part is drawn from its
+ * slot (op 0x37) with op 0x78, the object path m2_obj.h proves on the real
+ * geometrizer.
  *
- * This draws two fighters in their stance on an StF stage. The poses, stage
- * draw lists and colour runs come from tools/bake-board.mjs (src/poses.h); each part is loaded with COP op 0x04
- * (Fn_load_matrix: three columns, then the translation) and submitted with
- * op 0x78, the object path m2_obj.h proves on the real geometrizer.
+ * This draws two fighters in their stance on an StF stage. The stage draw
+ * lists, the eye models and the colour runs come from tools/bake-board.mjs
+ * (src/poses.h).
  */
 #include "m2.h"
 #include "m2_obj.h"
 #include "stf_tex_codec.h"   /* the SDK's, with room for StF's stage sets */
 #include "poses.h"
+#include "stf_motion.h"
 
 #define FOCUS 280.0f
 
@@ -59,7 +63,21 @@ static void submit_mat_ov(u32 model, const mat_t *m, u32 ow, u32 ov) {
 
 static void submit_mat(u32 model, const mat_t *m) { submit_mat_ov(model, m, 0u, 0u); }
 
-typedef struct { const pose_anim_t *anim; float x; int face; u32 frame; } fighter_t;
+/* The same under the coprocessor's current matrix. */
+static void submit_cur(u32 model) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    volatile const u32 *mh = (volatile const u32 *)(M2_MODEL_TABLE + model * 16u);
+    *cf = COP_FADD; *cf = COP_FADD; *cf = COP_FADD;
+    cop_drain(cf, 1u);
+    { u32 wr = *(volatile u32 *)COP_WPOS_REG;
+      *(volatile u32 *)GEO_WRITE_REG = wr + 0x48u;
+      *cf = COP_SUBMIT; *cf = wr; *cf = 0u;
+      *cf = mh[0]; *cf = mh[1]; *cf = mh[2]; *cf = mh[3];
+      *cf = g_cop_p2; *cf = g_cop_p;
+      g_cop_p2 = *cf; g_cop_p = *cf;
+      { u32 ep = *(volatile u32 *)COP_WPOS_REG;
+        *(volatile u32 *)(GEO_BUFFERRAM + (ep & 0x0001FFFCu)) = GEO_OP_END; } }
+}
 
 /* The camera: at (0, CAM_Y, CAM_Z) in StF's units (1.6 times the board's
  * world, whose stages are baked at StF's 1/1.6), looking along +z, pitched
@@ -122,27 +140,191 @@ static void stage_light(const stage_t *st) {
     m2_cop_m2w(0.0f, 0.0f, st->bright, light);
 }
 
-/* A fighter in the world: facing +x (face 1), or turned half way round about
- * y to face -x, standing at (x, 0, 0). A motion's forward is +x in the board's
- * frame, and board and camera share y up. */
-static void place(mat_t *w, const fighter_t *f) {
-    float s = f->face > 0 ? 1.0f : -1.0f;
-    float m[12] = { 0 };
-    m[0] = s; m[4] = 1.0f; m[8] = s;
-    m[9] = f->x;
-    mat_mul(w, &cam, m);
+/* ---- StF's fighters ----
+ *
+ * A fighter is StF's rob: its 0x3400-byte block, which StF's motion code
+ * (stf_motion.s) reads and writes through g7, the other fighter's through g8.
+ * The fields the board sets, at StF's own offsets:
+ *   0x000  flags (w0): bit 31 plays a motion, bit 7 once the first frame is
+ *          done, bit 1 player 2; 0x84000080 / 0x84000082 in a real fight
+ *   0x004  player (0, 1), the coprocessor's slot bank
+ *   0x018  position (x, y, z); 0x026 yaw (forward is (cos, -sin) in x, z)
+ *   0x1A8  motion, 0x1AA its frame (coma), 0x800 its length, 0x802 the next
+ *   0x1B0  character (player 2: its own models, character + 26), 0x1B1 the
+ *          character it is; 0x190 its record, 0x1A0 the record's motions
+ *          (as action_init sets them)
+ *   0x040  the sixteen part models (calc_rob_angle_int fills them)
+ *   0x84C  skeleton kind; 0xFF so the first set_motion copies the rig in
+ *   0xBD8  the motion record (0x800 bytes, StF's at 0x520000 + 0x7C8 p)
+ *   0x27C0 rob_disp's y scale (1.0)
+ */
+#define ROB_SIZE  0x3400u
+#define MOT_SIZE  0x800u
+#define STF_STANCE 278u                  /* the motion both fighters play at a fight's start */
+#define RW(r, o) (*(u32 *)((u8 *)(r) + (o)))
+#define RH(r, o) (*(u16 *)((u8 *)(r) + (o)))
+#define RB(r, o) (*(u8 *)((u8 *)(r) + (o)))
+/* 16-byte aligned, as StF's are: its code moves them in triple and quad words. */
+static u32 robs[2][ROB_SIZE / 4] __attribute__((aligned(16)));
+static u32 mots[2][MOT_SIZE / 4] __attribute__((aligned(16)));
+/* What StF's globals point at: the camera (fa_camera, whose +0x18 position
+ * and +0x26 yaw get_frame_dat reads to turn a fighter's face), and the
+ * replay record and object set_mot_dat reads in a replay. */
+static u32 stf_cam[0x500 / 4] __attribute__((aligned(16)));
+static u32 stf_rec[0x40] __attribute__((aligned(16))), stf_obj0[0x40] __attribute__((aligned(16)));
+
+extern void stf_call(void (*fn)(void), void *rob, void *enemy, u32 arg);
+
+typedef struct { const pose_anim_t *anim; float x; u16 yaw; } fighter_t;
+
+static void stf_set(u32 a, u32 v) { *(u32 *)stf_ram(a) = v; }
+
+/* CHAR_PARTS: each character's record (+0 its part models, +0xC its
+ * motions), in StF's ROM tables at their own address. */
+#define STF_CHAR_PARTS 0xC5268u
+static const u32 *stf_char(u32 c) { return *(const u32 *const *)(STF_CHAR_PARTS + c * 4u); }
+
+/* StF's globals as they are in a 2-player fight (a real board's RAM at a
+ * fight's start): the modes, the debug flags, the stage's walls. */
+static void stf_globals(void) {
+    stf_set(0x500028u, 0x09090000u);     /* also_mode 9 (0x50002B) */
+    stf_set(0x50002Cu, 0x200u);          /* mode_flag */
+    stf_set(0x500030u, 0x0909u);         /* _sub_mode, also_sub_mode */
+    stf_set(0x500034u, 0x200u);
+    stf_set(0x500068u, 0x8400442Cu);     /* not_scr_bg_move */
+    stf_set(0x500090u, 0x1Eu);           /* replay_countdown (0x500092) 0 */
+    stf_set(0x500804u, (u32)robs[0]);    /* fa_rob0 */
+    stf_set(0x500808u, (u32)robs[1]);    /* fa_rob1 */
+    stf_set(0x500814u, (u32)stf_cam);    /* fa_camera */
+    stf_set(0x500854u, (u32)stf_rec);    /* mod_fa_record */
+    stf_set(0x500870u, (u32)stf_obj0);   /* mod_fa_obj0 */
+    stf_set(0x508000u, 0x18A00u);        /* debug_flag */
+    stf_set(0x509518u, 0x3F800000u);     /* player_model_y_scale 1, 1, 1 */
+    stf_set(0x50951Cu, 0x3F800000u);
+    stf_set(0x509520u, 0x3F800000u);
+    stf_set(0x50A000u, 0x3CCE9ED5u);
+    stf_set(0x50A00Cu, 0x41000000u);     /* stage_x 8.0 */
+    stf_set(0x50A010u, 0xC1200000u);     /* stage_soko -10.0 */
 }
 
-/* Player 2 (p 1) draws StF's player 2 models, as StF does. */
-static void draw_fighter(const fighter_t *f, u32 p) {
-    const pose_anim_t *a = f->anim;
-    const float (*mats)[12] = a->mats[f->frame % a->frames];
-    mat_t w, m;
+/* The board's camera as StF's camera object: at (0, CAM_Y, CAM_Z), yaw 0
+ * (StF's camera looks along (-sin, cos) in x, z: +z). */
+static void stf_camera(void) {
+    union { float f; u32 u; } y, z;
+    y.f = 1.76f; z.f = -7.36f;
+    stf_cam[0x18 / 4] = 0u; stf_cam[0x1C / 4] = y.u; stf_cam[0x20 / 4] = z.u;
+    RH(stf_cam, 0x24) = 0xFA50u;         /* 8 degrees down */
+    RH(stf_cam, 0x26) = 0u;
+}
+
+/* A fighter's rob, as StF sets one up for a round: player p, at (x, 0, 0)
+ * with its yaw, playing the stance from its first frame. */
+static void rob_init(u32 p, const fighter_t *f) {
+    u32 *r = robs[p];
+    union { float f; u32 u; } x;
     u32 i;
-    place(&w, f);
-    for (i = 0; i < a->nparts; i++) {
-        mat_mul(&m, &w, mats[a->parts[i].slot]);
-        submit_mat(p ? a->parts[i].p2 : a->parts[i].model, &m);
+    for (i = 0; i < ROB_SIZE / 4; i++) r[i] = 0u;
+    for (i = 0; i < MOT_SIZE / 4; i++) mots[p][i] = 0u;
+    x.f = f->x;
+    RW(r, 0x000) = p ? 0x84000082u : 0x84000080u;
+    RB(r, 0x004) = (u8)p;
+    RW(r, 0x018) = x.u;
+    RH(r, 0x026) = f->yaw;
+    RB(r, 0x1B0) = (u8)(f->anim->chr + (p ? 26u : 0u));
+    RB(r, 0x1B1) = (u8)f->anim->chr;
+    RW(r, 0x190) = (u32)stf_char(RB(r, 0x1B0));
+    RW(r, 0x1A0) = stf_char(RB(r, 0x1B0))[3];
+    RB(r, 0x84C) = 0xFFu;
+    RW(r, 0xBD8) = (u32)mots[p];
+    RW(r, 0x27C0) = 0x3F800000u;
+    /* The dent pendulums, as the round's start sets them (sub_89BF8 with
+     * zero angles): unit scale, then the countdown camera_init runs down
+     * each frame; dented_cnt only swings them while it is not negative. */
+    for (i = 0; i < 3u; i++) {
+        RW(r, 0x1F88 + 4u * i) = 0x3F800000u;
+        RW(r, 0x1FEC + 4u * i) = 0x3F800000u;
+    }
+    RW(r, 0x219C) = 0u;
+}
+
+static void rob_start(u32 p) {
+    stf_call(stf_sub_7F0E8, robs[0], robs[1], 0u);   /* both bodies' pendulums */
+    stf_call(stf_set_motion, robs[p], robs[p ^ 1u], STF_STANCE);
+    RH(robs[p], 0x1AA) = 1u;
+    stf_call(stf_calc_rob_angle, robs[p], robs[p ^ 1u], 0u);
+}
+
+/* One 60 Hz frame of a fighter, as StF's action_init steps it: the motion's
+ * frame on by one (once its first frame is done), then play_motion's head
+ * (past the end, the next motion; 0xFFFF holds the last frame and blends
+ * back with smooth_int; 0 holds the last frame), calc_rob_angle (the frame's
+ * angles from the motion's curves) and calc_unit_mat (the part matrices into
+ * the coprocessor's slots). The game's own part of action_init (commands,
+ * actions, moving the fighter) is not run. */
+static void rob_step(u32 p) {
+    u32 *r = robs[p], *e = robs[p ^ 1u];
+    u32 w0 = RW(r, 0) & ~1u, coma, len, next;
+    RW(r, 0x219C)--;                      /* camera_init's sub_7F5CC */
+    if (RH(r, 0x1A8) == 0u) w0 |= 1u;
+    else if (w0 & 0x80u) {
+        coma = RH(r, 0x1AA);
+        RH(r, 0xC4E) = (u16)coma;
+        coma++;
+        RH(r, 0x1AE)++;
+        RH(r, 0x1AA) = (u16)coma;
+        if (coma > RH(r, 0x800)) w0 |= 1u;
+    }
+    RW(r, 0) = w0;
+    if ((w0 & 0x80000000u) && RH(r, 0x1A8) != 0u) {
+        coma = RH(r, 0x1AA); len = RH(r, 0x800);
+        if (coma == 0u) goto load1;
+        if (coma <= len) goto load;
+        next = RH(r, 0x802);
+        if (next == 0xFFFFu) {
+            RW(r, 0x82C) = RW(r, 0x6EC);
+            RW(r, 0xBD4) = RW(r, 0x1A4);
+            RW(r, 0xC58) = RW(r, 0x70C);
+            stf_call(stf_smooth_int, r, e, 0u);
+            goto load1;
+        }
+        if (RH(r, 0x86C) != 0u && RH(r, 0xA1C) > RH(r, 0x86E)) next = RH(r, 0x802) = RH(r, 0x86C);
+        if (next == 0u) { RH(r, 0x1AA) = (u16)len; goto load; }
+        stf_call(stf_set_motion, r, e, next);
+    load1:
+        RH(r, 0x1AA) = 1u;
+    load:
+        stf_call(stf_calc_rob_angle, r, e, 0u);
+    }
+    stf_call(stf_calc_unit_mat, r, e, 0u);
+    RW(r, 0) |= 0x80u;
+}
+
+/* rob_disp: under the camera, each of the sixteen parts with a model, from
+ * its slot (op 0x37 multiplies the slot into the current matrix) after a
+ * scale of (1, y, 1); then the eyes, on the head's slot (rob_disp_rdn_loop's
+ * set_obj_tpd, whose texture points are the eye models' own). */
+#define COP_PART COP_CMD(0x37)
+static void draw_fighter(const fighter_t *f, u32 p) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    const pose_anim_t *a = f->anim;
+    u32 *r = robs[p], i, model, head = 0u;
+    *cf = COP_WMATRIX;
+    for (i = 0; i < 9; i++) *cf = m2_obj_fb(cam.r[i]);
+    for (i = 0; i < 3; i++) *cf = m2_obj_fb(cam.t[i]);
+    for (i = 0; i < 16u + a->nparts; i++) {
+        u32 slot;
+        if (i < 16u) { slot = i; model = RW(r, 0x40 + i * 4u); }
+        else {                           /* the eyes: a second model on the head's slot */
+            const pose_part_t *pt = &a->parts[i - 16u];
+            if (pt->slot != 2u || !head++) continue;
+            slot = 2u; model = p ? pt->p2 : pt->model;
+        }
+        if (model == 0u) continue;
+        *cf = COP_PUSH;
+        *cf = COP_SCALE; *cf = 0x3F800000u; *cf = RW(r, 0x27C0); *cf = 0x3F800000u;
+        *cf = COP_PART; *cf = p; *cf = slot * 12u;
+        submit_cur(model);
+        *cf = COP_POP;
     }
 }
 
@@ -352,12 +534,16 @@ static void load_stage(const stage_t *st) {
     for (i = 0; i < st->ndraws; i++) m2_load_model_palette(st->draws[i].model);
 }
 
+/* Every model a fighter can draw: its sixteen parts (its character record's
+ * first list; player 2's at character + 26) and its eyes. */
 static void load_palettes(void) {
-    u32 a, i;
+    u32 a, i, p;
     for (a = 0; a < POSE_ANIMS; a++)
-        for (i = 0; i < pose_anims[a].nparts; i++) {
-            m2_load_model_palette(pose_anims[a].parts[i].model);
-            m2_load_model_palette(pose_anims[a].parts[i].p2);
+        for (p = 0; p < 2u; p++) {
+            const u32 *parts = *(const u32 *const *)stf_char(pose_anims[a].chr + p * 26u);
+            for (i = 0; i < 16u; i++) if (parts[i]) m2_load_model_palette(parts[i]);
+            for (i = 0; i < pose_anims[a].nparts; i++)
+                m2_load_model_palette(p ? pose_anims[a].parts[i].p2 : pose_anims[a].parts[i].model);
         }
 }
 
@@ -373,7 +559,7 @@ static u32 edges(u32 now, u32 *held) { u32 e = now & ~*held; *held = now; return
 int main(void) {
     fighter_t fs[2];
     u32 i, pick[2] = { 0u, 1u }, stage = 0u;
-    u32 held = 0u, vbl;
+    u32 held = 0u, vbl, step = 0u;
 
     m2_init();
     m2_silicon_boot();
@@ -386,19 +572,28 @@ int main(void) {
     load_fighter_colors(&pose_anims[pick[0]], &pose_anims[pick[1]]);
     for (i = 0; i < 8u; i++) { m2_frame_begin(); m2_frame_end(); }
 
+    stf_globals();
+    stf_camera();
+    /* A fighter at yaw a faces (-sin a, cos a) in x, z, as StF's camera
+     * does: 4.0 apart, as a real fight starts. */
+    fs[0].x = -2.0f; fs[0].yaw = 0xC000u;    /* facing +x */
+    fs[1].x =  2.0f; fs[1].yaw = 0x4000u;    /* facing -x */
+    for (i = 0; i < 2u; i++) { fs[i].anim = &pose_anims[pick[i]]; rob_init(i, &fs[i]); }
+    for (i = 0; i < 2u; i++) rob_start(i);
     vbl = frameVBL;
-    fs[0].x = -1.1f; fs[0].face = 1;  fs[0].frame = 0u;
-    fs[1].x =  1.1f; fs[1].face = -1; fs[1].frame = 0u;
     for (;;) {
         m2_player_t p[2];
         u32 e;
         p[0] = m2_player(0); p[1] = m2_player(1);
         /* button 1 changes that player's fighter, P1's button 2 the stage */
         e = edges((u32)p[0].b1 | (u32)p[1].b1 << 1 | (u32)p[0].b2 << 2, &held);
-        for (i = 0; i < 2u; i++) {
-            if (e & (1u << i)) { pick[i] = (pick[i] + 1u) % POSE_ANIMS; fs[i].frame = 0u; }
-            fs[i].anim = &pose_anims[pick[i]];
-        }
+        for (i = 0; i < 2u; i++)
+            if (e & (1u << i)) {
+                pick[i] = (pick[i] + 1u) % POSE_ANIMS;
+                fs[i].anim = &pose_anims[pick[i]];
+                rob_init(i, &fs[i]);
+                rob_start(i);
+            }
         if (e & 4u) { stage = (stage + 1u) % STAGES; load_stage(&stages[stage]); }
         if (e & 7u) load_fighter_colors(fs[0].anim, fs[1].anim);
 
@@ -408,7 +603,15 @@ int main(void) {
         m2_geo_fifo_light(m2_obj_fb(light[0]), m2_obj_fb(light[1]), m2_obj_fb(light[2]));
         move_tpd_send(&stages[stage].tpd);
         draw_stage(&stages[stage]);
-        for (i = 0; i < 2u; i++) { draw_fighter(&fs[i], i); fs[i].frame++; }
+        /* StF steps its fighters once a 60 Hz frame and draws every other
+         * one: a frame of the motion for every vblank since the last pass
+         * (up to four), the last one's matrices drawn. */
+        { u32 n = frame_counter - step;
+          if (n > 4u) n = 4u;
+          if (n == 0u) n = 1u;
+          step = frame_counter;
+          while (n--) for (i = 0; i < 2u; i++) rob_step(i); }
+        for (i = 0; i < 2u; i++) draw_fighter(&fs[i], i);
         *(volatile u32 *)ZCLIP_REG = 0xFFFF00FFu;
         m2_frame_commit();
         /* 30 fps, as StF runs. StF's frame_counter counts its 60 Hz loop and

@@ -4,6 +4,8 @@ cmake_minimum_required(VERSION 3.20)
 # built against m2-sdk (headers, i960 boot assembly, linker script, ROM splitter).
 #
 #   node tools/bake-board.mjs                        (board/src/poses.h, from the ROM sets)
+#   python3 tools/lift-stf.py                        (board/src/stf_motion.s, .h, stf_rom_c0000.bin,
+#                                                     from the StF disassembly)
 #   cmake -G "Unix Makefiles" -B <build> -S board
 #   make -C <build> -j2                              -> board/roms/sfight/epr-19001.15, epr-19002.16
 #
@@ -21,6 +23,9 @@ project(m2_megamix C ASM)
 if(NOT EXISTS "${CMAKE_SOURCE_DIR}/src/poses.h")
     message(FATAL_ERROR "src/poses.h is missing: run node tools/bake-board.mjs first")
 endif()
+if(NOT EXISTS "${CMAKE_SOURCE_DIR}/src/stf_motion.s")
+    message(FATAL_ERROR "src/stf_motion.s is missing: run python3 tools/lift-stf.py first")
+endif()
 
 set(M2_STARTUP_ASM
     ${M2_SDK}/src/kx_init.s
@@ -28,7 +33,11 @@ set(M2_STARTUP_ASM
     ${M2_SDK}/src/i_table.s
     ${M2_SDK}/src/i_handle.s)
 
-add_executable(game.elf ${M2_STARTUP_ASM} src/megamix.c)
+add_executable(game.elf ${M2_STARTUP_ASM} src/megamix.c src/stf_call.s src/stf_motion.s)
+# StF's motion code keeps its ROM tables' addresses (.stfrom, 0xC0000..0xFFFFF).
+set_source_files_properties(src/stf_motion.s PROPERTIES
+    COMPILE_OPTIONS "-Wa,-I${CMAKE_SOURCE_DIR}/src"
+    OBJECT_DEPENDS "${CMAKE_SOURCE_DIR}/src/stf_rom_c0000.bin")
 target_include_directories(game.elf PRIVATE src "${M2_SDK}/src")
 target_compile_options(game.elf PRIVATE $<$<COMPILE_LANGUAGE:C>:-O2>)
 target_compile_definitions(game.elf PRIVATE $<$<COMPILE_LANGUAGE:C>:M2_API=>)
@@ -36,6 +45,7 @@ set_target_properties(game.elf PROPERTIES SUFFIX "")
 target_link_options(game.elf PRIVATE
     -nostdlib
     "-T${M2_SDK}/lib/testlinkrom_elf.ld"
+    "-Wl,--section-start=.stfrom=0xC0000"
     "-Wl,-Map=game.map")
 
 include("${M2_SDK}/cmake/m2sdk.cmake")

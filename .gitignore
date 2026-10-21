@@ -1,2 +1,5 @@
 board/src/poses.h
+board/src/stf_motion.s
+board/src/stf_motion.h
+board/src/stf_rom_c0000.bin
 board/roms/
