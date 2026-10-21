@@ -149,7 +149,9 @@ const stf = games.stf;
 const frames = readFrameTables(stf.rom);
 const k = ARENA.stf.scale;
 const scale = [k, 0, 0, 0, 0, k, 0, 0, 0, 0, k, 0, 0, 0, 0, 1];
-out.push('typedef struct { u32 model; float m[12]; } stage_draw_t;');
+/* x0, x1: for a cage panel, the x of its two ends in its own frame, which
+ * cage_clip_m projects to cull it (see CAGE_X); equal (0, 0) for any other draw. */
+out.push('typedef struct { u32 model; float m[12]; float x0, x1; } stage_draw_t;');
 /* bg: the record's stage_bg_color (+0x16, BGR555), which StF's scr_bg_int
  * puts behind the 3D layer (change_bg_color, bg_col_set).
  * bright, vx, vy: stage_bright (+0x04) and stage_vecter_x/y (+0x08, +0x0A),
@@ -185,11 +187,35 @@ out.push('                 u16 cset; u8 tint[3]; const u16 *cyc; tpd_t tpd; } st
 const TPD = { 0: { kind: 2, model: 555, addr: 0xaf678 }, 2: { kind: 1, model: 1604, addr: 0x758fc } };
 /* The board's stages: South Island and Aurora Icefield. */
 const STAGE_SLOTS = [0, 2];
+/*
+ * cage_clip_m's tables of panel ends, by panel count: a wall of n panels is cut
+ * at these x (in the wall's frame, at z 6), and the stage flags pick the table
+ * (0x13: 4, 0x15: 2, 0x1D: 3, 0x16: 1, else 8; see cagePanelCount). Panel k
+ * runs from end k to end k + 1.
+ */
+const CAGE_X = { 8: 0x24c80, 4: 0x24ca4, 2: 0x24cb8, 3: 0x24cc4, 1: 0x24cd4 };
+function cagePanels(flags) {
+    let n = 8;
+    if (flags & (1 << 0x13)) n = 4;
+    if (flags & (1 << 0x15)) n = 2;
+    if (flags & (1 << 0x1d)) n = 3;
+    if (flags & (1 << 0x16)) n = 1;
+    return n;
+}
+const cageEnds = (n) => Array.from({ length: n + 1 }, (_, i) => stf.rom.mainCpuView.getFloat32(CAGE_X[n] + i * 4, true));
 const stages = [];
 stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
     const list = buildStageDisplayList(st, frames).filter((e) => !e.extra && !e.points);
     out.push(`static const stage_draw_t stage${n}_draws[${list.length}] = {`);
-    for (const e of list) out.push(`  {${e.model}, {${boardOf(mul(scale, composeOps(opsAt(e, 0)))).map(f32).join(',')}}},`);
+    /* cage_display's panels come wall by wall, each wall's in table order. */
+    const np = cagePanels(st.flags), ends = cageEnds(np);
+    const walls = list.filter((e) => e.layer === 'cage').length;
+    if (walls && walls !== 4 * np) throw new Error(`${st.name}: ${walls} cage panels, not 4 walls of ${np}`);
+    let panel = 0;
+    for (const e of list) {
+        const x = e.layer === 'cage' ? ends.slice(panel % np, panel++ % np + 2) : [0, 0];
+        out.push(`  {${e.model}, {${boardOf(mul(scale, composeOps(opsAt(e, 0)))).map(f32).join(',')}}, ${x.map(f32).join(', ')}},`);
+    }
     out.push('};');
     const cx = buildColorxlat(stf.rom, { colorSet: st.texSet[1], tint: st.tint, fighters: [] });
     out.push(`static const u16 stage${n}_cx[] = {${u16s(cxlatRun(cx, 0, 28, 0, 64))}};`);

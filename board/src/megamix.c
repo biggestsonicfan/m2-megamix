@@ -155,11 +155,41 @@ static void move_tpd_send(const tpd_t *t) {
     }
 }
 
+/* cage_clip_m's test for one cage panel, on the coprocessor as StF does it:
+ * each of the panel's two ends, (x, 0, 0) in its own frame, goes through op
+ * 0x29 under its matrix (model -> camera), and gets an out-code: 0x1F when its
+ * depth is 2 or less, else bit 0 when its screen x (focus * x / z) is at or
+ * left of -248 and bit 1 at or right of 248. A panel whose two ends share a
+ * bit is not drawn. That is what keeps a wall the camera stands just outside
+ * of (Aurora Icefield's fly-in) off the screen: StF's cage_sub_check leaves
+ * it to the later cage_disp_f pass, where both ends are behind the near
+ * limit. */
+static u32 cage_code(float x) {
+    float p[3], sx;
+    u32 c = 0u;
+    m2_cop_m2w(x, 0.0f, 0.0f, p);
+    if (!(p[2] > 2.0f)) return 0x1Fu;
+    sx = FOCUS * p[0] / p[2];
+    if (!(sx > -248.0f)) c |= 1u;
+    if (!(sx < 248.0f)) c |= 2u;
+    return c;
+}
+
+static int cage_clip(const mat_t *m, float x0, float x1) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    int i;
+    *cf = COP_WMATRIX;
+    for (i = 0; i < 9; i++) *cf = m2_obj_fb(m->r[i]);
+    for (i = 0; i < 3; i++) *cf = m2_obj_fb(m->t[i]);
+    return (cage_code(x0) & cage_code(x1)) != 0u;
+}
+
 static void draw_stage(const stage_t *st) {
     mat_t m;
     u32 i, model;
     for (i = 0; i < st->ndraws; i++) {
         mat_mul(&m, &cam, st->draws[i].m);
+        if (st->draws[i].x0 < st->draws[i].x1 && cage_clip(&m, st->draws[i].x0, st->draws[i].x1)) continue;
         model = st->draws[i].model;
         if (st->tpd.kind != 0u && model == st->tpd.model) submit_mat_ov(model, &m, st->tpd.kind == 1u ? 0u : 1u, TPD_ADDR);
         else submit_mat(model, &m);

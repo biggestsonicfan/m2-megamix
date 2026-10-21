@@ -179,6 +179,34 @@ columns, then the translation, the layout `pose.js` uses) and drawn with op
 
   From the board's fixed camera the sea is out of view, and so is the
   aurora: it is only seen in StF's intro fly-in.
+- Cage walls: StF tests each cage panel before it draws it.
+  `cage_clip_m` takes the panel's two ends, (x, 0, 6) in the wall's frame
+  for x from a table at `0x24C80` (8 panels a wall), `0x24CA4` (4),
+  `0x24CB8` (2), `0x24CC4` (3) or `0x24CD4` (1), chosen by stage flags
+  0x13, 0x15, 0x1D and 0x16. It moves each end into the camera's frame with
+  COP op 0x29. An end gets out-code 0x1F when its Z ≤ 2.0, otherwise bit 0
+  when 280·X/Z ≤ −248 and bit 1 when it is ≥ 248. A panel whose two ends
+  share a bit is skipped. Besides this, `cage_sub_check` (from
+  `camera_init`) marks the walls the camera is inside of (mask at
+  `0x500288`). `cage_display` draws those walls, and `cage_disp_f` draws
+  the others in a later pass, when camera flag bit 0xE is set. The board
+  bakes each panel's two ends (`stage_draw_t.x0`, `x1`) and runs the same
+  test on the coprocessor in `draw_stage`. It has no passes, so it does not
+  port the mask. From inside the ring every wall is in it.
+
+  Check: Aurora Icefield from real StF's intro camera (frames 84 and 108
+  of the stage, mask 0x0E, all cage panels drawn in the first pass). A read
+  tap on models 1125..1127 shows real StF drawing 7 panels: one on side
+  1, and three each on sides 2 and 3. The panels of side 0, which the
+  camera is just outside of, are culled because their ends are behind the
+  near limit. The board drew all 12. Those 3 extra panels (1125, 1126 and
+  1127 on side 0) were the large light-blue shape across the middle of the
+  picture: 19,290 pixels at frame 84 and 31,918 at frame 108, mostly
+  (160, 205, 250) and (169, 202, 250). Only 79 and 12 of them matched real
+  StF. With the test, the board's throwaway builds draw the same 7 panels
+  as real StF. Of those pixels, 16,915 and 25,612 now match real StF. In the
+  whole 496×384 frame, 173,142 and 180,153 pixels are identical (156,306
+  and 154,553 before).
 - Materials: StF's `camera_init` sends the stage's 32 material words (prog
   `0x909E0` + stage slot × 4) as GEO texture parameters every frame, each with
   its coefficient from `flt_90BA0`. `m2_obj_frame_setup` fills all 32 with one
@@ -203,10 +231,6 @@ Known gaps:
   slot 0 of the select table at 0xDACAC to 0x0F) draw player 2 as the board
   does: Sonic dark grey, and Honey blonde, with purple fur, a blue dress, a
   blue hairband and white barrettes.
-- Aurora Icefield seen from real StF's intro camera (frame 84 of the stage,
-  a24 2247, a26 −28455): the board draws a large light-blue shape across
-  the middle of the picture, and real StF does not draw it. Not yet
-  traced.
 - No camera of StF's, no shadows.
 
 ## Plan
