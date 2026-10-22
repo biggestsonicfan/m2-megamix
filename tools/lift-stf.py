@@ -91,17 +91,21 @@ GUEST_BASE = 0x02E00000
 # change (each a list by character), 519 motions, and each character's hit
 # reactions (sub_2B94C). motion_remap is the board's own (StF has none: it
 # starts as zeros): a list by character of a motion each id plays instead.
+# char_game is the board's own too: a byte by character (52, player 2's 26
+# on), the game the character comes from (GAMES: 0 StF, the zeros it starts
+# as), which code that treats another game's fighter its own way branches on.
 GUESTS = [('CHAR_PARTS', 0x100, 52 * 4), ('SKELETON_TYPE_DATA', 0x400, 4 * 4),
           ('MOVESET_ARRAY', 0x100, 24 * 4), ('player_hand_animations', 0x100, 52 * 4),
           ('player_foot_animation', 0x100, 52 * 4), ('player_body_animation', 0x100, 52 * 4),
           ('PLAYER_HEAD_LIST', 0x1800, 21 * 4), ('animation_related', 0x2000, 519 * 4),
           ('offset_list_motions', 0x2000, 519 * 4), ('ptr_DA0B4', 0x80, 26 * 4),
-          ('motion_remap', 0x80, 26 * 4)]
+          ('motion_remap', 0x80, 26 * 4), ('char_game', 0x40, 52)]
+GAMES = [('STF', 0), ('VF2', 1), ('FV', 2)]      # char_game's values (GAME_<name>)
 # Code put in at a label of StF's, before what is there. sub_2B94C picks a
 # hit's reaction from the defender's table: (side)[category * 8], +2 from
 # behind. VF2's tables have a crouching defender's reactions 4 on; StF's
 # repeat its first four there, so the crouch term changes nothing for StF's
-# own fighters. 0x1A4 bit 3: crouching.
+# own fighters, but only another game's take it. 0x1A4 bit 3: crouching.
 # set_motion, before it stores the id (its flags already read): the id the
 # fighter's character plays instead (motion_remap; 0: its own). A guest's
 # take the place of the ids StF's code plays by number; StF's fighters', of
@@ -111,7 +115,9 @@ INSERT = {
                   'cmpobe  0, r4, loc_1B044_own', 'lda     0x1FFF, r5', 'and     r5, g0, r6',
                   'ldos    (r4)[r6*2], r6', 'cmpobe  0, r6, loc_1B044_own', 'andnot  r5, g0, g0',
                   'or      r6, g0, g0', 'loc_1B044_own:'],
-    'loc_2B9CC': ['ld      0x1A4(g8), r3', 'bbc     3, r3, loc_2B9CC_up', 'addo    4, r9, r9',
+    'loc_2B9CC': ['ldob    0x1B1(g8), r3', 'ldob    guest_char_game[r3], r3',
+                  'cmpobe  GAME_STF, r3, loc_2B9CC_up', 'ld      0x1A4(g8), r3',
+                  'bbc     3, r3, loc_2B9CC_up', 'addo    4, r9, r9',
                   'loc_2B9CC_up:'],
 }
 
@@ -323,6 +329,8 @@ def main():
         S.append(f'                .set    {t}, 0x{addr[t]:X}')
     for t, _, _ in GUESTS:
         S.append(f'                .set    guest_{t}, 0x{guest_at[t]:X}')
+    for g, v in GAMES:
+        S.append(f'                .set    GAME_{g}, {v}')
     for t in sorted({t for t in sets if TOKEN.search(t)} & set(re.findall(TOKEN, text)) - set(addr)):
         if not (RAM_LO <= sets[t] < RAM_HI):
             S.append(f'                .set    {t}, 0x{sets[t]:X}')
@@ -391,6 +399,9 @@ def main():
         H.append(f'#define STF_GUEST_{t}_SRC 0x{addr[t] if t in addr else sets.get(t, 0):08X}u')
         H.append(f'#define STF_GUEST_{t}_LEN 0x{n:X}u')
     H.append(f'#define STF_GUEST_HEAP 0x{guest_heap:08X}u')
+    H.append('/* STF_GUEST_char_game\'s values: the game a character comes from. */')
+    for g, v in GAMES:
+        H.append(f'#define GAME_{g} {v}u')
     H.append('/* The move tables\' inline code goes on here (`bx`, from anywhere). */')
     H.append(f'#define STF_NATIVE_TAIL_FAR 0x{ROM_LO + tramp:05X}u')
     H.append('')

@@ -201,6 +201,13 @@ static void stf_set(u32 a, u32 v) { *(u32 *)stf_ram(a) = v; }
  * motions), in the guest table (StF's, with the guests' records in). */
 static const u32 *stf_char(u32 c) { return *(const u32 *const *)(STF_GUEST_CHAR_PARTS + c * 4u); }
 
+/* The game character c comes from (GAME_STF, GAME_VF2, GAME_FV): its byte in
+ * the guest table char_game, which tools/vf2-guest.mjs sets for its guests
+ * (StF's own are 0). What treats another game's fighter its own way
+ * branches on it: here, and in stf_motion.s (lift-stf.py's INSERT). */
+static u32 char_game(u32 c) { return *(const u8 *)(STF_GUEST_char_game + c); }
+static const char *const game_name[] = { "STF", "VF2", "FV" };
+
 /* The rest of the globals StF's fight code reads, as a real board has them
  * in the attract mode's fight (its RAM read in MAME, 70 s after power-on):
  * the rounds (0x500052 two to win), the energy (0x5000A0 140), the game's
@@ -421,10 +428,13 @@ static void draw_fighter(const fighter_t *f, u32 p) {
     volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
     const pose_anim_t *a = f->anim;
     u32 *r = robs[p], i, model, head = 0u;
+    /* the eyes are StF's (a second head model); another game's fighter has
+     * them in his head */
+    u32 n = char_game(a->chr) == GAME_STF ? 16u + a->nparts : 16u;
     *cf = COP_WMATRIX;
     for (i = 0; i < 9; i++) *cf = m2_obj_fb(cam.r[i]);
     for (i = 0; i < 3; i++) *cf = m2_obj_fb(cam.t[i]);
-    for (i = 0; i < 16u + a->nparts; i++) {
+    for (i = 0; i < n; i++) {
         u32 slot;
         if (i < 16u) { slot = i; model = RW(r, 0x40 + i * 4u); }
         else {                           /* the eyes: a second model on the head's slot */
@@ -655,6 +665,7 @@ static void load_palettes(void) {
         for (p = 0; p < 2u; p++) {
             const u32 *parts = *(const u32 *const *)stf_char(pose_anims[a].chr + p * 26u);
             for (i = 0; i < 16u; i++) if (parts[i]) m2_load_model_palette(parts[i]);
+            if (char_game(pose_anims[a].chr) != GAME_STF) continue;
             for (i = 0; i < pose_anims[a].nparts; i++)
                 m2_load_model_palette(p ? pose_anims[a].parts[i].p2 : pose_anims[a].parts[i].model);
         }
@@ -760,8 +771,12 @@ static void menu_draw(void) {
         const char *v = 0;
         if (i == menu_cur) TILE_L1[(WIN_ROW + r) * 64u + WIN_COL + 2u] = T_CURSOR;
         win_put(3, r, menu_label[i], T_TEXT);
-        if (i == M_P1 || i == M_P2) v = fighter_name[menu_val[i]];
-        else if (i != M_START) v = dec(menu_val[i], b);
+        if (i == M_P1 || i == M_P2) {      /* its game and name, as "VF2:AKIRA" */
+            const char *g = game_name[char_game(pose_anims[menu_val[i]].chr)];
+            v = fighter_name[menu_val[i]];
+            win_put(WIN_W - 3u - slen(v) - slen(g), r, g, T_INV);
+            win_put(WIN_W - 3u - slen(v), r, ":", T_INV);
+        } else if (i != M_START) v = dec(menu_val[i], b);
         if (v) win_put(WIN_W - 2u - slen(v), r, v, T_INV);
         if (i == M_STAGE) {               /* the name line, as StF's "15:ADV_MOV2" */
             const char *n = stage_name[menu_val[i]];

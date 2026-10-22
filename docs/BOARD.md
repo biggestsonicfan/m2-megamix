@@ -335,7 +335,8 @@ with a heap after them.
   (StF's 0xDA0B4, now the guest table `ptr_DA0B4`). Akira's is VF2's own: 30
   kinds of hit, each by category, crouch, behind and side. StF's lists ignore
   crouching, so the lift puts in a test of the crouch flag (0x1A4 bit 3) at
-  `loc_2B9CC`, which picks the crouching half of the list.
+  `loc_2B9CC`, which picks the crouching half of the list. Only a fighter
+  whose game is not StF's takes it (`char_game`, below).
 - **Thrown motions:** a throw's setup (op 5) gives its victim a motion, the
   one after the throw in VF2's numbering, usually. StF's fighters play those
   too, as copies (847..878) scaled to them (×1.07 in height, `THROWN`).
@@ -364,7 +365,24 @@ with a heap after them.
   comes to ×2.03 (`SCALE`, with the measurements). The mesh points, the
   skeleton and the motions' float objects (the body's place and the aim and IK
   targets) are scaled, so StF's code poses, steps and hits with him at that
-  size.
+  size. A float object's latched constants (channel types 0..2) are not: they
+  are angles the pose code holds. Object 17, the pelvis's roll, is (0, 0,
+  16384.0), a quarter turn, in nearly all of VF2's motions. Scaled, it rolled
+  his pelvis half a turn: his waist rode high, his legs went straight and wide
+  and he leaned forward in his stance.
+- **Game:** `char_game` (a guest table of the board's own, at
+  `STF_GUEST_char_game`, 0x02E06200) is a byte by character, 52 of them
+  (player 2's 26 on): the game the character comes from, `GAME_STF` (0, what
+  it starts as), `GAME_VF2` (1) or `GAME_FV` (2). `lift-stf.py` defines the
+  values for the lifted code (`.set GAME_<game>`) and `stf_motion.h`
+  (`#define GAME_<game>`); `vf2-guest.mjs` sets characters 6 and 32 to VF2.
+  What treats another game's fighter its own way branches on it:
+  - in the lifted code, an `INSERT` hook reads `guest_char_game[0x1B1(rob)]`
+    (the crouch test at `loc_2B9CC`, so far);
+  - in C, `char_game(c)`: the eyes (StF's second head model) are drawn and
+    their palettes loaded only for StF's fighters, and the setup menu shows
+    each fighter as `<game>:<name>` (`STF:SONIC`, `VF2:AKIRA`).
+  A Fighting Vipers guest sets its characters to `GAME_FV` the same way.
 
 He walks, attacks, hits, takes hits and goes down, as player 1 or 2 or both.
 StF's command interpreter keeps its backtrack base at 0x1214(g13), where g13

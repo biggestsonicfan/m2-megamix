@@ -148,10 +148,12 @@ function boardTables() {
 
 /* board/src/stf_motion.h (tools/lift-stf.py): the guest tables, where the
  * lifted routines read StF's per-character and per-motion tables from: each
- * one's address, StF's own table (_SRC, _LEN) and the heap after them. */
+ * one's address, StF's own table (_SRC, _LEN) and the heap after them; and
+ * char_game's values (GAME_<game>). */
 function guestTables() {
     const h = readFileSync(`${ROOT}board/src/stf_motion.h`, 'utf8');
-    const G = { tables: {} };
+    const G = { tables: {}, games: {} };
+    for (const m of h.matchAll(/#define GAME_(\w+) (\d+)u/g)) G.games[m[1]] = +m[2];
     for (const m of h.matchAll(/#define STF_GUEST_(\w+?)(_SRC|_LEN)? 0x([0-9A-F]+)u/g)) {
         if (m[1] === 'HEAP') { G.heap = parseInt(m[3], 16); continue; }
         const t = G.tables[m[1]] ??= {};

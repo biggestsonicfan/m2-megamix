@@ -148,12 +148,15 @@ function scaleMesh(b) {
 }
 
 /* A motion's float objects (12..19, channels 36 on): their values, and a
- * Hermite key's two tangents with them. */
+ * Hermite key's two tangents with them. Not a latched constant (types 0..2):
+ * those are angles the pose code holds, not points (object 17, the pelvis's
+ * roll, is (0, 0, 16384.0), a quarter turn, in all but two of VF2's motions;
+ * scaled, it rolled his pelvis half a turn and his stance came apart). */
 function scaleMotion(b, k = [SCALE, SCALE, SCALE]) {
     const c = motionChannels(b, 0);
     for (let i = 36; i < 60; i++) {
         const t = c.types[i];
-        if (t === ZERO) continue;
+        if (t <= ZERO) continue;
         scaleFloats(b, c.values[i], t === LINEAR ? c.counts[i] : t === HERMITE ? c.counts[i] * 3 : 1, k[(i - 36) % 3]);
     }
     return b;
@@ -642,6 +645,9 @@ export function importAkira(R, vf2, stf) {
         const r = alloc(u16s([0, 0, head, head, 0, 0, 0, 0, 0, 0, 0, 0]), `head ${p ? 'P2' : 'P1'}`);
         for (let k = 0; k < H.len / 4; k++) H.view.setUint32(H.lists + k * H.perKind + (CHR + p * PLAYER2) * 4, r, true);
     }
+
+    /* char_game: the game he comes from, for the code that branches on it. */
+    for (const c of [CHR, CHR + PLAYER2]) T.char_game.bytes[c] = R.guest.games.VF2;
 
     report.push(`heap ${hex(R.guest.heap)}..${hex(heap)}`);
     return { report, modelId, newId, parts: A.parts.map((x) => M(x.model)), p2: A.p2.parts.map((x) => M(x.model)) };
