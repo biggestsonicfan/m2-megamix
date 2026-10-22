@@ -512,8 +512,18 @@ Acting on him now:
   still lists the item as open.)
 
 Hard-coded characters, by id:
-- `selected_player_check` (1471) and the command decoder at `loc_1E0A0`
-  (11322) leave out Bark, Eggman, Big Eggman and Boss Eggman (5, 8, 9, 11);
+- `selected_player_check` (1471) is the stance's (`ACT_RC_KAMAE`) end
+  handler in `ACTUAL_MOVES`. For parents 5, 8, 9 and 11 (Bark, Eggman, Big
+  Eggman, Boss Eggman) it returns. For everyone else it goes on to
+  `loc_13120`, which stores r11 at rob+0x19C and clears rob+0x1B2 and
+  rob+0x1AE. Akira (6) takes `loc_13120`. Left as it is, because that is
+  already VF2's own: VF2's action table (0x1B808, the same layout) has the
+  same stance code at 0x149EC (StF's `ACT_RC_KAMAE`, byte for byte). Its end
+  handler there is 0x147A4, the same code as `loc_13120`, with no character
+  check. A VF2 fighter's stance ends the way his does now, so there is
+  nothing to swap in. It stays on this list only because the check is still
+  by StF id: a guest put in slot 5, 8, 9 or 11 would skip the reset.
+- The command decoder at `loc_1E0A0` (11322) leaves out the same four ids;
   Akira takes the rest of the cast's path. → A per-character flag table
   (a guest one) in place of the ids, if a guest should not.
 - `sub_2EF9C` (17178): Espio (7, 33) only. Super Sonic (`damage_calculation`
