@@ -388,6 +388,20 @@ with a heap after them.
   with his body (he pushes Honey back ball to ball, gap about 0, and his
   second and third punches take her from 140 to 128 to 117, the same frames
   and values on both), and Honey's tables are byte for byte StF's record.
+- **Damage:** the setup's op 4 (a strike) and op 5 (a throw) carry the
+  damage at byte +3, out of VF2's 200 energy; StF's fighters have 140.
+  `convertSetup` scales both ×140/200 (`DAMAGE`), rounded, at least 1 where
+  VF2's is not 0: 10→7, 12→8, 20→14, a throw's 50→35, 80→56 (the import
+  prints the whole list). Only his converted setups change; StF's are
+  StF's. At hit time StF's `ketchup` multiplies the setup's number by
+  1 + 0.01 × (victim's energy − attacker's), the gap capped at −30 and,
+  above, at 50 − (energy_max − victim's energy) / 2, then rounds. So a drop
+  is ×140/200 of the old one only up to that rounding. Checked in MAME
+  and m2-hle2 (Akira against Honey, the same inputs as before): his two
+  punches that land take her 140 → 132 → 125 (8, then 8 × 0.92 = 7), where
+  they took 140 → 128 → 117 (12, then 12 × 0.88 = 11). Her punch is her
+  own 11 on both builds: thrown first, at even energy, 140 → 129 → 119
+  → 110 on the old build and the new.
 - **Game:** `char_game` (a guest table of the board's own, at
   `STF_GUEST_char_game`, 0x02E06200) is a byte by character, 52 of them
   (player 2's 26 on): the game the character comes from, `GAME_STF` (0, what
@@ -436,8 +450,6 @@ Acting on him now:
   in `word_6BE90` (StF's ids only: 466, 167, 284…). His ids are 519 on and
   the victims' copies 847..878, so his throws get no camera. → A guest
   table (his ids to StF's scripts); `word_6BE90` moves into `GUESTS`.
-- **Damage:** `convertSetup` keeps VF2's strike damage (out of 200) and its
-  throws' 50 against StF's 140: his hits do ×1.43. → ×140/200.
 - **Opponent mask:** command op `loc_1EA88` (11984) tests a bit by the
   opponent's character. Akira has bit 6, Knuckles', so a StF script that
   singles out Knuckles singles him out. → A bit of his own, or check the
@@ -476,7 +488,7 @@ guest copy.
 Already his own or fine: `CHAR_PARTS`, `MOVESET_ARRAY`, `ptr_DA0B4`,
 `motion_remap`, `SKELETON_TYPE_DATA` (all four kinds), the hand, foot,
 body and head lists, `char_game`, `rob_coli_ball_types` (his collision
-balls, above); `_uk_gravity` (0.0, as Sonic's). In C,
+balls, above), his damage (×140/200 in his setups, above); `_uk_gravity` (0.0, as Sonic's). In C,
 `rob_init`, `draw_fighter` and `load_palettes` read the guest tables and
 `char_game`. The camera (`camera_place`, `cam_mode_9`/`10`) reads no
 character, only positions, flags and the motion id; it aims at root

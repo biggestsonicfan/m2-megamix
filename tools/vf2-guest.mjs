@@ -171,6 +171,9 @@ function scaleMotion(b, k = [SCALE, SCALE, SCALE]) {
 /* The bits of a rob's flags StF's own play op 5 sets. */
 const STF_FLAG_BITS = new Set([0, 1, 3, 4, 7, 8, 9, 10, 11, 13, 15, 23, 25, 29, 30]);
 const THROWN = [SCALE, 1.07, SCALE];
+/* Damage (setup op 4, a strike, and op 5, a throw: byte +3) is out of VF2's
+ * 200 energy; StF's fighters have 140. */
+const DAMAGE = 140 / 200;
 
 /* A mesh's extent: the geometrizer's walk (import-assets keepModel). */
 function meshLength(d, base) {
@@ -428,6 +431,12 @@ export function importAkira(R, vf2, stf) {
     /* ---- the setups, converted ---- */
     const f32 = (x) => { const b = new Uint8Array(4); new DataView(b.buffer).setFloat32(0, x, true); return [...b]; };
     const put16 = (a, o, v) => { a[o] = v & 0xff; a[o + 1] = (v >> 8) & 0xff; };
+    const damages = new Map();
+    const damage = (v) => {
+        const d = v && Math.max(1, Math.round(v * DAMAGE));
+        damages.set(v, d);
+        return d;
+    };
     function convertSetup(id) {
         const s = setups.get(id);
         const h = s.head;
@@ -435,8 +444,8 @@ export function importAkira(R, vf2, stf) {
         for (const { op, b } of s.setup) {
             let o;
             switch (op) {
-            case 4: o = [4, b[1], b[2], b[3], 0, ...b.subarray(8, 17), ...f32(2.0)]; break;
-            case 5: o = [...b, 0, 0, 0, 0]; put16(o, 1, mid(b[1] | (b[2] << 8))); break;
+            case 4: o = [4, b[1], b[2], damage(b[3]), 0, ...b.subarray(8, 17), ...f32(2.0)]; break;
+            case 5: o = [...b, 0, 0, 0, 0]; put16(o, 1, mid(b[1] | (b[2] << 8))); o[3] = damage(b[3]); break;
             case 6: o = [7, b[3], b[4]]; break;
             case 0xc: o = [0xc, 0, b[1], b[2]]; break;
             case 1: o = [...b]; put16(o, 1, mid(b[1] | (b[2] << 8))); break;
@@ -489,6 +498,7 @@ export function importAkira(R, vf2, stf) {
         setupT.view.setUint32(copyId.get(id) * 4, setupT.view.getUint32(newId.get(id) * 4, true), true);
     }
     report.push(`motion blocks ${motionBytes} bytes`);
+    report.push(`damage x140/200: ${[...damages].sort((a, b) => a[0] - b[0]).map(([v, d]) => `${v}->${d}`).join(', ')}`);
 
     /* ---- the command program, converted ---- */
     const order = [...units.keys()].sort((a, b) => a - b);
