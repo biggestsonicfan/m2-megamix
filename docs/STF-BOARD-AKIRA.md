@@ -9,6 +9,10 @@ existing VF2 data. No new assets are made, and there is no i960 code yet.
 
 Akira stands in for Sonic, StF character 0 (and 26, player 2's record).
 
+(The board build now has him in, on its own program, as character 6: see
+BOARD.md, "The guest: VF2's Akira". This file's measurements of free ROM
+and the packing of his textures are what that import uses.)
+
 All numbers were measured from the sets in `$ROMS_DIR` with noclip's
 readers (vendor/noclip). Sizes marked ≤ are distances to the next block
 of the same kind, which makes them upper bounds.

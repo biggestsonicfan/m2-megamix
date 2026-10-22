@@ -6,6 +6,9 @@
  *   node tools/pack-akira.mjs            plan, offsets and checks
  *   node tools/pack-akira.mjs --out DIR  also write the patch bytes to DIR
  *
+ * tools/import-assets.mjs calls packAkira() with every model the board gives
+ * him (his parts, player 2's, his hands) and writes what it returns.
+ *
  * What it builds, all in StF's address space:
  *   - seven uncompressed (type 1) 256x256 pages, levels 0-4, in the empty run of
  *     main_data from 0xD6F1AE;
@@ -27,16 +30,15 @@
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadNodeGames } from '../tests/node-roms.mjs';
 import { decodeModel } from '../vendor/noclip/js/model.js';
 import { readModelEntry, meshOffsetOf, MAIN_DATA_BASE } from '../vendor/noclip/js/romset.js';
 import { buildTexram } from '../vendor/noclip/js/texture.js';
 import { levelOrigin, texelByte, SHEET_BYTES, SHEET_H } from '../vendor/noclip/js/atlas.js';
 
-const outDir = process.argv.includes('--out') ? process.argv[process.argv.indexOf('--out') + 1] : null;
-
 /* Akira's models in VF2 (readFighters(vf2)[0].parts) and his texture sets. */
-const MODELS = [407, 408, 409, 410, 411, 412, 413, 414, 416, 417, 419, 420, 421, 422, 2452, 2454, 2442];
+export const MODELS = [407, 408, 409, 410, 411, 412, 413, 414, 416, 417, 419, 420, 421, 422, 2452, 2454, 2442];
 const VF2_SETS = [40, 1, 2];
 /* StF set 1: its page-list pointer, its list (listIdx word + 24 page pointers)
  * and the seven pages: index -> slot on sheet 1. */
@@ -51,8 +53,13 @@ const LEVELS = 5;                                        /* a raw page writes 0-
 const PAGE_BYTES = 16 + [...Array(LEVELS)].reduce((n, _, L) => n + (256 >> L) ** 2 / 2, 0);
 
 const hex = (v) => '0x' + v.toString(16).toUpperCase();
-const G = await loadNodeGames();
-const vf2 = G.vf2.rom, stf = G.stf.rom;
+const key = (t) => `${t.x},${t.y},${t.w},${t.h}`;
+
+/* The pack, for VF2 models `MODELS`: StF's main_data and textures with the
+ * runs filled (`md`, `tx`, whole copies), where (`PAGE0`..`MD_END`, `HDR_SETS`,
+ * the textures run up to `at`), each model's new material and UV pointers
+ * (`copies`) and what the checks found (`problems`). */
+export function packAkira(vf2, stf, MODELS) {
 
 /* ---- 1. Akira's streams and tiles ---------------------------------------- */
 
@@ -87,7 +94,6 @@ const tileOf = ({ th0, th2 }) => ((th0 & 0x4000) === 0 ? null : {
     x: 32 * (th2 & 0x3f), y: 32 * ((th2 >> 6) & 0x1f), sheet: (th2 >> 12) & 1,
     w: 32 << (th0 & 7), h: 32 << ((th0 >> 3) & 7),
 });
-const key = (t) => `${t.x},${t.y},${t.w},${t.h}`;
 
 const models = MODELS.map((m) => ({ m, ...streams(vf2, m) }));
 const tiles = new Map();
@@ -227,6 +233,7 @@ for (const m of models) {
             const th2 = (rec(vf2, b).th2 & ~0x7ff) | (n.x / 32) | ((n.y / 32) << 6);
             tx[o] = th2 & 0xff; tx[o + 1] = th2 >> 8;
         }
+        c.recs = [...new Set(m.recs)].map((b) => at + b - m.mat.from);
         at = (at + m.mat.to - m.mat.from + 15) & ~15;
     }
     if (m.uv) {
@@ -305,7 +312,18 @@ for (const c of copies) {
     }
 }
 
+    return { tiles, tileCount, clusters, moved, used, pageAt, PAGE0, LIST_COPY, TABLE_COPY, SET_TABLE, HDR_SETS, MD_END,
+        md, tx, at, copies, deep, faces, problems, TEX0: (TEX_RUN + 15) & ~15 };
+}
+
 /* ---- Report --------------------------------------------------------------- */
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+const outDir = process.argv.includes('--out') ? process.argv[process.argv.indexOf('--out') + 1] : null;
+const G = await loadNodeGames();
+const vf2 = G.vf2.rom, stf = G.stf.rom;
+const { tiles, tileCount, clusters, moved, used, pageAt, PAGE0, LIST_COPY, TABLE_COPY, SET_TABLE, HDR_SETS, MD_END,
+    md, tx, at, copies, deep, faces, problems } = packAkira(vf2, stf, MODELS);
 
 console.log(`${tiles.size} tiles (${tileCount} cells of 32x32) in ${clusters.length} groups`);
 for (const p of PAGES) {
@@ -330,3 +348,4 @@ if (outDir) {
     writeFileSync(join(outDir, `textures-${((TEX_RUN + 15) & ~15).toString(16)}.bin`), tx.subarray((TEX_RUN + 15) & ~15, at));
 }
 process.exitCode = problems.length ? 1 : 0;
+}

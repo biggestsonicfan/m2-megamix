@@ -198,9 +198,8 @@ typedef struct { const pose_anim_t *anim; float x; u16 yaw; } fighter_t;
 static void stf_set(u32 a, u32 v) { *(u32 *)stf_ram(a) = v; }
 
 /* CHAR_PARTS: each character's record (+0 its part models, +0xC its
- * motions), in StF's ROM tables at their own address. */
-#define STF_CHAR_PARTS 0xC5268u
-static const u32 *stf_char(u32 c) { return *(const u32 *const *)(STF_CHAR_PARTS + c * 4u); }
+ * motions), in the guest table (StF's, with the guests' records in). */
+static const u32 *stf_char(u32 c) { return *(const u32 *const *)(STF_GUEST_CHAR_PARTS + c * 4u); }
 
 /* The rest of the globals StF's fight code reads, as a real board has them
  * in the attract mode's fight (its RAM read in MAME, 70 s after power-on):
@@ -335,7 +334,8 @@ static void fight_step(const u32 pad[2]) {
     for (p = 0; p < 2u; p++) RW(robs[p], 0x219C)--;  /* camera_init's sub_7F5CC */
     for (p = 0; p < 2u; p++) {
         RB(robs[p], 0x1200) = (u8)pad[p];
-        stf_call(stf_sub_1D47C, robs[p], robs[p ^ 1u], 0u);
+        /* g13 the rob too: the command interpreter keeps its base there */
+        stf_task(stf_sub_1D47C, robs[p], robs[p], robs[p ^ 1u]);
     }
     for (p = 0; p < 2u; p++)
         stf_task((void (*)(void))RW(robs[p], 0xC), robs[p], robs[p], robs[p ^ 1u]);

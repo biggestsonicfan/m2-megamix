@@ -54,8 +54,8 @@ never reads them. Of 53 MB of data it keeps about 4 MB;
 reason.
 
 The sets in `$ROMS_DIR` are read only by this import (and the bake): the board
-runs on `board/roms` alone. VF2's and Fighting Vipers' assets will be imported
-by further steps of the same script, into the space StF's leave free.
+runs on `board/roms` alone. Other games' fighters go into the space StF's leave
+free (next section).
 
 A run with the stripped ROMs draws the same frames as one with StF's full set
 (the same inputs, a snapshot every 40 frames through all 18 pairings on both
@@ -313,6 +313,50 @@ same frame of the stance motion (278), all sixteen part positions in the rob
   4,963 (13 newly wrong), and the frames are 179,775 and 184,355 pixels
   identical to StF's, the throwaway's counts.
 
+## The guest: VF2's Akira
+
+`tools/vf2-guest.mjs` (called by the import) brings in VF2's Akira as StF
+character 6, Knuckles' slot (32 for player 2), which Megamix does not use. He
+runs on StF's own code like the rest of the cast: everything of his that the
+code reads is converted into StF's formats and written into the guest tables
+`tools/lift-stf.py` moves out of the program ROM (`GUESTS`, at 0x02E00000),
+with a heap after them.
+
+- **Motions:** the ones his actions, his command program and their setups
+  reach (255), as new motion ids from 519 on. The blocks are in StF's format
+  already; their setups are converted op by op (VF2's play ops differ in
+  length and number).
+- **Command program:** converted op by op. Commits get StF's longer form. His
+  native ops (one instruction putting a motion id in g0) become `lda` plus a
+  jump to `cmd_native_tail`. VF2's 0x32 is dropped and 0x33 becomes 0x11.
+- **Records:** Knuckles' record and actions, with his parts and his actions in
+  place of Knuckles' where VF2's slots map to StF's. Also his skeleton, his
+  hand shapes, and a head record of one frame.
+- **Models:** 95 models (P1 and P2 parts and his hands) under free model ids
+  from 5102 down. Their meshes go in the polygon ROM's empty run, and the
+  materials, UVs and textures are packed by `tools/pack-akira.mjs`. Colour
+  bases whose palette entries differ between the games are moved to a StF
+  entry with VF2's colour, or to a free one that is given it.
+- **Size:** StF's world is about twice the size of VF2's and Fighting Vipers'.
+  Fighting Vipers has a Sonic of its own, so Akira is sized by height against
+  it: 71/73 of Bahn (5'11" to 6'1"), scaled from FV's Sonic to StF's. That
+  comes to ×2.03 (`SCALE`, with the measurements). The mesh points, the
+  skeleton and the motions' float objects (the body's place and the aim and IK
+  targets) are scaled, so StF's code poses, steps and hits with him at that
+  size.
+
+He walks, attacks, hits, takes hits and goes down, as player 1 or 2 or both.
+StF's command interpreter keeps its backtrack base at 0x1214(g13), where g13
+is the fighter's rob, so the board runs `sub_1D47C` as a task (`stf_task`).
+With g13 left over from C, Akira's first failed match backtracked off the
+stack. StF's own scripts never fail all the way back, so they had not shown
+it.
+
+Known gaps: his reactions to hits are Knuckles' (StF's), on his skeleton.
+StF's slots that VF2 has no action for keep Knuckles' motions. His hand
+shapes change without easing. While he is on, his colours take rows 0..6
+(7..13 for player 2), which includes StF's fixed rows 5/6 (12/13).
+
 ## The fight
 
 The rounds run on StF's own code, lifted by `tools/lift-stf.py`; the board
@@ -370,10 +414,10 @@ sets up what StF's game loop would have set up around it.
 
 ## Where it stands
 
-Two fighters (button 1 cycles each player's: Sonic, Honey, Eggman) stand
+Two fighters (start cycles each player's: Sonic, Honey, Eggman, Akira) stand
 facing each other and play their stance motion with StF's own motion code
 (60 Hz steps, drawn at 30 fps), on one of two of
-StF's stages, South Island and Aurora Icefield (player 1's button 2 switches
+StF's stages, South Island and Aurora Icefield (player 1's start with down held switches
 between them). The stages are drawn from StF's stage records with its
 textures, colours, materials, light, colour cycling, and the sea and
 aurora. South Island matches StF's own picture closely. They push, hit and

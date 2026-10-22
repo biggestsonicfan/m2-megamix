@@ -78,6 +78,22 @@ RAM_PAD = 0x400                          # room past the highest address a block
 # RAM the routines reach through a base: the two fighters' motion records
 # (action_init: 0x520000 and 0x5207C8, 0x800 bytes each).
 RAM_SPANS = [(0x520000, 0x520FC8)]
+# The per-character tables a guest fighter (a character of another game in a
+# StF character's place) needs entries of its own in: the routines read them
+# at fixed addresses in the data ROM instead (guest_<name>), where
+# tools/import-assets.mjs writes StF's tables with the guests' entries in.
+# Each is given its room there; the rest, from GUEST_HEAP, is the guests' own
+# records, motions and programs. stf_motion.h has the addresses
+# (STF_GUEST_<name>).
+GUEST_BASE = 0x02E00000
+# name, its room, StF's own table's length (what it starts as): 52 characters
+# (player 2's are 26 on), 24 move tables, 4 skeletons, 21 kinds of head
+# change (each a list by character), 519 motions.
+GUESTS = [('CHAR_PARTS', 0x100, 52 * 4), ('SKELETON_TYPE_DATA', 0x400, 4 * 4),
+          ('MOVESET_ARRAY', 0x100, 24 * 4), ('player_hand_animations', 0x100, 52 * 4),
+          ('player_foot_animation', 0x100, 52 * 4), ('player_body_animation', 0x100, 52 * 4),
+          ('PLAYER_HEAD_LIST', 0x1800, 21 * 4), ('animation_related', 0x2000, 519 * 4),
+          ('offset_list_motions', 0x2000, 519 * 4)]
 
 LABEL = re.compile(r'^([A-Za-z_.$][\w.$]*):')
 TOKEN = re.compile(r'(?<![\w.$])[A-Za-z_.$][\w.$]*')
@@ -199,7 +215,16 @@ def main():
         ram[v] = True
         return f'STFRAM_{v:06X}'
 
+    guest_at, at = {}, GUEST_BASE
+    for t, n, _ in GUESTS:
+        guest_at[t] = at
+        at += n
+    guest_heap = at
+
     def fix_token(t, c):
+        if t in guest_at:
+            notes.setdefault('guest', set()).add(t)
+            return f'guest_{t}'
         if t in NUMBERS:
             notes.setdefault('num', set()).add(f'{t}=0x{addr[t]:X}')
             return f'0x{addr[t]:X}'
@@ -274,6 +299,8 @@ def main():
     S.append('')
     for t in sorted(notes.get('rom', ())):
         S.append(f'                .set    {t}, 0x{addr[t]:X}')
+    for t, _, _ in GUESTS:
+        S.append(f'                .set    guest_{t}, 0x{guest_at[t]:X}')
     for t in sorted({t for t in sets if TOKEN.search(t)} & set(re.findall(TOKEN, text)) - set(addr)):
         if not (RAM_LO <= sets[t] < RAM_HI):
             S.append(f'                .set    {t}, 0x{sets[t]:X}')
@@ -334,6 +361,17 @@ def main():
     for f in ROOTS:
         H.append(f'extern void stf_{f}(void) __asm__("{f}");')
     H.append('')
+    H.append('/* The tables the routines read a guest fighter\'s entries from, in the')
+    H.append(' * data ROM (tools/import-assets.mjs writes them), and the guests\' heap;')
+    H.append(' * _SRC and _LEN: StF\'s own table, which they start as. */')
+    for t, _, n in GUESTS:
+        H.append(f'#define STF_GUEST_{t} 0x{guest_at[t]:08X}u')
+        H.append(f'#define STF_GUEST_{t}_SRC 0x{addr[t] if t in addr else sets[t]:08X}u')
+        H.append(f'#define STF_GUEST_{t}_LEN 0x{n:X}u')
+    H.append(f'#define STF_GUEST_HEAP 0x{guest_heap:08X}u')
+    H.append('/* The move tables\' inline code goes on here (`bx`, from anywhere). */')
+    H.append(f'#define STF_NATIVE_TAIL_FAR 0x{ROM_LO + tramp:05X}u')
+    H.append('')
     H.append('/* The board\'s copy of StF\'s RAM the routines use. */')
     for lo, hi in blocks:
         H.append(f'extern u8 stf_ram_{lo:06X}[0x{hi - lo:X}] __asm__("stf_ram_{lo:06X}");')
@@ -352,6 +390,7 @@ def main():
     print(f'move-table branches to {tail}: {len(patches)}')
     print(f'ram blocks: {" ".join(f"{lo:06X}..{hi:06X}" for lo, hi in blocks)}')
     print(f'rom tables: {" ".join(sorted(notes.get("rom", ())))}')
+    print(f'guest tables: {" ".join(sorted(notes.get("guest", ())))}')
     print(f'labels made numbers: {" ".join(sorted(notes.get("num", ())))}')
 
 

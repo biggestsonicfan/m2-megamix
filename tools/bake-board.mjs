@@ -101,6 +101,24 @@ for (const r of CAST) {
         console.log(id, 'character', e.index, 'parts', parts.length);
     }
 }
+/* The guests (tools/vf2-guest.mjs): StF's own code draws them from the
+ * records it puts in, so no parts here; their colours are their own game's,
+ * seven part rows a player (rows 5, 6, 12 and 13 are StF's fixed rows, unused
+ * while he is on). */
+const GUESTS = [{ name: 'AKIRA', chr: 6, game: games.vf2.rom, fighter: 0, rows: 7 }];
+for (const g of GUESTS) {
+    const id = `${g.name.toLowerCase()}_stance`;
+    const cx = buildColorxlat(g.game, { fighters: [g.fighter] });
+    const cx2 = buildColorxlat(g.game, { fighters: [-1, g.fighter] });
+    out.push(`static const u16 ${id}_part[] = {${u16s(cxlatRun(cx, 0, g.rows, 48, 16))}};`);
+    out.push(`static const u16 ${id}_skin[] = {${u16s(cxlatRun(cx, 28, 2, 0, 64))}};`);
+    out.push(`static const u16 ${id}_part2[] = {${u16s(cxlatRun(cx2, g.rows, g.rows, 48, 16))}};`);
+    out.push(`static const u16 ${id}_skin2[] = {${u16s(cxlatRun(cx2, 30, 2, 0, 64))}};\n`);
+    anims.push(`{"${g.name} stance", ${g.chr}, 0, 0, ` +
+        `{{0, ${g.rows}, 48, 16, ${id}_part}, {28, 2, 0, 64, ${id}_skin}, ` +
+        `{${g.rows}, ${g.rows}, 48, 16, ${id}_part2}, {30, 2, 0, 64, ${id}_skin2}}}`);
+    console.log(id, 'character', g.chr, 'guest');
+}
 out.push(`#define POSE_ANIMS ${anims.length}`);
 out.push(`static const pose_anim_t pose_anims[POSE_ANIMS] = {\n    ${anims.join(',\n    ')}\n};\n`);
 /* ---- stages ---- */

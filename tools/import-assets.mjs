@@ -35,6 +35,8 @@
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { readZipDirectory, extractZipEntry } from '../vendor/noclip/js/zip.js';
+import { loadNodeGames } from '../tests/node-roms.mjs';
+import { importAkira } from './vf2-guest.mjs';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const ROMS = process.env.ROMS_DIR || `${process.env.HOME}/build/mameroms`;
@@ -101,6 +103,12 @@ class Region {
         this.out.set(this.src.subarray(off, off + len), off);
         this.kept.push([off, off + len, label]);
     }
+    /* bytes of the board's own (not the arcade's) */
+    put(off, bytes, label) {
+        if (off < 0 || off + bytes.length > this.out.length) throw new Error(`${this.name}: ${label} 0x${off.toString(16)}+0x${bytes.length.toString(16)} is outside`);
+        this.out.set(bytes, off);
+        this.kept.push([off, off + bytes.length, label]);
+    }
     /* back into the files, as MAME loads them */
     files() {
         const out = {};
@@ -136,6 +144,21 @@ function boardTables() {
     }
     if (!chars.size || !texsets.size) throw new Error('poses.h: no fighters or stages (run tools/bake-board.mjs)');
     return { models, chars: [...chars], texsets: [...texsets], csets: [...csets] };
+}
+
+/* board/src/stf_motion.h (tools/lift-stf.py): the guest tables, where the
+ * lifted routines read StF's per-character and per-motion tables from: each
+ * one's address, StF's own table (_SRC, _LEN) and the heap after them. */
+function guestTables() {
+    const h = readFileSync(`${ROOT}board/src/stf_motion.h`, 'utf8');
+    const G = { tables: {} };
+    for (const m of h.matchAll(/#define STF_GUEST_(\w+?)(_SRC|_LEN)? 0x([0-9A-F]+)u/g)) {
+        if (m[1] === 'HEAP') { G.heap = parseInt(m[3], 16); continue; }
+        const t = G.tables[m[1]] ??= {};
+        t[m[2] ? m[2].slice(1).toLowerCase() : 'at'] = parseInt(m[3], 16);
+    }
+    G.nativeTail = parseInt(h.match(/#define STF_NATIVE_TAIL_FAR 0x([0-9A-F]+)u/)[1], 16);
+    return G;
 }
 
 /* ---- Sonic the Fighters --------------------------------------------------- */
@@ -206,7 +229,9 @@ async function importStf(R) {
             for (let f = 0; f < frames; f++) for (let w = 0; w < 4; w++) model(program.u16(h + 4 + f * 0x14 + w * 2));
         }
     }
+    const colorbases = new Set();
     for (const m of [...models].sort((a, b) => a - b)) keepModel(m);
+    Object.assign(R, { models, colorbases, modelTable: MODEL_TABLE, modelCount: MODELS });
 
     function keepModel(m) {
         const e = MODEL_TABLE + m * 16;
@@ -236,6 +261,7 @@ async function importStf(R) {
         for (const attr of polys) {
             tp += ((attr & 1) ? 4 : 3) * 2;
             thLo = Math.min(thLo, th); thHi = Math.max(thHi, th + 4);
+            if (!(th & 0x800000)) colorbases.add((textures.u16((th & 0x7fffff) * 2 + 6) >> 6) & 0x3ff);
             let tho = (attr >> 12) & 0x1f;
             if (tho & 0x10) tho -= 0x20;
             th += tho * 4;
@@ -306,6 +332,28 @@ async function importStf(R) {
         }
     }
 
+    /* The guest tables start as StF's own (a guest's entries go in later).
+     * PLAYER_HEAD_LIST is a list a kind of head change, each of them a list
+     * by character: those lists are copied too, after it in its room. */
+    const G = guestTables();
+    const tables = {};
+    for (const [name, t] of Object.entries(G.tables)) {
+        const b = new Uint8Array(t.len);
+        for (let i = 0; i < t.len; i += 4) new DataView(b.buffer).setUint32(i, t.src < 0x100000 ? program.u32(t.src + i) : u32At(t.src + i), true);
+        tables[name] = { ...t, bytes: b, view: new DataView(b.buffer) };
+    }
+    const heads = tables.PLAYER_HEAD_LIST;
+    const kindsAt = heads.len, perKind = 52 * 4;
+    const all = new Uint8Array(kindsAt + (heads.len / 4) * perKind);
+    all.set(heads.bytes);
+    for (let k = 0; k < heads.len / 4; k++) {
+        const src = heads.view.getUint32(k * 4, true), to = kindsAt + k * perKind;
+        for (let i = 0; i < perKind; i += 4) new DataView(all.buffer).setUint32(to + i, program.u32(src + i), true);
+        new DataView(all.buffer).setUint32(k * 4, heads.at + to, true);
+    }
+    Object.assign(heads, { bytes: all, view: new DataView(all.buffer), lists: kindsAt, perKind });
+    R.guest = { ...G, tables };
+
     /* The HUD's tiles (_Scroll_Initialize n: _ScrollCG_Initialize n, then
      * _ScrollColor_Initialize n + 1). The scroll table's entry is a list of
      * (source, destination) pairs ended by a zero source, each source a count
@@ -341,7 +389,7 @@ async function importStf(R) {
  * channel-type byte for each of the 20 objects), a count byte per keyed
  * channel, then (four-aligned) the key times and the values. */
 function motionEnd(r, off) {
-    const LINEAR = 1, HERMITE = 2, ZERO = 3, CONST = 4;
+    const ZERO = 3, LINEAR = 5, HERMITE = 6;
     const types = [];
     for (let j = 0; j < 20; j++) {
         const b = r.src[off + 2 + j], top2 = (b >> 6) & 3;
@@ -388,6 +436,11 @@ const R = {};
 for (const [name, L] of Object.entries(SFIGHT)) if (L.pairs) R[name] = new Region(name, L, files);
 
 await importStf(R);
+/* the guests: VF2's Akira as StF's character 6 (tools/vf2-guest.mjs) */
+const NG = await loadNodeGames();
+for (const line of importAkira(R, NG.vf2.rom, NG.stf.rom).report) console.log(`Akira: ${line}`);
+/* the guest tables, as they are after every guest's entries */
+for (const [name, t] of Object.entries(R.guest.tables)) R.main.put(t.at - MAIN_DATA, t.bytes, `guest ${name}`);
 
 const dir = `${OUT}/sfight`;
 mkdirSync(dir, { recursive: true });
