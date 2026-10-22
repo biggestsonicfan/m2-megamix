@@ -523,9 +523,32 @@ Hard-coded characters, by id:
   check. A VF2 fighter's stance ends the way his does now, so there is
   nothing to swap in. It stays on this list only because the check is still
   by StF id: a guest put in slot 5, 8, 9 or 11 would skip the reset.
-- The command decoder at `loc_1E0A0` (11322) leaves out the same four ids;
-  Akira takes the rest of the cast's path. → A per-character flag table
-  (a guest one) in place of the ids, if a guest should not.
+- The command decoder at `loc_1E0A0` (11322) runs when a direction is held
+  (r8 & 0xF0; bit 4 is down, r6 and r7 the forward and back bits) and no
+  command matched. For everyone but 5, 8, 9 and 11, if w0 bit 29 is clear
+  and down is held, it commits 1 << 25 (type 2) at rob+0x194, whatever
+  forward or back do. Otherwise it goes to `loc_1E0E4`, the forward and
+  back tree (3 << 24, 5 << 24, 1 << 26, 7 << 25 or 1 << 24, by 0x5B8 bit 0
+  and the motion kind at rob+0x19F). Akira takes the first path. Left as
+  it is, because VF2's decoder (0x1C4B8, the same code up to here) matches
+  neither path:
+  - It has no character check and no w0 bit 29 test.
+  - With down held it runs a tree of its own: down with forward commits
+    5 << 24 (type 5). Down with back commits 1 << 27 (type 8) if 0x5B8
+    bit 0 is set, else 3 << 25 (type 6). Down alone commits 1 << 25
+    (type 2), and only that one is the same as his path now. Each commit
+    is skipped for some motion kinds (29, 30, VF2's numbers).
+  - Without down it runs the forward and back tree, with other kinds
+    (26, 18, 19) than StF's (22, 14, 15).
+
+  VF2's types 5 and 6 have no StF type in the importer's `COMMIT_TYPE`.
+  StF's kinds are not known to mean VF2's. The difference is in code, not
+  in a number: there is no value to give him. Getting VF2's down tree would
+  need a `char_game` branch in StF's decoder (the shared path), and putting
+  him on the 5/8/9/11 path would take away his crouch. Neither is done.
+  What he has now: down alone is VF2's, and down-forward and down-back act
+  as down. → Only with a guest decoder of his own (VF2's tree, its types
+  mapped), not a change to StF's.
 - `sub_2EF9C` (17178): Espio (7, 33) only. Super Sonic (`damage_calculation`
   7986, `original_combo_control` 10184, the check at 9283: 0, 16 and robot
   opponents 3, 11, 13), `egg_robo_condition` (20340) and the intro anim
