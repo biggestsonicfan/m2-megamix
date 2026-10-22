@@ -496,10 +496,20 @@ Acting on him now:
   `char_game` gate in `cam_mode_10` would change the shared path; neither
   is done. A throw of an StF fighter's on him still gets its camera (the
   thrower's id is StF's). → Only once a VF2 equivalent is found.
-- **Opponent mask:** command op `loc_1EA88` (11984) tests a bit by the
-  opponent's character. Akira has bit 6, Knuckles', so a StF script that
-  singles out Knuckles singles him out. → A bit of his own, or check the
-  scripts.
+- **Opponent mask:** command op 0x21, `loc_1EA88` (11984), tests bit
+  rob+0x1B1 of the opponent (the parent character) in the op's 32-bit mask.
+  Akira's 1B1 is 6, Knuckles'. Left as it is, because no script tests bit 6.
+  StF's programs use the op with only four masks: 0x4, 0x10, 0x80 and 0x400
+  (Amy, Fang, Espio and Bean), each in 8 of the programs. No StF script
+  singles out Knuckles, so none singles out Akira, and he passes and fails
+  each test the way an id no mask holds would. VF2's handler for op 0x21
+  (0x1CDA8) is the same code as StF's, but none of VF2's 11 programs, his
+  included, uses it. That leaves him no mask and no bit of his own to take
+  from VF2. A bit of his own would mean a 1B1 other than 6, which StF's
+  code reads as his parent character everywhere (the shared path). It would
+  also change no test's result, so it is not done. → Only if a script that
+  tests bit 6 comes in, or one of his own that uses op 0x21. (The grader
+  still lists the item as open.)
 
 Hard-coded characters, by id:
 - `selected_player_check` (1471) and the command decoder at `loc_1E0A0`
