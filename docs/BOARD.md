@@ -5,8 +5,8 @@
 two program EPROMs (epr-19001/19002) and nothing else. It is not a patch of
 Sonic the Fighters: StF's program is the map (its disassembly, its symbols in
 `stf-fly/data/symbols.json`, and Sega's own C for its hot functions in
-`m2-hle2/vendor/gems-c`), and its data ROMs stay on the board as the asset
-store.
+`m2-hle2/vendor/gems-c`). The data ROMs are StF's file names and layout, but
+hold only the assets the board uses (see "The data ROMs" below).
 
 The aim: a versus-only fighter (two players, no CPU) with fighters and a few
 stages from each of the three games, as in the browser game.
@@ -16,12 +16,13 @@ stages from each of the three games, as in the browser game.
 ```sh
 node tools/bake-board.mjs                       # board/src/poses.h, from $ROMS_DIR's zips
 python3 tools/lift-stf.py                       # board/src/stf_motion.{s,h}, stf_rom_c0000.bin
+node tools/import-assets.mjs                    # board/roms/sfight/'s data ROMs, from $ROMS_DIR's sfight.zip
 cmake -G "Unix Makefiles" -B <build> -S board   # m2-sdk beside this checkout
 make -C <build> -j2                             # -> board/roms/sfight/epr-19001.15, epr-19002.16
-mame sfight -rompath "board/roms;$ROMS_DIR"
+mame sfight -rompath board/roms
 ```
 
-MAME reports wrong checksums for the two program EPROMs; that is expected.
+MAME reports wrong checksums for every ROM of the set; that is expected.
 `M2_HLE_GEO_OFF=1` in the environment runs MAME's real geometrizer program
 instead of its HLE; both draw the same picture.
 
@@ -32,6 +33,34 @@ and data and are not in git.
 table B (2048 entries, not 512): StF's stage sets need up to 1178, and the
 SDK's size drops six of their pages. It keeps the SDK's include guard and is
 included in place of it; the SDK itself is used unchanged.
+
+## The data ROMs
+
+`tools/import-assets.mjs` writes `board/roms/sfight/`'s data ROMs: each starts
+zero-filled and gets only what the board reads, at StF's own address, so StF's
+pointers, its program-ROM tables and the code lifted from it find everything
+where it always was. From StF it takes the luma ramp, the polygon palette, the
+model-table entries, meshes and texture streams of every model the board draws
+(the stages in `poses.h`, and every part StF's code can put on the cast:
+the character records' lists, the hand, foot and body swaps and the head
+lists), the texture codec's table, the fighters' and stages' texture sets,
+the stages' colour blocks, all 519 motions (the lifted reaction code picks
+them from tables of its own), the HUD's scroll tiles and patterns, and from
+the coprocessor's data ROM the sine and cosine tables StF's coprocessor
+firmware (cpres1, which the SDK boots) reads. The sound program, the samples
+and the billboard's program (`segabill`'s epr-18022) are zeros: the board
+never reads them. Of 53 MB of data it keeps about 4 MB;
+`board/roms/assets.txt` lists every run it kept, by region, address and
+reason.
+
+The sets in `$ROMS_DIR` are read only by this import (and the bake): the board
+runs on `board/roms` alone. VF2's and Fighting Vipers' assets will be imported
+by further steps of the same script, into the space StF's leave free.
+
+A run with the stripped ROMs draws the same frames as one with StF's full set
+(the same inputs, a snapshot every 40 frames through all 18 pairings on both
+stages), and a read trace of the board finds no word it reads that the import
+left out.
 
 ## How a fighter is drawn
 

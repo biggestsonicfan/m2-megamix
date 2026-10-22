@@ -18,7 +18,8 @@ HUD are plain text, in the style of a debug menu.
 ## On the board
 
 `board/` is the same game growing as a new program for the Sonic the Fighters
-board (Model 2B), built on m2-sdk. See `docs/BOARD.md`.
+board (Model 2B), built on m2-sdk, on data ROMs that hold only the assets it
+uses (`tools/import-assets.mjs`). See `docs/BOARD.md`.
 
 ## Running
 

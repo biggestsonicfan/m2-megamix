@@ -6,6 +6,7 @@ cmake_minimum_required(VERSION 3.20)
 #   node tools/bake-board.mjs                        (board/src/poses.h, from the ROM sets)
 #   python3 tools/lift-stf.py                        (board/src/stf_motion.s, .h, stf_rom_80000.bin,
 #                                                     from the StF disassembly)
+#   node tools/import-assets.mjs                     (board/roms/sfight/'s data ROMs, only the assets used)
 #   cmake -G "Unix Makefiles" -B <build> -S board
 #   make -C <build> -j2                              -> board/roms/sfight/epr-19001.15, epr-19002.16
 #
@@ -55,8 +56,8 @@ endif()
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
-# roms/sfight/: the program EPROM pair. Put the folder before the stock sfight.zip
-# on MAME's -rompath.
+# roms/sfight/: the program EPROM pair, beside the data ROMs tools/import-assets.mjs
+# writes there. MAME runs it with -rompath board/roms alone.
 set(ROM_DIR "${CMAKE_SOURCE_DIR}/roms/sfight")
 add_custom_target(rom ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory "${ROM_DIR}"
