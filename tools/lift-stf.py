@@ -94,12 +94,15 @@ GUEST_BASE = 0x02E00000
 # char_game is the board's own too: a byte by character (52, player 2's 26
 # on), the game the character comes from (GAMES: 0 StF, the zeros it starts
 # as), which code that treats another game's fighter its own way branches on.
+# rob_coli_ball_types: a list by skeleton type (rob+0x84C) of lists by
+# character of collision-ball records; the lists are copied into its room.
 GUESTS = [('CHAR_PARTS', 0x100, 52 * 4), ('SKELETON_TYPE_DATA', 0x400, 4 * 4),
           ('MOVESET_ARRAY', 0x100, 24 * 4), ('player_hand_animations', 0x100, 52 * 4),
           ('player_foot_animation', 0x100, 52 * 4), ('player_body_animation', 0x100, 52 * 4),
           ('PLAYER_HEAD_LIST', 0x1800, 21 * 4), ('animation_related', 0x2000, 519 * 4),
           ('offset_list_motions', 0x2000, 519 * 4), ('ptr_DA0B4', 0x80, 26 * 4),
-          ('motion_remap', 0x80, 26 * 4), ('char_game', 0x40, 52)]
+          ('motion_remap', 0x80, 26 * 4), ('char_game', 0x40, 52),
+          ('rob_coli_ball_types', 0x400, 4 * 4)]
 GAMES = [('STF', 0), ('VF2', 1), ('FV', 2)]      # char_game's values (GAME_<name>)
 # Code put in at a label of StF's, before what is there. sub_2B94C picks a
 # hit's reaction from the defender's table: (side)[category * 8], +2 from

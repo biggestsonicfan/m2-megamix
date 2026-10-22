@@ -370,6 +370,24 @@ with a heap after them.
   16384.0), a quarter turn, in nearly all of VF2's motions. Scaled, it rolled
   his pelvis half a turn: his waist rode high, his legs went straight and wide
   and he leaned forward in his stance.
+- **Collision balls:** `rob_coli_ball_table_all_init` (stf_motion.s 125)
+  copies a fighter's balls from `rob_coli_ball_types`, now a guest table:
+  four lists by skeleton type (rob+0x84C) of 52 records by character. A
+  record is four pointers: the balls (32 × x, y, z, r in their part's
+  frame), the part each ball rides, the balls by part (ball × 4, 8 bytes a
+  part) and the count by part. Types 0 and 1 share one list, type 2 is one
+  record every character shares, and type 3's list is used from its second
+  half. VF2 has one set for its whole cast (code 0x176A0): 30 balls at
+  0x020078A8, a list pointer by part at 0x02007BEE and a count by part at
+  0x02007C68, by VF2's part index, which is his StF part index too. The
+  importer turns them into a record of his (×`SCALE`) and points characters
+  6 and 32 at it in types 0, 1 and 3 (both halves); StF's records and type 2
+  are as they were. Checked in MAME and m2-hle2 (Akira against Honey): his
+  balls in RAM are VF2's ×2.03 (a 0.26 head, 0.14 fists, in place of
+  Knuckles' 0.32 head), the copro's part matrices carry them
+  with his body (he pushes Honey back ball to ball, gap about 0, and his
+  second and third punches take her from 140 to 128 to 117, the same frames
+  and values on both), and Honey's tables are byte for byte StF's record.
 - **Game:** `char_game` (a guest table of the board's own, at
   `STF_GUEST_char_game`, 0x02E06200) is a byte by character, 52 of them
   (player 2's 26 on): the game the character comes from, `GAME_STF` (0, what
@@ -402,11 +420,6 @@ changed). Line numbers are `stf_motion.s`'s. What a VF2 or FV fighter
 should get is after the arrow.
 
 Acting on him now:
-- **Collision balls:** `rob_coli_ball_table_all_init` (125) reads
-  `rob_coli_ball_types` (0xC9B30)[0x84C][0x1B0], not a guest table. Akira
-  gets Knuckles' set (0xCB130: balls in Knuckles' bone space, a 0.32 head),
-  so his hurt and push balls are a Sonic-sized fighter's. → A guest table,
-  with his balls from VF2's collision data, ×`SCALE`.
 - **Record fields:** `vf2-guest.mjs` (603) copies Knuckles' 0x30-byte record
   and replaces only +0, +8 and +0xC. The rest are StF's (shared by the
   cast): +0x10 (0xC50F8) the distances `get_en_info` (7186) judges
@@ -462,7 +475,8 @@ guest copy.
 
 Already his own or fine: `CHAR_PARTS`, `MOVESET_ARRAY`, `ptr_DA0B4`,
 `motion_remap`, `SKELETON_TYPE_DATA` (all four kinds), the hand, foot,
-body and head lists, `char_game`; `_uk_gravity` (0.0, as Sonic's). In C,
+body and head lists, `char_game`, `rob_coli_ball_types` (his collision
+balls, above); `_uk_gravity` (0.0, as Sonic's). In C,
 `rob_init`, `draw_fighter` and `load_palettes` read the guest tables and
 `char_game`. The camera (`camera_place`, `cam_mode_9`/`10`) reads no
 character, only positions, flags and the motion id; it aims at root

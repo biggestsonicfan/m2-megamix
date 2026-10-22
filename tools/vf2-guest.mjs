@@ -40,6 +40,9 @@ const VF2_NATIVE_TAIL = 0x1d194;
 const VF2_REACTIONS = 0x0201ccfc;
 const VF2_HANDS = 0x3c;                  /* record +0x3C: 32 shapes a hand, slot 5 then 8 at +0x180 */
 const SKELETON = 4, SKELETON_BYTES = 15 * 12;
+/* The collision balls, one set for the cast (0x176A0): their points (x, y,
+ * z, r), a list pointer by part (bytes, ball * 4) and a count by part. */
+const VF2_BALLS = { points: 0x020078a8, count: 30, lists: 0x02007bee, counts: 0x02007c68 };
 
 /* The polygon ROM's empty run (docs/STF-BOARD-AKIRA.md, "What fits where"). */
 const POLY_RUN = 0xec2578, POLY_RUN_END = 0xec2578 + 0x13da88;
@@ -626,6 +629,43 @@ export function importAkira(R, vf2, stf) {
             Object.assign(t, { bytes: b, view: v, lists: 0x10, perKind: per });
         }
         for (let k = 0; k < 4; k++) for (const c of [CHR, CHR + PLAYER2]) t.view.setUint32(t.lists + k * per + c * 4, skel, true);
+    }
+
+    /* Collision balls: rob_coli_ball_types[type][character] (rob+0x84C, the
+     * skeleton type; rob_coli_ball_table_all_init) names a record of four
+     * pointers: the balls (32, each x, y, z in its part's frame and r), the
+     * part each ball rides (32 words), each part's balls (16 lists of 8
+     * bytes, ball * 4, ended by a 0 after the first) and each part's count
+     * (16 bytes). VF2 keeps the same, one set for its whole cast (0x176A0):
+     * 30 balls, a count and a list pointer by part. His parts are VF2's, so
+     * only the lengths change: x, y, z and r, ×SCALE. Types 0, 1 and 3 (both
+     * of its halves) are his; type 2 is one set every character shares. */
+    {
+        const t = T.rob_coli_ball_types, from = program.u32(t.src), to = t.at + 0x10, n = 0x340;
+        if (!t.lists) {
+            const b = new Uint8Array(0x10 + n), v = new DataView(b.buffer);
+            for (let i = 0; i < n; i += 4) v.setUint32(0x10 + i, program.u32(from + i), true);
+            for (let k = 0; k < 4; k++) v.setUint32(k * 4, to + program.u32(t.src + k * 4) - from, true);
+            Object.assign(t, { bytes: b, view: v, lists: 0x10 });
+        }
+        const balls = new Uint8Array(32 * 16), part = new Array(32).fill(0);
+        const lists = new Uint8Array(16 * 8), counts = new Uint8Array(16);
+        for (let s = 0; s < 16; s++) {
+            counts[s] = bytes(vf2, VF2_BALLS.counts + s, 1)[0];
+            if (!counts[s]) continue;
+            const list = bytes(vf2, d32(VF2_BALLS.lists + s * 4), counts[s]);
+            list.forEach((x, k) => { lists[s * 8 + k] = x; part[x >> 2] = s; });
+        }
+        balls.set(bytes(vf2, VF2_BALLS.points, VF2_BALLS.count * 16));
+        scaleFloats(balls, 0, VF2_BALLS.count * 4);
+        const rec = u32s([
+            alloc(balls, 'balls', 16), alloc(u32s(part), 'ball parts', 16),
+            alloc(lists, 'part balls', 16), alloc(counts, 'part ball counts', 16),
+        ]);
+        const recAt = alloc(rec, 'ball record', 16);
+        const at = (k) => t.view.getUint32(k * 4, true) - t.at;
+        for (const list of [at(0), at(1), at(3), at(3) + 52 * 4])
+            for (const c of [CHR, CHR + PLAYER2]) t.view.setUint32(list + c * 4, recAt, true);
     }
 
     const hands = [];
