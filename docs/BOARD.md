@@ -394,11 +394,13 @@ sets up what StF's game loop would have set up around it.
   in the real fight RAM. With them overridden it returned 100.0 and nobody
   stopped at the ropes.
 - Damage only lands while game_timer (0x500028, seconds << 6) is above 0.
-  The board starts it at 30 << 6 and counts it down once a frame.
+  The board starts it at the setup's time << 6 and counts it down once a
+  frame.
 - A round ends on a KO (rob w0 bit 5, energy at +0x1AC reaching 0) or when
   the clock runs out; the fighter with more energy takes the win
-  (p1_wins 0x50004F, p2_wins 0x500051, two to win). Three seconds later
-  the next round starts with both fighters reset.
+  (p1_wins 0x50004F, p2_wins 0x500051, the setup's round count to win).
+  Three seconds later the next round starts with both fighters reset, or,
+  once a fighter has won the match, the setup comes back.
 - HUD: StF's own `energy_disp`, `barrier_left_disp`, `time_dsp`,
   `win_lamp_dsp` and `win_lamp_int`, with the board's game_disp block
   (0x500834; w0 0x84800000, lamp bytes as in the real block) in g13. They
@@ -432,13 +434,54 @@ sets up what StF's game loop would have set up around it.
   rob+0x1B1 the parent. `ADV_CPU_BATTLE_INT` sets 1B1 = 1B0 - 0x1A, and a
   real P2 Honey alternate has 1B0 0x24, 1B1 0x0A.
 
+## Game setup
+
+The board boots into a setup window in the style of StF's debug menu
+(`DEBUG_PARAMETER_SET`, its `PARAMETER_SET` window), drawn over the live
+stage: the two fighters stand in their stance behind it, with the clock
+held, and a change of stage or fighter shows at once.
+
+    GAME_SETUP
+     GAME_START
+     time        30   round time, 1..99 s (game_timer 0x500028)
+     round        2   wins to take the match, 1..5 (0x500052, the lamps)
+     stage        0   South Island, Aurora Icefield
+          0:SOUTH_ISLAND
+     1P CHAR  SONIC   Sonic, Honey, Eggman, Akira
+     2P CHAR  HONEY
+     energy     140   energy_max (0x5000A0), 10..250; the bars scale by it
+     barrier      5   barrier_default_num (0x50A424), 0..9
+
+- Controls, either player, as in StF's menu: up and down move the cursor,
+  kick raises a value and punch lowers it (both wrap), guard held repeats
+  them. Start, or punch or kick on GAME_START, starts the match. Both
+  starts at once during a fight go back to the setup; so does the end of
+  a match.
+- The look is StF's own tile words, on tile layer 1 (0x01002000): the blue
+  frame 0x8200..0x8207, text 0x8000 | ascii, the inverse title and values
+  0x8080 | ascii (a black box, palette bank 1), the cursor 0x801C. The
+  board's character RAM already holds StF's font and frames there.
+- Tile layers 0 and 1 share a window mask (tile RAM 0x0100C000, four
+  words a line, a bit per 8 pixels, top bit leftmost): layer 1 shows only
+  where its bit is set. StF sets it over its window (lines 160..271, x
+  64..255, for its PARAMETER_SET); the board sets it over the setup's frame
+  and clears it for the fight, where the HUD is on layer 0.
+- Black: palette colours show through colorxlat row c at luma 0x40, and
+  MAME reads 0..0x40 there as 0, which the tile layers treat as
+  see-through. The fight's band (`flat_cx`, as in StF's fight) has 0 for
+  component 0, so the font's black outlines vanish; the setup writes 0x41
+  there and the fight's start puts 0 back. m2-hle2 shows the window, the
+  boxes and the outlines the same.
+- `m2_backdrop` (the stage's backdrop colour) takes pen 1, the font's
+  white, and fills layer 0 with its solid tile: a stage switch from the
+  setup keeps pen 1 and clears layer 0, as the boot does.
+
 ## Where it stands
 
-Two fighters (start cycles each player's: Sonic, Honey, Eggman, Akira) stand
+Two fighters (Sonic, Honey, Eggman or Akira, picked in the setup) stand
 facing each other and play their stance motion with StF's own motion code
 (60 Hz steps, drawn at 30 fps), on one of two of
-StF's stages, South Island and Aurora Icefield (player 1's start with down held switches
-between them). The stages are drawn from StF's stage records with its
+StF's stages, South Island and Aurora Icefield (see Game setup). The stages are drawn from StF's stage records with its
 textures, colours, materials, light, colour cycling, and the sea and
 aurora. South Island matches StF's own picture closely. They push, hit and
 knock each other down, rounds end on a KO or the clock, and StF's HUD shows

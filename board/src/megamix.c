@@ -347,6 +347,8 @@ static void fight_step(const u32 pad[2]) {
 /* A round: both fighters back to their marks, the collision task, the
  * clock at StF's 30 seconds (MES_READY_INT: time << 6; the collision task
  * only deals damage while it runs). */
+static u32 round_time = 30u;             /* seconds, the setup menu's time */
+
 static void round_start(fighter_t fs[2]) {
     u32 i;
     for (i = 0; i < 2u; i++) {
@@ -362,11 +364,9 @@ static void round_start(fighter_t fs[2]) {
     stf_task(stf_coli_init, stf_coli, robs[0], robs[1]);
     for (i = 0; i < 2u; i++) rob_start(i);
     stf_task(stf_cam_mode_9, stf_cam, robs[0], robs[1]);
-    *(short *)stf_ram(0x500028u) = 30 << 6;
+    *(short *)stf_ram(0x500028u) = (short)(round_time << 6);
     /* the HUD, as MES_ROUND_INT and MES_READY_INT leave it: both bars
      * from empty, the lamps (clear_win_lamp_cntr's, then win_lamp_int) */
-    if (*(u8 *)stf_ram(0x50004Fu) >= 2u || *(u8 *)stf_ram(0x500051u) >= 2u)
-        *(u8 *)stf_ram(0x50004Fu) = *(u8 *)stf_ram(0x500051u) = 0u;
     for (i = 0; i < sizeof stf_disp / 4; i++) stf_disp[i] = 0u;
     stf_disp[0] = 0x84800000u;
     for (i = 0; i < 10u; i++) {
@@ -669,10 +669,133 @@ static void load_fighter_colors(const pose_anim_t *p1, const pose_anim_t *p2) {
 
 static u32 edges(u32 now, u32 *held) { u32 e = now & ~*held; *held = now; return e; }
 
+/* ---- The setup menu ----
+ *
+ * A window in the style of StF's debug menu (PARAMETER_SET, which it opens
+ * with 2P start held in debug mode): on tile layer 1, StF's own tile words.
+ * The frame is tiles 0x200..0x207 (corners, edges), the font is ASCII at
+ * codes 0x00..0x7F and drawn inverse at +0x80; every word carries 0x8000.
+ * The title is inverse on the first row, the cursor (0x1C) left of the
+ * labels, each value inverse and right-aligned one tile in from the frame,
+ * and a name line (the stage's) right-aligned one tile further in. As in
+ * StF's window: up and down move, punch lowers a value and kick raises it,
+ * with guard held they repeat. Start begins the fight. */
+#define TILE_L1    ((volatile u16 *)0x01002000u)
+#define WIN_COL    18u
+#define WIN_ROW    3u
+#define WIN_W      26u
+#define T_TEXT     0x8000u
+#define T_INV      0x8080u
+#define T_CURSOR   0x801Cu
+enum { M_START, M_TIME, M_ROUND, M_STAGE, M_P1, M_P2, M_ENERGY, M_BARRIER, M_ITEMS };
+static const char *const menu_label[M_ITEMS] = {
+    "GAME_START", "time", "round", "stage", "1P CHAR", "2P CHAR", "energy", "barrier" };
+/* each value's range and step: the clock in seconds (StF's time, 1..99),
+ * the rounds to win (0x500052, the lamps StF draws), the energy a round
+ * starts with (energy_max, 0x5000A0, which the bars scale by) and the
+ * barriers a match starts with (barrier_default_num, 0x50A424) */
+static const u16 menu_min[M_ITEMS]  = { 0, 1, 1, 0, 0, 0, 10, 0 };
+static const u16 menu_max[M_ITEMS]  = { 0, 99, 5, STAGES - 1, POSE_ANIMS - 1, POSE_ANIMS - 1, 250, 9 };
+static const u16 menu_step[M_ITEMS] = { 0, 1, 1, 1, 1, 1, 10, 1 };
+static u16 menu_val[M_ITEMS] = { 0, 30, 2, 0, 0, 1, 140, 5 };
+static const char *const fighter_name[POSE_ANIMS] = { "SONIC", "HONEY", "EGGMAN", "AKIRA" };
+static const char *const stage_name[STAGES] = { "SOUTH_ISLAND", "AURORA_ICEFIELD" };
+static u32 menu_cur;
+
+static u32 slen(const char *s) { u32 n = 0; while (s[n]) n++; return n; }
+
+static void win_put(u32 col, u32 row, const char *s, u32 base) {
+    volatile u16 *t = TILE_L1 + (WIN_ROW + row) * 64u + WIN_COL + col;
+    while (*s) *t++ = (u16)(base | (u8)*s++);
+}
+
+/* n in decimal, into b (at least 6 bytes) */
+static const char *dec(u32 n, char *b) {
+    char *p = b + 5;
+    *p = 0;
+    do { *--p = (char)('0' + n % 10u); n /= 10u; } while (n && p > b);
+    return p;
+}
+
+/* tile layers 0 and 1 share a window mask: four words a line, a bit
+ * for each 8 pixels (the top bit leftmost), set where layer 1 shows in
+ * place of layer 0. StF's windows set it over their frame. */
+#define TILE_MASK  ((volatile u16 *)0x0100C000u)
+
+static void menu_mask(u32 on) {
+    u32 y, c;
+    /* a palette colour's component c shows through colorxlat row c at
+     * luma 0x40, and black there is see-through on the tile layers (MAME
+     * reads 0..0x40 as 0): 0x41, the darkest it draws, gives the font's
+     * black outlines and the values' black boxes, as StF's menu shows them;
+     * 0 again restores the fight's band as StF has it */
+    for (c = 0; c < 3u; c++)
+        *(volatile u16 *)(M2_COLORXLAT + c * 0x4000u + 0x40u * 2u) = on ? 0x41u : 0u;
+    for (y = 0; y < 384u; y++)
+        for (c = 0; c < 4u; c++) TILE_MASK[y * 4u + c] = 0u;
+    if (!on) return;
+    for (y = WIN_ROW * 8u; y < (WIN_ROW + M_ITEMS + 5u) * 8u; y++)
+        for (c = WIN_COL; c < WIN_COL + WIN_W; c++)
+            TILE_MASK[y * 4u + (c >> 4)] |= (u16)(0x8000u >> (c & 15u));
+}
+
+static void menu_clear(void) {
+    u32 i;
+    for (i = 0; i < 64u * 64u; i++) TILE_L1[i] = 0x8020u;
+    menu_mask(0u);
+}
+
+static void menu_draw(void) {
+    u32 rows = M_ITEMS + 5u, r, c, i;     /* the frame, title, items, name line, a blank */
+    char b[24];
+    for (r = 0; r < rows; r++) {
+        volatile u16 *t = TILE_L1 + (WIN_ROW + r) * 64u + WIN_COL;
+        u32 edge = r == 0u ? 0x8200u : r == rows - 1u ? 0x8205u : 0x8203u;
+        t[0] = (u16)edge;
+        for (c = 1; c < WIN_W - 1u; c++) t[c] = (u16)(r == 0u ? 0x8201u : r == rows - 1u ? 0x8206u : 0x8020u);
+        t[WIN_W - 1u] = (u16)(edge + (r == 0u || r == rows - 1u ? 2u : 1u));
+    }
+    win_put(1, 1, "GAME_SETUP", T_INV);
+    for (i = 0, r = 2; i < M_ITEMS; i++, r++) {
+        const char *v = 0;
+        if (i == menu_cur) TILE_L1[(WIN_ROW + r) * 64u + WIN_COL + 2u] = T_CURSOR;
+        win_put(3, r, menu_label[i], T_TEXT);
+        if (i == M_P1 || i == M_P2) v = fighter_name[menu_val[i]];
+        else if (i != M_START) v = dec(menu_val[i], b);
+        if (v) win_put(WIN_W - 2u - slen(v), r, v, T_INV);
+        if (i == M_STAGE) {               /* the name line, as StF's "15:ADV_MOV2" */
+            const char *n = stage_name[menu_val[i]];
+            const char *d = dec(menu_val[i], b);
+            u32 len = slen(d) + 1u + slen(n);
+            r++;
+            win_put(WIN_W - 3u - len, r, d, T_TEXT);
+            win_put(WIN_W - 3u - len + slen(d), r, ":", T_TEXT);
+            win_put(WIN_W - 3u - slen(n), r, n, T_TEXT);
+        }
+    }
+}
+
+/* One pass of the menu on the pads' new presses (e) and held bits (h),
+ * StF's pad bits. Returns the item whose value changed, M_START when the
+ * fight is to begin, or M_ITEMS for neither. */
+static u32 menu_input(u32 e, u32 h, u32 start) {
+    u32 i = menu_cur, v;
+    if (h & 4u) e |= h;                  /* guard held: repeat, as StF's window does */
+    if (start || (i == M_START && (e & 3u))) return M_START;
+    if (e & 0x10u) { menu_cur = (menu_cur + 1u) % M_ITEMS; return M_ITEMS; }
+    if (e & 0x20u) { menu_cur = (menu_cur + M_ITEMS - 1u) % M_ITEMS; return M_ITEMS; }
+    if (i == M_START || !(e & 3u)) return M_ITEMS;
+    v = menu_val[i];
+    if (e & 2u) v = v + menu_step[i] > menu_max[i] ? menu_min[i] : v + menu_step[i];
+    else v = v < menu_min[i] + menu_step[i] ? menu_max[i] : v - menu_step[i];
+    menu_val[i] = (u16)v;
+    return i;
+}
+
 int main(void) {
     fighter_t fs[2];
-    u32 i, pick[2] = { 0u, 1u }, stage = 0u;
-    u32 held = 0u, vbl, step = 0u, over = 0u;
+    u32 i, stage = 0u;
+    u32 held = 0u, pheld = 0u, vbl, step = 0u, over = 0u, in_menu = 1u, quit = 0u;
 
     m2_init();
     m2_silicon_boot();
@@ -682,37 +805,69 @@ int main(void) {
     tex_load_set(SET_FIGHTERS);
     load_palettes();
     load_stage(&stages[stage]);
-    load_fighter_colors(&pose_anims[pick[0]], &pose_anims[pick[1]]);
+    load_fighter_colors(&pose_anims[menu_val[M_P1]], &pose_anims[menu_val[M_P2]]);
     for (i = 0; i < 8u; i++) { m2_frame_begin(); m2_frame_end(); }
 
     stf_globals();
     stf_camera();
     /* StF's tiles and their colours: the set the boot loads (the clock's
-     * digits, the bars), then the fight's, as MES_ROUND_INT loads them */
+     * digits, the bars, the debug font and frames), then the fight's, as
+     * MES_ROUND_INT loads them */
     stf_call(stf__Scroll_Initialize, robs[0], robs[1], 0u);
     stf_call(stf__Scroll_Initialize, robs[0], robs[1], 70u);
     stf_call(stf__Scroll_Initialize, robs[0], robs[1], 170u);
     for (i = 0; i < 64u * 64u; i++) M2_TILE_FG[i] = 0x20u;   /* StF's blank (clr_pattern_s) */
-    for (i = 0; i < 2u; i++) fs[i].anim = &pose_anims[pick[i]];
+    menu_clear();
+    menu_mask(1u);
+    fs[0].anim = &pose_anims[menu_val[M_P1]];
+    fs[1].anim = &pose_anims[menu_val[M_P2]];
     round_start(fs);
     vbl = frameVBL;
     for (;;) {
         m2_player_t p[2];
-        u32 e, pad[2];
+        u32 e, pad[2] = { 0u, 0u };
         p[0] = m2_player(0); p[1] = m2_player(1);
-        pad[0] = pad_bits(&p[0]); pad[1] = pad_bits(&p[1]);
-        /* start changes that player's fighter; P1's start with down held, the stage */
-        e = edges((u32)(p[0].start && !p[0].down) | (u32)p[1].start << 1 |
-                  (u32)(p[0].start && p[0].down) << 2, &held);
-        for (i = 0; i < 2u; i++)
-            if (e & (1u << i)) {
-                pick[i] = (pick[i] + 1u) % POSE_ANIMS;
-                fs[i].anim = &pose_anims[pick[i]];
+        e = edges((u32)p[0].start | (u32)p[1].start << 1, &held);
+        if (in_menu) {
+            /* the setup window, on either pad; the fighters stand in their
+             * stance behind it, on the stage it picks, with the clock held */
+            u32 h = pad_bits(&p[0]) | pad_bits(&p[1]);
+            u32 c = menu_input(edges(h, &pheld), h, e & 3u);
+            if (c == M_STAGE) {
+                /* m2_backdrop takes pen 1 (the font's white) and layer 0 for
+                 * its field; StF's pen 0 is the backdrop here, as at boot */
+                u16 ink = M2_PALETTE[1];
+                stage = menu_val[M_STAGE];
+                load_stage(&stages[stage]);
+                M2_PALETTE[1] = ink;
+                for (i = 0; i < 64u * 64u; i++) M2_TILE_FG[i] = 0x20u;
+            }
+            if (c == M_P1 || c == M_P2) {
+                i = c == M_P1 ? 0u : 1u;
+                fs[i].anim = &pose_anims[menu_val[c]];
                 rob_init(i, &fs[i]);
                 rob_start(i);
+                load_fighter_colors(fs[0].anim, fs[1].anim);
             }
-        if (e & 4u) { stage = (stage + 1u) % STAGES; load_stage(&stages[stage]); }
-        if (e & 7u) load_fighter_colors(fs[0].anim, fs[1].anim);
+            if (c == M_START) {
+                round_time = menu_val[M_TIME];
+                stf_set(0x5000A0u, menu_val[M_ENERGY]);          /* energy_max */
+                stf_set(0x50A424u, menu_val[M_BARRIER]);         /* barrier_default_num */
+                *(u8 *)stf_ram(0x500052u) = (u8)menu_val[M_ROUND];
+                *(u8 *)stf_ram(0x50004Fu) = *(u8 *)stf_ram(0x500051u) = 0u;
+                menu_clear();
+                round_start(fs);
+                over = 0u;
+                in_menu = 0u;
+            } else {
+                menu_draw();
+                *(short *)stf_ram(0x500028u) = (short)(round_time << 6);
+            }
+        } else {
+            pad[0] = pad_bits(&p[0]); pad[1] = pad_bits(&p[1]);
+            /* both starts at once: back to the setup */
+            if ((e & 3u) && p[0].start && p[1].start) quit = 1u;
+        }
 
         m2_frame_begin();
         m2_obj_frame_setup();
@@ -730,9 +885,27 @@ int main(void) {
           step = frame_counter;
           while (n--) {
               fight_step(pad);
+              if (in_menu) continue;
               /* a knock-out (a fighter's w0 bit 5) or the clock's end: the
-               * next round three seconds later */
-              if (over) { if (!--over) round_start(fs); }
+               * next round three seconds later, or the setup once a
+               * fighter has won the match */
+              if (quit || over) {
+                  if (quit || !--over) {
+                      u32 won = menu_val[M_ROUND];
+                      if (quit || *(u8 *)stf_ram(0x50004Fu) >= won ||
+                          *(u8 *)stf_ram(0x500051u) >= won) {
+                          in_menu = 1u;
+                          for (i = 0; i < 64u * 64u; i++) M2_TILE_FG[i] = 0x20u;
+                          menu_mask(1u);
+                          *(u8 *)stf_ram(0x50004Fu) = *(u8 *)stf_ram(0x500051u) = 0u;
+                          round_start(fs);
+                          over = quit = 0u;
+                          break;
+                      }
+                      round_start(fs);
+                      over = 0u;
+                  }
+              }
               else if (((RW(robs[0], 0) | RW(robs[1], 0)) & 0x20u) ||
                        *(short *)stf_ram(0x500028u) <= 0) {
                   /* the round to the one with more energy left */
@@ -741,7 +914,7 @@ int main(void) {
                   over = 180u;
               }
           } }
-        hud_draw();
+        if (!in_menu) hud_draw();
         for (i = 0; i < 2u; i++) draw_fighter(&fs[i], i);
         *(volatile u32 *)ZCLIP_REG = 0xFFFF00FFu;
         m2_frame_commit();
