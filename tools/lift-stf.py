@@ -38,11 +38,12 @@ import tempfile
 # sub_1D47C: rob_control's command decoder (the pad to moves); coli_init and
 # collision: the collision task (hits, damage, the walls); get_game_info:
 # the task after it (each fighter's own state, and the angle and distance to
-# the other, which the fighters turn by).
+# the other, which the fighters turn by); cam_mode_9 and cam_mode_10: the
+# fight's camera (camera_work's modes for a round: 9 places it, 10 follows).
 ROOTS = ['set_motion', 'calc_rob_angle', 'calc_rob_angle_cont', 'calc_unit_mat', 'smooth_int', 'sub_7F0E8',
          'action_init', 'rob_action', 'sub_1D47C', 'coli_init', 'collision', 'get_game_info', 'cmd_native_tail',
          'cop_initialize_end2', '_Scroll_Initialize', 'energy_disp', 'barrier_left_disp', 'time_dsp',
-         'win_lamp_dsp', 'win_lamp_int']
+         'win_lamp_dsp', 'win_lamp_int', 'cam_mode_9', 'cam_mode_10']
 # Routines the board does not run (debug text, name plates, projectiles,
 # sound, ring scatter, Super Sonic's hair objects): `ret`.
 STUBS = ['print_mes', 'print_mes_ex', 'print_hex_w', 'debug_disp_hex', 'dsp_pattern_right',
@@ -63,6 +64,13 @@ LOW_TABLES = {'off_FE8'}
 # Tables read on past their end, into the next label's (off_1008's eight
 # pointers run through off_1010 into off_1018).
 RUN_ON = {'off_1008'}
+# Jump tables in the ROM range that hold code (the camera's script steps):
+# lifted with the code, as the copied ROM holds StF's addresses.
+ROM_CODE_TABLES = {'off_9C83C', 'off_9C848'}
+# Data blocks that point into themselves (the fight camera's motion table
+# and its scripts, `.short` halves and `.long`s): lifted as words, each
+# word that is an address inside the block made relative to its label.
+SELF_REL = {'word_6BE90'}
 ROM_LO, ROM_HI = 0x80000, 0x100000      # copied to the same addresses
 ROM_BIN = 'stf_rom_80000.bin'
 RAM_LO, RAM_HI = 0x500000, 0x600000     # StF's work RAM: moved into the board's
@@ -148,7 +156,7 @@ def main():
         return out, not is_data(i) or name_at[i] in RUN_ON
     def table(t):
         return (t in labline and is_data(labline[t]) and t not in NUMBERS
-                and (0x1000 <= addr.get(t, 0) < ROM_LO or t in LOW_TABLES))
+                and (0x1000 <= addr.get(t, 0) < ROM_LO or t in LOW_TABLES or t in ROM_CODE_TABLES))
     def code_ptr(t):
         return (t in labline and not is_data(labline[t]) and t not in NUMBERS
                 and not 0x3A00 <= addr.get(t, 0) < 0x3C00 and addr.get(t, 0) >= 0x1000)
@@ -221,6 +229,15 @@ def main():
         if i != prev:
             out.append('                .align  4')
         out.append(name_at[i] + ':')
+        if name_at[i] in SELF_REL:
+            lo = addr[name_at[i]]
+            hi = min(v for v in addr.values() if v > lo)
+            for o in range(lo, hi, 4):
+                w = int.from_bytes(rom[o:o + 4], 'little')
+                v = f'{name_at[i]}+0x{w - lo:X}' if lo <= w < hi else f'0x{w:X}'
+                out.append(f'                .long   {v}')
+            prev = nxt_start[i]
+            continue
         for c in lines(i)[0]:
             parts = c.split(None, 1)
             op, args = parts[0], (parts[1] if len(parts) > 1 else '')

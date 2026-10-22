@@ -132,7 +132,8 @@ static void camera_init(void) {
  * turn, then ang_y by VECTER_Y and ang_x by VECTER_X, and op 0x29 on
  * (0, 0, BRIGHT), from the camera before its scale. StF sends it to the geometrizer (slot 0xA0) before the stage
  * and, scaled by rob_light (1.0 but in a hit flash), before each fighter. It
- * is built once a stage, from the camera's start, and not turned with it. */
+ * is built every frame from the camera's turn (camera_stf), so it stays fixed
+ * in the world as the camera moves. */
 static float light[3];
 
 static void stage_light(const stage_t *st) {
@@ -340,6 +341,7 @@ static void fight_step(const u32 pad[2]) {
         stf_task((void (*)(void))RW(robs[p], 0xC), robs[p], robs[p], robs[p ^ 1u]);
     stf_task((void (*)(void))RW(stf_coli, 0xC), stf_coli, robs[0], robs[1]);
     stf_task(stf_get_game_info, stf_ctl[0], robs[0], robs[1]);
+    stf_task(stf_cam_mode_10, stf_cam, robs[0], robs[1]);
 }
 
 /* A round: both fighters back to their marks, the collision task, the
@@ -359,6 +361,7 @@ static void round_start(fighter_t fs[2]) {
     RW(stf_coli, 0x008) = sizeof stf_coli;
     stf_task(stf_coli_init, stf_coli, robs[0], robs[1]);
     for (i = 0; i < 2u; i++) rob_start(i);
+    stf_task(stf_cam_mode_9, stf_cam, robs[0], robs[1]);
     *(short *)stf_ram(0x500028u) = 30 << 6;
     /* the HUD, as MES_ROUND_INT and MES_READY_INT leave it: both bars
      * from empty, the lamps (clear_win_lamp_cntr's, then win_lamp_int) */
@@ -383,29 +386,25 @@ static void hud_draw(void) {
     stf_task(stf_win_lamp_dsp, stf_disp, robs[0], robs[1]);
 }
 
-/* The camera follows the fighters, after where StF's camera_cont has it
- * in a real fight (its own code is not lifted): half way to the point
- * between them, backing off as they part (more than
- * the 4.0 a round starts at), and turned to look at that point; a sixth of
- * the way there a pass. (The camera's place is in units 1.6 times the
- * fighters', as its scale is.) */
-static float cam_pos[3] = { 0.0f, CAM_Y, CAM_Z }, cam_mid[2] = { 0.0f, 0.0f };
-static void camera_follow(void) {
-    float x0 = *(float *)((u8 *)robs[0] + 0x18), x1 = *(float *)((u8 *)robs[1] + 0x18);
-    float z0 = *(float *)((u8 *)robs[0] + 0x20), z1 = *(float *)((u8 *)robs[1] + 0x20);
-    float dx = x1 - x0, dz = z1 - z0, l;
-    float d = m2_sqrtf(dx * dx + dz * dz);
-    float back = d > 4.0f ? (d - 4.0f) * 0.5f : 0.0f;
-    union { float f; u32 u; } v;
-    cam_mid[0] += ((x0 + x1) * 0.8f - cam_mid[0]) * (1.0f / 6.0f);
-    cam_mid[1] += ((z0 + z1) * 0.8f - cam_mid[1]) * (1.0f / 6.0f);
-    cam_pos[0] += (cam_mid[0] * 0.5f - cam_pos[0]) * (1.0f / 6.0f);
-    cam_pos[2] += (cam_mid[1] * 0.5f + CAM_Z - back - cam_pos[2]) * (1.0f / 6.0f);
-    dx = cam_mid[0] - cam_pos[0]; dz = cam_mid[1] - cam_pos[2];
-    l = m2_sqrtf(dx * dx + dz * dz);
-    camera_at(cam_pos, -dx / l, dz / l, CAM_S, CAM_C);
-    v.f = cam_pos[0]; stf_cam[0x18 / 4] = v.u;
-    v.f = cam_pos[2]; stf_cam[0x20 / 4] = v.u;
+/* The fight's camera is StF's own: camera_work's mode 9 (cam_mode_9) places
+ * it at a round's start and mode 10 (cam_mode_10) moves it each 60 Hz frame,
+ * on the camera object (fa_camera): its place at +0x18 in the fighters'
+ * units, its turn at +0x24 (x), +0x26 (y), +0x28 (z). camera_control's
+ * matrix from them: identity, ang_z, ang_x and ang_y by the negated angles,
+ * then the place; the board's camera is in units 1.6 times the fighters'
+ * (as its scale is), so the place goes in 1.6 times. The light is built
+ * from the turn every frame, as camera_control builds it. */
+static void camera_stf(const stage_t *st) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    float pos[3];
+    int i;
+    for (i = 0; i < 3; i++) pos[i] = *(float *)((u8 *)stf_cam + 0x18 + 4 * i) * 1.6f;
+    *cf = COP_IDENTITY;
+    *cf = COP_ANG_Z; *cf = (u32)-(int)(short)RH(stf_cam, 0x28);
+    *cf = COP_ANG_X; *cf = (u32)-(int)(short)RH(stf_cam, 0x24);
+    *cf = COP_ANG_Y; *cf = (u32)-(int)(short)RH(stf_cam, 0x26);
+    camera_place(pos);
+    stage_light(st);
 }
 
 static u32 pad_bits(const m2_player_t *p) {
@@ -718,8 +717,8 @@ int main(void) {
         m2_frame_begin();
         m2_obj_frame_setup();
         send_materials(stages[stage].mat);
+        camera_stf(&stages[stage]);
         m2_geo_fifo_light(m2_obj_fb(light[0]), m2_obj_fb(light[1]), m2_obj_fb(light[2]));
-        camera_follow();
         move_tpd_send(&stages[stage].tpd);
         draw_stage(&stages[stage]);
         /* StF steps its fighters once a 60 Hz frame and draws every other

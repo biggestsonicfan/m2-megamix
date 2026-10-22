@@ -120,8 +120,8 @@ same frame of the stance motion (278), all sixteen part positions in the rob
   the world. In real StF on South Island, 17 samples of the light it sends,
   taken while the camera moved, fit `Rcam · Ry(VECTER_Y) · Rx(VECTER_X) ·
   (0, 0, BRIGHT)` to within 6e-6. The board does the same with the same
-  coprocessor ops on its own camera (`stage_light`, once a stage) and sends
-  it every frame after `m2_obj_frame_setup`, whose fixed light is one frame of
+  coprocessor ops on StF's camera (`stage_light`, every frame, as the
+  camera turns) and sends it after `m2_obj_frame_setup`, whose fixed light is one frame of
   South Island's. The floors and skies are unlit (their light is in the
   texture); posts, ropes, cage, cliffs and fighters are lit. Check: board
   builds with real StF's camera at one frame (identity, the turns, `set_pos`
@@ -312,11 +312,29 @@ sets up what StF's game loop would have set up around it.
   write StF's tiles to the FG layer; `_Scroll_Initialize` loads the CG
   slots they need (0 at boot, 70 and 170 as `MES_ROUND_INT` does). The FG
   layer is cleared to StF's blank tile 0x20 first.
-- Camera: StF's `camera_cont` is not lifted. The board follows the
-  fighters' midpoint the way it moves in a real fight: `camera_place`
-  scales its position by 1.6, so the midpoint in camera units is
-  0.8 * (x0 + x1); the camera backs off as the fighters part and turns to
-  face the midpoint.
+- Camera: StF's own. `camera_work` runs the camera object (`fa_camera`,
+  0x500814) by its mode byte (+0x40) through `cam_mode_list`. In a round
+  mode 9 places the camera and sets mode 10, the in-fight follow; 11, 12,
+  25, 35 and 4 are round ends and replays, which the board does not run.
+  `round_start` runs `cam_mode_9` as a task (g13 the camera, g7/g8 the
+  robs) after `rob_start`; `fight_step` runs `cam_mode_10` once a frame.
+  Mode 10 also plays the special moves' camera scripts (`word_6BE90`, a
+  table of self-pointers the lifter relocates, `SELF_REL`; its step
+  handlers are the ROM jump tables `off_9C83C`/`off_9C848`, lifted as code,
+  `ROM_CODE_TABLES`). `camera_stf` then builds StF's `camera_control`
+  matrix: identity, `ang_z`, `ang_x`, `ang_y` by the negated +0x28, +0x24,
+  +0x26, and `camera_place` at the position (+0x18..+0x20). StF keeps that
+  position in fighter units; the board's camera is in the stage's 1.6
+  units (Camera scale, above), so it is passed times 1.6. In real StF
+  the fighters are drawn on the unscaled matrix (rob+0x2A40 equals the
+  camera at 0x5010F8, unit columns); the board draws them on the scaled
+  one, which projects the same with 1.6-times normals.
+  Check: real StF, 1P fight on South Island: mode 10, camera y about 3.0,
+  4.5 to 5.0 from the fighters' midpoint, pitch -2600 to -3300. Board,
+  fighters 4.0 apart: mode 10, camera (0, 3.31, -4.85), pitch -2560 (its
+  0xF8 target), aimed at (0, 2.1, 0); as they part to 14 it backs off to
+  (0.2, 6.6, -9.9) and stays on the midpoint; snapshots keep both in
+  frame.
 - Characters: rob+0x1B0 is the character drawn (the alternates are +26),
   rob+0x1B1 the parent. `ADV_CPU_BATTLE_INT` sets 1B1 = 1B0 - 0x1A, and a
   real P2 Honey alternate has 1B0 0x24, 1B1 0x0A.
@@ -345,7 +363,7 @@ Known gaps:
 - Eggman's head (model 793) takes its texture from StF's texture set 7,
   which the board does not load (it loads set 1 and the stage's), so it
   does not show.
-- No camera of StF's own (the board's follows the fighters), no shadows.
+- No shadows. The camera's round-end and replay modes are not run.
   Near the ring's edge the near ropes cross the view.
 
 ## Plan
