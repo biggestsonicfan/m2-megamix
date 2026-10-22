@@ -395,6 +395,79 @@ Known gaps: his hand shapes change without easing. While he is on, his
 colours take rows 0..6 (7..13 for player 2), which includes StF's fixed rows
 5/6 (12/13).
 
+### Where a guest is still treated as StF's
+
+An audit of the lifted code, `megamix.c` and `vf2-guest.mjs` (no code
+changed). Line numbers are `stf_motion.s`'s. What a VF2 or FV fighter
+should get is after the arrow.
+
+Acting on him now:
+- **Collision balls:** `rob_coli_ball_table_all_init` (125) reads
+  `rob_coli_ball_types` (0xC9B30)[0x84C][0x1B0], not a guest table. Akira
+  gets Knuckles' set (0xCB130: balls in Knuckles' bone space, a 0.32 head),
+  so his hurt and push balls are a Sonic-sized fighter's. → A guest table,
+  with his balls from VF2's collision data, ×`SCALE`.
+- **Record fields:** `vf2-guest.mjs` (603) copies Knuckles' 0x30-byte record
+  and replaces only +0, +8 and +0xC. The rest are StF's (shared by the
+  cast): +0x10 (0xC50F8) the distances `get_en_info` (7186) judges
+  near, far and reach by; +0x18 (0xC5148) option data for
+  `copy_option_data` (10082); +0x20 (0xC50E4) the byte for rob+0x5BE
+  (1585..1596, 1756); +0x04, +0x14, +0x24..0x2C tuning. → +0x10 from VF2's
+  ranges, ×`SCALE`; +0x18 a zero block of his own (skip); the others his
+  own or shown unused.
+- **Body pendulum:** `sub_7F0E8` (24413) and `scale_something` (24764)
+  take a row of `flt_7F198` by character mod 26: Knuckles'
+  (0.985, 0.30/0.18/0.30). → Skip for non-StF (VF2 has no dents), or a
+  neutral row.
+- **Throw camera:** `cam_mode_10` looks the motion either fighter plays up
+  in `word_6BE90` (StF's ids only: 466, 167, 284…). His ids are 519 on and
+  the victims' copies 847..878, so his throws get no camera. → A guest
+  table (his ids to StF's scripts); `word_6BE90` moves into `GUESTS`.
+- **Damage:** `convertSetup` keeps VF2's strike damage (out of 200) and its
+  throws' 50 against StF's 140: his hits do ×1.43. → ×140/200.
+- **Opponent mask:** command op `loc_1EA88` (11984) tests a bit by the
+  opponent's character. Akira has bit 6, Knuckles', so a StF script that
+  singles out Knuckles singles him out. → A bit of his own, or check the
+  scripts.
+
+Hard-coded characters, by id:
+- `selected_player_check` (1471) and the command decoder at `loc_1E0A0`
+  (11322) leave out Bark, Eggman, Big Eggman and Boss Eggman (5, 8, 9, 11);
+  Akira takes the rest of the cast's path. → A per-character flag table
+  (a guest one) in place of the ids, if a guest should not.
+- `sub_2EF9C` (17178): Espio (7, 33) only. Super Sonic (`damage_calculation`
+  7986, `original_combo_control` 10184, the check at 9283: 0, 16 and robot
+  opponents 3, 11, 13), `egg_robo_condition` (20340) and the intro anim
+  (20296: 13, 14): none touch character 6. A guest in one of those slots
+  would inherit them.
+
+Inert on the board, for later:
+- `character_spin_mot_objects` (0x81138, `sub_81038` 24854): Knuckles' spin
+  ball models (360/359). → Skip for non-StF.
+- Sound (`sound_request_u` is stubbed): `blank_per_character_audio_array`
+  (0xDB25C, 9517) gives Knuckles' voices (0xDB3D0); `loc_2B33C` (14184)
+  picks robot hit sounds by id. → A guest voice table when sound comes in.
+- `sub_2C7E4` (15482), a projectile's hit: StF's `uk_hit_motions` direct,
+  not `guest_ptr_DA0B4`, so Knuckles' reactions. → The guest table, when
+  projectiles come in.
+- `ptr_CE1CC` (`damage_unit` 14752, 15559; `sub_3261C` 19934): every row is
+  the same empty `word_CE1CC`. → Skip for non-StF if StF's rows are filled.
+
+Not settled: all his setups have skeleton type 0 and 0x860 clear
+(`convertSetup` zeroes header bytes 4..7 and 12), so `calc_rob_angle_cont`
+(18164) reads `off_C2058`[0][6], the sibling of `SKELETON_TYPE_DATA` that is
+not a guest table. That row is 0xC2558 (StF's `model_floats_0`) for every
+character, StF's or not. Check in MAME what it feeds before giving it a
+guest copy.
+
+Already his own or fine: `CHAR_PARTS`, `MOVESET_ARRAY`, `ptr_DA0B4`,
+`motion_remap`, `SKELETON_TYPE_DATA` (all four kinds), the hand, foot,
+body and head lists, `char_game`; `_uk_gravity` (0.0, as Sonic's). In C,
+`rob_init`, `draw_fighter` and `load_palettes` read the guest tables and
+`char_game`. The camera (`camera_place`, `cam_mode_9`/`10`) reads no
+character, only positions, flags and the motion id; it aims at root
+y + 1.0, which holds while guests are scaled to StF's size.
+
 ## The fight
 
 The rounds run on StF's own code, lifted by `tools/lift-stf.py`; the board
