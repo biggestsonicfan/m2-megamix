@@ -549,7 +549,18 @@ Hard-coded characters, by id:
   What he has now: down alone is VF2's, and down-forward and down-back act
   as down. → Only with a guest decoder of his own (VF2's tree, its types
   mapped), not a change to StF's.
-- `sub_2EF9C` (17178): Espio (7, 33) only. Super Sonic (`damage_calculation`
+- `sub_2EF9C` (17178), called from the motion setup at 17172 before it
+  copies the 0x40-byte block to rob+0x40: if the drawn character
+  (rob+0x1B0) is 7 or 33 (Espio, either colour), it sets bit 8 of
+  rob+0x2A3C (r9 bit 6 set) or bit 5 (clear); for anyone else it returns
+  having done nothing. Akira (1B0 6 or 32) returns, as every non-Espio
+  fighter does. Left as it is: what bits 5 and 8 of rob+0x2A3C mean is not
+  known, and VF2 has no Espio, so there is no VF2 value of the same
+  meaning to give him; skipping it is already what a fighter who is not
+  Espio gets. It stays on this list only because the check is by StF id:
+  a guest put in slot 7 or 33 would get Espio's bits. → Nothing to do for
+  Akira; only if a guest takes slot 7 or 33.
+- Super Sonic (`damage_calculation`
   7986, `original_combo_control` 10184, the check at 9283: 0, 16 and robot
   opponents 3, 11, 13), `egg_robo_condition` (20340) and the intro anim
   (20296: 13, 14): none touch character 6. A guest in one of those slots
