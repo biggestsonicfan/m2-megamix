@@ -560,8 +560,20 @@ Hard-coded characters, by id:
   Espio gets. It stays on this list only because the check is by StF id:
   a guest put in slot 7 or 33 would get Espio's bits. → Nothing to do for
   Akira; only if a guest takes slot 7 or 33.
-- Super Sonic (`damage_calculation`
-  7986, `original_combo_control` 10184, the check at 9283: 0, 16 and robot
+- `damage_calculation` (7981; StF ROM 0x19708): after `ketchup`, if the
+  clock (0x500028) is above 0 and the victim's parent (rob+0x1B1) is not
+  16 (Super Sonic), it takes the damage off rob+0x1AC and sets w0 bit 5 at
+  0. If the parent is 16, the victim takes no damage. Akira (1B1 6) takes
+  the damage, as every fighter who is not Super Sonic does. Left as it is,
+  because that is already VF2's own: VF2's damage code (0x18A54, called
+  the same way, with its own `ketchup` at 0x18AC8) subtracts and sets the
+  KO bit with no character check (and no clock test), so there is no VF2
+  value to give him. What it does after that (a sound by rob+0x1B1 through
+  0x201E44C once the damage is above 40) is VF2's voice path, not this
+  check. It stays on this list only because the check is by StF id: a
+  guest put in slot 16 would take no damage. → Nothing to do for Akira;
+  only if a guest takes slot 16.
+- Super Sonic (`original_combo_control` 10184, the check at 9283: 0, 16 and robot
   opponents 3, 11, 13), `egg_robo_condition` (20340) and the intro anim
   (20296: 13, 14): none touch character 6. A guest in one of those slots
   would inherit them.
