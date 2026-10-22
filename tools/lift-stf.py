@@ -88,12 +88,32 @@ RAM_SPANS = [(0x520000, 0x520FC8)]
 GUEST_BASE = 0x02E00000
 # name, its room, StF's own table's length (what it starts as): 52 characters
 # (player 2's are 26 on), 24 move tables, 4 skeletons, 21 kinds of head
-# change (each a list by character), 519 motions.
+# change (each a list by character), 519 motions, and each character's hit
+# reactions (sub_2B94C). motion_remap is the board's own (StF has none: it
+# starts as zeros): a list by character of a motion each id plays instead.
 GUESTS = [('CHAR_PARTS', 0x100, 52 * 4), ('SKELETON_TYPE_DATA', 0x400, 4 * 4),
           ('MOVESET_ARRAY', 0x100, 24 * 4), ('player_hand_animations', 0x100, 52 * 4),
           ('player_foot_animation', 0x100, 52 * 4), ('player_body_animation', 0x100, 52 * 4),
           ('PLAYER_HEAD_LIST', 0x1800, 21 * 4), ('animation_related', 0x2000, 519 * 4),
-          ('offset_list_motions', 0x2000, 519 * 4)]
+          ('offset_list_motions', 0x2000, 519 * 4), ('ptr_DA0B4', 0x80, 26 * 4),
+          ('motion_remap', 0x80, 26 * 4)]
+# Code put in at a label of StF's, before what is there. sub_2B94C picks a
+# hit's reaction from the defender's table: (side)[category * 8], +2 from
+# behind. VF2's tables have a crouching defender's reactions 4 on; StF's
+# repeat its first four there, so the crouch term changes nothing for StF's
+# own fighters. 0x1A4 bit 3: crouching.
+# set_motion, before it stores the id (its flags already read): the id the
+# fighter's character plays instead (motion_remap; 0: its own). A guest's
+# take the place of the ids StF's code plays by number; StF's fighters', of
+# the ones a guest's throw gives its victim.
+INSERT = {
+    'loc_1B044': ['ldob    0x1B1(g7), r4', 'ld      guest_motion_remap[r4*4], r4',
+                  'cmpobe  0, r4, loc_1B044_own', 'lda     0x1FFF, r5', 'and     r5, g0, r6',
+                  'ldos    (r4)[r6*2], r6', 'cmpobe  0, r6, loc_1B044_own', 'andnot  r5, g0, g0',
+                  'or      r6, g0, g0', 'loc_1B044_own:'],
+    'loc_2B9CC': ['ld      0x1A4(g8), r3', 'bbc     3, r3, loc_2B9CC_up', 'addo    4, r9, r9',
+                  'loc_2B9CC_up:'],
+}
 
 LABEL = re.compile(r'^([A-Za-z_.$][\w.$]*):')
 TOKEN = re.compile(r'(?<![\w.$])[A-Za-z_.$][\w.$]*')
@@ -254,6 +274,8 @@ def main():
         if i != prev:
             out.append('                .align  4')
         out.append(name_at[i] + ':')
+        for c in INSERT.get(name_at[i], ()):
+            out.append(c if c.endswith(':') else f'                {c}')
         if name_at[i] in SELF_REL:
             lo = addr[name_at[i]]
             hi = min(v for v in addr.values() if v > lo)
@@ -366,7 +388,7 @@ def main():
     H.append(' * _SRC and _LEN: StF\'s own table, which they start as. */')
     for t, _, n in GUESTS:
         H.append(f'#define STF_GUEST_{t} 0x{guest_at[t]:08X}u')
-        H.append(f'#define STF_GUEST_{t}_SRC 0x{addr[t] if t in addr else sets[t]:08X}u')
+        H.append(f'#define STF_GUEST_{t}_SRC 0x{addr[t] if t in addr else sets.get(t, 0):08X}u')
         H.append(f'#define STF_GUEST_{t}_LEN 0x{n:X}u')
     H.append(f'#define STF_GUEST_HEAP 0x{guest_heap:08X}u')
     H.append('/* The move tables\' inline code goes on here (`bx`, from anywhere). */')

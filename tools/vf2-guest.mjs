@@ -35,6 +35,9 @@ const VF2_COMMANDS = 0x1d1fc;
 const VF2_SETUPS = 0x0200d34c, VF2_SETUP_LENGTHS = 0x1b7f6, VF2_SETUP_OPS = 0x12;
 const VF2_MOTIONS = 0x02120004, VF2_MOTION_COUNT = 1360;
 const VF2_NATIVE_TAIL = 0x1d194;
+/* 30 kinds of hit, each a list of 40 reactions: category (guard, guard,
+ * hit, counter hit, knock-down) * 8, +4 crouching, +2 from behind, +side. */
+const VF2_REACTIONS = 0x0201ccfc;
 const VF2_HANDS = 0x3c;                  /* record +0x3C: 32 shapes a hand, slot 5 then 8 at +0x180 */
 const SKELETON = 4, SKELETON_BYTES = 15 * 12;
 
@@ -71,11 +74,16 @@ const COMMIT_TYPE = {
 };
 const COMMIT_ACTION = { 7: 18, 8: 19, 0x12: 14, 0x13: 15, 0x1d: 16, 0x1e: 17 };
 
-/* VF2's action slots -> StF's (js/fighters.js ACTION_SLOTS). The other StF
- * slots keep Knuckles' motions. */
-const ACTION_SLOTS = [
-    [0, 0], [1, 1], [2, 2], [5, 3], [8, 5], [9, 6], [14, 7], [15, 9], [20, 13], [22, 15],
-    [28, 33], [31, 40], [32, 41],
+/* StF's 52 action slots, each played with one of VF2's (its number) or a VF2
+ * motion ({ motion }), matched by what the motion does: stance, crouch,
+ * turns, steps, dashes, jumps, falls and getting up. StF's own flag bits stay. */
+const STF_ACTIONS = [
+    0, 1, 2, 5, 1, 8, 9, 14, 14, 15,                       /*  0 stance, crouch, steps */
+    15, 21, 24, 20, 16, 22, 17, 20, 16, 21,                /* 10 walks, crouch dashes */
+    16, 22, 17, 23, 17, 81, 82, 83, 28, 28,                /* 20 run, jumps */
+    29, 29, 1, 28, 28, 29, 0, 29, { motion: 0x2ce }, { motion: 0x2ce },  /* 30 landing, falls */
+    31, 36, 40, 50, 60, 51, 54, 34, 38, 35,                /* 40 down, getting up */
+    39, 54,
 ];
 
 /* ---- helpers --------------------------------------------------------------- */
@@ -126,9 +134,9 @@ function motionChannels(d, off) {
  * with him at that size. */
 export const SCALE = (71 / 73) * (1.670 / 1.309) * (2.676 / 1.638);
 
-function scaleFloats(b, at, n) {
+function scaleFloats(b, at, n, k = SCALE) {
     const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
-    for (let i = 0; i < n; i++) v.setFloat32(at + i * 4, v.getFloat32(at + i * 4, true) * SCALE, true);
+    for (let i = 0; i < n; i++) v.setFloat32(at + i * 4, v.getFloat32(at + i * 4, true) * k, true);
 }
 
 /* A mesh's points (the two in each 40-byte record; noclip model.js). */
@@ -141,15 +149,22 @@ function scaleMesh(b) {
 
 /* A motion's float objects (12..19, channels 36 on): their values, and a
  * Hermite key's two tangents with them. */
-function scaleMotion(b) {
+function scaleMotion(b, k = [SCALE, SCALE, SCALE]) {
     const c = motionChannels(b, 0);
     for (let i = 36; i < 60; i++) {
         const t = c.types[i];
         if (t === ZERO) continue;
-        scaleFloats(b, c.values[i], t === LINEAR ? c.counts[i] : t === HERMITE ? c.counts[i] * 3 : 1);
+        scaleFloats(b, c.values[i], t === LINEAR ? c.counts[i] : t === HERMITE ? c.counts[i] * 3 : 1, k[(i - 36) % 3]);
     }
     return b;
 }
+
+/* The copies of the motions his throws give their victim that StF's fighters
+ * play: his reach (x, z), their height (y: StF's stance stands 1.07 high,
+ * VF2's 1.0). */
+/* The bits of a rob's flags StF's own play op 5 sets. */
+const STF_FLAG_BITS = new Set([0, 1, 3, 4, 7, 8, 9, 10, 11, 13, 15, 23, 25, 29, 30]);
+const THROWN = [SCALE, 1.07, SCALE];
 
 /* A mesh's extent: the geometrizer's walk (import-assets keepModel). */
 function meshLength(d, base) {
@@ -259,6 +274,8 @@ export function importAkira(R, vf2, stf) {
                 units.set(a, { kind: 'op', op, len });
                 if (op === 0x0d) todo.push([p32(a + 1), 'table']);
                 if (op === 0x0f || op === 0x27 || op === 0x32 || op === 0x33) todo.push([p32(a + 1), 'script']);
+                /* a throw's follow-up: the script it runs once it lands (0x1228) */
+                if (op === 0x15 && p32(a + 5)) todo.push([p32(a + 5), 'script']);
                 if (op === 0x28) { for (const o of [1, 5, 9]) todo.push([p32(a + o), 'script']); break; }
                 if (op === 0x11) { todo.push([p32(a + 1), 'script']); break; }
                 if (op === 0x13) {
@@ -289,7 +306,15 @@ export function importAkira(R, vf2, stf) {
     }
 
     /* ---- motions: the closure ---- */
-    const want = new Set(A.actions.filter((x) => x));
+    const actionMotion = (x) => (typeof x === 'number' ? A.actions[x] : x.motion);
+    /* his reactions: a kind VF2 has none for in a category (0) has kind 0's */
+    const reactions = [];
+    for (let k = 0; k < 30; k++) {
+        const t = d32(VF2_REACTIONS + k * 4), r = [];
+        for (let i = 0; i < 40; i++) r.push(d32(t + i * 4) || reactions[0][i]);
+        reactions.push(r);
+    }
+    const want = new Set([...A.actions, ...STF_ACTIONS.map(actionMotion), ...reactions.flat().map((x) => x & MOTION_ID)].filter((x) => x));
     const commitWord = (a) => p32(a + 1);
     for (const a of commits) {
         const w = commitWord(a), type = w >>> 24;
@@ -316,6 +341,16 @@ export function importAkira(R, vf2, stf) {
         return (id & ~MOTION_ID) | newId.get(m);
     };
     report.push(`${ids.length} motions, ${FIRST_MOTION}..${FIRST_MOTION + ids.length - 1}`);
+
+    /* The motions his throws give their victim (setup op 5's: the throw's
+     * own id + 1, mostly) and what those hand over to: StF's fighters play
+     * copies (THROWN), with ids after his. */
+    const thrown = new Set();
+    for (const s of setups.values()) for (const { op, b } of s.setup) if (op === 5 && ((b[1] | (b[2] << 8)) & MOTION_ID)) thrown.add((b[1] | (b[2] << 8)) & MOTION_ID);
+    for (const todo = [...thrown]; todo.length;) for (const x of referenced(setups.get(todo.pop()))) if (!thrown.has(x)) { thrown.add(x); todo.push(x); }
+    const thrownIds = [...thrown].sort((a, b) => a - b);
+    const copyId = new Map(thrownIds.map((id, i) => [id, FIRST_MOTION + ids.length + i]));
+    report.push(`${thrownIds.length} motions his throws give, copied for StF's fighters as ${FIRST_MOTION + ids.length}..${FIRST_MOTION + ids.length + thrownIds.length - 1}`);
 
     /* ---- hands: the shapes his motions use, one index for both hands ---- */
     const handTable = d32(A.root + VF2_HANDS);
@@ -409,6 +444,10 @@ export function importAkira(R, vf2, stf) {
             for (const { op, b } of s.play) {
                 const to = op in PLAY_TO ? PLAY_TO[op] : op;
                 if (to === null) continue;
+                /* Op 5 sets a bit of the rob's flags (0x1A4). VF2's thrown motions set
+                 * bit 24, which StF never sets and reads as "commit 0x18", past the end
+                 * of its commit table: keep only the bits StF itself sets. */
+                if (op === 5 && !STF_FLAG_BITS.has(b[3])) continue;
                 if (to === 'hand') {
                     const o = [0x10 | (b[0] & 0x80), b[1], b[2], b[3] === 1 ? 5 : 8, shapeIndex(b[4])];
                     out.push(...o);
@@ -426,7 +465,7 @@ export function importAkira(R, vf2, stf) {
 
     /* ---- motions and setups into the heap, the two tables by new id ---- */
     const motions = T.offset_list_motions, setupT = T.animation_related;
-    const top = FIRST_MOTION + ids.length;
+    const top = FIRST_MOTION + ids.length + thrownIds.length;
     for (const t of [motions, setupT]) {
         if (top * 4 > t.room) throw new Error(`${t.name ?? 'motion table'}: ${top} ids do not fit`);
         grow(t, top * 4);
@@ -438,6 +477,10 @@ export function importAkira(R, vf2, stf) {
         motionBytes += len;
         motions.view.setUint32(newId.get(id) * 4, alloc(scaleMotion(r.data.slice(r.off, r.off + len)), `motion ${id}`), true);
         setupT.view.setUint32(newId.get(id) * 4, alloc(convertSetup(id), `setup ${id}`, 1), true);
+        if (!copyId.has(id)) continue;
+        motionBytes += len;
+        motions.view.setUint32(copyId.get(id) * 4, alloc(scaleMotion(r.data.slice(r.off, r.off + len), THROWN), `thrown motion ${id}`), true);
+        setupT.view.setUint32(copyId.get(id) * 4, setupT.view.getUint32(newId.get(id) * 4, true), true);
     }
     report.push(`motion blocks ${motionBytes} bytes`);
 
@@ -506,7 +549,7 @@ export function importAkira(R, vf2, stf) {
             if (u.op === 0x2b) b[2] = 0;
             if ([0x0d, 0x0f, 0x27, 0x11].includes(u.op)) reloc(1, b);
             if (u.op === 0x28) for (const o of [1, 5, 9]) reloc(o, b);
-            if (u.op === 0x15 && whereOf(p32(a + 5)) !== undefined) reloc(5, b);
+            if (u.op === 0x15 && p32(a + 5)) reloc(5, b);
             prog.push(...b);
         }
     }
@@ -520,8 +563,37 @@ export function importAkira(R, vf2, stf) {
     const knuxActions = program.u32(knux + 0xc);
     const actions = [];
     for (let i = 0; i < 52; i++) actions.push(program.u16(knuxActions + i * 2));
-    for (const [v, s] of ACTION_SLOTS) if (A.actions[v]) actions[s] = (actions[s] & ~MOTION_ID) | mid(A.actions[v]);
+    STF_ACTIONS.forEach((x, s) => { actions[s] = (actions[s] & ~MOTION_ID) | mid(actionMotion(x)); });
     const actionsAt = alloc(u16s(actions), 'actions');
+
+    /* ptr_DA0B4[character] (sub_2B94C): his 30 lists, each VF2's 40, then
+     * StF's category 5 (an attack with 0x1A4 bit 22: his hit's) and StF's
+     * last three. */
+    const stfKinds = T.ptr_DA0B4.view.getUint32(CHR * 4, true);
+    const kinds = reactions.map((r, k) => {
+        const stfList = program.u32(stfKinds + k * 4);
+        const tail = [41, 42, 43].map((i) => program.u32(stfList + i * 4));
+        return alloc(u32s([...r.map(mid), mid(r[16]), ...tail]), `reactions ${k}`);
+    });
+    T.ptr_DA0B4.view.setUint32(CHR * 4, alloc(u32s(kinds), 'reaction kinds'), true);
+
+    /* motion_remap (set_motion): his motion for each StF one StF's code plays
+     * him by number: its action slots' and reactions' (by place), and the
+     * knock-downs sub_2B94C's callers put in (225, 262, 270, 334). StF's
+     * fighters play the copies of what his throws give their victim. */
+    const own = new Array(top).fill(0);
+    const stfId = (x) => x & MOTION_ID, put = (from, to) => { if (from && from < FIRST_MOTION && !own[from]) own[from] = stfId(to); };
+    for (const x of [225, 262, 270, 334]) put(x, mid(0x2ce));
+    STF_ACTIONS.forEach((x, s) => put(stfId(program.u16(knuxActions + s * 2)), mid(actionMotion(x))));
+    reactions.forEach((r, k) => {
+        const stfList = program.u32(stfKinds + k * 4);
+        for (let i = 0; i < 41; i++) put(stfId(program.u32(stfList + i * 4)), mid(i < 40 ? r[i] : r[16]));
+    });
+    const theirs = new Array(top).fill(0);
+    for (const [id, c] of copyId) theirs[newId.get(id)] = c;
+    const ownAt = alloc(u16s(own), 'motion remap'), theirsAt = alloc(u16s(theirs), 'StF fighters\' motion remap');
+    for (let c = 0; c < PLAYER2; c++) T.motion_remap.view.setUint32(c * 4, c === CHR ? ownAt : theirsAt, true);
+    report.push(`motion remap: ${own.filter((x) => x).length} of StF's ids`);
 
     for (const [p, body] of [[0, A], [1, A.p2]]) {
         const parts = body.parts.map((x) => M(x.model));

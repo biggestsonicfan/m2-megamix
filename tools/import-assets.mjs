@@ -332,14 +332,15 @@ async function importStf(R) {
         }
     }
 
-    /* The guest tables start as StF's own (a guest's entries go in later).
+    /* The guest tables start as StF's own (a guest's entries go in later; the
+     * board's own, with no source, as zeros).
      * PLAYER_HEAD_LIST is a list a kind of head change, each of them a list
      * by character: those lists are copied too, after it in its room. */
     const G = guestTables();
     const tables = {};
     for (const [name, t] of Object.entries(G.tables)) {
         const b = new Uint8Array(t.len);
-        for (let i = 0; i < t.len; i += 4) new DataView(b.buffer).setUint32(i, t.src < 0x100000 ? program.u32(t.src + i) : u32At(t.src + i), true);
+        for (let i = 0; i < t.len; i += 4) new DataView(b.buffer).setUint32(i, !t.src ? 0 : t.src < 0x100000 ? program.u32(t.src + i) : u32At(t.src + i), true);
         tables[name] = { ...t, bytes: b, view: new DataView(b.buffer) };
     }
     const heads = tables.PLAYER_HEAD_LIST;

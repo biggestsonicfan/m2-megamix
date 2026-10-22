@@ -322,16 +322,37 @@ code reads is converted into StF's formats and written into the guest tables
 `tools/lift-stf.py` moves out of the program ROM (`GUESTS`, at 0x02E00000),
 with a heap after them.
 
-- **Motions:** the ones his actions, his command program and their setups
-  reach (255), as new motion ids from 519 on. The blocks are in StF's format
-  already; their setups are converted op by op (VF2's play ops differ in
-  length and number).
+- **Motions:** the ones his actions, his reactions, his command program and
+  their setups reach (328), as new motion ids from 519 on. The blocks are in
+  StF's format already; their setups are converted op by op (VF2's play ops
+  differ in length and number). Play op 5 (set a flag bit) is kept only for
+  the bits StF's own motions set: VF2's thrown motions set bit 24, which StF
+  never sets and its code turns into a commit of type 0x18.
+- **Actions:** all 52 of StF's action slots are given one of his motions
+  (`STF_ACTIONS`), so he has his own stance, walks, guards, falls and get-ups;
+  none of Knuckles' are left.
+- **Reactions:** `sub_2B94C` picks a hit reaction from a list by character
+  (StF's 0xDA0B4, now the guest table `ptr_DA0B4`). Akira's is VF2's own: 30
+  kinds of hit, each by category, crouch, behind and side. StF's lists ignore
+  crouching, so the lift puts in a test of the crouch flag (0x1A4 bit 3) at
+  `loc_2B9CC`, which picks the crouching half of the list.
+- **Thrown motions:** a throw's setup (op 5) gives its victim a motion, the
+  one after the throw in VF2's numbering, usually. StF's fighters play those
+  too, as copies (847..878) scaled to them (×1.07 in height, `THROWN`).
+- **Remap:** `motion_remap` (a guest table of the board's own, a list by
+  character) gives `set_motion` (`loc_1B044`, a hook the lift puts in) a motion
+  to play in place of an id. StF's code still asks for its own ids at times
+  (the stance, getting up, a few reactions): for Akira they become his (68 of
+  them); for the others, his throws' victim motions become the copies.
 - **Command program:** converted op by op. Commits get StF's longer form. His
   native ops (one instruction putting a motion id in g0) become `lda` plus a
   jump to `cmd_native_tail`. VF2's 0x32 is dropped and 0x33 becomes 0x11.
+  Op 0x15's script (what a throw runs once it lands, through 0x1228 into the
+  command pointer 0x121C) is converted too: left at its VF2 address, it ran
+  StF's ROM as commands and the board stopped.
 - **Records:** Knuckles' record and actions, with his parts and his actions in
-  place of Knuckles' where VF2's slots map to StF's. Also his skeleton, his
-  hand shapes, and a head record of one frame.
+  place of Knuckles'. Also his skeleton, his hand shapes, and a head record
+  of one frame.
 - **Models:** 95 models (P1 and P2 parts and his hands) under free model ids
   from 5102 down. Their meshes go in the polygon ROM's empty run, and the
   materials, UVs and textures are packed by `tools/pack-akira.mjs`. Colour
@@ -352,10 +373,9 @@ With g13 left over from C, Akira's first failed match backtracked off the
 stack. StF's own scripts never fail all the way back, so they had not shown
 it.
 
-Known gaps: his reactions to hits are Knuckles' (StF's), on his skeleton.
-StF's slots that VF2 has no action for keep Knuckles' motions. His hand
-shapes change without easing. While he is on, his colours take rows 0..6
-(7..13 for player 2), which includes StF's fixed rows 5/6 (12/13).
+Known gaps: his hand shapes change without easing. While he is on, his
+colours take rows 0..6 (7..13 for player 2), which includes StF's fixed rows
+5/6 (12/13).
 
 ## The fight
 
