@@ -455,8 +455,15 @@ Acting on him now:
     their meaning is unknown. VF2's +0x2C (79.0) is not known to match.
 - **Body pendulum:** `sub_7F0E8` (24413) and `scale_something` (24764)
   take a row of `flt_7F198` by character mod 26: Knuckles'
-  (0.985, 0.30/0.18/0.30). → Skip for non-StF (VF2 has no dents), or a
-  neutral row.
+  (0.985, 0.30/0.18/0.30), into the dent pendulums at rob+0x1F88 (both)
+  and rob+0x2758. Left as Knuckles': VF2 has no dents and no pendulum
+  constants in its data, so it has no value of the same meaning to give
+  him, and a scaled one would be invented (the numbers are rates, not
+  lengths, so ×`SCALE` does not apply either). His row is StF's own ROM
+  table, not a guest one, and skipping it for non-StF would change the
+  shared path, so neither is done. → Once what the dents do to a guest
+  model is checked in MAME: a guest table or a `char_game` gate, not a
+  made-up row.
 - **Throw camera:** `cam_mode_10` looks the motion either fighter plays up
   in `word_6BE90` (StF's ids only: 466, 167, 284…). His ids are 519 on and
   the victims' copies 847..878, so his throws get no camera. → A guest
