@@ -611,6 +611,15 @@ export function importAkira(R, vf2, stf) {
     for (let c = 0; c < PLAYER2; c++) T.motion_remap.view.setUint32(c * 4, c === CHR ? ownAt : theirsAt, true);
     report.push(`motion remap: ${own.filter((x) => x).length} of StF's ids`);
 
+    /* His skeleton (VF2's record +4, ×SCALE): SKELETON_TYPE_DATA's, below,
+     * and his records' +4, which is StF's skeleton too. */
+    const bones = Uint8Array.from(bytes(vf2, d32(A.root + SKELETON), SKELETON_BYTES));
+    scaleFloats(bones, 0, SKELETON_BYTES / 4);
+    const skel = alloc(bones, 'skeleton');
+
+    /* His records: Knuckles', with his parts (+0, +8), actions (+0xC) and
+     * skeleton (+4). The rest stay Knuckles' (docs/BOARD.md, "Where a guest
+     * is still treated as StF's"). */
     for (const [p, body] of [[0, A], [1, A.p2]]) {
         const parts = body.parts.map((x) => M(x.model));
         const list = alloc(u32s([...parts, ...parts]), `parts ${p ? 'P2' : 'P1'}`);
@@ -618,15 +627,12 @@ export function importAkira(R, vf2, stf) {
         const src = program.u32(T.CHAR_PARTS.src + (CHR + p * PLAYER2) * 4);
         for (let i = 0; i < 0x30; i += 4) new DataView(rec.buffer).setUint32(i, program.u32(src + i), true);
         const rv = new DataView(rec.buffer);
-        rv.setUint32(0, list, true); rv.setUint32(8, list, true); rv.setUint32(0xc, actionsAt, true);
+        rv.setUint32(0, list, true); rv.setUint32(4, skel, true); rv.setUint32(8, list, true); rv.setUint32(0xc, actionsAt, true);
         T.CHAR_PARTS.view.setUint32((CHR + p * PLAYER2) * 4, alloc(rec, `record ${p ? 'P2' : 'P1'}`), true);
     }
 
     /* SKELETON_TYPE_DATA[type][character]: the four lists, each copied into
      * the room after the four pointers. */
-    const bones = Uint8Array.from(bytes(vf2, d32(A.root + SKELETON), SKELETON_BYTES));
-    scaleFloats(bones, 0, SKELETON_BYTES / 4);
-    const skel = alloc(bones, 'skeleton');
     {
         const t = T.SKELETON_TYPE_DATA, per = 52 * 4;
         if (!t.lists) {

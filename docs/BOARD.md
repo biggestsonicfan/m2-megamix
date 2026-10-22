@@ -434,14 +434,25 @@ changed). Line numbers are `stf_motion.s`'s. What a VF2 or FV fighter
 should get is after the arrow.
 
 Acting on him now:
-- **Record fields:** `vf2-guest.mjs` (603) copies Knuckles' 0x30-byte record
-  and replaces only +0, +8 and +0xC. The rest are StF's (shared by the
-  cast): +0x10 (0xC50F8) the distances `get_en_info` (7186) judges
-  near, far and reach by; +0x18 (0xC5148) option data for
-  `copy_option_data` (10082); +0x20 (0xC50E4) the byte for rob+0x5BE
-  (1585..1596, 1756); +0x04, +0x14, +0x24..0x2C tuning. → +0x10 from VF2's
-  ranges, ×`SCALE`; +0x18 a zero block of his own (skip); the others his
-  own or shown unused.
+- **Record fields:** `vf2-guest.mjs` copies Knuckles' 0x30-byte record and
+  replaces +0, +8, +0xC and +4 (the skeleton, as VF2's record +4: his,
+  ×`SCALE`, the one `SKELETON_TYPE_DATA` gets; no lifted code reads it, and MAME and
+  m2-hle2 give the same energies with it as before).
+  These are still Knuckles', because VF2 has no field known to mean the same:
+  - +0x10 (0xC50F8, the cast's one table): 15 floats and a count at +0x3C.
+    `get_en_info` (7186) tests the distance (rob+0x5F4) against +0, +4, +8,
+    +0xC… for its near, far and reach bits. VF2's record has no pointer
+    there. Its +0x18..+0x24 hold 1.4, 1.7, 1.4, 1.4 and +0x28 3.0, but no
+    one has found what reads them, so they are not known to be ranges.
+    → Find VF2's reader first, then ×`SCALE`.
+  - +0x18 (0xC5148; Amy 0xC51B8): option data for `copy_option_data`
+    (10082). VF2 has none. → A zero block of his own, once it is known what
+    zero does.
+  - +0x20 (0xC50E4, the cast's bytes 38, 26): rob+0x5BE (1585..1596,
+    1756). What rob+0x5BE is, and VF2's equivalent, are unknown.
+  - +0x14 (a float by character: 60 Knuckles, 40 Amy, 160 Eggman), +0x24
+    (8.0), +0x28 (0xC513C) and +0x2C (9.0): no lifted code reads them, and
+    their meaning is unknown. VF2's +0x2C (79.0) is not known to match.
 - **Body pendulum:** `sub_7F0E8` (24413) and `scale_something` (24764)
   take a row of `flt_7F198` by character mod 26: Knuckles'
   (0.985, 0.30/0.18/0.30). → Skip for non-StF (VF2 has no dents), or a
@@ -486,7 +497,8 @@ character, StF's or not. Check in MAME what it feeds before giving it a
 guest copy.
 
 Already his own or fine: `CHAR_PARTS`, `MOVESET_ARRAY`, `ptr_DA0B4`,
-`motion_remap`, `SKELETON_TYPE_DATA` (all four kinds), the hand, foot,
+`motion_remap`, `SKELETON_TYPE_DATA` (all four kinds) and his records' +4,
+the hand, foot,
 body and head lists, `char_game`, `rob_coli_ball_types` (his collision
 balls, above), his damage (×140/200 in his setups, above); `_uk_gravity` (0.0, as Sonic's). In C,
 `rob_init`, `draw_fighter` and `load_palettes` read the guest tables and
