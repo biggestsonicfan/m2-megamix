@@ -31,7 +31,8 @@
  *                                            outdir defaults to board/roms)
  *
  * and then run MAME with `-rompath board/roms` alone. It writes
- * outdir/assets.txt, the list of what it kept, by region and address.
+ * outdir/assets.txt, the list of what it kept, by region and address, and
+ * outdir/guests.json, what each guest lost on the way in (tools/grade-guest.mjs).
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { readZipDirectory, extractZipEntry } from '../vendor/noclip/js/zip.js';
@@ -441,7 +442,8 @@ for (const [name, L] of Object.entries(SFIGHT)) if (L.pairs) R[name] = new Regio
 await importStf(R);
 /* the guests: VF2's Akira as StF's character 6 (tools/vf2-guest.mjs) */
 const NG = await loadNodeGames();
-for (const line of importAkira(R, NG.vf2.rom, NG.stf.rom).report) console.log(`Akira: ${line}`);
+const akira = importAkira(R, NG.vf2.rom, NG.stf.rom);
+for (const line of akira.report) console.log(`Akira: ${line}`);
 /* the guest tables, as they are after every guest's entries */
 for (const [name, t] of Object.entries(R.guest.tables)) R.main.put(t.at - MAIN_DATA, t.bytes, `guest ${name}`);
 
@@ -452,6 +454,8 @@ for (const r of data) for (const [f, d] of Object.entries(r.files())) writeFileS
 for (const f of [...SFIGHT.audio.singles, ...SFIGHT.samples.singles]) writeFileSync(`${dir}/${f}`, new Uint8Array(files[f].length));
 for (const [f, n] of Object.entries(SFIGHT.billboard.zeros)) writeFileSync(`${dir}/${f}`, new Uint8Array(n));
 writeFileSync(`${OUT}/assets.txt`, manifest(data));
+/* what each guest lost on the way in (tools/grade-guest.mjs reads it) */
+writeFileSync(`${OUT}/guests.json`, JSON.stringify({ guests: [akira.coverage] }, null, 1) + '\n');
 for (const r of data) {
     let n = 0;
     for (const x of r.out) if (x) n++;

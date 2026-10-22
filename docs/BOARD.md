@@ -427,6 +427,24 @@ Known gaps: his hand shapes change without easing. While he is on, his
 colours take rows 0..6 (7..13 for player 2), which includes StF's fixed rows
 5/6 (12/13).
 
+### Grading a guest
+
+`node tools/grade-guest.mjs [romdir] [--json]` (after the import; romdir
+defaults to `board/roms`) compares the built data ROMs with StF's set and
+grades each guest. A guest table slot or record field is his own when it
+differs from StF's and a stand-in when it is StF's; StF's program-ROM
+tables (the list below) carry the audit's verdicts (closed: no value of
+the same meaning in his game; open; inert on the board; unsettled). It
+lists what StF's fighters have that he has none of (a foot and a body
+swap: one of StF's 26 has each), and what the import dropped of VF2's
+data, from `guests.json`, which `import-assets.mjs` writes beside the
+ROMs: VF2 play ops with no StF op (0x04 ×148, 0x09 ×25, 0x10 ×154, 0x14
+×4), flag bits StF never sets, strike bytes 4..7 (82 strikes), setup op
+6's bytes 1..2 (29), three command ops 0x32, and 40 of 1200 reactions
+VF2 has none for. Every StF slot, and StF's 519 motions, must be StF's:
+if one is not, it says which and exits 1. On 89696fb's data: 12 of 30
+items are Akira's own.
+
 ### Where a guest is still treated as StF's
 
 An audit of the lifted code, `megamix.c` and `vf2-guest.mjs` (no code
@@ -453,6 +471,9 @@ Acting on him now:
   - +0x14 (a float by character: 60 Knuckles, 40 Amy, 160 Eggman), +0x24
     (8.0), +0x28 (0xC513C) and +0x2C (9.0): no lifted code reads them, and
     their meaning is unknown. VF2's +0x2C (79.0) is not known to match.
+  - +0x1C (0xC5260, the same in all 26 of StF's records): missed by the
+    audit, found by `tools/grade-guest.mjs` (below). Its reader and
+    meaning are unknown, so it stays.
 - **Body pendulum:** `sub_7F0E8` (24413) and `scale_something` (24764)
   take a row of `flt_7F198` by character mod 26: Knuckles'
   (0.985, 0.30/0.18/0.30), into the dent pendulums at rob+0x1F88 (both)
@@ -465,9 +486,16 @@ Acting on him now:
   model is checked in MAME: a guest table or a `char_game` gate, not a
   made-up row.
 - **Throw camera:** `cam_mode_10` looks the motion either fighter plays up
-  in `word_6BE90` (StF's ids only: 466, 167, 284…). His ids are 519 on and
-  the victims' copies 847..878, so his throws get no camera. → A guest
-  table (his ids to StF's scripts); `word_6BE90` moves into `GUESTS`.
+  in `word_6BE90` (16-byte records: a motion id, a frame window, two
+  script pointers; 25 of StF's ids: 466, 167, 284…). His ids are 519 on and
+  the victims' copies 847..878, so his throws get no camera. Left as it
+  is: no camera script by motion is known in VF2's data (neither the
+  audit nor the importer's reading of VF2 names one), so he has no value
+  of the same meaning, and giving his throws StF's scripts would be a
+  mapping made up for him, not his own. StF's table is StF's, and a
+  `char_game` gate in `cam_mode_10` would change the shared path; neither
+  is done. A throw of an StF fighter's on him still gets its camera (the
+  thrower's id is StF's). → Only once a VF2 equivalent is found.
 - **Opponent mask:** command op `loc_1EA88` (11984) tests a bit by the
   opponent's character. Akira has bit 6, Knuckles', so a StF script that
   singles out Knuckles singles him out. → A bit of his own, or check the

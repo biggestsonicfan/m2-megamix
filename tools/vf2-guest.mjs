@@ -201,6 +201,10 @@ export function importAkira(R, vf2, stf) {
     const d32 = (a) => { const r = resolveData(vf2, a); return r.view.getUint32(r.off, true); };
     const A = readFighters(vf2)[0];
     const report = [];
+    /* What of VF2's is dropped or changed on the way in, for
+     * tools/grade-guest.mjs (import-assets writes it to guests.json). */
+    const lost = { playOps: {}, flagBits: {}, strikeBytes: 0, op6Bytes: 0, op2bBytes: 0 };
+    const tally = (o, k) => { o[k] = (o[k] ?? 0) + 1; };
 
     /* The heap: main_data from STF_GUEST_HEAP up. */
     let heap = R.guest.heap;
@@ -318,9 +322,10 @@ export function importAkira(R, vf2, stf) {
     const actionMotion = (x) => (typeof x === 'number' ? A.actions[x] : x.motion);
     /* his reactions: a kind VF2 has none for in a category (0) has kind 0's */
     const reactions = [];
+    let kind0 = 0;
     for (let k = 0; k < 30; k++) {
         const t = d32(VF2_REACTIONS + k * 4), r = [];
-        for (let i = 0; i < 40; i++) r.push(d32(t + i * 4) || reactions[0][i]);
+        for (let i = 0; i < 40; i++) { const x = d32(t + i * 4); if (!x && k) kind0++; r.push(x || reactions[0][i]); }
         reactions.push(r);
     }
     const want = new Set([...A.actions, ...STF_ACTIONS.map(actionMotion), ...reactions.flat().map((x) => x & MOTION_ID)].filter((x) => x));
@@ -444,9 +449,9 @@ export function importAkira(R, vf2, stf) {
         for (const { op, b } of s.setup) {
             let o;
             switch (op) {
-            case 4: o = [4, b[1], b[2], damage(b[3]), 0, ...b.subarray(8, 17), ...f32(2.0)]; break;
+            case 4: o = [4, b[1], b[2], damage(b[3]), 0, ...b.subarray(8, 17), ...f32(2.0)]; if (b.subarray(4, 8).some((x) => x)) lost.strikeBytes++; break;
             case 5: o = [...b, 0, 0, 0, 0]; put16(o, 1, mid(b[1] | (b[2] << 8))); o[3] = damage(b[3]); break;
-            case 6: o = [7, b[3], b[4]]; break;
+            case 6: o = [7, b[3], b[4]]; if (b[1] || b[2]) lost.op6Bytes++; break;
             case 0xc: o = [0xc, 0, b[1], b[2]]; break;
             case 1: o = [...b]; put16(o, 1, mid(b[1] | (b[2] << 8))); break;
             case 0xa: o = [...b]; put16(o, 4, mid(b[4] | (b[5] << 8))); break;
@@ -458,11 +463,11 @@ export function importAkira(R, vf2, stf) {
         if (s.end === 8) {
             for (const { op, b } of s.play) {
                 const to = op in PLAY_TO ? PLAY_TO[op] : op;
-                if (to === null) continue;
+                if (to === null) { tally(lost.playOps, hex(op)); continue; }
                 /* Op 5 sets a bit of the rob's flags (0x1A4). VF2's thrown motions set
                  * bit 24, which StF never sets and reads as "commit 0x18", past the end
                  * of its commit table: keep only the bits StF itself sets. */
-                if (op === 5 && !STF_FLAG_BITS.has(b[3])) continue;
+                if (op === 5 && !STF_FLAG_BITS.has(b[3])) { tally(lost.flagBits, b[3]); continue; }
                 if (to === 'hand') {
                     const o = [0x10 | (b[0] & 0x80), b[1], b[2], b[3] === 1 ? 5 : 8, shapeIndex(b[4])];
                     out.push(...o);
@@ -562,7 +567,7 @@ export function importAkira(R, vf2, stf) {
         case 0x32: dropped++; break;
         case 0x33: reloc(1, b); prog.push(0x11, ...b.subarray(1, 5)); break;
         default:
-            if (u.op === 0x2b) b[2] = 0;
+            if (u.op === 0x2b && b[2]) { lost.op2bBytes++; b[2] = 0; }
             if ([0x0d, 0x0f, 0x27, 0x11].includes(u.op)) reloc(1, b);
             if (u.op === 0x28) for (const o of [1, 5, 9]) reloc(o, b);
             if (u.op === 0x15 && p32(a + 5)) reloc(5, b);
@@ -706,5 +711,18 @@ export function importAkira(R, vf2, stf) {
     for (const c of [CHR, CHR + PLAYER2]) T.char_game.bytes[c] = R.guest.games.VF2;
 
     report.push(`heap ${hex(R.guest.heap)}..${hex(heap)}`);
-    return { report, modelId, newId, parts: A.parts.map((x) => M(x.model)), p2: A.p2.parts.map((x) => M(x.model)) };
+    const coverage = {
+        chars: [CHR, CHR + PLAYER2], game: 'VF2', name: 'Akira',
+        motions: ids.length, thrownCopies: thrownIds.length, actions: A.actions.length,
+        actionSlots: STF_ACTIONS.length, remapped: own.filter((x) => x).length,
+        reactions: 30 * 40, reactionsFromKind0: kind0,
+        commandUnits: units.size, commits: commits.length, natives: natives.length,
+        commitsAsAction: commits.filter((a) => COMMIT_ACTION[commitWord(a) >>> 24] !== undefined).length,
+        op32Dropped: dropped, models: vf2List.length,
+        handShapes: { used: shapesUsed.size, kept: shapes.length, every: 1 << q },
+        colorbases: { moved: cbMap.size, free: freeTaken.size },
+        balls: VF2_BALLS.count, damage: Object.fromEntries(damages),
+        lost,
+    };
+    return { report, coverage, modelId, newId, parts: A.parts.map((x) => M(x.model)), p2: A.p2.parts.map((x) => M(x.model)) };
 }
