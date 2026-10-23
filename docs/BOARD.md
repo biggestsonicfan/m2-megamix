@@ -624,8 +624,21 @@ Hard-coded characters, by id:
   same meaning to give him. It stays on this list only because the check is
   by StF id: a guest put in slot 13 or 39 would get Egg Robo's intro and
   head. → Nothing to do for Akira; only if a guest takes slot 13 or 39.
-- Super Sonic's intro anim (20296: 13, 14): does not touch character 6. A
-  guest in one of those slots would inherit it.
+- The intro animation step (20296, loc_33824 forward on rob+0x7F0 bit 10;
+  20349, loc_33910 backward on bit 11): it takes the drawn character's
+  (rob+0x1B0) row of `opening_cutscene_anim_data` and writes one frame of
+  it per step to rob+0x40[rob+0x2A8A], counting rob+0x2A88. Only rows 13/39
+  (`egg_robo_head_rising_cutscene_anim`) and 14/40 (`_uk_rocket_metal_trans`)
+  are set; when the parent (rob+0x1B1) is 14, it first zeroes rob+0x40..0x7C,
+  0x2050, 0x2054, 0x2A80 and 0x2A84. Every other row is 0, so the step
+  returns at once. Akira's rows (6 and 32) are 0 and his 1B1 is 6, so he
+  gets that early return, as every fighter but 13 and 14 does. Left as it
+  is, because VF2 has no such step: nothing in VF2's program uses rob+0x7F0,
+  rob+0x2A88 or rob+0x2A8A, so there is no VF2 intro frame table of the
+  same meaning to give him a row from. It stays on this list only because
+  the table and the 14 check are by StF id: a guest put in slot 13/39 or
+  14/40 would play Egg Robo's frames or row 14's (`_uk_rocket_metal_trans`). → Nothing to do
+  for Akira; only if a guest takes one of those slots.
 
 Inert on the board, for later:
 - `character_spin_mot_objects` (0x81138, `sub_81038` 24854): Knuckles' spin
