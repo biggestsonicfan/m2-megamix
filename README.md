@@ -59,6 +59,7 @@ struct dump, F2 pauses and F3 steps one frame.
 - `js/render.js` draws the stage and fighters with noclip's shader. Each one
   gets its own game's texture RAM and colour tables.
 - `docs/STRUCTURES.md` lists the shared structures and where each game keeps them.
+- `docs/SHARED-CODE.md` audits the i960 functions StF and VF2 share: which are one code, and what a VF2 fighter still needs (guest data or a branch on `char_game`); `tools/shared-fns.py` compares them.
 
 ## Not the board's own code
 

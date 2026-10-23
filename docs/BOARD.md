@@ -513,18 +513,21 @@ Acting on him now:
   These are still Knuckles', because VF2 has no field known to mean the same:
   - +0x10 (0xC50F8, the cast's one table): 15 floats and a count at +0x3C.
     `get_en_info` (7186) tests the distance (rob+0x5F4) against +0, +4, +8,
-    +0xC… for its near, far and reach bits. VF2's record has no pointer
-    there. Its +0x18..+0x24 hold 1.4, 1.7, 1.4, 1.4 and +0x28 3.0, but no
-    one has found what reads them, so they are not known to be ranges.
-    → Find VF2's reader first, then ×`SCALE`.
+    +0xC… for its near, far and reach bits. VF2's reader is its
+    `get_en_info` (V 0x18818), on rob 0x62C, 0x668, 0x630, 0x634, which
+    `init_fix` fills from record +0x18..+0x24 (1.4, 1.7, 1.4, 1.4).
+    → A copy of the table with those ×`SCALE` (D2 in `SHARED-CODE.md`).
   - +0x18 (0xC5148; Amy 0xC51B8): option data for `copy_option_data`
     (10082). VF2 has none. → A zero block of his own, once it is known what
     zero does.
-  - +0x20 (0xC50E4, the cast's bytes 38, 26): rob+0x5BE (1585..1596,
-    1756). What rob+0x5BE is, and VF2's equivalent, are unknown.
-  - +0x14 (a float by character: 60 Knuckles, 40 Amy, 160 Eggman), +0x24
-    (8.0), +0x28 (0xC513C) and +0x2C (9.0): no lifted code reads them, and
-    their meaning is unknown. VF2's +0x2C (79.0) is not known to match.
+  - +0x20 (0xC50E4, the cast's bytes 38, 26): the jump's frames, into
+    rob+0x5BE (1587..1600, 1756). VF2's are record +0x4C: 72, 32. → D3.
+  - +0x14 (a float by character: 60 Knuckles, 40 Amy, 160 Eggman): the
+    weight. `action_init` (802..810) puts it into rob+0x7DC and, with
+    `sub_3261C`'s, into rob+0x5D8, the friction `rob_spd_control` divides
+    by. VF2's is record +0x2C (79.0). → D1.
+  - +0x24 (8.0), +0x28 (0xC513C) and +0x2C (9.0): no lifted code reads
+    them, and their meaning is unknown.
   - +0x1C (0xC5260, the same in all 26 of StF's records): missed by the
     audit, found by `tools/grade-guest.mjs` (below). Its reader and
     meaning are unknown, so it stays. VF2's record has no pointer there:
