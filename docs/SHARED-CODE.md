@@ -40,7 +40,7 @@ below.
 |--|--|--|--|--|--|
 | `print_mes` | 0x5674 | 0x7FC0 | 12 / 12 | same | stubbed |
 | `rand` | 0x66B0 | 0x94D0 | 19 / 19 | same |  |
-| `rob_action` | 0x12974 | 0x142F4 | 381 / 301 | differs | D1 (done), D2, D3 (done) (his record); face_mot_control is VF2-only (U9) |
+| `rob_action` | 0x12974 | 0x142F4 | 381 / 301 | differs | D1 (done), D2 (done), D3 (done) (his record); face_mot_control is VF2-only (U9) |
 | `decide_command` | 0x12A94 | 0x1442C | 297 / 125 | differs | B5 |
 | `decide_my_command` | 0x12F98 | 0x14640 | 42 / 42 | differs | nothing (renumbered types) |
 | `exec_command` | 0x13040 | 0x146EC | 887 / 614 | differs | D3 (done), D6, B6; U6 |
@@ -52,7 +52,7 @@ below.
 | `rob_spd_control` | 0x17F78 | 0x1791C | 133 / 129 | differs | D1 (done) |
 | `action_after` | 0x18404 | 0x180BC | 15 / 34 | differs | nothing (VF2 bit 8 of rob+0 is dead on the board) |
 | `get_my_info` | 0x18584 | 0x18144 | 254 / 253 | differs | nothing (slow motion, settings bit) |
-| `get_en_info` | 0x18A88 | 0x18644 | 694 / 238 | differs | D2 |
+| `get_en_info` | 0x18A88 | 0x18644 | 694 / 238 | differs | D2 (done) |
 | `calc_land_time` | 0x19900 | 0x18C64 | 52 / 47 | differs | nothing (StF branch on a bit nothing sets) |
 | `calc_stage_limit_dist` | 0x199FC | 0x18D44 | 41 / 41 | same |  |
 | `calc_gyang_from_fu_vec2` | 0x19AB8 | 0x18E00 | 45 / 45 | same |  |
@@ -105,11 +105,18 @@ Guest data (his values in StF's fields; no shared code changes):
   (0x5E0..): his moves and hit reactions move him by their motions, so
   no slide of his has changed yet. Throws copy the thrower's speed, and no
   wall was hit.
-- **D2 Ranges.** Record +0x10's first four floats are `get_en_info`'s near
+- **D2 Ranges.** Done. Record +0x10's first four floats are `get_en_info`'s near
   and far ranges (rob+0x5F4 against them). VF2 reads its own from rob
   0x62C, 0x668, 0x630, 0x634, which `init_fix` (V 0x14218..0x14234) fills from
   record +0x18..+0x24: Akira's 1.4, 1.7, 1.4, 1.4 (×`SCALE`: 2.84, 3.45,
-  2.84, 2.84). He has Knuckles' 2.5, 2.5, 1.6, 2.4. VF2 writes the results to
+  2.84, 2.84). +0x10 points at 0xC50F8, the one table the whole cast
+  shares, so `vf2-guest.mjs` gives each of his records its own copy of it
+  with those four in place of Knuckles' 2.5, 2.5, 1.6, 2.4; the rest of the
+  table and the reader are StF's. In MAME and m2-hle2 his table reads 2.838,
+  3.446, 2.838, 2.838 and Sonic's 2.5, 2.5, 1.6, 2.4. In MAME, walking in
+  and out, his rob+0x720 bit 0 now holds to a distance of 2.84 and bit 1 to
+  3.45 (both 2.5 before); his motions and positions are as before, and
+  Sonic's log is the same byte for byte. Still to do (not part of D2): VF2 writes the results to
   rob+0x5B8 bits 8, 12, 9, 10, 13, StF to rob+0x720 bits 0..4, and StF's
   0x5B8 bit 8 means something else (the opponent moving away). So his
   command ops 7/0xA on those bits (10 on bit 8, 2 on bit 11) test the wrong

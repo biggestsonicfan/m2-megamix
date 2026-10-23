@@ -40,6 +40,7 @@ const VF2_NATIVE_TAIL = 0x1d194;
 /* 30 kinds of hit, each a list of 40 reactions: category (guard, guard,
  * hit, counter hit, knock-down) * 8, +4 crouching, +2 from behind, +side. */
 const VF2_REACTIONS = 0x0201ccfc;
+const VF2_RANGES = 0x18;                /* record +0x18..+0x24: near, far, low, behind (init_fix) */
 const VF2_WEIGHT = 0x2c;                 /* record +0x2C: the weight, a float (init_fix) */
 const VF2_JUMP_TIME = 0x4c;              /* record +0x4C: the jump's frames (V 0x1482C) */
 const VF2_HANDS = 0x3c;                  /* record +0x3C: 32 shapes a hand, slot 5 then 8 at +0x180 */
@@ -638,7 +639,8 @@ export function importAkira(R, vf2, stf) {
     const skel = alloc(bones, 'skeleton');
 
     /* His records: Knuckles', with his parts (+0, +8), actions (+0xC),
-     * skeleton (+4), weight (+0x14) and jump time (+0x20). The rest stay Knuckles'
+     * skeleton (+4), ranges (+0x10), weight (+0x14) and jump time (+0x20).
+     * The rest stay Knuckles'
      * (docs/BOARD.md, "Where a guest is still treated as StF's"). */
     for (const [p, body] of [[0, A], [1, A.p2]]) {
         const parts = body.parts.map((x) => M(x.model));
@@ -656,6 +658,14 @@ export function importAkira(R, vf2, stf) {
          * sub_3261C's, rob+0x5D8 (rob_spd_control's slide, how far hits push
          * him). VF2's init_fix takes record +0x2C (docs/SHARED-CODE.md, D1). */
         rv.setUint32(0x14, d32(body.root + VF2_WEIGHT), true);
+        /* +0x10, the cast's one table (15 floats, a count at +0x3C):
+         * get_en_info tests rob+0x5F4 against its +0, +4, +8, +0xC. His copy
+         * has VF2's record +0x18..+0x24 there, ×SCALE (docs/SHARED-CODE.md, D2). */
+        const table = rv.getUint32(0x10, true), ranges = new Uint8Array(0x40);
+        for (let i = 0; i < 0x40; i += 4) new DataView(ranges.buffer).setUint32(i, program.u32(table + i), true);
+        ranges.set(bytes(vf2, body.root + VF2_RANGES, 16));
+        scaleFloats(ranges, 0, 4);
+        rv.setUint32(0x10, alloc(ranges, `ranges ${p ? 'P2' : 'P1'}`), true);
         T.CHAR_PARTS.view.setUint32((CHR + p * PLAYER2) * 4, alloc(rec, `record ${p ? 'P2' : 'P1'}`), true);
     }
 

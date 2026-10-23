@@ -507,7 +507,7 @@ should get is after the arrow.
 
 Acting on him now:
 - **Record fields:** `vf2-guest.mjs` copies Knuckles' 0x30-byte record and
-  replaces +0, +8, +0xC, +0x14 and +0x20 (his weight and jump time, below) and +4 (the skeleton, as VF2's record +4: his,
+  replaces +0, +8, +0xC, +0x10, +0x14 and +0x20 (his ranges, weight and jump time, below) and +4 (the skeleton, as VF2's record +4: his,
   ×`SCALE`, the one `SKELETON_TYPE_DATA` gets; no lifted code reads it, and MAME and
   m2-hle2 give the same energies with it as before).
   +0x20 is the jump's frames, into rob+0x5BE (1587..1600, 1756; the second
@@ -518,13 +518,15 @@ Acting on him now:
   weight. `action_init` (802..810) puts it into rob+0x7DC and, with
   `sub_3261C`'s, into rob+0x5D8, the friction `rob_spd_control` divides by;
   he has VF2's record +0x2C, 79.0 (D1 in `SHARED-CODE.md`).
+  +0x10 points at 0xC50F8, the cast's one table: 15 floats and a count at
+  +0x3C. `get_en_info` (7186) tests the distance (rob+0x5F4) against +0,
+  +4, +8, +0xC for its near, far and reach bits (rob+0x720 bits 0..4).
+  VF2's `get_en_info` (V 0x18818) reads rob 0x62C, 0x668, 0x630, 0x634,
+  which `init_fix` fills from record +0x18..+0x24 (1.4, 1.7, 1.4, 1.4). He
+  has his own copy of the table with those ×`SCALE` (2.84, 3.45, 2.84,
+  2.84) for Knuckles' 2.5, 2.5, 1.6, 2.4 (D2 in `SHARED-CODE.md`). MAME: his
+  near bit holds to 2.84 and far to 3.45; Sonic's are as before.
   These are still Knuckles', because VF2 has no field known to mean the same:
-  - +0x10 (0xC50F8, the cast's one table): 15 floats and a count at +0x3C.
-    `get_en_info` (7186) tests the distance (rob+0x5F4) against +0, +4, +8,
-    +0xC… for its near, far and reach bits. VF2's reader is its
-    `get_en_info` (V 0x18818), on rob 0x62C, 0x668, 0x630, 0x634, which
-    `init_fix` fills from record +0x18..+0x24 (1.4, 1.7, 1.4, 1.4).
-    → A copy of the table with those ×`SCALE` (D2 in `SHARED-CODE.md`).
   - +0x18 (0xC5148; Amy 0xC51B8): option data for `copy_option_data`
     (10082). VF2 has none. → A zero block of his own, once it is known what
     zero does.
