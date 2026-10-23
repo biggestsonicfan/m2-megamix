@@ -446,6 +446,8 @@ with a heap after them.
     object with tpa, tha, oba and count all 0. With the band in polygon RAM
     at 0, m2-hle2 drew that object from P1's band (a big polygon at his
     waist); MAME drew nothing.
+  - Akira as player 2 (against Sonic) on m2-hle2: no stray polygon, and the
+    band closes the belt through a kick and a punch, as for player 1.
 
 He walks, attacks, hits, takes hits and goes down, as player 1 or 2 or both.
 StF's command interpreter keeps its backtrack base at 0x1214(g13), where g13
