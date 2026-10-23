@@ -117,6 +117,7 @@ function slots() {
     };
     lists('SKELETON_TYPE_DATA', 4);
     lists('PLAYER_HEAD_LIST', 21);
+    lists('off_C2058', 4);
     /* types 0, 1 and 3 by character, 3 from its second half too; type 2 is
      * one record for everyone */
     lists('rob_coli_ball_types', 4, (k) => {
@@ -216,7 +217,6 @@ function audit(c, cov) {
         { what: 'blank_per_character_audio_array', status: 'inert', note: 'sound is stubbed' },
         { what: 'sub_2C7E4 projectile reactions', status: 'inert', note: 'StF\'s uk_hit_motions, not ptr_DA0B4' },
         { what: 'ptr_CE1CC damage_unit rows', status: 'inert', note: 'every row the same empty one' },
-        { what: 'off_C2058[0][6]', status: 'unsettled', note: 'his setups have skeleton type 0' },
     ];
 }
 

@@ -778,49 +778,50 @@ Inert on the board, for later:
   Neither is done. → Only if a StF row is ever filled, and then only with
   a VF2 table of the same meaning.
 
-- `off_C2058` (0xC2058; `calc_rob_angle_cont` 18164): the bone table the
-  per-frame angle code sends to the copro (op 0x35806B6B: each entry's
-  x, y, z, then +0x18 and +0xC; 0x24 bytes an entry). It picks
-  `off_C2058`[type][drawn character] by rob+0x84C, unless rob+0x860
-  bit 12 is set; then it uses rob+0x8C, which `calc_rob_angle_int` filled
-  from `SKELETON_TYPE_DATA` (the guest table, his own skeleton). `set_motion`
-  sets bit 12 when the setup's type (header byte 12) is not 0. All his
-  setups are type 0 with 0x860 clear (`convertSetup` zeroes header bytes
-  4..7 and 12), so he gets `off_C2058`[0][6] = 0xC2558. Left as it is:
-  - Type 0's list in StF's ROM is 0xC2558 for all 26 characters (types 1
-    and 3 differ by character). 372 of StF's 518 setups are type 0, and
-    none of the 518 sets bit 12 in its header, so in those motions every
-    StF fighter, Tails and Amy too, gets 0xC2558 here and not its own
-    skeleton. Akira gets the same row as all of them. He is not treated
-    differently from them.
-  - VF2's routine (around 0x27D68, the same copro stream) has no character or
-    type lookup and no bit 12 test: it loads one fixed table for its whole
-    cast (`lda 0x296A0, g6`, VF2's program ROM). That table is laid out
-    differently: 0x14 bytes an entry, sending +0x10 and +0xC (VF2's
-    0x27E4C, 0x27E9C), where StF's are 0x24 with +0x18 and +0xC. Its
-    numbers don't line up with StF's entry by entry (StF's second entry is
-    x 0.392; VF2's is y 0.28). Which VF2 field means which StF field is
-    not known, so a converted row would be invented. His record +4 (the
-    skeleton he already has) is a different VF2 table, one per character.
-  - Giving him a row of his own would also mean making `off_C2058` a guest
-    table (the lifter) and changing what StF's shared path reads.
+- `off_C2058` (0xC2058; `calc_rob_angle_cont` 18164): the bones the
+  per-frame angle code solves the pose on and sends to the copro (op
+  0x35806B6B). It picks `off_C2058`[type][drawn character] by rob+0x84C,
+  unless rob+0x860 bit 12 is set; then it uses rob+0x8C, which
+  `calc_rob_angle_int` filled from `SKELETON_TYPE_DATA`. `set_motion` sets
+  bit 12 when the setup's type (header byte 12) is not 0. All his setups
+  are type 0 with 0x860 clear (`convertSetup` zeroes header bytes 4..7 and
+  12), and type 0's list in StF's ROM is 0xC2558 for all 26 characters.
+  **Now his own** (the lifter makes `off_C2058` a guest table;
+  `vf2-guest.mjs` fills [0..3][6] and [0..3][32]):
+  - StF's row is 15 points: the chest (+0), the head (+0xC, the pivot the
+    head aim in `calc_unit_1` turns about), each arm's pivot (+0x18,
+    +0x3C) and its two bones (the x of points at +0xC and +0x18 from the
+    pivot), the pelvis (+0x60), each leg's pivot (+0x6C, +0x90) and two
+    bones. 0xC2558's head is x 0.361.
+  - VF2's routine (around 0x27D68, the same copro stream) loads one fixed
+    table for its whole cast (`lda 0x296A0, g6`). It has the same points at
+    +0, +0xC, +0x18, +0x2C, +0x40, +0x4C, +0x60, with each limb's two bone
+    lengths as scalars at its pivot +0xC and +0x10 (VF2's 0x27E4C and
+    0x27E9C send +0x10 and +0xC where StF's send +0x18 and +0xC). Its head
+    is x 0.39. His row is that table ×`SCALE` (lengths, as his skeleton):
+    head 0.79.
+  - On StF's row his head turned about a point 0.43 below his own head.
+    His face target (+0xB0C, at his head height) was then above the
+    pivot, and in every motion with the look gate closed (punch 527,
+    kick 720, crouch) the pitch sat at its −0x2000 clamp: he looked up
+    over the opponent instead of at them. Idle (gate open) was not
+    affected. Now the head angles follow VF2's model posed on the same
+    motion: punch pitch about −3000 (VF2 18 frame 4: −3125); kick
+    (VF2 738) frames 9..13 turn −26045, −25666, −24970, −24058, −23034 on
+    both. Sonic's head angles are unchanged frame for frame.
 
-  Neither is done. → Only if what VF2's 0x14-byte entries mean field by
-  field becomes known; then ×`SCALE` (they are lengths).
-
-`off_C2058` is the last entry. Every entry above it is now marked: left
-because VF2 has no equivalent of the same meaning, or because the meaning
-is not known (the record fields, +0x1C included). None of them can be
-replaced without an invented value or a change to the shared path. The
-next step is new knowledge (a VF2 reader of his record +0x18..+0x2C, or
-StF's reader of +0x1C), not another entry here.
+The entries above `off_C2058` are left because VF2 has no equivalent of
+the same meaning, or because the meaning is not known (the record fields,
++0x1C included). None of them can be replaced without an invented value or
+a change to the shared path. The next step is new knowledge (a VF2 reader
+of his record +0x18..+0x2C, or StF's reader of +0x1C).
 
 Already his own or fine: `CHAR_PARTS`, `MOVESET_ARRAY`, `ptr_DA0B4`,
 `motion_remap`, `SKELETON_TYPE_DATA` (all four kinds) and his records' +4,
 the hand, foot,
 body and head lists, `char_game`, `midriff` (his waist band, above),
 `rob_coli_ball_types` (his collision
-balls, above), his damage (×140/200 in his setups, above); `_uk_gravity` (0.0, as Sonic's). In C,
+balls, above), `off_C2058` (his solve bones, above), his damage (×140/200 in his setups, above); `_uk_gravity` (0.0, as Sonic's). In C,
 `rob_init`, `draw_fighter` and `load_palettes` read the guest tables and
 `char_game`. The camera (`camera_place`, `cam_mode_9`/`10`) reads no
 character, only positions, flags and the motion id; it aims at root

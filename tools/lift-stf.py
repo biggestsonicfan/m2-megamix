@@ -99,13 +99,18 @@ GUEST_BASE = 0x02E00000
 # midriff is the board's own: a pointer by character (52) to the band VF2
 # and Fighting Vipers draw between the hips and the chest (0: none, as for
 # every StF fighter); megamix.c builds it every frame.
+# off_C2058: a list by skeleton type (rob+0x84C) of lists by character of
+# the bones calc_rob_angle_cont solves the pose on (15 points: the chest,
+# the head, each arm's and leg's pivot and two bones, the pelvis); the
+# lists are copied into its room.
 GUESTS = [('CHAR_PARTS', 0x100, 52 * 4), ('SKELETON_TYPE_DATA', 0x400, 4 * 4),
           ('MOVESET_ARRAY', 0x100, 24 * 4), ('player_hand_animations', 0x100, 52 * 4),
           ('player_foot_animation', 0x100, 52 * 4), ('player_body_animation', 0x100, 52 * 4),
           ('PLAYER_HEAD_LIST', 0x1800, 21 * 4), ('animation_related', 0x2000, 519 * 4),
           ('offset_list_motions', 0x2000, 519 * 4), ('ptr_DA0B4', 0x80, 26 * 4),
           ('motion_remap', 0x80, 26 * 4), ('char_game', 0x40, 52),
-          ('rob_coli_ball_types', 0x400, 4 * 4), ('midriff', 0x100, 52 * 4)]
+          ('rob_coli_ball_types', 0x400, 4 * 4), ('midriff', 0x100, 52 * 4),
+          ('off_C2058', 0x400, 4 * 4)]
 GAMES = [('STF', 0), ('VF2', 1), ('FV', 2)]      # char_game's values (GAME_<name>)
 # Code put in at a label of StF's, before what is there. sub_2B94C picks a
 # hit's reaction from the defender's table: (side)[category * 8], +2 from

@@ -52,6 +52,8 @@ const MIDRIFF = { model: 8, ring: 0x70, ringPoints: 8, count: 0xd0, links: 0xd4,
 /* The collision balls, one set for the cast (0x176A0): their points (x, y,
  * z, r), a list pointer by part (bytes, ball * 4) and a count by part. */
 const VF2_BALLS = { points: 0x020078a8, count: 30, lists: 0x02007bee, counts: 0x02007c68 };
+/* The bones the pose is solved on, one table for the cast (program ROM). */
+const VF2_RIG = 0x296a0;
 
 /* The polygon ROM's empty run (docs/STF-BOARD-AKIRA.md, "What fits where"). */
 const POLY_RUN = 0xec2578, POLY_RUN_END = 0xec2578 + 0x13da88;
@@ -680,6 +682,38 @@ export function importAkira(R, vf2, stf) {
             Object.assign(t, { bytes: b, view: v, lists: 0x10, perKind: per });
         }
         for (let k = 0; k < 4; k++) for (const c of [CHR, CHR + PLAYER2]) t.view.setUint32(t.lists + k * per + c * 4, skel, true);
+    }
+
+    /* The bones his pose is solved on: off_C2058[type][character], which
+     * calc_rob_angle_cont reads (not his skeleton: StF's type 0 row is one
+     * for all 26). VF2 solves its whole cast on one table (VF2_RIG, which
+     * its 0x27CE0 loads), with StF's points at the same offsets: the chest,
+     * the head (+0xC, which the head turns about), the pelvis (+0x60), and
+     * from each arm's and leg's pivot (+0x18, +0x3C, +0x6C, +0x90) its two
+     * bones, a length at +0xC and +0x10 where StF's are the x of a point
+     * at +0xC and +0x18. ×SCALE, as his skeleton. On StF's row his head
+     * turned about a point 0.43 too low and pitched to its limit. */
+    {
+        const t = T.off_C2058, per = 52 * 4;
+        if (!t.lists) {
+            const b = new Uint8Array(0x10 + 4 * per), v = new DataView(b.buffer);
+            for (let k = 0; k < 4; k++) {
+                const from = program.u32(t.src + k * 4);
+                for (let i = 0; i < per; i += 4) v.setUint32(0x10 + k * per + i, program.u32(from + i), true);
+                v.setUint32(k * 4, t.at + 0x10 + k * per, true);
+            }
+            Object.assign(t, { bytes: b, view: v, lists: 0x10 });
+        }
+        const f = (o) => vf2.mainCpuView.getFloat32(VF2_RIG + o, true);
+        const pt = (o) => [f(o), f(o + 4), f(o + 8)];
+        const rig = [pt(0), pt(0xc)];
+        for (const at of [0x18, 0x2c]) rig.push(pt(at), [f(at + 0xc), 0, 0], [f(at + 0x10), 0, 0]);
+        rig.push(pt(0x40));
+        for (const at of [0x4c, 0x60]) rig.push(pt(at), [f(at + 0xc), 0, 0], [f(at + 0x10), 0, 0]);
+        const b = new Uint8Array(rig.length * 12), v = new DataView(b.buffer);
+        rig.flat().forEach((x, i) => v.setFloat32(i * 4, x * SCALE, true));
+        const rigAt = alloc(b, 'bones');
+        for (let k = 0; k < 4; k++) for (const c of [CHR, CHR + PLAYER2]) t.view.setUint32(t.lists + k * per + c * 4, rigAt, true);
     }
 
     /* Collision balls: rob_coli_ball_types[type][character] (rob+0x84C, the
