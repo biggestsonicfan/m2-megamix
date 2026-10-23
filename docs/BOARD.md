@@ -719,12 +719,35 @@ Inert on the board, for later:
   Neither is done. → Only if a StF row is ever filled, and then only with
   a VF2 table of the same meaning.
 
-Not settled: all his setups have skeleton type 0 and 0x860 clear
-(`convertSetup` zeroes header bytes 4..7 and 12), so `calc_rob_angle_cont`
-(18164) reads `off_C2058`[0][6], the sibling of `SKELETON_TYPE_DATA` that is
-not a guest table. That row is 0xC2558 (StF's `model_floats_0`) for every
-character, StF's or not. Check in MAME what it feeds before giving it a
-guest copy.
+- `off_C2058` (0xC2058; `calc_rob_angle_cont` 18164): the bone table the
+  per-frame angle code sends to the copro (op 0x35806B6B: each entry's
+  x, y, z, then +0x18 and +0xC; 0x24 bytes an entry). It picks
+  `off_C2058`[type][drawn character] by rob+0x84C, unless rob+0x860
+  bit 12 is set; then it uses rob+0x8C, which `calc_rob_angle_int` filled
+  from `SKELETON_TYPE_DATA` (the guest table, his own skeleton). `set_motion`
+  sets bit 12 when the setup's type (header byte 12) is not 0. All his
+  setups are type 0 with 0x860 clear (`convertSetup` zeroes header bytes
+  4..7 and 12), so he gets `off_C2058`[0][6] = 0xC2558. Left as it is:
+  - Type 0's list in StF's ROM is 0xC2558 for all 26 characters (types 1
+    and 3 differ by character). 372 of StF's 518 setups are type 0, and
+    none of the 518 sets bit 12 in its header, so in those motions every
+    StF fighter, Tails and Amy too, gets 0xC2558 here and not its own
+    skeleton. Akira gets the same row as all of them. He is not treated
+    differently from them.
+  - VF2's routine (around 0x27D68, the same copro stream) has no character or
+    type lookup and no bit 12 test: it loads one fixed table for its whole
+    cast (`lda 0x296A0, g6`, VF2's program ROM). That table is laid out
+    differently: 0x14 bytes an entry, sending +0x10 and +0xC (VF2's
+    0x27E4C, 0x27E9C), where StF's are 0x24 with +0x18 and +0xC. Its
+    numbers don't line up with StF's entry by entry (StF's second entry is
+    x 0.392; VF2's is y 0.28). Which VF2 field means which StF field is
+    not known, so a converted row would be invented. His record +4 (the
+    skeleton he already has) is a different VF2 table, one per character.
+  - Giving him a row of his own would also mean making `off_C2058` a guest
+    table (the lifter) and changing what StF's shared path reads.
+
+  Neither is done. → Only if what VF2's 0x14-byte entries mean field by
+  field becomes known; then ×`SCALE` (they are lengths).
 
 Already his own or fine: `CHAR_PARTS`, `MOVESET_ARRAY`, `ptr_DA0B4`,
 `motion_remap`, `SKELETON_TYPE_DATA` (all four kinds) and his records' +4,
