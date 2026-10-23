@@ -413,6 +413,33 @@ with a heap after them.
     their palettes loaded only for StF's fighters, and the setup menu shows
     each fighter as `<game>:<name>` (`STF:SONIC`, `VF2:AKIRA`).
   A Fighting Vipers guest sets its characters to `GAME_FV` the same way.
+- **Midriff:** why his waist looked broken. VF2 draws a band between the
+  chest and the hips each frame from polygon RAM: the record's +0x38 points
+  at a struct (model +8, the chest's ring of 8 points +0x70, a link count n
+  +0xD0, n links of 0x28 bytes from +0xD4: attribute, normal, two points;
+  a closing word, then 2n index bytes, one per link point: below 8, the
+  link's own point on the hips; 8 and up, the chest's ring point idx−8).
+  Each frame VF2 takes the ring through H⁻¹·C (H the hips' matrix, slot 9;
+  C the chest's, slot 1), writes the links to polygon RAM (geo command 5)
+  and draws them on the hips' matrix. The board never had it, so where the
+  chest bends (a kick, a punch's lean) the gap at the belt showed the floor
+  through. At rest the band has no area: the ring through H⁻¹·C (about 180°
+  round z) lands on the hips' points, so it only shows when he bends.
+  - `midriff` (a guest table of the board's own, `STF_GUEST_midriff`,
+    0x02E06640, 0xD0 bytes) is a word by character: 0, or (`vf2-guest.mjs`)
+    a struct in the data ROM: +0 the model, +4 n, +8 the ring (8 × 3 floats,
+    scaled to StF's size), +0x68 the 10n+1 words of the links (points
+    scaled), then the 2n index bytes.
+  - `draw_fighter`: `midriff_build` reads both matrices back from the
+    coprocessor (`slot_mat`), inverts the hips', and writes the links, the
+    chest points put in, to polygon RAM at `player << 8`; after slot 9's
+    model, `midriff_draw` submits the band's model with its data pointer
+    (header word 2) at that address + 4, in normal mode 2 (no normals; VF2
+    uses 3, the same light), then ends the list at `COP_WPOS` (not the geo
+    write pointer: there nothing was drawn).
+  - Tested on MAME and m2-hle2 (geo on and off): the band fills the belt as
+    he kicks; at rest nothing changes. Damage unchanged (Honey 140 → 132 →
+    125, Akira 127 → 116 on both).
 
 He walks, attacks, hits, takes hits and goes down, as player 1 or 2 or both.
 StF's command interpreter keeps its backtrack base at 0x1214(g13), where g13
@@ -762,7 +789,8 @@ StF's reader of +0x1C), not another entry here.
 Already his own or fine: `CHAR_PARTS`, `MOVESET_ARRAY`, `ptr_DA0B4`,
 `motion_remap`, `SKELETON_TYPE_DATA` (all four kinds) and his records' +4,
 the hand, foot,
-body and head lists, `char_game`, `rob_coli_ball_types` (his collision
+body and head lists, `char_game`, `midriff` (his waist band, above),
+`rob_coli_ball_types` (his collision
 balls, above), his damage (×140/200 in his setups, above); `_uk_gravity` (0.0, as Sonic's). In C,
 `rob_init`, `draw_fighter` and `load_palettes` read the guest tables and
 `char_game`. The camera (`camera_place`, `cam_mode_9`/`10`) reads no

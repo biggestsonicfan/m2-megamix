@@ -14,6 +14,8 @@
  *   - his command program, converted op by op;
  *   - his records (StF's, Knuckles', with his parts, player 2's and his
  *     actions), his skeleton, his hands and his head;
+ *   - his midriff, the band between his hips and his chest (the board's
+ *     guest table `midriff`; megamix.c builds and draws it);
  *   - his models under free StF model ids: the meshes in the polygon ROM's
  *     empty run, the material and UV streams and the textures as
  *     tools/pack-akira.mjs packs them.
@@ -40,6 +42,13 @@ const VF2_NATIVE_TAIL = 0x1d194;
 const VF2_REACTIONS = 0x0201ccfc;
 const VF2_HANDS = 0x3c;                  /* record +0x3C: 32 shapes a hand, slot 5 then 8 at +0x180 */
 const SKELETON = 4, SKELETON_BYTES = 15 * 12;
+/* Record +0x38: the midriff (noclip TECHNICAL.md, "The midriff"): +8 its
+ * model, +0x70 the chest's ring (8 points in the chest's frame), +0xD0 the
+ * link count, +0xD4 the links (0x28 bytes: an attribute, a normal, two
+ * points in the hips' frame), a closing word, then two index bytes a link
+ * (8 on: a chest point, index - 8; below 8: the link's own point). */
+const VF2_MIDRIFF = 0x38;
+const MIDRIFF = { model: 8, ring: 0x70, ringPoints: 8, count: 0xd0, links: 0xd4, link: 10, first: 8 };
 /* The collision balls, one set for the cast (0x176A0): their points (x, y,
  * z, r), a list pointer by part (bytes, ball * 4) and a count by part. */
 const VF2_BALLS = { points: 0x020078a8, count: 30, lists: 0x02007bee, counts: 0x02007c68 };
@@ -378,7 +387,9 @@ export function importAkira(R, vf2, stf) {
     report.push(`hand shapes ${shapes.join(',')}${q ? ` (every ${1 << q})` : ''}`);
 
     /* ---- models ---- */
+    const midriffAt = (body) => d32(body.root + VF2_MIDRIFF);
     const vf2Models = new Set([...A.parts, ...A.p2.parts].map((p) => p.model).filter((m) => m > 0));
+    for (const body of [A, A.p2]) vf2Models.add(d32(midriffAt(body) + MIDRIFF.model));
     for (let i = 0; i < 32; i++) { vf2Models.add(d32(handTable + i * 4)); vf2Models.add(d32(handTable + 0x180 + i * 4)); }
     const vf2List = [...vf2Models].filter((m) => m > 0).sort((a, b) => a - b);
     const modelId = new Map();
@@ -634,6 +645,25 @@ export function importAkira(R, vf2, stf) {
         const rv = new DataView(rec.buffer);
         rv.setUint32(0, list, true); rv.setUint32(4, skel, true); rv.setUint32(8, list, true); rv.setUint32(0xc, actionsAt, true);
         T.CHAR_PARTS.view.setUint32((CHR + p * PLAYER2) * 4, alloc(rec, `record ${p ? 'P2' : 'P1'}`), true);
+    }
+
+    /* His midriff, for either player (the board's guest table `midriff`):
+     * VF2's struct as the board reads it, his size: +0 the model (his, under
+     * its StF id), +4 the link count n, +8 the chest's ring (8 points),
+     * +0x68 the 10n + 1 words VF2 writes to polygon RAM (each link's
+     * attribute, normal and two points, the hips' ring; the closing word),
+     * then the 2n index bytes. Points ×SCALE; the normals as they are. */
+    for (const [p, body] of [[0, A], [1, A.p2]]) {
+        const at = midriffAt(body), n = d32(at + MIDRIFF.count);
+        const ring = Uint8Array.from(bytes(vf2, at + MIDRIFF.ring, MIDRIFF.ringPoints * 12));
+        scaleFloats(ring, 0, MIDRIFF.ringPoints * 3);
+        const words = Uint8Array.from(bytes(vf2, at + MIDRIFF.links, (MIDRIFF.link * n + 1) * 4));
+        for (let k = 0; k < n; k++) scaleFloats(words, (MIDRIFF.link * k + 4) * 4, 6);
+        const index = bytes(vf2, at + MIDRIFF.links + (MIDRIFF.link * n + 1) * 4, 2 * n);
+        for (const x of index) if (x >= MIDRIFF.first + MIDRIFF.ringPoints) throw new Error(`midriff: chest point ${x - MIDRIFF.first}`);
+        const b = new Uint8Array(8 + ring.length + words.length + index.length);
+        b.set(u32s([M(d32(at + MIDRIFF.model)), n])); b.set(ring, 8); b.set(words, 8 + ring.length); b.set(index, 8 + ring.length + words.length);
+        T.midriff.view.setUint32((CHR + p * PLAYER2) * 4, alloc(b, `midriff ${p ? 'P2' : 'P1'}`), true);
     }
 
     /* SKELETON_TYPE_DATA[type][character]: the four lists, each copied into

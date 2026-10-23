@@ -63,21 +63,28 @@ static void submit_mat_ov(u32 model, const mat_t *m, u32 ow, u32 ov) {
 
 static void submit_mat(u32 model, const mat_t *m) { submit_mat_ov(model, m, 0u, 0u); }
 
-/* The same under the coprocessor's current matrix. */
-static void submit_cur(u32 model) {
+/* The same under the coprocessor's current matrix (ow 2: word 2, the
+ * object's address, as the midriff's in polygon RAM). */
+static void submit_cur_ov(u32 model, u32 ow, u32 ov) {
     volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
     volatile const u32 *mh = (volatile const u32 *)(M2_MODEL_TABLE + model * 16u);
+    u32 hdr[4];
+    int i;
+    for (i = 0; i < 4; i++) hdr[i] = mh[i];
+    if (ov) hdr[ow] = ov;
     *cf = COP_FADD; *cf = COP_FADD; *cf = COP_FADD;
     cop_drain(cf, 1u);
     { u32 wr = *(volatile u32 *)COP_WPOS_REG;
       *(volatile u32 *)GEO_WRITE_REG = wr + 0x48u;
       *cf = COP_SUBMIT; *cf = wr; *cf = 0u;
-      *cf = mh[0]; *cf = mh[1]; *cf = mh[2]; *cf = mh[3];
+      *cf = hdr[0]; *cf = hdr[1]; *cf = hdr[2]; *cf = hdr[3];
       *cf = g_cop_p2; *cf = g_cop_p;
       g_cop_p2 = *cf; g_cop_p = *cf;
       { u32 ep = *(volatile u32 *)COP_WPOS_REG;
         *(volatile u32 *)(GEO_BUFFERRAM + (ep & 0x0001FFFCu)) = GEO_OP_END; } }
 }
+
+static void submit_cur(u32 model) { submit_cur_ov(model, 0u, 0u); }
 
 /* The camera: at (0, CAM_Y, CAM_Z) in StF's units (1.6 times the board's
  * world, whose stages are baked at StF's 1/1.6), looking along +z, pitched
@@ -427,10 +434,85 @@ static u32 pad_bits(const m2_player_t *p) {
  * scale of (1, y, 1); then the eyes, on the head's slot (rob_disp_rdn_loop's
  * set_obj_tpd, whose texture points are the eye models' own). */
 #define COP_PART COP_CMD(0x37)
+
+/* A slot's matrix (op 0x37 on the identity), read back. */
+static void slot_mat(mat_t *m, u32 p, u32 slot) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    int i;
+    *cf = COP_IDENTITY;
+    *cf = COP_PART; *cf = p; *cf = slot * 12u;
+    *cf = COP_RMATRIX;
+    for (i = 0; i < 9; i++) m->r[i] = m2_cop_gf();
+    for (i = 0; i < 3; i++) m->t[i] = m2_cop_gf();
+}
+
+/* The midriff of a VF2 or Fighting Vipers fighter (the guest table midriff,
+ * by drawn character; tools/vf2-guest.mjs): the band from a ring on the
+ * hips to a ring on the chest that closes the waist; StF's fighters have
+ * none. As VF2's calc_unit_mat (0x16F3C) builds it: the chest's ring
+ * carried into the hips' frame (H^-1 C p), then geometrizer command 5
+ * writes the links to polygon RAM at player << 8, each point a chest point
+ * where its index byte is 8 or more, else the link's own (the hips' ring,
+ * in the hips' frame already), and the closing word. Returns the model to
+ * draw it with (0: none). Leaves the coprocessor's matrix changed. */
+#define MID_POLY(p) ((p) << 8)
+static u32 midriff_build(u32 p) {
+    volatile u32 *fifo = (volatile u32 *)M2_GEOFIFO_ADDR;
+    const u32 *mid = *(const u32 *const *)(STF_GUEST_midriff + RB(robs[p], 0x1B0) * 4u);
+    const float (*ring)[3];
+    const u32 *w;
+    const u8 *idx;
+    float c[8][3], d[3], x[3][3], det;
+    mat_t h, ch;
+    u32 n, k, j, i;
+    if (mid == 0) return 0u;
+    n = mid[1]; ring = (const float (*)[3])&mid[2]; w = &mid[2 + 24]; idx = (const u8 *)&w[10u * n + 1u];
+    slot_mat(&h, p, 9u);
+    slot_mat(&ch, p, 1u);
+    /* x[i]: the hips' other two columns crossed, so (H^-1 d)[i] = d . x[i] / det */
+    for (i = 0; i < 3; i++) {
+        const float *u = &h.r[((i + 1u) % 3u) * 3u], *v = &h.r[((i + 2u) % 3u) * 3u];
+        x[i][0] = u[1] * v[2] - u[2] * v[1];
+        x[i][1] = u[2] * v[0] - u[0] * v[2];
+        x[i][2] = u[0] * v[1] - u[1] * v[0];
+    }
+    det = h.r[0] * x[0][0] + h.r[1] * x[0][1] + h.r[2] * x[0][2];
+    for (k = 0; k < 8u; k++) {
+        for (j = 0; j < 3; j++)
+            d[j] = ch.r[j] * ring[k][0] + ch.r[3 + j] * ring[k][1] + ch.r[6 + j] * ring[k][2] + ch.t[j] - h.t[j];
+        for (i = 0; i < 3; i++) c[k][i] = (d[0] * x[i][0] + d[1] * x[i][1] + d[2] * x[i][2]) / det;
+    }
+    *fifo = GEO_OP_POLYDATA; *fifo = MID_POLY(p); *fifo = 10u * n + 1u;
+    for (k = 0; k < n; k++, w += 10) {
+        for (j = 0; j < 4u; j++) *fifo = w[j];
+        for (j = 0; j < 2u; j++) {
+            u32 q = idx[k * 2u + j];
+            for (i = 0; i < 3; i++) *fifo = q >= 8u ? m2_obj_fb(c[q - 8u][i]) : w[4u + j * 3u + i];
+        }
+    }
+    *fifo = *w;
+    return mid[0];
+}
+
+/* rob_disp's slot 9 entry (0x195F8): the midriff on the hips' matrix, from
+ * polygon RAM past the first attribute and normal, with the model's texture
+ * points and material, in geometrizer mode 2: the board works out each
+ * face's normal from its points, so the band shades as it bends (VF2's mode
+ * 3 adds the specular VF2 draws with; the board draws in mode 0, without).
+ * The list's end goes after the mode word, as after a submit. */
+static void midriff_draw(u32 model, u32 p) {
+    volatile u32 *fifo = (volatile u32 *)M2_GEOFIFO_ADDR;
+    *fifo = GEO_OP_MODE; *fifo = GEO_MODE_NN_NS;
+    submit_cur_ov(model, 2u, MID_POLY(p) + 4u);
+    *fifo = GEO_OP_MODE; *fifo = GEO_MODE_NP_NS;
+    *(volatile u32 *)(GEO_BUFFERRAM + (*(volatile u32 *)COP_WPOS_REG & 0x0001FFFCu)) = GEO_OP_END;
+}
+
 static void draw_fighter(const fighter_t *f, u32 p) {
     volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
     const pose_anim_t *a = f->anim;
     u32 *r = robs[p], i, model, head = 0u;
+    u32 mid = midriff_build(p);
     /* the eyes are StF's (a second head model); another game's fighter has
      * them in his head */
     u32 n = char_game(a->chr) == GAME_STF ? 16u + a->nparts : 16u;
@@ -450,6 +532,7 @@ static void draw_fighter(const fighter_t *f, u32 p) {
         *cf = COP_SCALE; *cf = 0x3F800000u; *cf = RW(r, 0x27C0); *cf = 0x3F800000u;
         *cf = COP_PART; *cf = p; *cf = slot * 12u;
         submit_cur(model);
+        if (slot == 9u && i < 16u && mid) midriff_draw(mid, p);
         *cf = COP_POP;
     }
 }
