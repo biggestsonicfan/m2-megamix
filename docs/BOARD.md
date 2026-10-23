@@ -609,9 +609,23 @@ Hard-coded characters, by id:
   slot 0 would turn into Super Sonic against 3, 11 or 13, and a guest in 3,
   11 or 13 would let Sonic change. → Nothing to do for Akira; only if a guest
   takes one of those slots.
-- Super Sonic's `egg_robo_condition` (20340) and the intro anim
-  (20296: 13, 14): none touch character 6. A guest in one of those slots
-  would inherit them.
+- `egg_robo_condition` (20339; StF ROM 0x33920), the end of the intro
+  animation's forward step (rob+0x7F0 bit 10): when the frame index at
+  rob+0x2A88 reaches the count in the character's
+  `opening_cutscene_anim_data` row, it calls `uk_egg_robo_head_sub` (which
+  puts one of two `uk_egg_robo_head` values in rob+0x48) if the drawn
+  character (rob+0x1B0) is 13 or 39 (Egg Robo, either colour), and returns
+  for anyone else. Akira never gets here: his rows (6 and 32) in
+  `opening_cutscene_anim_data` are 0, as are every other row but 13/39
+  (`egg_robo_head_rising_cutscene_anim`) and 14/40 (`_uk_rocket_metal_trans`),
+  so the step returns at loc_33A00 before the check. Left as it is, because
+  VF2 has no such step: nothing in VF2's program uses rob+0x7F0, rob+0x2A88
+  or rob+0x2A8A, so there is no VF2 intro frame table or head value of the
+  same meaning to give him. It stays on this list only because the check is
+  by StF id: a guest put in slot 13 or 39 would get Egg Robo's intro and
+  head. → Nothing to do for Akira; only if a guest takes slot 13 or 39.
+- Super Sonic's intro anim (20296: 13, 14): does not touch character 6. A
+  guest in one of those slots would inherit it.
 
 Inert on the board, for later:
 - `character_spin_mot_objects` (0x81138, `sub_81038` 24854): Knuckles' spin
