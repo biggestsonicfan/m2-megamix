@@ -676,9 +676,27 @@ Inert on the board, for later:
   `char_game` would change the shared path; neither is done. It stays on
   this list because the tables are by StF id. → Only once the board has
   sound, with a guest's own samples and codes to point at.
-- `sub_2C7E4` (15482), a projectile's hit: StF's `uk_hit_motions` direct,
-  not `guest_ptr_DA0B4`, so Knuckles' reactions. → The guest table, when
-  projectiles come in.
+- `sub_2C7E4` (15480), a projectile's hit: it picks the victim's reaction
+  from StF's `uk_hit_motions` (0xDA0B4) by the projectile's kind byte
+  (+0x7E of the object), crouch (0x1A4 bit 3), side and behind, not through
+  `guest_ptr_DA0B4`[rob+0x1B1] as `sub_2B94C` does for a strike. So a
+  projectile on Akira would give him StF's shared lists, not his own (his
+  StF reaction ids then go through `motion_remap`). Left as it is:
+  - It never runs on the board. Its only callers are in `sub_2BEF4`
+    (14936, from `collision`), which walks the projectile objects of
+    `mod_fa_tobi` (0x5008A4, the board's zeroed `stf_tobi`) and takes only
+    ones with bit 31 set. Nothing in the lifted code or `megamix.c` makes
+    one, so the loop finds none.
+  - VF2 has no projectiles. His reaction lists (VF2's 40 by category,
+    crouch, behind and side) are what VF2 gives him for a strike. VF2 never
+    picks a reaction for a projectile, and StF's projectile kind byte is
+    not known to index the same kinds as VF2's strikes. So there is no VF2
+    value of the same meaning to give him.
+  - Reading `guest_ptr_DA0B4` here would change StF's lifted routine (the
+    shared path), with no way to test it while the path never runs.
+
+  Neither is done. → Only once projectiles run on the board, and a guest
+  with a projectile reaction of its own comes in.
 - `ptr_CE1CC` (`damage_unit` 14752, 15559; `sub_3261C` 19934): every row is
   the same empty `word_CE1CC`. → Skip for non-StF if StF's rows are filled.
 
