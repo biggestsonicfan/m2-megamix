@@ -658,9 +658,24 @@ Inert on the board, for later:
   for non-StF would change the shared path; neither is done. It stays on
   this list because the rows are by StF id. → Only if spin attacks are
   drawn on the board and a guest motion starts one.
-- Sound (`sound_request_u` is stubbed): `blank_per_character_audio_array`
-  (0xDB25C, 9517) gives Knuckles' voices (0xDB3D0); `loc_2B33C` (14184)
-  picks robot hit sounds by id. → A guest voice table when sound comes in.
+- Sound: `blank_per_character_audio_array` (0xDB25C, 9517,
+  `play_audio_per_character`) is a list of tables by the play op's byte 3,
+  each indexed by the parent (rob+0x1B1), so Akira (6) gets Knuckles'
+  voice codes (0xDB3D0); `dword_DB2A8` after it is by 1B1 too.
+  `loc_2B33C` (14175) picks hit sounds by the attacker's parent (3, 11, 12,
+  13: robot lists) or else by the drawn character (rob+0x1B0 × 12 into
+  `dword_DB964` / `dword_DB6F4`), so Knuckles' again. Left as it is: every
+  path ends in `sound_request_u`, which is a stub (`ret`, 25081), and the
+  board's sound program and samples are zeros, so nothing is heard and the
+  codes change nothing else. VF2 has voice codes of its own (its damage
+  code plays one by rob+0x1B1 through 0x201E44C, see `damage_calculation`
+  above), but they are commands to VF2's sound program and samples, not
+  StF's; the same number sent to StF's sound program plays a different
+  sample, so it is not a value of the same meaning, and a mapping from
+  VF2's voices to StF's codes would be invented. Gating the lookups on
+  `char_game` would change the shared path; neither is done. It stays on
+  this list because the tables are by StF id. → Only once the board has
+  sound, with a guest's own samples and codes to point at.
 - `sub_2C7E4` (15482), a projectile's hit: StF's `uk_hit_motions` direct,
   not `guest_ptr_DA0B4`, so Knuckles' reactions. → The guest table, when
   projectiles come in.
