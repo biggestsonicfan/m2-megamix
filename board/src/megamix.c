@@ -519,7 +519,11 @@ static void draw_fighter(const fighter_t *f, u32 p) {
     *cf = COP_WMATRIX;
     for (i = 0; i < 9; i++) *cf = m2_obj_fb(cam_l.r[i]);
     for (i = 0; i < 3; i++) *cf = m2_obj_fb(cam_l.t[i]);
-    for (i = 0; i < n; i++) {
+    /* slot 0 has no model: StF's records leave it 0, and its command
+     * interpreter keeps bytes there (+0x40..0x43 of g13, the rob), so a
+     * guest's slot 0 (Akira's 0x13AE) turns into an empty StF entry (0xAE),
+     * an object at polygon RAM 0, where the midriff is */
+    for (i = 1; i < n; i++) {
         u32 slot;
         if (i < 16u) { slot = i; model = RW(r, 0x40 + i * 4u); }
         else {                           /* the eyes: a second model on the head's slot */

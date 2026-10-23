@@ -440,6 +440,12 @@ with a heap after them.
   - Tested on MAME and m2-hle2 (geo on and off): the band fills the belt as
     he kicks; at rest nothing changes. Damage unchanged (Honey 140 → 132 →
     125, Akira 127 → 116 on both).
+  - Slot 0 is not drawn. StF's records leave it 0, and its command
+    interpreter keeps bytes at +0x40..0x43 of g13 (the rob: slot 0's
+    model word), so Akira's 0x13AE became 0xAE, an empty StF entry: an
+    object with tpa, tha, oba and count all 0. With the band in polygon RAM
+    at 0, m2-hle2 drew that object from P1's band (a big polygon at his
+    waist); MAME drew nothing.
 
 He walks, attacks, hits, takes hits and goes down, as player 1 or 2 or both.
 StF's command interpreter keeps its backtrack base at 0x1214(g13), where g13
