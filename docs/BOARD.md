@@ -697,8 +697,27 @@ Inert on the board, for later:
 
   Neither is done. → Only once projectiles run on the board, and a guest
   with a projectile reaction of its own comes in.
-- `ptr_CE1CC` (`damage_unit` 14752, 15559; `sub_3261C` 19934): every row is
-  the same empty `word_CE1CC`. → Skip for non-StF if StF's rows are filled.
+- `ptr_CE1CC` (0xCE0F8; `damage_unit` 14752, 15559; `sub_3261C` 19934):
+  the crushed-parts table, by drawn character (rob+0x1B0). Each of 16
+  parts has an 8-byte entry: four counts and a pointer to 0x28-byte pieces.
+  `damage_unit` uses it, for each part, with rob+0x1F20/0x1F4C, and hands
+  the pieces to `efc_crush_parts_put_cont` (effect +0x918/+0x920). It sets
+  the part's bit in rob+0x1F48. `sub_3261C` adds up the pieces. Left as it is:
+  - All 52 rows in the board's ROM (`stf_rom_80000.bin`) point to the same
+    `word_CE1CC`, which is 0x80 zero bytes. StF's rows are not filled. Every
+    count is 0, so `damage_unit` skips at `cmpobe 0, r8` and `sub_3261C`
+    returns 0 and 0 for every fighter. Akira's rows (6, 32) are the same
+    as every StF fighter's. He is not treated differently from them.
+  - VF2 has no crushed parts. Nothing in VF2's program uses rob+0x1F20,
+    0x1F48 or 0x1F4C, or the effect's +0x918, +0x91E, +0x91F or +0x920
+    (StF's program uses them 14, 15, 14, 6, 4, 4 and 5 times). So there is
+    no VF2 value of the same meaning.
+  - The old note "skip for non-StF if StF's rows are filled" doesn't apply,
+    because the rows are not filled. Skipping it for guests would mean a
+    char_game check on the shared path.
+
+  Neither is done. → Only if a StF row is ever filled, and then only with
+  a VF2 table of the same meaning.
 
 Not settled: all his setups have skeleton type 0 and 0x860 clear
 (`convertSetup` zeroes header bytes 4..7 and 12), so `calc_rob_angle_cont`
