@@ -87,12 +87,15 @@ static void submit_cur(u32 model) {
 #define CAM_S 0.139173f
 #define CAM_C 0.990268f
 #define STF_CAM_SCALE 0x3FCCCCCDu        /* 1.6 */
-static mat_t cam, cam_l;                 /* cam_l: before the scale, for the light */
+static mat_t cam, cam_l;                 /* cam_l: before the scale, for the light and the fighters */
 
 /* camera_init's matrix, with the camera's turn already in the coprocessor:
  * set_pos by the negated position, then (after the light's copy) op 0x07
- * with 1.6, 1.6, 1.6, as StF sends it before it stores the camera. Every
- * stage and fighter matrix is cam times its own, as StF's are. */
+ * with 1.6, 1.6, 1.6, as StF sends it before it stores the camera. The
+ * position is StF's eye, in fighter units, so a stage drawn on cam is
+ * R (1.6 v - eye), as in StF. Every stage matrix is cam times its own; the
+ * fighters are drawn on cam_l, as rob_disp draws them on the unscaled
+ * camera (rob+0x2A40). */
 static void camera_place(const float pos[3]) {
     volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
     int i;
@@ -405,7 +408,7 @@ static void camera_stf(const stage_t *st) {
     volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
     float pos[3];
     int i;
-    for (i = 0; i < 3; i++) pos[i] = *(float *)((u8 *)stf_cam + 0x18 + 4 * i) * 1.6f;
+    for (i = 0; i < 3; i++) pos[i] = *(float *)((u8 *)stf_cam + 0x18 + 4 * i);
     *cf = COP_IDENTITY;
     *cf = COP_ANG_Z; *cf = (u32)-(int)(short)RH(stf_cam, 0x28);
     *cf = COP_ANG_X; *cf = (u32)-(int)(short)RH(stf_cam, 0x24);
@@ -419,7 +422,7 @@ static u32 pad_bits(const m2_player_t *p) {
            (u32)p->up << 5 | (u32)p->right << 6 | (u32)p->left << 7;
 }
 
-/* rob_disp: under the camera, each of the sixteen parts with a model, from
+/* rob_disp: under the unscaled camera, each of the sixteen parts with a model, from
  * its slot (op 0x37 multiplies the slot into the current matrix) after a
  * scale of (1, y, 1); then the eyes, on the head's slot (rob_disp_rdn_loop's
  * set_obj_tpd, whose texture points are the eye models' own). */
@@ -432,8 +435,8 @@ static void draw_fighter(const fighter_t *f, u32 p) {
      * them in his head */
     u32 n = char_game(a->chr) == GAME_STF ? 16u + a->nparts : 16u;
     *cf = COP_WMATRIX;
-    for (i = 0; i < 9; i++) *cf = m2_obj_fb(cam.r[i]);
-    for (i = 0; i < 3; i++) *cf = m2_obj_fb(cam.t[i]);
+    for (i = 0; i < 9; i++) *cf = m2_obj_fb(cam_l.r[i]);
+    for (i = 0; i < 3; i++) *cf = m2_obj_fb(cam_l.t[i]);
     for (i = 0; i < n; i++) {
         u32 slot;
         if (i < 16u) { slot = i; model = RW(r, 0x40 + i * 4u); }

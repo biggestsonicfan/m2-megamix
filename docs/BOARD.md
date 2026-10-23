@@ -299,13 +299,11 @@ same frame of the stance motion (278), all sixteen part positions in the rob
   StF's units (`CAM_Y` 1.76, `CAM_Z` -7.36, 1.6 times the old 1.1 and
   -4.6), `set_pos` by its negation, then op `0x07` with 1.6 three times;
   `cam_l`, the matrix before the scale, is what `stage_light` turns. Every
-  stage and fighter matrix is `cam` times its own, as in StF, where
-  `rob_disp` builds the fighters on the stored, scaled camera (op
-  `0x2800505`). The stage bakes keep StF's 1/1.6 (`ARENA.stf.scale`): with
-  the camera's 1.6 they come out as StF's matrices. The fighter poses are
-  not rebaked: the whole camera frame is 1.6 times what it was, which
-  projects the same, so the fighters stand where they stood and only
-  their normals change (as long as StF's). The cage cull now tests the
+  stage matrix is `cam` times its own, as in StF. The stage bakes keep
+  StF's 1/1.6 (`ARENA.stf.scale`): with the camera's 1.6 they come out as
+  StF's matrices, R (1.6 v − eye). The fighters are drawn on `cam_l`, as
+  StF's `rob_disp` draws them on the unscaled camera (see Camera, under
+  The fight). The cage cull now tests the
   same Z as StF's. Check, the real camera path with StF's intro camera
   in its place (HUD off, no fighters, counter held): the display list at
   frame 84 is byte-for-byte the throwaway's (74 objects, 7 side-3 panels,
@@ -812,12 +810,19 @@ sets up what StF's game loop would have set up around it.
   handlers are the ROM jump tables `off_9C83C`/`off_9C848`, lifted as code,
   `ROM_CODE_TABLES`). `camera_stf` then builds StF's `camera_control`
   matrix: identity, `ang_z`, `ang_x`, `ang_y` by the negated +0x28, +0x24,
-  +0x26, and `camera_place` at the position (+0x18..+0x20). StF keeps that
-  position in fighter units; the board's camera is in the stage's 1.6
-  units (Camera scale, above), so it is passed times 1.6. In real StF
-  the fighters are drawn on the unscaled matrix (rob+0x2A40 equals the
-  camera at 0x5010F8, unit columns); the board draws them on the scaled
-  one, which projects the same with 1.6-times normals.
+  +0x26, and `camera_place` at the position (+0x18..+0x20). That position
+  is the eye in fighter units, and it is passed as it is: StF translates
+  by it before the 1.6 scale, so a stage point v lands at R (1.6 v − eye)
+  and the ring is drawn at the size the walls (stage_x 8.0) give it. In real
+  StF the fighters are drawn on the unscaled matrix (rob+0x2A40 equals the
+  camera at 0x5010F8, unit columns), and so does the board (`cam_l`).
+  Until now the board passed the eye times 1.6 and drew the fighters on
+  the scaled matrix: the fighters came out right, but the ring was drawn
+  1/1.6 its size around them (they walked out past the ropes) and the
+  camera sat on the near rope, which cut across the view. Check: MAME and
+  m2-hle2, Sonic and Honey walked back to x −6.9 and 7.3 stand inside
+  the ropes, the near rope across the bottom of the picture; Akira's
+  punches still take Honey 140 → 132 → 125, and hers him to 127, 116.
   Check: real StF, 1P fight on South Island: mode 10, camera y about 3.0,
   4.5 to 5.0 from the fighters' midpoint, pitch -2600 to -3300. Board,
   fighters 4.0 apart: mode 10, camera (0, 3.31, -4.85), pitch -2560 (its
@@ -894,7 +899,6 @@ Known gaps:
   which the board does not load (it loads set 1 and the stage's), so it
   does not show.
 - No shadows. The camera's round-end and replay modes are not run.
-  Near the ring's edge the near ropes cross the view.
 
 ## Plan
 
