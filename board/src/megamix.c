@@ -26,16 +26,6 @@
 
 typedef struct { float r[9], t[3]; } mat_t;   /* column-major, the COP's layout */
 
-/* a = b * c (both column-major with translation). */
-static void mat_mul(mat_t *a, const mat_t *b, const float *c) {
-    int i, j;
-    for (i = 0; i < 3; i++)
-        for (j = 0; j < 3; j++)
-            a->r[i * 3 + j] = b->r[j] * c[i * 3] + b->r[3 + j] * c[i * 3 + 1] + b->r[6 + j] * c[i * 3 + 2];
-    for (j = 0; j < 3; j++)
-        a->t[j] = b->r[j] * c[9] + b->r[3 + j] * c[10] + b->r[6 + j] * c[11] + b->t[j];
-}
-
 /* Submit one model-table object under the matrix m (model -> camera). With
  * ov nonzero, word ow of the model's header (0 its texture points, 1 its
  * texture headers) is ov instead, as set_obj_tpd and set_obj_thd do. */
@@ -609,6 +599,28 @@ static int cage_clip(const mat_t *m, u32 x0, u32 x1) {
     return (cage_code(cf, x0) & cage_code(cf, x1)) != 0u;
 }
 
+/* a = b * c (both column-major with translation), on the coprocessor: each
+ * column of a is b's rotation times c's (op 0x29 with no translation), and
+ * b's translation is added after. In soft float the stage's products were
+ * half the board's work per frame. */
+static void mat_mul(mat_t *a, const mat_t *b, const float *c) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    int i, j;
+    *cf = COP_WMATRIX;
+    for (i = 0; i < 9; i++) *cf = m2_obj_fb(b->r[i]);
+    for (i = 0; i < 3; i++) *cf = 0u;
+    for (i = 0; i < 4; i++) {
+        float *o = i < 3 ? &a->r[i * 3] : a->t;
+        *cf = COP_M2W;
+        for (j = 0; j < 3; j++) *cf = m2_obj_fb(c[i * 3 + j]);
+        for (j = 0; j < 3; j++) o[j] = m2_cop_gf();
+    }
+    for (j = 0; j < 3; j++) {
+        *cf = COP_FADD; *cf = m2_obj_fb(a->t[j]); *cf = m2_obj_fb(b->t[j]);
+        a->t[j] = m2_cop_gf();
+    }
+}
+
 static void draw_stage(const stage_t *st) {
     mat_t m;
     u32 i, model, x0, x1;
@@ -1023,10 +1035,12 @@ int main(void) {
         for (i = 0; i < 2u; i++) draw_fighter(&fs[i], i);
         *(volatile u32 *)ZCLIP_REG = 0xFFFF00FFu;
         m2_frame_commit();
-        /* 30 fps, as StF runs. StF's frame_counter counts its 60 Hz loop and
-         * sub_2435C runs once a pass, after the wait for the vsync. This loop
-         * can take longer than a vsync, so the count follows the vblanks. */
-        for (i = 0; i < 2u; i++) {
+        /* 60 fps, as StF and VF2 run: a pass a vsync, the fighters stepped
+         * once and drawn every frame. StF's frame_counter counts its 60 Hz
+         * loop and sub_2435C runs once a pass, after the wait for the vsync.
+         * A pass that runs past a vsync steps the fighters for each vblank it
+         * took, so the count follows the vblanks. */
+        {
             u32 v;
             m2_vsync();
             v = frameVBL; frame_counter += v - vbl; vbl = v;

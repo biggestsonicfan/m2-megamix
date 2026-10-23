@@ -90,6 +90,27 @@ the next motion or a `smooth_int` blend back past the end, then
 camera, each part's slot (op 0x37) after a scale of (1, y, 1), drawn with op
 0x78. A fighter at yaw a faces (-sin a, cos a) in x, z.
 
+The main loop runs once a vsync, as StF's and VF2's do: each pass steps
+the fighters once and draws them, so they move at 60 fps. It used to wait
+two vsyncs, and its work (about 24 ms, half of it soft-float `mat_mul`
+for the stage's 50 to 79 objects) made every pass three vblanks long: the
+fighters were drawn at 20 fps, in steps of three motion frames, which is
+what made Akira look stiff beside VF2. `mat_mul` now runs on the
+coprocessor (op 0x29 on each column, op 0x13 for the translation), and a
+pass takes 8.2 ms on South Island and 9.2 ms on Aurora Icefield (10.3 ms
+at most) in MAME. A pass that runs long still steps once per vblank it
+took.
+
+Graded against VF2 (MAME `vf2`, Akira vs Lau, the same inputs: walk
+forward, punch, kick, walk back, crouch): the board plays the same motions
+with the same blends (`smooth_int` modes, length 8), flags and lengths.
+It sometimes starts a motion at frame 2 rather than 1, and its walk starts
+about three frames later after the press. Check: a frame_counter write
+tap gives one pass a frame over 1099 passes on each stage (it was three
+vblanks a pass in the menu and the fight). On m2-hle2, a breakpoint on
+the counter's store hits every frame with Akira walking. The stage
+matrices `submit_mat` sends match the soft-float ones to 1.25e-7.
+
 Checked against real StF (MAME `sfight`, a 2P round, Sonic vs Sonic): at the
 same frame of the stance motion (278), all sixteen part positions in the rob
 (+0x1F4) match the real board's to the last digit printed, frames 39, 41 and
@@ -174,7 +195,7 @@ same frame of the stance motion (278), all sixteen part positions in the rob
   one per frame in a fight. The board bakes each stage's list, colour set
   and trims, builds the curve in integers on stage load, and rotates the
   rows after each vsync. Its counter follows the vblank count (`frameVBL`),
-  because its own loop runs slower than 30 fps. Bit 5 of
+  because a pass that runs long takes more than one. Bit 5 of
   `debug_flag` (`0x508000`) skips `sub_2435C`, so a debug-mode StF shows
   the water standing still. Check: with the board's counter held at the
   value real StF logged, colorxlat rows 14, 16, 18 and 19 (luma 48..63, R,
@@ -915,7 +936,7 @@ held, and a change of stage or fighter shows at once.
 
 Two fighters (Sonic, Honey, Eggman or Akira, picked in the setup) stand
 facing each other and play their stance motion with StF's own motion code
-(60 Hz steps, drawn at 30 fps), on one of two of
+(stepped and drawn at 60 fps, as StF and VF2 are), on one of two of
 StF's stages, South Island and Aurora Icefield (see Game setup). The stages are drawn from StF's stage records with its
 textures, colours, materials, light, colour cycling, and the sea and
 aurora. South Island matches StF's own picture closely. They push, hit and
