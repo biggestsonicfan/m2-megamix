@@ -589,8 +589,27 @@ Hard-coded characters, by id:
   It stays on this list only because the check is by StF id: a guest put in
   slot 16 would get Super Sonic's timer. → Nothing to do for Akira; only if
   a guest takes slot 16.
-- Super Sonic (the check at 9283: 0, 16 and robot
-  opponents 3, 11, 13), `egg_robo_condition` (20340) and the intro anim
+- The Super Sonic change (9283, `pm_game_2P_ss_check_pass`; StF ROM
+  0x1BFEC..0x1C058), in the block after `pm_ba_ex` that runs when rob+0x70C
+  bit 26 is set, rob+0xC7E is at most 0, w0 bit 18 is clear and rob+0xC70 is
+  above 0: if the game mode bytes pass and 0x5004F4 and 0x5004F8 are 0, a
+  fighter whose parent (rob+0x1B1) is 0 (Sonic) facing an opponent whose
+  parent is 3, 13 or 11 becomes Super Sonic (rob+0x1B0 = 16, then `sub_1BCC0`,
+  `sub_81038`, `sub_7F0E8`, `scale_something` and `char_nameplate_dsp` run
+  again, a sound, and rob+0x1AC set from 0x5000A0). Everyone else goes on
+  to `not_super_sonic`, which puts 0xC0 in rob+0xC7C and sets w0 bit 18 with
+  no character check. Akira (1B1 6) is not 0, so he never changes; as the
+  opponent, 6 is not 3, 11 or 13, so Sonic does not change against him.
+  Left as it is, because VF2 has no such block: after the same
+  `st r5, 0x1A4(g7)` (VF2 0x1ACB0; the code before it, 0x1AC98, is StF's
+  0x1BF58 byte for byte) VF2 goes on to its own test of 0x3351 bit 6, and
+  nothing in VF2's program uses rob+0x70C, rob+0xC70, rob+0xC7C or
+  rob+0xC7E. So there is no VF2 value of the same meaning to give him. It
+  stays on this list only because the check is by StF id: a guest put in
+  slot 0 would turn into Super Sonic against 3, 11 or 13, and a guest in 3,
+  11 or 13 would let Sonic change. → Nothing to do for Akira; only if a guest
+  takes one of those slots.
+- Super Sonic's `egg_robo_condition` (20340) and the intro anim
   (20296: 13, 14): none touch character 6. A guest in one of those slots
   would inherit them.
 
