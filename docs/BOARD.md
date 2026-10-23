@@ -573,7 +573,23 @@ Hard-coded characters, by id:
   check. It stays on this list only because the check is by StF id: a
   guest put in slot 16 would take no damage. → Nothing to do for Akira;
   only if a guest takes slot 16.
-- Super Sonic (`original_combo_control` 10184, the check at 9283: 0, 16 and robot
+- `original_combo_control` (10184; StF ROM 0x1CD8C), called each frame from
+  the motion update (1023, ROM 0x12A78) before `air_mot_control`: if the
+  parent (rob+0x1B1) is 16 (Super Sonic) and 0x5004F4 and 0x5004F8 are both
+  0, it sets w0 bit 18 and puts 0x18C0 in rob+0xC7C, the timer that bit 18
+  then counts down (and keeps rob+0xC7E at 0x140) until it clears the bit.
+  Akira (1B1 6) skips this, as every fighter who is not Super Sonic does.
+  Left as it is, because that is already VF2's own: VF2's frame loop (0x143E4,
+  the same code as StF's up to the call) has no such routine; it goes from
+  the same `st r5` straight to `air_mot_control` (0x1B5C8, StF's 0x1CE34
+  byte for byte), and nothing in VF2's program uses rob+0xC7C. So there is no
+  VF2 value to give him. The rest of the routine (the timer set when
+  0x50004C is at most 1 and 0x500064 is 9, and the countdown) has no
+  character check.
+  It stays on this list only because the check is by StF id: a guest put in
+  slot 16 would get Super Sonic's timer. → Nothing to do for Akira; only if
+  a guest takes slot 16.
+- Super Sonic (the check at 9283: 0, 16 and robot
   opponents 3, 11, 13), `egg_robo_condition` (20340) and the intro anim
   (20296: 13, 14): none touch character 6. A guest in one of those slots
   would inherit them.
