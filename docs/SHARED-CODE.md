@@ -128,9 +128,19 @@ Guest data (his values in StF's fields; no shared code changes):
   The takeoff loads the first, the jump itself (bit 18) the second. In
   MAME his jump now runs as VF2's, Up to stance in 52 frames (46 before),
   airborne 31 (VF2 32, before 25); Sonic's frames are unchanged.
-- **D4 VF2's motion patches.** VF2's `set_mot_dat` changes two of Akira's
-  setups in code: motion 40 sets 0x804 bit 7, motion 578 flips bit 15 of
-  op 0xB's 0x844 word. Both can go into `convertSetup`.
+- **D4 VF2's motion patches.** Done. VF2's `set_mot_dat` changes two of
+  Akira's setups in code: motion 40 sets 0x804 bit 7 (V 0x1A26C), motion 578
+  flips bit 15 of op 0xB's 0x844 word (V 0x1A97C; StF's op 0xB, S 0x1B934,
+  reads the same five bytes). `convertSetup` now does both in his data:
+  board ids 540 (header byte 0, 0x09 → 0x89) and 708 (op 0xB byte 2,
+  0x80 → 0). Those two bytes of mpr-19005.9 are the whole ROM change. 40 is
+  one of his hit reactions (kind 2, entries 20, 21, 28, 29), 578 a commit in
+  his command program (0x348A0) that no input tried reached, so the check
+  points his stance slot at each from Lua (MAME) or `write_memory` (m2-hle2)
+  and lets StF's `set_motion` load it: 540's 0x804 reads 0x00020089
+  (0x00020009 before), 708's 0x844 0x02100000 (0x02108000 before), the same
+  in both. Fights without that swap, Akira's and Sonic's, log the same byte
+  for byte in MAME as before.
 - **D5 Damage op.** Play op 8 (damage) misses the converter's ×140/200;
   Akira has 4 (motions 16 and 44).
 - **D6 Importer slip.** `STF_ACTIONS[31]` should be VF2 action 30, not 29
@@ -609,9 +619,9 @@ StF addresses are from rom_code1.asm (Sega's labels where it has them). VF2 addr
 - DIFFERS:
   1. StF-only clears and setup (a): 0x87a, 0x86c, 0x870, 0x872, 0x864, 0xa25, 0xa28, 0xacc, 0xc60, 0x2a92, 0x2a94, w0 bits 16/17, 0x7f0 bit 16; the 0x2a70 head list (0xc540c, indexed by 0x1b0); the block for 0x500030==9; zeroing 0x2068 and 0x20f0; 0x70c/0x860 from header bytes 4-7 and 0x84c from byte 12 (zero in converted headers); the 0xc6570 setup at 1b510. Board: nothing. These are StF state, and the zero header bytes keep Akira off them.
   2. VF2 hard-coded patches by motion id (b), ungated:
-     - id 40 (Akira's): 0x804 |= bit 7 (1a26c-1a274). LOST on the board. Recommendation: a guest data fix in vf2-guest.mjs convertSetup: h[0] |= 0x80 for VF2 id 40.
+     - id 40 (Akira's): 0x804 |= bit 7 (1a26c-1a274). Done on the board (D4): convertSetup sets it in his setup 40.
      - ids 219 and 411: clear kind bit 25. Not Akira's. Nothing.
-     - op 0xb (1a8f0, word into 0x844): notbit 15 for ids 578, 550, 802, 528, 529, 38, 707, 691, 290, 604, 630, 632. 578 is Akira's. LOST on the board. Recommendation: a guest data fix in convertSetup that flips bit 15 of the 0x844 word in id 578's op 0xb.
+     - op 0xb (1a8f0, word into 0x844): notbit 15 for ids 578, 550, 802, 528, 529, 38, 707, 691, 290, 604, 630, 632. 578 is Akira's. Done on the board (D4): convertSetup flips it in his setup 578's op 0xb.
      - op 2 (1a420): 0x12e -> 0x49 and 0x375 -> 46. Not Akira's. Nothing.
      - op 4 strike: id 0xbd sets 0x82a=0xbff4; 0x12e adds +9 damage. Not Akira's. Nothing.
   3. VF2 gated patches (b):

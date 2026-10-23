@@ -462,6 +462,10 @@ export function importAkira(R, vf2, stf) {
         const s = setups.get(id);
         const h = s.head;
         const out = [h[0], h[1], h[2], h[3], 0, 0, 0, 0, h[4], h[5], h[6], h[7], 0];
+        /* VF2's set_mot_dat patches two of his setups in code (V 0x1A26C, 0x1A97C):
+         * motion 40 sets bit 7 of the kind word (0x804), and 578 flips bit 15 of
+         * op 0xB's word (0x844). StF's has no such patches: put them in the data. */
+        if (id === 40) out[0] |= 0x80;
         for (const { op, b } of s.setup) {
             let o;
             switch (op) {
@@ -471,6 +475,7 @@ export function importAkira(R, vf2, stf) {
             case 0xc: o = [0xc, 0, b[1], b[2]]; break;
             case 1: o = [...b]; put16(o, 1, mid(b[1] | (b[2] << 8))); break;
             case 0xa: o = [...b]; put16(o, 4, mid(b[4] | (b[5] << 8))); break;
+            case 0xb: o = [...b]; if (id === 578) o[2] ^= 0x80; break;
             default: o = [...b];
             }
             out.push(...o);

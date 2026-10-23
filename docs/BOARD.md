@@ -346,7 +346,10 @@ with a heap after them.
   StF's format already; their setups are converted op by op (VF2's play ops
   differ in length and number). Play op 5 (set a flag bit) is kept only for
   the bits StF's own motions set: VF2's thrown motions set bit 24, which StF
-  never sets and its code turns into a commit of type 0x18.
+  never sets and its code turns into a commit of type 0x18. Two setups
+  VF2's `set_mot_dat` patches in code get it in the data: motion 40's kind
+  word bit 7 and motion 578's op 0xB bit 15 (D4 in `SHARED-CODE.md`; in
+  MAME and m2-hle2 his 540 and 708 load them).
 - **Actions:** all 52 of StF's action slots are given one of his motions
   (`STF_ACTIONS`), so he has his own stance, walks, guards, falls and get-ups;
   none of Knuckles' are left.
