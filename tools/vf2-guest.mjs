@@ -40,6 +40,7 @@ const VF2_NATIVE_TAIL = 0x1d194;
 /* 30 kinds of hit, each a list of 40 reactions: category (guard, guard,
  * hit, counter hit, knock-down) * 8, +4 crouching, +2 from behind, +side. */
 const VF2_REACTIONS = 0x0201ccfc;
+const VF2_JUMP_TIME = 0x4c;              /* record +0x4C: the jump's frames (V 0x1482C) */
 const VF2_HANDS = 0x3c;                  /* record +0x3C: 32 shapes a hand, slot 5 then 8 at +0x180 */
 const SKELETON = 4, SKELETON_BYTES = 15 * 12;
 /* Record +0x38: the midriff (noclip TECHNICAL.md, "The midriff"): +8 its
@@ -635,9 +636,9 @@ export function importAkira(R, vf2, stf) {
     scaleFloats(bones, 0, SKELETON_BYTES / 4);
     const skel = alloc(bones, 'skeleton');
 
-    /* His records: Knuckles', with his parts (+0, +8), actions (+0xC) and
-     * skeleton (+4). The rest stay Knuckles' (docs/BOARD.md, "Where a guest
-     * is still treated as StF's"). */
+    /* His records: Knuckles', with his parts (+0, +8), actions (+0xC),
+     * skeleton (+4) and jump time (+0x20). The rest stay Knuckles'
+     * (docs/BOARD.md, "Where a guest is still treated as StF's"). */
     for (const [p, body] of [[0, A], [1, A.p2]]) {
         const parts = body.parts.map((x) => M(x.model));
         const list = alloc(u32s([...parts, ...parts]), `parts ${p ? 'P2' : 'P1'}`);
@@ -646,6 +647,10 @@ export function importAkira(R, vf2, stf) {
         for (let i = 0; i < 0x30; i += 4) new DataView(rec.buffer).setUint32(i, program.u32(src + i), true);
         const rv = new DataView(rec.buffer);
         rv.setUint32(0, list, true); rv.setUint32(4, skel, true); rv.setUint32(8, list, true); rv.setUint32(0xc, actionsAt, true);
+        /* +0x20, the jump's frames (rob+0x5BE; the second byte on action
+         * bit 18): VF2's exec_command (V 0x14828) takes record +0x4C, or 32
+         * on bit 18 (docs/SHARED-CODE.md, D3). */
+        rv.setUint32(0x20, alloc(Uint8Array.of(d8(body.root + VF2_JUMP_TIME), 32), `jump time ${p ? 'P2' : 'P1'}`, 1), true);
         T.CHAR_PARTS.view.setUint32((CHR + p * PLAYER2) * 4, alloc(rec, `record ${p ? 'P2' : 'P1'}`), true);
     }
 

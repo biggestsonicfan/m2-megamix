@@ -40,10 +40,10 @@ below.
 |--|--|--|--|--|--|
 | `print_mes` | 0x5674 | 0x7FC0 | 12 / 12 | same | stubbed |
 | `rand` | 0x66B0 | 0x94D0 | 19 / 19 | same |  |
-| `rob_action` | 0x12974 | 0x142F4 | 381 / 301 | differs | D1, D2, D3 (his record); face_mot_control is VF2-only (U9) |
+| `rob_action` | 0x12974 | 0x142F4 | 381 / 301 | differs | D1, D2, D3 (done) (his record); face_mot_control is VF2-only (U9) |
 | `decide_command` | 0x12A94 | 0x1442C | 297 / 125 | differs | B5 |
 | `decide_my_command` | 0x12F98 | 0x14640 | 42 / 42 | differs | nothing (renumbered types) |
-| `exec_command` | 0x13040 | 0x146EC | 887 / 614 | differs | D3, D6, B6; U6 |
+| `exec_command` | 0x13040 | 0x146EC | 887 / 614 | differs | D3 (done), D6, B6; U6 |
 | `exec_action` | 0x13510 | 0x1499C | 3727 / 1974 | differs | B4, B9, B10, B11; U7 |
 | `get_game_info` | 0x16B9C | 0x1645C | 29 / 29 | same |  |
 | `calc_unit_mat` | 0x16C44 | 0x16504 | 834 / 863 | differs | nothing (dents, squash, midriff: covered or never armed) |
@@ -106,9 +106,13 @@ Guest data (his values in StF's fields; no shared code changes):
   0x5B8 bit 8 means something else (the opponent moving away). So his
   command ops 7/0xA on those bits (10 on bit 8, 2 on bit 11) test the wrong
   thing: the converter has to move them to StF's op 0x34/0x35 on 0x720.
-- **D3 Jump time.** Record +0x20 points at two bytes, the jump's frames
-  (S 0x13270: rob+0x5BE; the second when rob+0 bit 29 or action bit 18 is
-  set). VF2's are record +0x4C: 72, and 32. He has Knuckles' 38, 26.
+- **D3 Jump time.** Done. Record +0x20 points at two bytes, the jump's
+  frames (S 0x13270: rob+0x5BE; the second when rob+0 bit 29 or action bit
+  18 is set). VF2 (V 0x14828) takes record +0x4C, or 32 on bit 18: Akira's
+  are 72 and 32, and `vf2-guest.mjs` gives him those for Knuckles' 38, 26.
+  The takeoff loads the first, the jump itself (bit 18) the second. In
+  MAME his jump now runs as VF2's, Up to stance in 52 frames (46 before),
+  airborne 31 (VF2 32, before 25); Sonic's frames are unchanged.
 - **D4 VF2's motion patches.** VF2's `set_mot_dat` changes two of Akira's
   setups in code: motion 40 sets 0x804 bit 7, motion 578 flips bit 15 of
   op 0xB's 0x844 word. Both can go into `convertSetup`.

@@ -507,9 +507,13 @@ should get is after the arrow.
 
 Acting on him now:
 - **Record fields:** `vf2-guest.mjs` copies Knuckles' 0x30-byte record and
-  replaces +0, +8, +0xC and +4 (the skeleton, as VF2's record +4: his,
+  replaces +0, +8, +0xC, +0x20 (his jump time, below) and +4 (the skeleton, as VF2's record +4: his,
   ×`SCALE`, the one `SKELETON_TYPE_DATA` gets; no lifted code reads it, and MAME and
   m2-hle2 give the same energies with it as before).
+  +0x20 is the jump's frames, into rob+0x5BE (1587..1600, 1756; the second
+  byte on action bit 18): Knuckles' are 38, 26, VF2's `exec_command`
+  (V 0x14828) takes record +0x4C or 32, and he has his own 72, 32 (D3 in
+  `SHARED-CODE.md`). MAME: his jump lasts VF2's 52 frames, Sonic's is as before.
   These are still Knuckles', because VF2 has no field known to mean the same:
   - +0x10 (0xC50F8, the cast's one table): 15 floats and a count at +0x3C.
     `get_en_info` (7186) tests the distance (rob+0x5F4) against +0, +4, +8,
@@ -520,8 +524,6 @@ Acting on him now:
   - +0x18 (0xC5148; Amy 0xC51B8): option data for `copy_option_data`
     (10082). VF2 has none. → A zero block of his own, once it is known what
     zero does.
-  - +0x20 (0xC50E4, the cast's bytes 38, 26): the jump's frames, into
-    rob+0x5BE (1587..1600, 1756). VF2's are record +0x4C: 72, 32. → D3.
   - +0x14 (a float by character: 60 Knuckles, 40 Amy, 160 Eggman): the
     weight. `action_init` (802..810) puts it into rob+0x7DC and, with
     `sub_3261C`'s, into rob+0x5D8, the friction `rob_spd_control` divides
