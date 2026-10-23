@@ -40,7 +40,7 @@ below.
 |--|--|--|--|--|--|
 | `print_mes` | 0x5674 | 0x7FC0 | 12 / 12 | same | stubbed |
 | `rand` | 0x66B0 | 0x94D0 | 19 / 19 | same |  |
-| `rob_action` | 0x12974 | 0x142F4 | 381 / 301 | differs | D1, D2, D3 (done) (his record); face_mot_control is VF2-only (U9) |
+| `rob_action` | 0x12974 | 0x142F4 | 381 / 301 | differs | D1 (done), D2, D3 (done) (his record); face_mot_control is VF2-only (U9) |
 | `decide_command` | 0x12A94 | 0x1442C | 297 / 125 | differs | B5 |
 | `decide_my_command` | 0x12F98 | 0x14640 | 42 / 42 | differs | nothing (renumbered types) |
 | `exec_command` | 0x13040 | 0x146EC | 887 / 614 | differs | D3 (done), D6, B6; U6 |
@@ -49,7 +49,7 @@ below.
 | `calc_unit_mat` | 0x16C44 | 0x16504 | 834 / 863 | differs | nothing (dents, squash, midriff: covered or never armed) |
 | `set_coli_ball_data` | 0x17C14 | 0x176A0 | 27 / 20 | differs | nothing (copro protocol, table placement) |
 | `rob_revise_yang` | 0x17CA0 | 0x17710 | 157 / 113 | differs | B12 |
-| `rob_spd_control` | 0x17F78 | 0x1791C | 133 / 129 | differs | D1 |
+| `rob_spd_control` | 0x17F78 | 0x1791C | 133 / 129 | differs | D1 (done) |
 | `action_after` | 0x18404 | 0x180BC | 15 / 34 | differs | nothing (VF2 bit 8 of rob+0 is dead on the board) |
 | `get_my_info` | 0x18584 | 0x18144 | 254 / 253 | differs | nothing (slow motion, settings bit) |
 | `get_en_info` | 0x18A88 | 0x18644 | 694 / 238 | differs | D2 |
@@ -92,11 +92,19 @@ m2-hle2.
 
 Guest data (his values in StF's fields; no shared code changes):
 
-- **D1 Weight.** Record +0x14 is the weight: `action_init` (S 0x1269C) puts
-  it into rob+0x7DC and, plus `sub_3261C`'s, into rob+0x5D8, the friction
-  `rob_spd_control` divides by. VF2's record keeps it at +0x2C (`init_fix`;
-  Akira 79.0). He has Knuckles' 60. rob+0x5D8 has three more readers
-  (`stf_motion.s` lines 4781, 14441, 15397) to check first.
+- **D1 Weight.** Done. Record +0x14 is the weight: `action_init` (S 0x1269C)
+  puts it into rob+0x7DC and, plus `sub_3261C`'s (0 for him), into
+  rob+0x5D8, the friction `rob_spd_control` divides by. VF2's record keeps
+  it at +0x2C (`init_fix`; Akira 79.0), and `vf2-guest.mjs` gives him that
+  for Knuckles' 60. rob+0x5D8's other readers: the knockback a hit gives
+  (lines 14441, 15397: ÷ 60 + 0.3·(w − 60)) and the wall hit
+  (`ACT_RC_KABEHIT`, 4781: w − 60 clamped to ±20, into rob+0xA0E). In MAME
+  and m2-hle2 his rob+0x7DC and 0x5D8 are 79.0 (60.0 before), Sonic's 60.0
+  and his runs unchanged. In the fights tried (dashes, P2's punches, kicks,
+  lows) nothing gives Akira ground speed (rob+0x2C/0x34) or knockback
+  (0x5E0..): his moves and hit reactions move him by their motions, so
+  no slide of his has changed yet. Throws copy the thrower's speed, and no
+  wall was hit.
 - **D2 Ranges.** Record +0x10's first four floats are `get_en_info`'s near
   and far ranges (rob+0x5F4 against them). VF2 reads its own from rob
   0x62C, 0x668, 0x630, 0x634, which `init_fix` (V 0x14218..0x14234) fills from

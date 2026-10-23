@@ -40,6 +40,7 @@ const VF2_NATIVE_TAIL = 0x1d194;
 /* 30 kinds of hit, each a list of 40 reactions: category (guard, guard,
  * hit, counter hit, knock-down) * 8, +4 crouching, +2 from behind, +side. */
 const VF2_REACTIONS = 0x0201ccfc;
+const VF2_WEIGHT = 0x2c;                 /* record +0x2C: the weight, a float (init_fix) */
 const VF2_JUMP_TIME = 0x4c;              /* record +0x4C: the jump's frames (V 0x1482C) */
 const VF2_HANDS = 0x3c;                  /* record +0x3C: 32 shapes a hand, slot 5 then 8 at +0x180 */
 const SKELETON = 4, SKELETON_BYTES = 15 * 12;
@@ -637,7 +638,7 @@ export function importAkira(R, vf2, stf) {
     const skel = alloc(bones, 'skeleton');
 
     /* His records: Knuckles', with his parts (+0, +8), actions (+0xC),
-     * skeleton (+4) and jump time (+0x20). The rest stay Knuckles'
+     * skeleton (+4), weight (+0x14) and jump time (+0x20). The rest stay Knuckles'
      * (docs/BOARD.md, "Where a guest is still treated as StF's"). */
     for (const [p, body] of [[0, A], [1, A.p2]]) {
         const parts = body.parts.map((x) => M(x.model));
@@ -651,6 +652,10 @@ export function importAkira(R, vf2, stf) {
          * bit 18): VF2's exec_command (V 0x14828) takes record +0x4C, or 32
          * on bit 18 (docs/SHARED-CODE.md, D3). */
         rv.setUint32(0x20, alloc(Uint8Array.of(d8(body.root + VF2_JUMP_TIME), 32), `jump time ${p ? 'P2' : 'P1'}`, 1), true);
+        /* +0x14, the weight: action_init puts it in rob+0x7DC and, with
+         * sub_3261C's, rob+0x5D8 (rob_spd_control's slide, how far hits push
+         * him). VF2's init_fix takes record +0x2C (docs/SHARED-CODE.md, D1). */
+        rv.setUint32(0x14, d32(body.root + VF2_WEIGHT), true);
         T.CHAR_PARTS.view.setUint32((CHR + p * PLAYER2) * 4, alloc(rec, `record ${p ? 'P2' : 'P1'}`), true);
     }
 
