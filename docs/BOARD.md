@@ -473,7 +473,12 @@ Acting on him now:
     their meaning is unknown. VF2's +0x2C (79.0) is not known to match.
   - +0x1C (0xC5260, the same in all 26 of StF's records): missed by the
     audit, found by `tools/grade-guest.mjs` (below). Its reader and
-    meaning are unknown, so it stays.
+    meaning are unknown, so it stays. VF2's record has no pointer there:
+    its +0x1C is the 1.7 in the +0x18..+0x24 floats above, whose reader is
+    not found either. So VF2 has no field of the same kind, let alone one
+    of the same meaning, and a pointer of his own would be invented.
+    Neither the audit nor the grader names a reader. → Only once StF's
+    reader of +0x1C is found, and a VF2 value of the same meaning.
 - **Body pendulum:** `sub_7F0E8` (24413) and `scale_something` (24764)
   take a row of `flt_7F198` by character mod 26: Knuckles'
   (0.985, 0.30/0.18/0.30), into the dent pendulums at rob+0x1F88 (both)
@@ -748,6 +753,13 @@ Inert on the board, for later:
 
   Neither is done. → Only if what VF2's 0x14-byte entries mean field by
   field becomes known; then ×`SCALE` (they are lengths).
+
+`off_C2058` is the last entry. Every entry above it is now marked: left
+because VF2 has no equivalent of the same meaning, or because the meaning
+is not known (the record fields, +0x1C included). None of them can be
+replaced without an invented value or a change to the shared path. The
+next step is new knowledge (a VF2 reader of his record +0x18..+0x2C, or
+StF's reader of +0x1C), not another entry here.
 
 Already his own or fine: `CHAR_PARTS`, `MOVESET_ARRAY`, `ptr_DA0B4`,
 `motion_remap`, `SKELETON_TYPE_DATA` (all four kinds) and his records' +4,
