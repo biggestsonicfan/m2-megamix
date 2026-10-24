@@ -38,10 +38,17 @@ async function fetchZip(zip) {
     return r.arrayBuffer();
 }
 
+/* Ryo's files off the Shenmue disc, if the server has it (tools/serve.py);
+ * without them the cast is the three games'. */
+async function fetchShenmue(path) {
+    const r = await fetch(`shenmue/${path}`);
+    return r.ok ? r.arrayBuffer() : null;
+}
+
 async function load() {
     mode = 'loading';
     try {
-        games = await loadGames(fetchZip, (s) => { $text.textContent = s; });
+        games = await loadGames(fetchZip, (s) => { $text.textContent = s; }, fetchShenmue);
     } catch (e) {
         const need = GAMES.map((g) => `${g.zip}.zip`).join(' ');
         $text.textContent = `COULD NOT LOAD ${e.message}\n\nDROP ${need} ON THE PAGE\nOR PRESS O TO PICK THEM`;
@@ -69,7 +76,7 @@ $files.addEventListener('change', () => takeFiles($files.files));
 
 /* ---- the menu -------------------------------------------------------- */
 
-const gameTag = (key) => ({ vf2: 'VF2', fv: 'FV ', stf: 'STF' })[key];
+const gameTag = (key) => ({ vf2: 'VF2', fv: 'FV ', stf: 'STF', shenmue: 'SHM' })[key];
 const fighterName = (i) => `${gameTag(ROSTER[i].game)} ${ROSTER[i].name}`;
 const stageName = (i) => `${gameTag(stages[i].game.key)} ${stages[i].stage.name.toUpperCase()}`;
 const wrap = (v, n) => (v + n) % n;
@@ -115,7 +122,7 @@ function start() {
     renderer.setStage(game, stage);
     /* A fighter is lit by the stage when it is from the stage's game, and
      * by its game's first stage when not (South Island for StF). */
-    renderer.setFighters(fight.players, (key) => (key === game.key ? stage : games[key].stages[0]));
+    renderer.setFighters(fight.players, (key) => (key === game.key ? stage : games[key].stages?.[0]));
     renderer.side = null;
     screenRight = renderer.follow(fight.players, { snap: true });
     renderer.placeFighters();

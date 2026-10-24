@@ -202,9 +202,15 @@ export function matchPress(entries, btn, hist, dist) {
  *   reaction(a, how)   the motion this fighter plays under attack `a`
  *   createBody()       a drawable body: pose(ref, frame) -> {mats, parts, pose}
  *   look               what its material needs (js/render.js)
+ * and, where they are not the VF2/StF ones:
+ *   motion(id)         its own motion by id (else motionOf(rom, id))
+ *   size               its height to Akira's, for its reach and its body (1)
+ * A game that brings its own fighters (Shenmue's Ryo, js/ryo.js) names its
+ * maker as game.makeFighter.
  */
 export function makeFighter(games, entry) {
     const game = games[entry.game];
+    if (game.makeFighter) return game.makeFighter(games, entry);
     return game.kind === 'stf' ? stfFighter(game, entry) : vfFighter(game, entry);
 }
 

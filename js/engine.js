@@ -34,6 +34,10 @@ const DOWN_FRAMES = 50;             /* lying before the rise */
 const BODY_RADIUS = 0.35;
 const HIT_RADIUS = 0.2;
 const PUSH_APART = 0.6;
+/* A fighter's size against the VF2 cast's (Ryo's 69/71): the radii go with it. */
+const sizeOf = (p) => p.fighter.size ?? 1;
+/* A fighter's motion: its own if it has its own (Ryo's), else its ROM's. */
+const motionFor = (f, id) => f.motion?.(id) ?? motionOf(f.rom, id);
 const COUNTER = 1.25;
 
 /* ---- vectors in the world (the viewer's frame: y up) --------------------- */
@@ -276,7 +280,7 @@ function think(fight, p, o) {
  * attack from the setup record, and the follow table it parks. */
 function startMove(fight, p, o, e, press) {
     const id = e.motion & MOTION_ID;
-    const motion = motionOf(p.fighter.rom, id);
+    const motion = motionFor(p.fighter, id);
     if (!motion) return;
     const atk = p.fighter.attack(id);
     if (atk?.victim != null) {
@@ -314,12 +318,12 @@ function levelOf(press) {
  */
 const THROW_RANGE = 1.5;
 function canThrow(p, o) {
-    return flat(bodyPoint(p), bodyPoint(o)) < THROW_RANGE && FREE.has(o.state) && o.state !== ST.SYAGAMI && !o.crouching;
+    return flat(bodyPoint(p), bodyPoint(o)) < THROW_RANGE * sizeOf(p) && FREE.has(o.state) && o.state !== ST.SYAGAMI && !o.crouching;
 }
 
 function throwStart(fight, p, o, id, atk) {
-    const motion = motionOf(p.fighter.rom, id);
-    const victim = motionOf(p.fighter.rom, atk.victim);
+    const motion = motionFor(p.fighter, id);
+    const victim = motionFor(p.fighter, atk.victim);
     if (!victim) return;
     setMotion(p, { rom: p.fighter.rom, motion }, { state: ST.NAGE });
     p.act = 'throw';
@@ -384,9 +388,12 @@ function ended(fight, p) {
  * Here: the board tests each strike against the other's body by the moving
  * part its setup names; this engine takes the end of a limb that is furthest
  * forward (hands, feet, head) through the active frames, hit to the later of
- * cancel and hit + 2, against a capsule from the floor to the head.
+ * cancel and hit + 2, against a capsule from the floor to the head. The limb
+ * from its inner joint (elbow, knee, chest) to that end is tested, not the
+ * end alone, so a blow that reaches past the body still lands.
  */
 const EFFECTORS = [S.LHAND, S.RHAND, S.LFOOT, S.RFOOT, S.HEAD];
+const INNER = { [S.LHAND]: S.LHAND - 1, [S.RHAND]: S.RHAND - 1, [S.LFOOT]: S.LFOOT - 1, [S.RFOOT]: S.RFOOT - 1, [S.HEAD]: S.CHEST };
 function strike(fight, p, o) {
     if (p.state !== ST.MOTION || !p.attack || p.hitDone || !p.timing) return;
     const { hit, cancel } = p.timing;
@@ -397,12 +404,18 @@ function strike(fight, p, o) {
     for (const s of EFFECTORS) {
         const w = slotWorld(p, s);
         const r = dot(sub(w, base), fwd);
-        if (r > reach) { reach = r; best = w; }
+        if (r > reach) { reach = r; best = s; }
     }
     if (o.state === ST.NAGERARE || o.state === ST.DOWN || o.state === ST.RISE) return;
     const head = slotWorld(o, S.HEAD), pel = slotWorld(o, S.PELVIS);
     const foot = [pel[0], 0.1, pel[2]];
-    if (segDist(best, foot, head) > BODY_RADIUS + HIT_RADIUS) return;
+    const tip = slotWorld(p, best), inner = slotWorld(p, INNER[best]);
+    let d = Infinity;
+    for (let k = 0; k <= 4; k++) {
+        const t = k / 4, at = [inner[0] + (tip[0] - inner[0]) * t, inner[1] + (tip[1] - inner[1]) * t, inner[2] + (tip[2] - inner[2]) * t];
+        d = Math.min(d, segDist(at, foot, head));
+    }
+    if (d > BODY_RADIUS * sizeOf(o) + HIT_RADIUS * sizeOf(p)) return;
     const a = p.attack;
     /* A high blow goes over a crouch (the board's yarare test does the same
      * by height). */
@@ -441,9 +454,9 @@ function react(fight, o, how, kind) {
 function separate(fight, a, b) {
     if (a.state === ST.NAGERARE || b.state === ST.NAGERARE) return;
     const pa = bodyPoint(a), pb = bodyPoint(b);
-    const d = flat(pa, pb);
-    if (d >= PUSH_APART || d < 1e-6) return;
-    const push = (PUSH_APART - d) / 2, nx = (pb[0] - pa[0]) / d, nz = (pb[2] - pa[2]) / d;
+    const d = flat(pa, pb), apart = PUSH_APART * (sizeOf(a) + sizeOf(b)) / 2;
+    if (d >= apart || d < 1e-6) return;
+    const push = (apart - d) / 2, nx = (pb[0] - pa[0]) / d, nz = (pb[2] - pa[2]) / d;
     a.pos[0] -= nx * push; a.pos[2] -= nz * push;
     b.pos[0] += nx * push; b.pos[2] += nz * push;
 }
@@ -457,7 +470,7 @@ function bound(fight, p) {
         }
         return;
     }
-    const lim = A.half - BODY_RADIUS;
+    const lim = A.half - BODY_RADIUS * sizeOf(p);
     for (const k of [0, 2]) {
         if (at[k] > lim) p.pos[k] -= at[k] - lim;
         if (at[k] < -lim) p.pos[k] += -lim - at[k];

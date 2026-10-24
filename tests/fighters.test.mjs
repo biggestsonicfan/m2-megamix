@@ -16,7 +16,9 @@ for (const f of fighters) {
         assert.ok(ref.motion, `${f.name} ${a}`);
         const p = body.pose(ref, 1);
         assert.equal(p.mats.length, 16);
-        assert.ok(p.parts.length >= 10, `${f.name} ${a} parts ${p.parts.length}`);
+        /* Ryo's model is one skin over the sixteen slots; the rest are parts. */
+        if (p.parts[0]?.skin) assert.ok(p.parts[0].skin.positions.length === body.skin.count * 3, `${f.name} ${a} skin`);
+        else assert.ok(p.parts.length >= 10, `${f.name} ${a} parts ${p.parts.length}`);
         for (const part of p.parts) if (part.key != null) assert.ok(body.decode(part.key), `${f.name} model ${part.key}`);
     }
     const entries = f.moves.tables.get(f.moves.root);
@@ -65,4 +67,18 @@ for (const [a, v] of [[0, 3], [6, 0], [3, 6], [3, 4]]) {
 function f0(f) {
     return [...f.moves.tables.get(f.moves.root)].map((e) => e.motion & 0x1fff).find((id) => f.attack(id)?.level !== undefined && f.attack(id)?.victim == null);
 }
+/* Ryo (with the Shenmue disc): 5'9" to Akira's 5'11", and his throw on Akira. */
+const ryo = fighters.find((f) => f.game === 'shenmue');
+if (ryo) {
+    const { ryoFit, SIZE } = await import('../js/ryo.js');
+    const fit = ryoFit(games);
+    assert.ok(Math.abs(fit.ryo / fit.akira - 69 / 71) < 0.002, `Ryo's height ${fit.ryo} to Akira's ${fit.akira}`);
+    assert.equal(ryo.size, SIZE);
+    const entry = [...ryo.moves.tables.values()].flat().find((e) => ryo.attack(e.motion)?.victim != null);
+    assert.ok(entry, 'Ryo has a throw');
+    const ref = { rom: ryo.rom, motion: ryo.motion(ryo.attack(entry.motion).victim) };
+    const p = fighters[0].createBody().pose(ref, Math.floor(ref.motion.frames / 2));
+    assert.ok(p.mats.every((m) => m.every(Number.isFinite)));
+    console.log('Ryo', fit.ryo.toFixed(3), 'to Akira', fit.akira.toFixed(3), 'throw', entry.name);
+} else console.log('Ryo skipped: no Shenmue disc');
 console.log('ok');

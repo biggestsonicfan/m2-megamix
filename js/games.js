@@ -10,6 +10,7 @@ import { loadRomSet } from '../vendor/noclip/js/romset.js';
 import { readStageTable } from '../vendor/noclip/js/stages.js';
 import { readVf2Stages } from '../vendor/noclip/js/vf2.js';
 import { prepareGame } from './fighters.js';
+import { loadShenmue, ryoFighter } from './ryo.js';
 
 export const GAMES = [
     { key: 'vf2', zip: 'vf2', title: 'Virtua Fighter 2', kind: 'vf2' },
@@ -30,6 +31,9 @@ export const ROSTER = [
     { game: 'stf', index: 15, name: 'HONEY' },
     { game: 'stf', index: 8, name: 'EGGMAN' },
 ];
+
+/* Ryo, from the Shenmue beta's disc, when it can be had (js/ryo.js). */
+export const RYO = { game: 'shenmue', index: 0, name: 'RYO' };
 
 /* The arenas, as the fight code bounds them: VF2's ring is 16 square and a
  * fighter past its edge is out; FV's and StF's cages are walls. StF's stages
@@ -54,8 +58,10 @@ export function stagesOf(game) {
     return STAGE_SLOTS[game.key].map((n) => list[n]).filter((s) => s && s.name);
 }
 
-/** Load the three sets. `fetchZip(zipName)` returns an ArrayBuffer. */
-export async function loadGames(fetchZip, onStatus = () => {}) {
+/** Load the three sets. `fetchZip(zipName)` returns an ArrayBuffer;
+ * `fetchShenmue(path)` one of Ryo's files off the Shenmue disc, or null, and
+ * with them he joins the roster. */
+export async function loadGames(fetchZip, onStatus = () => {}, fetchShenmue = null) {
     const games = {};
     for (const g of GAMES) {
         onStatus(`LOADING ${g.zip}.zip`);
@@ -64,5 +70,13 @@ export async function loadGames(fetchZip, onStatus = () => {}) {
         games[g.key] = prepareGame({ ...g, rom });
     }
     for (const g of Object.values(games)) g.stages = stagesOf(g);
+    if (fetchShenmue) {
+        onStatus('LOADING SHENMUE');
+        const sm = await loadShenmue(fetchShenmue).catch(() => null);
+        if (sm) {
+            games.shenmue = { ...sm, makeFighter: ryoFighter };
+            if (!ROSTER.includes(RYO)) ROSTER.push(RYO);
+        }
+    }
     return games;
 }

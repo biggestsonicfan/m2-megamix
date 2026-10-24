@@ -3,6 +3,7 @@
 
     shenmue-fight.py list GDI_DIR                          # the GD-ROM's files: path, LBA, size
     shenmue-fight.py extract GDI_DIR OUT_DIR [NAME ...]   # files off the GD-ROM (default 1ST_READ.BIN)
+    shenmue-fight.py cat GDI_DIR PATH                      # one file off the GD-ROM, to stdout
     shenmue-fight.py moves 1ST_READ.BIN [--json]           # Ryo's hand, leg and throw lists
     shenmue-fight.py cast 1ST_READ.BIN                     # the fighters' EN_ names
     shenmue-fight.py script EN_X.BIN [--names M.TXT]       # disassemble a fighter's move script
@@ -81,6 +82,14 @@ def gdi_files(d, listing=False):
     root = pvd[156:156 + 34]
     for p, ext, sz in walk(struct.unpack_from('<I', root, 2)[0], struct.unpack_from('<I', root, 10)[0], ''):
         yield (p, ext, sz) if listing else (p, lambda e=ext, s=sz: read(e, s)[:s])
+
+def read_file(d, path):
+    """One file's bytes by its path on the disc (MISC/MOTION.BIN), or None."""
+    want = '/' + path.lstrip('/').upper()
+    for p, data in gdi_files(d):
+        if p.upper() == want:
+            return data()
+    return None
 
 # --- 1ST_READ.BIN
 
@@ -242,6 +251,12 @@ def main(argv):
     if cmd == 'list':
         for path, lba, size in gdi_files(argv[1], listing=True):
             print('%8d %10d %s' % (lba, size, path))
+        return
+    if cmd == 'cat':
+        data = read_file(argv[1], argv[2])
+        if data is None:
+            sys.exit('%s: not on the disc' % argv[2])
+        sys.stdout.buffer.write(data)
         return
     if cmd == 'extract':
         want = set(argv[3:]) or {'1ST_READ.BIN'}

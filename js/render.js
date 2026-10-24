@@ -42,6 +42,28 @@ function atlasTexture({ sheet0, sheet1 }) {
     return atlas;
 }
 
+/* Ryo's light: a sun from up front and the ambient. */
+const SUN = (() => { const v = [0.45, 0.8, 0.4], l = Math.hypot(...v); return v.map((x) => x / l); })();
+const AMBIENT = 0.5, DIFFUSE = 0.6;
+
+/* A Shenmue texture (js/shenmue.js decodePvr) as a material, one per name:
+ * its punch-through texels cut out, both faces drawn. */
+function skinMaterial(cache, textures, name) {
+    if (cache.has(name)) return cache.get(name);
+    const t = textures.get(name);
+    let map = null;
+    if (t) {
+        map = new THREE.DataTexture(t.rgba, t.width, t.height, THREE.RGBAFormat);
+        map.wrapS = map.wrapT = THREE.RepeatWrapping;
+        map.magFilter = map.minFilter = THREE.LinearFilter;
+        map.colorSpace = THREE.SRGBColorSpace;
+        map.needsUpdate = true;
+    }
+    const mat = new THREE.MeshBasicMaterial({ map, vertexColors: true, alphaTest: 0.5, side: THREE.DoubleSide });
+    cache.set(name, mat);
+    return mat;
+}
+
 /* The scene's sets with the game's resident set ahead of them
  * (js/app.js texramQueue). */
 const queue = (rom, sets) => (rom.game.texture.residentSet == null ? sets : [rom.game.texture.residentSet, ...sets]);
@@ -76,6 +98,7 @@ export class Renderer {
         this.stage = null;
         this.bodies = [];
         this.materials = new Map();
+        this.skinTextures = new Map();
         this.side = null;
         this.cam = null;
         this.resize();
@@ -172,6 +195,7 @@ export class Renderer {
      * colour block, and a game without a lighting block of its own (FV) takes
      * its light. */
     fighterMaterial(f, scene) {
+        if (f.look.kind === 'shenmue') return null;
         const key = `${f.game}:${f.name}:${scene.slot}`;
         if (this.materials.has(key)) return this.materials.get(key);
         const { rom } = f;
@@ -197,6 +221,7 @@ export class Renderer {
         for (const b of this.bodies) {
             this.scene.remove(b.group);
             for (const mesh of b.pool) if (mesh.userData.dynamic) mesh.geometry.dispose();
+            b.skin?.geometry.dispose();
         }
         this.bodies = players.map((p) => {
             const group = new THREE.Group();
@@ -211,6 +236,10 @@ export class Renderer {
             const { p } = b;
             W.makeRotationY(p.yang).setPosition(p.pos[0], p.pos[1], p.pos[2]);
             const parts = p.posed?.parts ?? [];
+            if (parts[0]?.skin) {
+                this.placeSkin(b, parts[0].skin, W);
+                continue;
+            }
             parts.forEach((part, i) => {
                 let mesh = b.pool[i];
                 if (!mesh) {
@@ -238,6 +267,45 @@ export class Renderer {
             });
             for (let i = parts.length; i < b.pool.length; i++) b.pool[i].visible = false;
         }
+    }
+
+    /* A skinned fighter (Ryo): one mesh, its triangles grouped by texture,
+     * built once from the body's skin; the positions come each frame, and
+     * the light (one sun and the ambient, as a lambert) is worked out here
+     * into the vertex colours. */
+    placeSkin(b, skin, W) {
+        if (!b.skin) {
+            const { body } = b.p;
+            const s = body.skin, n = s.count;
+            const geom = new THREE.BufferGeometry();
+            geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+            geom.setAttribute('uv', new THREE.BufferAttribute(s.uv, 2));
+            geom.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+            geom.setIndex(new THREE.BufferAttribute(s.index, 1));
+            const mats = s.parts.map((part, i) => {
+                geom.addGroup(part.start, part.count, i);
+                return skinMaterial(this.skinTextures, s.textures, part.texture);
+            });
+            const mesh = new THREE.Mesh(geom, mats);
+            mesh.matrixAutoUpdate = false;
+            mesh.frustumCulled = false;
+            b.group.add(mesh);
+            b.skin = mesh;
+        }
+        for (const mesh of b.pool) mesh.visible = false;
+        const geom = b.skin.geometry, pos = geom.attributes.position, col = geom.attributes.color;
+        pos.array.set(skin.positions);
+        pos.needsUpdate = true;
+        /* the sun in the fighter's own frame */
+        const c = Math.cos(b.p.yang), sn = Math.sin(b.p.yang);
+        const lx = c * SUN[0] - sn * SUN[2], ly = SUN[1], lz = sn * SUN[0] + c * SUN[2];
+        const N = skin.normals, C = col.array;
+        for (let i = 0; i < N.length; i += 3) {
+            const l = AMBIENT + DIFFUSE * Math.max(0, N[i] * lx + N[i + 1] * ly + N[i + 2] * lz);
+            C[i] = C[i + 1] = C[i + 2] = Math.min(1, l);
+        }
+        col.needsUpdate = true;
+        b.skin.matrix.copy(W);
     }
 
     /* ---- the camera ---- */
