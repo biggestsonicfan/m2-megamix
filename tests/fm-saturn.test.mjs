@@ -2277,6 +2277,173 @@ for (const [from, to] of [['`mov r12,r1`, 0x0600f002', '`mov r13,r1`, 0x0600f002
 /* the list's row naming another field or mask fails too */
 assert.throws(() => checkF008(f008Doc, newDoc.replace('| 0x0600f008 | this fighter (r12) | +0x11d4 | 0x00100000 |', '| 0x0600f008 | this fighter (r12) | +0x11d4 | 0x00200000 |')));
 assert.throws(() => checkF008(f008Doc, newDoc.replace('| 0x0600f008 | this fighter (r12) | +0x11d4 | 0x00100000 |', '| 0x0600f008 | this fighter (r12) | +0x11d0 | 0x00100000 |')));
+/* The flag at 0x0600f1f6: the next row, its clear side split twice */
+const f1f6Doc = kindsDoc.split('#### The flag at 0x0600f1f6\n\n')[1].split('\n#### ')[0].split('\n### ')[0];
+function checkF1f6(text, list, four, those) {
+    const at = 0x0600f1f6, sides = FM.flagSides(game, run9, at);
+    const listed = list.match(/^\| 0x0600f1f6 \| this fighter \(r12\) \| (\+0x[\da-f]+) \| (0x[\da-f]{8}) \|$/m);
+    assert.ok(listed, '0x0600f1f6\'s row in "Flag tests not yet described"');
+    const named = `${listed[1]} & ${listed[2]}`;
+    const rows = [...text.matchAll(new RegExp(String.raw`^\| (0x[\da-f]{8}) \| (${FLAG}) \| (.*?) \| (.*?) \|$`, 'gm'))];
+    assert.deepEqual(rows.map(r => [r[1], r[2]]), [['0x0600f1f6', named]]);
+    assert.equal(eventFlag(sides.flag), named, '0x0600f1f6: the disc\'s flag');
+    const pcW = a => (assert.equal(word(a) & 0xf000, 0x9000, `${h(a, 8)}: mov.w @(disp,pc),rN`), a + 4 + (word(a) & 0xff) * 2);
+    const pcL = a => (assert.equal(word(a) & 0xf000, 0xd000, `${h(a, 8)}: mov.l @(disp,pc),rN`), (a & ~3) + 4 + (word(a) & 0xff) * 4);
+    const long = a => game.prg.readUInt32BE(game.at(a)), sword = a => word(a) << 16 >> 16;
+    const bTarget = a => ((word(a) & 0xff) << 24 >> 24) * 2 + a + 4;
+    const braTarget = a => (assert.equal(word(a) & 0xf000, 0xa000, `${h(a, 8)}: bra`), ((word(a) & 0xfff) << 20 >> 20) * 2 + a + 4);
+    const bf = a => (assert.equal(word(a) & 0xff00, 0x8b00, `${h(a, 8)}: bf`), bTarget(a));
+    /* mov rM,r1; mov.w @(lit),r0; add r0,r1; mov.b @r1,r0; tst #bit,r0; bt */
+    const [, m, lit, off, bit, op] = text.match(/0x0600f1ee is `mov r(\d+),r1`, 0x0600f1f0 `mov\.w @\((0x[\da-f]{8})\),r0`,\nwhich loads (0x[\da-f]{4}), 0x0600f1f2 `add r0,r1`, 0x0600f1f4 `mov\.b @r1,r0` and\n0x0600f1f6 `tst #(0x[\da-f]{2}),r0`, then `(b[tf])` at 0x0600f1f8\./);
+    assert.equal(word(0x0600f1ee), 0x6103 | (+m << 4), 'mov rM,r1');
+    assert.equal(+m, 12, 'this fighter is r12');
+    assert.equal(word(0x0600f1f0) & 0x0f00, 0x0000, 'into r0');
+    assert.equal(pcW(0x0600f1f0), parseInt(lit, 16), 'the literal\'s address');
+    assert.equal(word(parseInt(lit, 16)), parseInt(off, 16), 'the literal');
+    assert.equal(word(0x0600f1f2), 0x310c, 'add r0,r1');
+    assert.equal(word(0x0600f1f4), 0x6010, 'mov.b @r1,r0');
+    assert.equal(word(at), 0xc800 | parseInt(bit, 16), 'tst #bit,r0');
+    assert.ok(sides.flag.of !== 13, 'not the opponent\'s');
+    const byte = parseInt(off, 16), mask = parseInt(bit, 16) << 8 * (3 - (byte & 3));
+    assert.equal(flagText(byte & ~3, mask), named, 'the byte as its long');
+    const [, bb, bfd, lf, lm] = text.match(/That is bit (0x[\da-f]{2}) of\nthe byte (\+0x[\da-f]+) of this fighter \(r12\), not the opponent's: big-endian,\nthe long (\+0x[\da-f]+) masked with (0x[\da-f]{8})\./);
+    assert.deepEqual([bb, bfd, `${lf} & ${lm}`], [bit, `+${h(byte, 2)}`, named], 'the byte and long named');
+    assert.equal(word(at + 2) & 0xff00, 0x8900, '0x0600f1f8: bt, so the branch is the clear side');
+    assert.equal(op, 'bt', 'the branch named');
+    assert.match(text, /The `bt` branches when the bit\nis clear, so the branch is the clear side and the fall-through the set\nside\./);
+    const clear = bTarget(at + 2), set = at + 4;
+    /* the set side: bra, nop, then the stop's words */
+    const [, sLit, sOff, sBit, stopName] = text.match(/The set side: 0x0600f1fa `bra`, with 0x0600f1fc `nop` in its delay slot,\nlands at 0x0600f338 `mov r12,r1`, 0x0600f33a `mov\.w @\((0x[\da-f]{8})\),r0`,\nwhich loads (0x[\da-f]{4}), `add r0,r1`, `mov\.b @r1,r0` and 0x0600f340\n`tst #(0x[\da-f]{2}),r0`\. That stop tests this fighter's \(r12\) (\+0x[\da-f]+ & 0x[\da-f]{8});\nit is a row in "The flags those four stop at", which describes its sides\./);
+    const sBra = braTarget(set);
+    assert.equal(word(set + 2), 0x0009, 'nop in the delay slot');
+    assert.equal(sBra, 0x0600f338, 'the bra\'s target');
+    assert.equal(word(0x0600f338), 0x61c3, 'mov r12,r1');
+    assert.equal(word(0x0600f33a) & 0x0f00, 0x0000, 'into r0');
+    assert.equal(pcW(0x0600f33a), parseInt(sLit, 16));
+    assert.equal(word(parseInt(sLit, 16)), parseInt(sOff, 16));
+    assert.equal(word(0x0600f33c), 0x310c, 'add r0,r1');
+    assert.equal(word(0x0600f33e), 0x6010, 'mov.b @r1,r0');
+    assert.equal(word(0x0600f340), 0xc800 | parseInt(sBit, 16), 'tst #bit,r0');
+    const sByte = parseInt(sOff, 16);
+    assert.equal(flagText(sByte & ~3, parseInt(sBit, 16) << 8 * (3 - (sByte & 3))), stopName, 'the stop\'s byte as its long');
+    assert.equal(sides.set.length, 1, 'set: the stop and nothing else');
+    const stop = sides.set[0];
+    assert.deepEqual([stop.kind, stop.at, stop.of], ['stop', 0x0600f340, undefined]);
+    assert.equal(eventFlag(stop), stopName, 'the stop flagSides reports');
+    assert.ok(four.includes(`\n| 0x0600f340 | ${stopName} |`), 'the stop\'s row in "The flags those four stop at"');
+    /* the clear side: two longs, then two splits */
+    const ev = sides.clear, end = ev.at(-1);
+    assert.deepEqual([end.kind, end.at], ['end', 0x0600f3f6]);
+    assert.equal(word(end.at), 0x4e2b, 'jmp @r14');
+    assert.ok(ev.every(e => e.of === undefined), 'clear: all r12');
+    assert.ok(!ev.some(e => ['stop', 'same', 'param', 'return'].includes(e.kind) || e.field === 0 && e.mask === 0x10000000), 'clear: no stop');
+    const [, c1, s1, c2, s2] = text.match(/The clear side's splits: (0x[\da-f]{8}) `cmp\/pz r5` and `bf` at 0x0600f2c6,\nwhich lands at (0x[\da-f]{8}),[^]*?then (0x[\da-f]{8}) `tst r0,r0` and `bf` at\n0x0600f2d2, which lands at (0x[\da-f]{8}),/);
+    assert.equal(word(parseInt(c1, 16)), 0x4511, 'cmp/pz r5');
+    assert.equal(parseInt(c1, 16) + 2, 0x0600f2c6);
+    const neg = bf(0x0600f2c6), nz = bf(0x0600f2d2);
+    assert.deepEqual([h(neg, 8), h(nz, 8)], [s1, s2], 'the splits\' targets');
+    assert.equal(word(parseInt(c2, 16)), 0x2008, 'tst r0,r0');
+    assert.equal(parseInt(c2, 16) + 2, 0x0600f2d2);
+    assert.match(text, /0x0600f1ec `mov\.w @r6\+,r5` loads, is negative\./);
+    assert.equal(word(0x0600f1ec), 0x6565, 'mov.w @r6+,r5');
+    const before = ev.filter(e => e.at < 0x0600f2c4);
+    assert.deepEqual(before.map(e => [e.kind, e.at, e.field, e.size, e.values]), [['store', 0x0600f2b2, 0x20, 4, [null]], ['store', 0x0600f2c2, 0x28, 4, [null]]], 'before the splits');
+    assert.match(text, /The stores at 0x0600f2b2 and 0x0600f2c2, before the splits,\nare this fighter's longs \+0x20 and \+0x28, whose values `flagSides` does\nnot follow\./);
+    /* r5 negative: one store, then bra */
+    const [, nLit, nVal] = text.match(/There 0x0600f2f0\n`mov\.w @\((0x[\da-f]{8})\),r8` loads (-?0x[\da-f]{4}) and 0x0600f2f2\n`mov\.l r8,@\(0x24,r12\)` stores it in the long \+0x24; the `bra` at\n0x0600f2f4 jumps to 0x0600f3f6\./);
+    assert.equal(word(neg) & 0x0f00, 0x0800, 'into r8');
+    assert.equal(pcW(neg), parseInt(nLit, 16));
+    assert.equal(sword(parseInt(nLit, 16)), parseInt(nVal, 16), 'the literal');
+    assert.equal(word(0x0600f2f2), 0x1c89, 'mov.l r8,@(0x24,r12)');
+    assert.equal(braTarget(0x0600f2f4), end.at);
+    const negEv = ev.filter(e => e.at >= neg && e.at < 0x0600f2f4);
+    assert.deepEqual(negEv.map(e => [e.kind, e.at, e.field, e.size, e.values]), [['store', 0x0600f2f2, 0x24, 4, [parseInt(nVal, 16)]]], 'r5 negative');
+    /* r5 not negative: the call, then nonzero */
+    const [, fLit, fn] = text.match(/Not branching, it goes on at 0x0600f2c8\n`mov r5,r4`, 0x0600f2ca `mov\.l @\((0x[\da-f]{8})\),r0`, which loads (0x[\da-f]{8}),\nand 0x0600f2cc `jsr @r0`/);
+    assert.equal(word(0x0600f2c8), 0x6453, 'mov r5,r4');
+    assert.equal(word(0x0600f2ca) & 0x0f00, 0x0000, 'into r0');
+    assert.equal(pcL(0x0600f2ca), parseInt(fLit, 16));
+    assert.equal(long(parseInt(fLit, 16)), parseInt(fn, 16), 'the call\'s target');
+    assert.equal(word(0x0600f2cc), 0x400b, 'jsr @r0');
+    const calls = ev.filter(e => e.kind === 'call');
+    assert.deepEqual(calls.map(e => [e.at, h(e.target, 8)]), [[0x0600f2cc, fn]], 'the one call');
+    const nzEv = ev.filter(e => e.at >= nz && e.at < 0x0600f32c);
+    assert.deepEqual(nzEv.map(e => [e.kind, e.at, e.field, e.size]), [['store', 0x0600f324, 0x20, 4], ['store', 0x0600f326, 0x28, 4], ['store', 0x0600f32a, 0x24, 4]], 'nonzero');
+    const [, zLit, zVal] = text.match(/There it stores 0 in the long \+0x20 at 0x0600f324 and\nin the long \+0x28 at 0x0600f326, and 0x0600f328 `mov\.w @\((0x[\da-f]{8})\),r3`\nloads (0x[\da-f]{4}) for the long \+0x24 at 0x0600f32a; the `bra` at 0x0600f32c\njumps to 0x0600f3f6\. With zero, the `bra` at 0x0600f2d4 jumps to\n0x0600f3f6\./);
+    assert.deepEqual(nzEv.map(e => e.values), [[0], [0], [parseInt(zVal, 16)]], 'the nonzero values');
+    assert.equal(word(0x0600f322), 0xe300, 'mov #0,r3');
+    assert.equal(word(0x0600f324), 0x1c38, 'mov.l r3,@(0x20,r12)');
+    assert.equal(word(0x0600f326), 0x1c3a, 'mov.l r3,@(0x28,r12)');
+    assert.equal(word(0x0600f328) & 0x0f00, 0x0300, 'into r3');
+    assert.equal(pcW(0x0600f328), parseInt(zLit, 16));
+    assert.equal(word(parseInt(zLit, 16)), parseInt(zVal, 16));
+    assert.equal(word(0x0600f32a), 0x1c39, 'mov.l r3,@(0x24,r12)');
+    assert.equal(braTarget(0x0600f32c), end.at);
+    assert.equal(braTarget(0x0600f2d4), end.at);
+    assert.equal(before.length + negEv.length + calls.length + nzEv.length + 1, ev.length, 'every clear event placed');
+    /* where the clear side lands */
+    assert.match(text, /0x0600f2a4 is the fall-through of the `bf` at 0x0600f2a2\nafter the test at 0x0600f2a0 \(\+0x6c0 & 0x00080000\), a row in "The flags\nthose stop at"; from 0x0600f2a4 `flagSides` lists the same events as for\nthat row's clear side\./);
+    assert.equal(clear, 0x0600f2a4, 'the clear side\'s target');
+    assert.equal(word(0x0600f2a2) & 0xff00, 0x8b00, '0x0600f2a2: bf');
+    assert.ok(those.includes('\n| 0x0600f2a0 | +0x6c0 & 0x00080000 |'), '0x0600f2a0\'s row');
+    const f2a0 = FM.flagSides(game, run9, 0x0600f2a0);
+    assert.equal(eventFlag(f2a0.flag), '+0x6c0 & 0x00080000');
+    assert.deepEqual(f2a0.clear, ev, 'the same events as 0x0600f2a0\'s clear side');
+    assert.ok(!FM.handlerReaches(game, run9, set, 0x0600eb9e, [stop.at]), 'set: no 0.8 check');
+    assert.ok(!FM.handlerReaches(game, run9, clear, 0x0600eb9e, [end.at]), 'clear: no 0.8 check');
+    assert.match(text, /Neither\nside calls anything else or stops at another flag test, and neither\nreaches the 0\.8 distance check or `\+0` bit 0x10000000\./);
+    /* the table cells */
+    const ends = `ends this frame's run (${h(end.at, 8)})`, and = a => a.length > 1 ? `${a.slice(0, -1).join(', ')} and ${a.at(-1)}` : a[0];
+    const fl = a => and(a.map(e => `+${h(e.field, 2)}`));
+    assert.equal(rows[0][3], `goes on to ${h(set, 8)}; no store or call; the \`bra\` at ${h(set, 8)} jumps to ${h(sBra, 8)}; stops at ${h(stop.at, 8)} (${stopName})`, 'the set cell');
+    assert.equal(rows[0][4], `branches to ${h(clear, 8)}; stores ${fl(before)}; the \`bf\` at 0x0600f2c6 splits it at ${h(neg, 8)}, which stores ${fl(negEv)}; else it calls ${fn}, and the \`bf\` at 0x0600f2d2 splits it at ${h(nz, 8)}, which stores ${fl(nzEv)}; ${ends}`, 'the clear cell');
+    /* the bullet */
+    const bullet = text.match(/^- \*\*(.+?)\*\*:([^]*?)\n\n/m), body = bullet[2].replace(/\s+/g, ' ');
+    assert.equal(bullet[1], named);
+    const longs = a => `the long${a.length > 1 ? 's' : ''} ${fl(a)}`;
+    assert.equal(body, ` set, the \`bra\` at ${h(set, 8)} jumps to ${h(sBra, 8)} with no store or call, and it stops at ${h(stop.at, 8)}; clear, it jumps to ${h(clear, 8)} and stores ${longs(before)}, then with r5 negative stores ${longs(negEv)}, else calls ${fn} and, if that returns nonzero, stores ${longs(nzEv)}; every clear path ends this frame's run at ${h(end.at, 8)}.`);
+}
+checkF1f6(f1f6Doc, newDoc, fourDoc, thoseDoc);
+for (const [from, to] of [['`mov r12,r1`, 0x0600f1f0', '`mov r13,r1`, 0x0600f1f0'], ['`mov.w @(0x0600f20c),r0`', '`mov.w @(0x0600f20a),r0`'],
+    ['which loads 0x06c1', 'which loads 0x06c0'], ['`tst #0x08,r0`, then', '`tst #0x04,r0`, then'], ['then `bt` at', 'then `bf` at'],
+    ['| 0x0600f1f6 | +0x6c0 & 0x00080000 |', '| 0x0600f1f6 | +0x6c0 & 0x00040000 |'], ['| 0x0600f1f6 | +0x6c0 & 0x00080000 |', '| 0x0600f1f6 | +0x6c4 & 0x00080000 |'],
+    ['| 0x0600f1f6 | +0x6c0 & 0x00080000 |', '| 0x0600f1f6 | the opponent\'s +0x6c0 & 0x00080000 |'],
+    ['That is bit 0x08 of', 'That is bit 0x04 of'], ['the byte +0x6c1 of this', 'the byte +0x6c0 of this'],
+    ['the long +0x6c0 masked with 0x00080000', 'the long +0x6c4 masked with 0x00080000'], ['masked with 0x00080000. The', 'masked with 0x00000800. The'],
+    ['fighter (r12), not the opponent\'s: big', 'fighter (r13), not the opponent\'s: big'],
+    ['is clear, so the branch is the clear side and the fall-through the set', 'is clear, so the branch is the set side and the fall-through the clear'],
+    ['| goes on to 0x0600f1fa;', '| goes on to 0x0600f1fc;'], ['0x0600f1fa; no store or call;', '0x0600f1fa; stores +0x6c0;'],
+    ['jumps to 0x0600f338; stops', 'jumps to 0x0600f33a; stops'], ['stops at 0x0600f340 (+0x6c0 & 0x01000000) |', 'stops at 0x0600f340 (+0x6c0 & 0x02000000) |'],
+    ['stops at 0x0600f340 (+0x6c0 & 0x01000000) |', 'ends this frame\'s run (0x0600f3f6) |'],
+    ['| branches to 0x0600f2a4;', '| branches to 0x0600f2a0;'], ['0x0600f2a4; stores +0x20 and +0x28;', '0x0600f2a4; stores +0x20;'],
+    ['splits it at 0x0600f2f0, which stores +0x24;', 'splits it at 0x0600f2f2, which stores +0x24;'], ['0x0600f2f0, which stores +0x24;', '0x0600f2f0, which stores +0x20;'],
+    ['else it calls 0x06010dda, and', 'else it calls 0x060131d0, and'], ['splits it at 0x0600f322, which', 'splits it at 0x0600f324, which'],
+    ['which stores +0x20, +0x28 and +0x24; ends', 'which stores +0x20 and +0x28; ends'], ['+0x24; ends this frame\'s run (0x0600f3f6) |', '+0x24; ends this frame\'s run (0x0600f3f8) |'],
+    ['set, the `bra` at 0x0600f1fa jumps to\n  0x0600f338', 'set, the `bra` at 0x0600f1fa jumps to\n  0x0600f340'], ['no store or call, and it stops at 0x0600f340;', 'no store or call, and it stops at 0x0600f338;'],
+    ['jumps to 0x0600f2a4 and stores the longs +0x20 and +0x28', 'jumps to 0x0600f2a4 and stores the longs +0x20 and +0x24'],
+    ['with r5\n  negative stores the long +0x24', 'with r5\n  negative stores the long +0x28'], ['else calls 0x06010dda and, if', 'else calls 0x060131d0 and, if'],
+    ['returns nonzero, stores the longs +0x20, +0x28 and +0x24', 'returns zero, stores the longs +0x20, +0x28 and +0x24'],
+    ['every clear\n  path ends this frame\'s run at 0x0600f3f6.', 'every clear\n  path ends this frame\'s run at 0x0600f3f8.'],
+    ['0x0600f1fc `nop` in its delay slot', '0x0600f1fe `nop` in its delay slot'], ['lands at 0x0600f338 `mov r12,r1`', 'lands at 0x0600f33a `mov r12,r1`'],
+    ['`mov.w @(0x0600f362),r0`', '`mov.w @(0x0600f364),r0`'], ['which loads 0x06c0, `add', 'which loads 0x06c1, `add'], ['`tst #0x01,r0`. That', '`tst #0x02,r0`. That'],
+    ['(r12) +0x6c0 & 0x01000000;', '(r12) +0x6c0 & 0x02000000;'],
+    ['0x0600f2c4 `cmp/pz r5`', '0x0600f2c2 `cmp/pz r5`'], ['which lands at 0x0600f2f0, so', 'which lands at 0x0600f2f2, so'],
+    ['`mov.w @r6+,r5` loads', '`mov.w @r6+,r4` loads'], ['`mov.w @(0x0600f2f8),r8` loads -0x07ae', '`mov.w @(0x0600f2fa),r8` loads -0x07ae'],
+    ['loads -0x07ae and', 'loads 0x07ae and'], ['`mov.l @(0x0600f2ec),r0`, which loads 0x06010dda', '`mov.l @(0x0600f2ec),r0`, which loads 0x060131d0'],
+    ['`mov.l @(0x0600f2ec),r0`', '`mov.l @(0x0600f2e8),r0`'], ['then 0x0600f2d0 `tst r0,r0`', 'then 0x0600f2ce `tst r0,r0`'],
+    ['which lands at 0x0600f322, so', 'which lands at 0x0600f324, so'], ['`mov.w @(0x0600f332),r3`', '`mov.w @(0x0600f330),r3`'],
+    ['loads 0x07ae for the long', 'loads 0x07ad for the long'], ['the `bra` at 0x0600f32c\njumps', 'the `bra` at 0x0600f32e\njumps'],
+    ['With zero, the `bra` at 0x0600f2d4', 'With zero, the `bra` at 0x0600f2d6'],
+    ['are this fighter\'s longs +0x20 and +0x28', 'are this fighter\'s longs +0x20 and +0x24'],
+    ['after the test at 0x0600f2a0 (+0x6c0 & 0x00080000)', 'after the test at 0x0600f2a0 (+0x6c0 & 0x00040000)'], ['`bf` at 0x0600f2a2\nafter', '`bt` at 0x0600f2a2\nafter'],
+    ['Neither\nside calls anything else', 'The set\nside calls 0x060131d0']]) {
+    assert.ok(f1f6Doc.includes(from), from);
+    assert.throws(() => checkF1f6(f1f6Doc.replace(from, to), newDoc, fourDoc, thoseDoc), `${from} -> ${to}`);
+}
+/* the list's row naming another field or mask fails too */
+assert.throws(() => checkF1f6(f1f6Doc, newDoc.replace('| 0x0600f1f6 | this fighter (r12) | +0x6c0 | 0x00080000 |', '| 0x0600f1f6 | this fighter (r12) | +0x6c0 | 0x00040000 |'), fourDoc, thoseDoc));
+assert.throws(() => checkF1f6(f1f6Doc, newDoc.replace('| 0x0600f1f6 | this fighter (r12) | +0x6c0 | 0x00080000 |', '| 0x0600f1f6 | this fighter (r12) | +0x6c4 | 0x00080000 |'), fourDoc, thoseDoc));
+assert.throws(() => checkF1f6(f1f6Doc, newDoc, fourDoc.replace('| 0x0600f340 | +0x6c0 & 0x01000000 |', '| 0x0600f340 | +0x6c0 & 0x02000000 |'), thoseDoc));
 const sentenceSlots = new Map(kinds.map(([, k, , , , , , does]) => [parseInt(k, 16), [...new Set([...does.matchAll(
     /(?<![\w.+\u2212-]|bit |frame |kind |≤ |is )(\d+)(?![\w.]| frames?)/g)].map(m => +m[1]))].sort((a, b) => a - b)]));
 const ruleSlots = (kind, p) => kind !== 9 ? sentenceSlots.get(kind)

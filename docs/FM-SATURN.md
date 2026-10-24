@@ -1296,6 +1296,58 @@ over the halfword +0x646, in the long +0x6f8. All are this fighter's
 and neither reaches the 0.8 distance check or `+0` bit 0x10000000.
 `tests/fm-saturn.test.mjs` checks this section against a fresh read.
 
+#### The flag at 0x0600f1f6
+
+The next row of "Flag tests not yet described", read off the disc and
+followed the same way. The fighter, field and mask in that row match the
+disc: 0x0600f1ee is `mov r12,r1`, 0x0600f1f0 `mov.w @(0x0600f20c),r0`,
+which loads 0x06c1, 0x0600f1f2 `add r0,r1`, 0x0600f1f4 `mov.b @r1,r0` and
+0x0600f1f6 `tst #0x08,r0`, then `bt` at 0x0600f1f8. That is bit 0x08 of
+the byte +0x6c1 of this fighter (r12), not the opponent's: big-endian,
+the long +0x6c0 masked with 0x00080000. The `bt` branches when the bit
+is clear, so the branch is the clear side and the fall-through the set
+side.
+
+| Tested at | Flag | Set | Clear |
+| --- | --- | --- | --- |
+| 0x0600f1f6 | +0x6c0 & 0x00080000 | goes on to 0x0600f1fa; no store or call; the `bra` at 0x0600f1fa jumps to 0x0600f338; stops at 0x0600f340 (+0x6c0 & 0x01000000) | branches to 0x0600f2a4; stores +0x20 and +0x28; the `bf` at 0x0600f2c6 splits it at 0x0600f2f0, which stores +0x24; else it calls 0x06010dda, and the `bf` at 0x0600f2d2 splits it at 0x0600f322, which stores +0x20, +0x28 and +0x24; ends this frame's run (0x0600f3f6) |
+
+- **+0x6c0 & 0x00080000**: set, the `bra` at 0x0600f1fa jumps to
+  0x0600f338 with no store or call, and it stops at 0x0600f340; clear, it
+  jumps to 0x0600f2a4 and stores the longs +0x20 and +0x28, then with r5
+  negative stores the long +0x24, else calls 0x06010dda and, if that
+  returns nonzero, stores the longs +0x20, +0x28 and +0x24; every clear
+  path ends this frame's run at 0x0600f3f6.
+
+The set side: 0x0600f1fa `bra`, with 0x0600f1fc `nop` in its delay slot,
+lands at 0x0600f338 `mov r12,r1`, 0x0600f33a `mov.w @(0x0600f362),r0`,
+which loads 0x06c0, `add r0,r1`, `mov.b @r1,r0` and 0x0600f340
+`tst #0x01,r0`. That stop tests this fighter's (r12) +0x6c0 & 0x01000000;
+it is a row in "The flags those four stop at", which describes its sides.
+
+The clear side's splits: 0x0600f2c4 `cmp/pz r5` and `bf` at 0x0600f2c6,
+which lands at 0x0600f2f0, so it branches when r5, the halfword that
+0x0600f1ec `mov.w @r6+,r5` loads, is negative. There 0x0600f2f0
+`mov.w @(0x0600f2f8),r8` loads -0x07ae and 0x0600f2f2
+`mov.l r8,@(0x24,r12)` stores it in the long +0x24; the `bra` at
+0x0600f2f4 jumps to 0x0600f3f6. Not branching, it goes on at 0x0600f2c8
+`mov r5,r4`, 0x0600f2ca `mov.l @(0x0600f2ec),r0`, which loads 0x06010dda,
+and 0x0600f2cc `jsr @r0`, then 0x0600f2d0 `tst r0,r0` and `bf` at
+0x0600f2d2, which lands at 0x0600f322, so it branches when the call
+returns nonzero. There it stores 0 in the long +0x20 at 0x0600f324 and
+in the long +0x28 at 0x0600f326, and 0x0600f328 `mov.w @(0x0600f332),r3`
+loads 0x07ae for the long +0x24 at 0x0600f32a; the `bra` at 0x0600f32c
+jumps to 0x0600f3f6. With zero, the `bra` at 0x0600f2d4 jumps to
+0x0600f3f6. The stores at 0x0600f2b2 and 0x0600f2c2, before the splits,
+are this fighter's longs +0x20 and +0x28, whose values `flagSides` does
+not follow. 0x0600f2a4 is the fall-through of the `bf` at 0x0600f2a2
+after the test at 0x0600f2a0 (+0x6c0 & 0x00080000), a row in "The flags
+those stop at"; from 0x0600f2a4 `flagSides` lists the same events as for
+that row's clear side. 0x0600f3f6 is the run handler's `jmp @r14`. Neither
+side calls anything else or stops at another flag test, and neither
+reaches the 0.8 distance check or `+0` bit 0x10000000.
+`tests/fm-saturn.test.mjs` checks this section against a fresh read.
+
 ### Slots
 
 The action-table slots that those handlers play, read the way 0x0600CEC8
