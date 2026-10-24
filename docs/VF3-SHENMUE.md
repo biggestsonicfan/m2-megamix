@@ -185,15 +185,52 @@ What a converted block does not bring with it:
   0x804, 0x810..) and the ops from it. The test had 738's own VF2 setup,
   converted. For a motion only Shenmue has, `importAkira` can't take it:
   `readSetup` reads VF2's setup table, and ids at 1360 and above throw. A
-  Shenmue motion needs a new id with a setup that someone writes or derives.
-  A header and op 0 alone should play the motion with no hit, damage or
-  cancel timing (not tested). The timing (op 2), strike (op 4) and throw
+  Shenmue motion needs a new id with a setup that someone writes or derives
+  ("A header and no ops", below). The timing (op 2), strike (op 4) and throw
   (op 5) ops are the move's properties.
 - **The table's second offset.** It is only in Shenmue's file, and nothing on
   the VF2 or StF path has a field for it. It doesn't block anything.
 - **Size scaling** is not missing. The import applies SCALE (Akira's, 2.03) to
   objects 12–19. Shenmue's units are VF2's, so a Ryo would need only his own
   factor for his own height. That is a property and doesn't block anything.
+
+### A header and no ops
+
+VF2 has no free motion id: all 1360 have a block and a setup. So a
+Shenmue-only motion takes the slot of a VF2 motion that Akira's import
+doesn't carry. The test used VF2 1160 for Shenmue 316, H_HIJI_00 (not a VF3
+name; 564 bytes, 32 frames). The setup is 738's 8-byte header (kind word
+0x101) and op 0. His commit at 0x34C57, type 0, which played 738, plays 1160
+instead. The import is unchanged.
+
+- **The import completes.** 329 motions instead of 328. 1160 is StF id
+  804, a 564-byte block and a 14-byte setup: StF's 13-byte header (01 01,
+  then zeros) and 0. `animation_related[804]` and `offset_list_motions[804]`
+  point at them, and the commit in the converted program says 804 where it
+  said 720 (738).
+- **set_mot_dat loads the header** (S 0x1B26C):
+  - 0x804 gets 0x101, 0x1A4 gets 0x101, and 0x810, 0x814, 0x860 and 0x84C
+    get 0;
+  - 0x800, 0x80A and 0x80C are the block's 32 frames;
+  - 0x802 (the next motion) and 0xA00 are cleared, and 0x808 is not touched;
+  - the first op byte is 0 (loc_1B5D0), so the play script (0x82C) is that
+    byte: empty.
+- **What the missing ops leave** (play_motion, S 0x1BDA4):
+  - **Timing, op 2 (0x808 hit, 0x80A cancel, 0x80C end, 0xA00 = 1).** This
+    is the one that stops it. With 0xA00 at 0, play_motion skips its phases
+    (basic_begin, basic_main, basic_follow1). Those clear 0x1A4 bit 1 at
+    the hit frame. At the cancel frame they clear bits 8, 16 and 26 and set
+    bit 2. At the end frame they clear bits 0 and 12. With 0x802 at 0, the motion holds its last frame. So
+    the move plays once and then holds, with 0x1A4 still 0x101: no cancel
+    window and no end. That nothing else clears those bits is read from the
+    code, not tried.
+  - **Hit and damage, op 4** (level, damage, reach; from the strike data).
+    None. The kind word's bit 8 says "attack" while there is no strike
+    data, so a header for a motion without op 4 should clear bit 8.
+  - **Cancel** is op 2's 0x80A, above. VF2's ops 0xB (0x844) and play ops
+    are properties only.
+
+  The least that makes it a move is op 2. Op 4 makes it a hit.
 
 ## Open
 
