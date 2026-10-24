@@ -464,6 +464,27 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
     (93 of 104 groups found here), never 0 as on every strike. So the strike
     group runs longer than the throw group. The bytes after this one aren't
     decoded.
+- **Counting kind-5 groups (86, 88, 104):** the three counts are the same
+  layout (header, one tag-2 block, kind 5) with different checks on the
+  tag-2 words. The scans didn't walk off the hit block.
+  - **104:** every kind-5 group, words not checked (the bits part above).
+  - **88:** words strictly rising, word 1 < word 2 < word 3 (the angle and
+    the byte after it).
+  - **86:** that, and word 3 ≤ the motion's frames + 2 (the throw's motion
+    id). It drops AKI_AKI_BATTLE_TUKAMI_ALL (1, 30, 84; 80 frames) and
+    AKI_AKI_NGS_B_HIKI (1, 35, 57; 48 frames).
+  - **The 16 in 104 but not 88** all have word 2 = word 3 (1, 18, 18 …),
+    damage 0 (14) or 1 (2). None is a throw move: they are receiving,
+    escape, grab and hold motions (AK_FB_CHG_YA_SK, AK_UKASHI_YA_ESCP,
+    BA_02_SK_Y, TOMOE_01_SK_Y, AKI_AKI_TUKAMI_BODY2,
+    YKI_AKI_BATTLE_TUKAMARE_MISS, AI_FT_NGSK_041_YA, YKI_AKI_HAGAI_SIME and
+    _LP, AKI_AKI_UDEKIME_L_LP …). 10 of them give a u16 after damage past the
+    1559 records. So 104 isn't a count of throw groups. 88 and 86 are
+    throw-group counts with the stricter checks. The bits byte is 0 on all
+    104, including these 16.
+  - The strikes' 231 (the bits part, and "The byte after the angle") is
+    likewise unchecked: 226 have rising words and 224 also pass the frames
+    check.
 - **Frames (the tag-2 words): not settled.** The three words don't line up
   across Elbow Slam, Twist Knuckle and Vortex Throw, so none of them is named
   here. What the records show (frames = the motion's own count):
