@@ -39,6 +39,7 @@ import { readZipDirectory, extractZipEntry } from '../vendor/noclip/js/zip.js';
 import { loadNodeGames } from '../tests/node-roms.mjs';
 import { importAkira } from './vf2-guest.mjs';
 import { ryoTiles, importRyo } from './ryo-guest.mjs';
+import { importVf2Stages, VF2_SET0 } from './vf2-stages.mjs';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const ROMS = process.env.ROMS_DIR || `${process.env.HOME}/build/mameroms`;
@@ -136,11 +137,13 @@ function boardTables() {
     const models = new Set(), chars = new Set(), texsets = new Set(), csets = new Set();
     for (const m of h.matchAll(/pose_part_t \w+\[\d+\] = \{([^;]*)\};/g))
         for (const p of m[1].matchAll(/\{(\d+), \d+, (\d+)\}/g)) { models.add(+p[1]); models.add(+p[2]); }
-    for (const m of h.matchAll(/stage_draw_t \w+\[\d+\] = \{([^;]*)\};/g))
+    /* VF2's stages (vf2stageN_draws, sets VF2_SET0 on) are tools/vf2-stages.mjs's */
+    for (const m of h.matchAll(/stage_draw_t (?!vf2)\w+\[\d+\] = \{([^;]*)\};/g))
         for (const d of m[1].matchAll(/^\s*\{(\d+), \{/gm)) models.add(+d[1]);
     for (const m of h.matchAll(/\{"[^"]+ stance", (\d+), \d+, \w+_parts/g)) chars.add(+m[1]);
     const stages = h.match(/stage_t stages\[STAGES\] = \{([^;]*)\};/)[1];
     for (const m of stages.matchAll(/\{"([^"]+)", (\d+), \d+, \w+, \{[^}]*\}, \w+, \w+, [-\d.]+f, -?\d+, -?\d+, (\d+), \{[^}]*\}, \w+, \{(\d+), (\d+),/g)) {
+        if (+m[2] >= VF2_SET0) continue;
         texsets.add(+m[2]); csets.add(+m[3]);
         if (+m[4]) models.add(+m[5]);
     }
@@ -470,6 +473,9 @@ const akira = importAkira(R, NG.vf2.rom, NG.stf.rom, { extraTiles: ryoTex.tiles 
 for (const line of akira.report) console.log(`Akira: ${line}`);
 const ryo = importRyo(R, akira.ctx, NG, ryoTex);
 for (const line of ryo.report) console.log(`Ryo: ${line}`);
+/* VF2's Tou-rin and Colosseum (tools/vf2-stages.mjs) */
+const vf2st = importVf2Stages(R, NG, akira.ctx);
+for (const line of vf2st.report) console.log(`VF2 stages: ${line}`);
 /* the guest tables, as they are after every guest's entries */
 for (const [name, t] of Object.entries(R.guest.tables)) R.main.put(t.at - MAIN_DATA, t.bytes, `guest ${name}`);
 

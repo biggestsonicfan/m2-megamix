@@ -1125,6 +1125,83 @@ number 3 (0x0C0200E4) and sets scene 3, area `MFBT`, entry 99
 (0x0C20D220/4/8). Start begins it. In RetroArch the triggers need keys
 (`input_player1_l2/r2`).
 
+## VF2's stages: Tou-rin and the Colosseum
+
+`tools/vf2-stages.mjs` brings VF2's stage slots 0 and 1 (Tou-rin, the
+Colosseum) onto the board as setup stages 2 and 3. `vf2StagePlan` reads
+each stage's draws (noclip's `vf2.js`); `importVf2Stages` writes them into
+the data ROMs, and `bake-board.mjs` bakes their records into `poses.h`.
+
+- Models: 406 VF2 models, as board ids 4899 down to 4494 (`VF2_STAGE_TOP`;
+  import-assets checks each table entry is free). Points are scaled by
+  `SCALE` (2.02688, VF2 to StF units), as Akira's are; the draw matrices'
+  translations are scaled by the same factor (`VF2_SCALE`).
+- Textures: VF2's stage models read the fighters' sheet's slots 16..23 (all
+  eight even pages 0x20..0x2E) and the stages' sheet's slots 22 and 23 (odd
+  pages 0x2D, 0x2F). On the board the fighters' sheet holds StF's set 1, so
+  each even page moves to the same 2x4 block of the stages' sheet, 1024 to
+  the left (slot s to `((s-16)>>1)*4 + ((s-16)&1)`, g2 made odd), and each
+  face's tile word follows it (th2 `(th2 & ~0x103F) | ((x-1024)/32)`). The
+  two odd pages stay where they are; VF2's other ten pages are not read and
+  not copied. That makes 10 pages a stage, as texture sets 18 and 19. Each
+  page is copied with VF2's 16-byte phase kept (`b & 15` of padding first),
+  or the geometrizer stops with "Send Tex Align Error!!".
+- Colours: VF2's stage faces use colorxlat rows 0..27, so the stage bakes
+  VF2's rows 0..27 whole (107 colorbases moved, 96 of them into free
+  entries from 0x3FF down). The fighters' bands are laid back over them
+  (`load_fighter_colors`) once the stage has loaded.
+- Pointers of 0 mean "none" to the decoder (uvPtr 0 is a model without
+  UVs), so the importer's free-space search starts at 0x100.
+- The materials are VF2's 32 words at 0x118F0 (VF2's boot sends them with
+  the coefficients at 0x11868 between them, 0x117F8; no stage changes them).
+  The light is the stage record's (0x6EE38 + stage * 256): (0, 0, +0x6C)
+  turned by +0x70 about X, then +0x72 about Y, then the camera (0x1DA2C).
+- The ring: VF2's factory setting puts 7.5 in stage_x (0xCF64 takes
+  0x50A704, from 0x11540; 0x11530's 8.0 only when the stages cycle). The
+  floor is scaled by stage_x / 6.0, 1.25 (0x20264), and the ring ground
+  is the record's entry `trunc(2 stage_x + 0.5) - 12`, entry 3 (0x20878).
+  noclip's decoder draws them at 8.0, so `vf2StagePlan` puts them back.
+- Tou-rin's wind (VF2 draw kind 12, 0x30E74): one draw cycles through 256
+  models, `wind[(frame_counter >> 1) & 255]` (VF2's counter 0x500020, one a
+  main loop), on the bare camera. It is a small piece far to the right
+  of the ring, out of the fight camera's view in the checks.
+- The Colosseum's storm (0x2468C): four channels started by the low byte of
+  VF2's random number, each stepping the shared 27-step timeline at 0x24D70
+  (0 on, 1 off, 2 hold). VF2's schedule (stormSchedule, 1800 frames from a
+  fixed seed) is baked as a bitmap of channel 3, the arena flash. While it
+  is on each draw takes its entry in the lit record (0x6FE38, 0x20AFC), one
+  for one, and the light is the flash's (9999, X 0x9D00, Y 0xBF00, 0x1FC00).
+  Four lit stands (VF2 2620, 2622, 2663, 2664) have 16 faces fewer than
+  their twins, so a piece of the right-hand stands goes dark in the flash,
+  as VF2's own lists give it. Channels 0..2 are the sky's, not ported.
+- An entry of 0xFFFF in VF2's lists draws nothing; the plan has 0 for it
+  and the board skips model 0.
+- Check: `checkVf2Stages` decodes every model from VF2 and from the patched
+  board ROMs and compares points (times SCALE), UVs, tile sizes and the
+  texels at levels 0..3. MAME: both stages draw as in VF2.
+
+### Ring out
+
+VF2's rule, from its program (Ghidra and objdump): `rob_check_stage`
+(0x17BC0) tests the fighter's root (+0x1F4 x, +0x1FC z) against stage_x
+(0x17BA8), and a fighter outside drops to the ground outside the ring
+(-0.5; vy at +0x30 less the gravity each frame, y clamped there,
+0x17A88) and gets w0 bit 5 once its body spheres hang below -0.45 outside
+(+0x624, 0x23A38): from standing, 18 frames. `JUDGE_DSP_INT` (0xE5A8) calls it a ring out when
+both fighters still have energy, and the round goes to the one whose bit 5
+is clear.
+
+StF has no ring out, so the board adds it (`ring_out_step`, megamix.c) on
+VF2's stages only. There stage_x (0x50A00C) is 100.0, so StF's walls never
+stop anyone, and the board checks the root against the ring's half size,
+7.5 times VF2_SCALE (15.2). A fighter past it falls under the gravity at
+0x50A000 to -0.5 times VF2_SCALE, and about 18 frames after the crossing
+gets w0 bit 5; the round ends as on a KO, "RING OUT" on the tile layer
+until the next round. The clock stops once a round is decided (it also ran
+on after a KO before). Check: MAME, both stages, Sonic walked back off the
+edge: he drops, RING OUT shows, P2 takes the star, and the next round
+starts (the second ends the match).
+
 ## The fight
 
 The rounds run on StF's own code, lifted by `tools/lift-stf.py`; the board
@@ -1150,8 +1227,10 @@ sets up what StF's game loop would have set up around it.
 - Damage only lands while game_timer (0x500028, seconds << 6) is above 0.
   The board starts it at the setup's time << 6 and counts it down once a
   frame.
-- A round ends on a KO (rob w0 bit 5, energy at +0x1AC reaching 0) or when
-  the clock runs out; the fighter with more energy takes the win
+- A round ends on a KO (rob w0 bit 5, energy at +0x1AC reaching 0), a ring
+  out (VF2's stages, above) or when the clock runs out; as in VF2's
+  `JUDGE_DSP_INT` the win goes to the fighter whose bit 5 is clear, else to
+  the one with more energy
   (p1_wins 0x50004F, p2_wins 0x500051, the setup's round count to win).
   Three seconds later the next round starts with both fighters reset, or,
   once a fighter has won the match, the setup comes back.
@@ -1220,7 +1299,7 @@ held, and a change of stage or fighter shows at once.
      GAME_START
      time        30   round time, 1..99 s (game_timer 0x500028)
      round        2   wins to take the match, 1..5 (0x500052, the lamps)
-     stage        0   South Island, Aurora Icefield
+     stage        0   South Island, Aurora Icefield, VF2 Tou-rin, VF2 Colosseum
           0:SOUTH_ISLAND
      1P CHAR  SONIC   Sonic, Honey, Eggman, Akira
      2P CHAR  HONEY
@@ -1281,11 +1360,12 @@ held, and a change of stage or fighter shows at once.
 
 Two fighters (Sonic, Honey, Eggman, Akira or Ryo, picked in the setup) stand
 facing each other and play their stance motion with StF's own motion code
-(stepped and drawn at 60 fps, as StF and VF2 are), on one of two of
-StF's stages, South Island and Aurora Icefield (see Game setup). The stages are drawn from StF's stage records with its
+(stepped and drawn at 60 fps, as StF and VF2 are), on one of four
+stages: StF's South Island and Aurora Icefield, and VF2's Tou-rin and the
+Colosseum, with VF2's ring out (see Game setup and VF2's stages). The stages are drawn from StF's stage records with its
 textures, colours, materials, light, colour cycling, and the sea and
 aurora. South Island matches StF's own picture closely. They push, hit and
-knock each other down, rounds end on a KO or the clock, and StF's HUD shows
+knock each other down, rounds end on a KO, a ring out or the clock, and StF's HUD shows
 the energy bars, the clock and the round stars (see The fight). Further stages will
 come from VF2 and Fighting Vipers.
 

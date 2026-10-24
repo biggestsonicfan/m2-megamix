@@ -144,15 +144,26 @@ static void camera_init(void) {
  * in the world as the camera moves. */
 static float light[3];
 
+/* StF's frame_counter (see stage_col_cycle). */
+static u32 frame_counter;
+
+/* VF2's Colosseum storm: while channel 3 of the storm (VF2 0x2468C) is on,
+ * the arena is lit, each draw its lit twin and the light the flash's. */
+static u32 storm_lit(const stage_t *st) {
+    u32 f = frame_counter % FLASH_FRAMES;
+    return st->storm && (st->storm[f >> 3] >> (f & 7u) & 1u);
+}
+
 static void stage_light(const stage_t *st) {
     volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    u32 lit = storm_lit(st);
     int i;
     *cf = COP_WMATRIX;
     for (i = 0; i < 9; i++) *cf = m2_obj_fb(cam_l.r[i]);
     for (i = 0; i < 3; i++) *cf = 0u;
-    *cf = COP_ANG_Y; *cf = (u32)(int)st->vy;
-    *cf = COP_ANG_X; *cf = (u32)(int)st->vx;
-    m2_cop_m2w(0.0f, 0.0f, st->bright, light);
+    *cf = COP_ANG_Y; *cf = (u32)(int)(lit ? st->flash[2] : st->vy);
+    *cf = COP_ANG_X; *cf = (u32)(int)(lit ? st->flash[1] : st->vx);
+    m2_cop_m2w(0.0f, 0.0f, lit ? st->flash[0] : st->bright, light);
 }
 
 /* ---- StF's fighters ----
@@ -366,6 +377,12 @@ static void fight_step(const u32 pad[2]) {
  * only deals damage while it runs). */
 static u32 round_time = 30u;             /* seconds, the setup menu's time */
 
+/* The stage the fight is on (load_stage), and VF2's ring out on its
+ * stages: each fighter's frames since its root left the ring (0: inside). */
+static const stage_t *cur_stage;
+static u32 rout[2], ring_out;
+static u32 rout_vy[2];            /* its fall's speed, a float's bits */
+
 static void round_start(fighter_t fs[2]) {
     u32 i;
     for (i = 0; i < 2u; i++) {
@@ -382,6 +399,12 @@ static void round_start(fighter_t fs[2]) {
     for (i = 0; i < 2u; i++) rob_start(i);
     stf_task(stf_cam_mode_9, stf_cam, robs[0], robs[1]);
     *(short *)stf_ram(0x500028u) = (short)(round_time << 6);
+    /* stage_x (0x50A00C), the half side of the square area_coli walls the
+     * fighters in: StF's cage at 8.0; VF2's ring has no walls, so out of
+     * reach (100.0), and the ring out (ring_out_step) at the ring's edge */
+    stf_set(0x50A00Cu, cur_stage && m2_obj_fb(cur_stage->ring) ? 0x42C80000u : 0x41000000u);
+    rout[0] = rout[1] = ring_out = 0u;
+    rout_vy[0] = rout_vy[1] = 0u;
     /* the HUD, as MES_ROUND_INT and MES_READY_INT leave it: both bars
      * from empty, the lamps (clear_win_lamp_cntr's, then win_lamp_int) */
     for (i = 0; i < sizeof stf_disp / 4; i++) stf_disp[i] = 0u;
@@ -603,9 +626,6 @@ static void draw_fighter(const fighter_t *f, u32 p) {
     }
 }
 
-/* StF's frame_counter (see stage_col_cycle). */
-static u32 frame_counter;
-
 /* The afterimages: the coprocessor's ring of 128 copies, which
  * zanzou_control (fight_step) lays from each fighter's parts while his
  * motion's op 0x26 holds a part mask. zanzou_disp (0x8ACD0), under the
@@ -732,6 +752,9 @@ static void draw_stage(const stage_t *st) {
         x0 = m2_obj_fb(st->draws[i].x0); x1 = m2_obj_fb(st->draws[i].x1);
         if (x0 != x1 && cage_clip(&m, x0, x1)) continue;
         model = st->draws[i].model;
+        if (st->lit && storm_lit(st)) model = st->lit[i];
+        if (st->wind && i == st->wind_at) model = st->wind[(frame_counter >> st->wind_shift) & 255u];
+        if (model == 0u) continue;       /* VF2's: nothing in this look or frame */
         if (st->tpd.kind != 0u && model == st->tpd.model) submit_mat_ov(model, &m, st->tpd.kind == 1u ? 0u : 1u, TPD_ADDR);
         else submit_mat(model, &m);
     }
@@ -854,12 +877,17 @@ static void send_materials(const u32 *mat) {
  * cycling curve, its backdrop colour and its light. */
 static void load_stage(const stage_t *st) {
     u32 i;
+    cur_stage = st;
     tex_load_set(st->texset);
     cx_put(&st->cx);
     make_lay_col_256_tbl(st);
     m2_backdrop(st->bg);                 /* scr_bg_int: the record's stage_bg_color */
     stage_light(st);
-    for (i = 0; i < st->ndraws; i++) m2_load_model_palette(st->draws[i].model);
+    for (i = 0; i < st->ndraws; i++) {
+        if (st->draws[i].model) m2_load_model_palette(st->draws[i].model);
+        if (st->lit && st->lit[i]) m2_load_model_palette(st->lit[i]);
+    }
+    if (st->wind) for (i = 0; i < 256u; i++) if (st->wind[i]) m2_load_model_palette(st->wind[i]);
 }
 
 /* Every model a fighter can draw: its sixteen parts (its character record's
@@ -923,7 +951,7 @@ static const char *const fighter_name[POSE_ANIMS] = { "SONIC", "HONEY", "EGGMAN"
 /* The game a fighter's name line shows where it is not the one its code
  * runs as: Ryo (Shenmue's) fights on Akira's moves, as VF2's. */
 static const char *const fighter_from[POSE_ANIMS] = { 0, 0, 0, 0, "SHENMUE" };
-static const char *const stage_name[STAGES] = { "SOUTH_ISLAND", "AURORA_ICEFIELD" };
+static const char *const stage_name[STAGES] = { "SOUTH_ISLAND", "AURORA_ICEFIELD", "VF2 TOU-RIN", "VF2 COLOSSEUM" };
 static u32 menu_cur;
 
 static u32 slen(const char *s) { u32 n = 0; while (s[n]) n++; return n; }
@@ -1064,6 +1092,61 @@ static u32 menu_input(u32 e, u32 h, u32 start) {
     return i;
 }
 
+/*
+ * VF2's ring out (checked in its program, Ghidra and objdump): once a frame
+ * the fighter's root (rob part 0, +0x1F4 x and +0x1FC z) against stage_x
+ * (0x50A00C, 8.0 at the default ring size, from 0x11530): at |x| or |z| at
+ * or past it the fighter falls (0x17BA8) to the ground outside (0x50A010,
+ * -0.5); once a collision ball outside the ring touches that ground (rob
+ * +0x624, area_coli 0x2396C, about 18 frames from standing) rob_check_stage
+ * (0x17BC0) sets w0 bit 5, a knock-out's bit, and JUDGE_DSP_INT (0xE5A8)
+ * calls it a ring out (0x500050) while both energies are above 0; the
+ * round goes to the one whose bit 5 is clear. StF has the same code with
+ * the bit set left out (rob_check_stage 0x181D8) and walls instead, so the
+ * board does it here: the ring, the drop and the ground in StF's units
+ * (VF2's times the guests' scale), the bit after VF2's 18 frames.
+ */
+#define RF(r, o) (*(u32 *)((u8 *)(r) + (o)))   /* a float's bits */
+#define RING_OUT_FRAMES 18u
+/* float order on the bits (the board has no float compares) */
+static u32 f_key(u32 u) { return u & 0x80000000u ? ~u : u | 0x80000000u; }
+static u32 f_add(u32 a, u32 b) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    *cf = COP_FADD; *cf = a; *cf = b;
+    return m2_obj_fb(m2_cop_gf());
+}
+
+static void ring_out_step(const stage_t *st) {
+    u32 p, ring = m2_obj_fb(st->ring), ground = m2_obj_fb(-0.5f * VF2_SCALE);
+    u32 g = *(u32 *)stf_ram(0x50A000u) ^ 0x80000000u;   /* -gravity */
+    if (ring == 0u) return;
+    for (p = 0; p < 2u; p++) {
+        u32 *r = robs[p], y;
+        if (!rout[p]) {
+            if ((RF(r, 0x1F4) & 0x7FFFFFFFu) < ring && (RF(r, 0x1FC) & 0x7FFFFFFFu) < ring) continue;
+            rout_vy[p] = 0u;
+        }
+        rout_vy[p] = f_add(rout_vy[p], g);
+        y = f_add(RF(r, 0x1C), rout_vy[p]);
+        RF(r, 0x1C) = f_key(y) < f_key(ground) ? ground : y;
+        if (++rout[p] == RING_OUT_FRAMES) {
+            if ((short)RH(robs[0], 0x1AC) > 0 && (short)RH(robs[1], 0x1AC) > 0) ring_out = 1u;
+            RW(r, 0) |= 0x20u;
+        }
+    }
+}
+
+/* RING OUT, over the 3D while the round ends */
+#define MSG_COL 27u
+#define MSG_ROW 12u
+static void ring_msg(u32 on) {
+    u32 y, c;
+    put_at(MSG_COL, MSG_ROW, on ? "RING OUT" : "        ", on ? T_INV : 0x8020u);
+    if (on) { mask_rect(MSG_COL, MSG_ROW, 8u, 1u); return; }
+    for (y = MSG_ROW * 8u; y < MSG_ROW * 8u + 8u; y++)
+        for (c = MSG_COL; c < MSG_COL + 8u; c++) TILE_MASK[y * 4u + (c >> 4)] &= (u16)~(0x8000u >> (c & 15u));
+}
+
 int main(void) {
     fighter_t fs[2];
     u32 i, stage = 0u;
@@ -1112,6 +1195,7 @@ int main(void) {
                 u16 ink = M2_PALETTE[1];
                 stage = menu_val[M_STAGE];
                 load_stage(&stages[stage]);
+                load_fighter_colors(fs[0].anim, fs[1].anim);   /* their bands, over the stage's rows */
                 M2_PALETTE[1] = ink;
                 for (i = 0; i < 64u * 64u; i++) M2_TILE_FG[i] = 0x20u;
             }
@@ -1159,14 +1243,18 @@ int main(void) {
           if (n == 0u) n = 1u;
           step = frame_counter;
           while (n--) {
+              short clock = *(short *)stf_ram(0x500028u);
               fight_step(pad);
               if (in_menu) continue;
+              if (over) *(short *)stf_ram(0x500028u) = clock;  /* the clock stops once the round is decided */
+              if (!over && !quit) ring_out_step(&stages[stage]);
               /* a knock-out (a fighter's w0 bit 5) or the clock's end: the
                * next round three seconds later, or the setup once a
                * fighter has won the match */
               if (quit || over) {
                   if (quit || !--over) {
                       u32 won = menu_val[M_ROUND];
+                      if (ring_out) ring_msg(0u);
                       if (quit || *(u8 *)stf_ram(0x50004Fu) >= won ||
                           *(u8 *)stf_ram(0x500051u) >= won) {
                           in_menu = 1u;
@@ -1183,9 +1271,14 @@ int main(void) {
               }
               else if (((RW(robs[0], 0) | RW(robs[1], 0)) & 0x20u) ||
                        *(short *)stf_ram(0x500028u) <= 0) {
-                  /* the round to the one with more energy left */
+                  /* the round, as VF2's JUDGE_DSP_INT gives it: to the one
+                   * whose bit 5 is clear (a knock-out, a ring out), else to
+                   * the one with more energy left */
                   short e0 = (short)RH(robs[0], 0x1AC), e1 = (short)RH(robs[1], 0x1AC);
-                  if (e0 != e1) (*(u8 *)stf_ram(e0 > e1 ? 0x50004Fu : 0x500051u))++;
+                  u32 l0 = RW(robs[0], 0) & 0x20u, l1 = RW(robs[1], 0) & 0x20u;
+                  if (l0 != l1) (*(u8 *)stf_ram(l0 ? 0x500051u : 0x50004Fu))++;
+                  else if (e0 != e1) (*(u8 *)stf_ram(e0 > e1 ? 0x50004Fu : 0x500051u))++;
+                  if (ring_out) ring_msg(1u);
                   over = 180u;
               }
           } }
