@@ -959,6 +959,32 @@ and are left undescribed here, and so is the `tst r7,r7`. Neither side
 reaches the 0.8 distance check or `+0` bit 0x10000000.
 `tests/fm-saturn.test.mjs` checks this section against a fresh read.
 
+#### The flag at 0x0600eaf6
+
+The flag test that the clear side of "The flag at 0x0600eaee" stops at,
+the next row of "Flag tests not yet described", read off the disc and
+followed the same way. The fighter, field and mask in that row match the
+disc: r3 still holds what 0x0600eae6 `mov #0x70,r0` and 0x0600eae8
+`mov.l @(r0,r12),r3` loaded; 0x0600eaf2 is `mov #0x04,r0`, 0x0600eaf4
+`shll16 r0` and 0x0600eaf6 `tst r0,r3`, then `bt` at 0x0600eaf8. That is
+the long +0x70 of this fighter (r12), not the opponent's, masked with
+0x00040000: parameter bit 0x04. The `bt` branches when the bit is clear,
+so the branch is the clear side and the fall-through the set side.
+
+| Tested at | Flag | Set | Clear |
+| --- | --- | --- | --- |
+| 0x0600eaf6 | +0x70 & 0x00040000 | goes on to 0x0600eafa; no store or call; stops at 0x0600eb08 (+0x70 & 0x00200000) | branches to 0x0600eb40; no store or call; stops at 0x0600eb44 (+0x70 & 0x00200000) |
+
+- **+0x70 & 0x00040000**: set, it goes on at 0x0600eafa and stops at
+  0x0600eb08; clear, it jumps ahead to 0x0600eb40 and stops at
+  0x0600eb44. Neither side stores or calls anything before its stop.
+
+The set side stops at 0x0600eb08 and the clear side at 0x0600eb44; both
+test this fighter's (r12) +0x70 & 0x00200000, parameter bit 0x20. Both
+are rows in "Flag tests not yet described" and are left undescribed
+here. Neither side reaches the 0.8 distance check or `+0` bit 0x10000000.
+`tests/fm-saturn.test.mjs` checks this section against a fresh read.
+
 ### Slots
 
 The action-table slots that those handlers play, read the way 0x0600CEC8
