@@ -47,10 +47,13 @@ const LEVELS = 5;                        /* a raw page's levels, 0-4 */
 const ATTR_HI = (10 << 18) | (2 << 23), Z_NEAR = 1 << 10;
 const TRI = 2, QUAD = 1, LINK_NEW = 2 << 8;       /* link type 0: the face is culled */
 const ROWS = 28;                         /* the luma ramp's rows, 0..27 */
-/* The shin faces (bones 0x11, 0x16; index in the slot's faces) the board hid
- * while the face itself turned to the eye, in the poses where a bent rear leg
- * spiked, on either leg (cutParts, #1546; measured in docs/BOARD.md). */
-const FLAT = new Map([[SLOT_BONES[0x11], new Set([0, 1, 2, 4, 6, 7, 9, 11, 13, 14, 15, 16, 20, 21, 30, 34, 35, 36, 40, 41, 42])],
+/* The faces (by bone; index in the slot's faces) the board hid while the
+ * face itself turned to the eye, where that opened a hole a player sees: the
+ * shins, where a bent rear leg spiked, on either leg (#1546), and the back of
+ * the jacket's collar behind his neck (#1549) (cutParts; measured in
+ * docs/BOARD.md). */
+const FLAT = new Map([[SLOT_BONES[0x01], new Set([100])],
+    [SLOT_BONES[0x11], new Set([0, 1, 2, 4, 6, 7, 9, 11, 13, 14, 15, 16, 20, 21, 30, 34, 35, 36, 40, 41, 42])],
     [SLOT_BONES[0x16], new Set([0, 6, 14, 17, 18, 20, 24, 25, 26, 27])]]);
 
 const hex = (v) => '0x' + v.toString(16).toUpperCase();

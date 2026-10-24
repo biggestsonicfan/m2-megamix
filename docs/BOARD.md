@@ -1007,6 +1007,25 @@ The bent rear shins are whole in all six spiking frames, and each shoe
 meets its hem with no gap, so the ankle needs no seam. On m2-hle2, shots
 t05 and t11 are whole too.
 
+**The back of the collar** (#1549, "the back of the jacket looks funny
+while he blocks"). Ryo vs Ryo: frames 701-1000 P1 holds Barrier while P2
+punches and kicks, then the other way round, a shot every 4th frame. While
+P1 blocks, the camera sees his back. Run against every chest and head face
+in each frame's display list, the same test finds 68 chest and 46 head
+faces that the board hides while they face the eye. A build with all of
+them flat, painted magenta, and another with them magenta but left on their
+corners' normals show which pixels flattening fills for the first time.
+On P1's back only chest face 100 fills a hole there: the collar where it
+stands up behind his neck. Without it a patch of neck about 6 by 2 pixels
+shows through, a notch in the collar, in every frame his back is seen, 13 to 16
+pixels a frame. The others fill pixels that were already dark jacket at the
+hem (229, 231, 233, 192, 131; no visible change), or relight faces that
+were already seen. The head's flagged faces change 12 pixels on his upper
+body over the 75 blocking frames. Face 100 is flat now. Against the build
+before it, 2156 pixels change over 150 frames, all on P1, and all but 70
+are inside face 100's outline on the screen (those 70 lie within a pixel
+of it). Nothing else changes: not the shins, not the seams, not P2.
+
 **Graded against the Dreamcast** (beta 0.400 disc 3's Free Battle in Flycast,
 full body beside a MAME shot, mean colour per region): the shape and
 proportions match (head ≈ 0.135 of his height in both), and so does the hue
