@@ -105,7 +105,13 @@ for (const r of CAST) {
  * records it puts in, so no parts here; their colours are their own game's,
  * seven part rows a player (rows 5, 6, 12 and 13 are StF's fixed rows, unused
  * while he is on). */
-const GUESTS = [{ name: 'AKIRA', chr: 6, game: games.vf2.rom, fighter: 0, rows: 7 }];
+/* Ryo (tools/ryo-guest.mjs) colours his faces from StF's own ramp rows
+ * (luma 0..47), so the rows here (Akira's, in the band 48..63) go unused by
+ * him; they keep the player 1 and 2 uploads the same shape. */
+const GUESTS = [
+    { name: 'AKIRA', chr: 6, game: games.vf2.rom, fighter: 0, rows: 7 },
+    { name: 'RYO', chr: 1, game: games.vf2.rom, fighter: 0, rows: 7 },
+];
 for (const g of GUESTS) {
     const id = `${g.name.toLowerCase()}_stance`;
     const cx = buildColorxlat(g.game, { fighters: [g.fighter] });

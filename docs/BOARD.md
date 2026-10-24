@@ -846,6 +846,50 @@ balls, above), `off_C2058` (his solve bones, above), his damage (×140/200 in hi
 character, only positions, flags and the motion id; it aims at root
 y + 1.0, which holds while guests are scaled to StF's size.
 
+## The guest: Shenmue's Ryo
+
+Ryo Hazuki (the Shenmue beta's model YKB_M, js/ryo.js) is StF character 1
+(Tails, whom Megamix does not use; 27 for player 2), picked as RYO in the
+setup. tools/ryo-guest.mjs builds him on top of what tools/vf2-guest.mjs
+put in for Akira, and import-assets runs it after Akira's.
+
+- **Moves.** Akira's: his command program, actions, reactions, motion remap
+  and setups, so he plays as a VF2 fighter (`char_game` VF2). His own
+  motions are VF3-style Shenmue ones the board cannot play yet
+  (docs/VF3-SHENMUE.md).
+- **Parts.** Each of his 37 nodes rides the StF part its nearest anchored
+  bone drives (`SLOT_BONES`); a strip point on the parent node is placed by
+  the two nodes' rest matrices, so each part is rigid. 15 parts, 1793
+  triangles, scaled by `ryoFit` (1.0084 of Akira's height) × SCALE. Each
+  part is one mesh of independent triangles: per triangle a triangle link
+  (points A, B) and a culled quad link (points C, C) whose material step
+  moves to the next triangle's record. The meshes go in the polygon ROM's
+  empty run after Akira's, as model ids counted down from the table's end.
+  The import decodes each mesh back with noclip's `decodeModel` and stops if
+  a corner, tile or UV differs from what it put in.
+- **Textures.** His seven textures become 4-bit brightness tiles (the 99th
+  percentile = 15; a texture with holes keeps 15 for them and sets th0 bit
+  13), mipmapped to level 4, packed into Akira's seven pages after his
+  (pack-akira's `extra`). Their material and UV streams follow Akira's in the
+  textures region.
+- **Colour.** The board takes a face's colour from its colorbase and only the
+  brightness from the texel, so each face takes, per channel, the StF ramp
+  row (0..27, lumabase 0) whose values at its texels' brightness come
+  nearest to their colour (15 texels sampled across the face's UVs). 262
+  colours: StF's own palette entry where one matches, 226 new colorbases
+  from the free ones at the top. The SDK's boot copies all 1024 entries, so
+  they are loaded.
+- **Skeleton, solve bones.** Akira's, with Ryo's spine, pivots and bone
+  lengths (`prepareModel(model).rig` × his size).
+- **Collision balls.** Akira's 30 (the hurt and hit spheres), each moved from
+  Akira's part to Ryo's: its centre mapped across the two parts' bounding
+  boxes, axis by axis, and its radius scaled by the cube root of the three
+  ratios (each 0.5..2, the result 0.6..1.6).
+- **Hands, head.** His own hand parts (one shape) and head; no midriff.
+
+Checked in MAME (`sfight`, the shared build): Ryo vs Akira and Akira vs
+Ryo, both drawn, each knocking the other from 140 to 0 with punches.
+
 ## The fight
 
 The rounds run on StF's own code, lifted by `tools/lift-stf.py`; the board
@@ -960,7 +1004,7 @@ held, and a change of stage or fighter shows at once.
 
 ## Where it stands
 
-Two fighters (Sonic, Honey, Eggman or Akira, picked in the setup) stand
+Two fighters (Sonic, Honey, Eggman, Akira or Ryo, picked in the setup) stand
 facing each other and play their stance motion with StF's own motion code
 (stepped and drawn at 60 fps, as StF and VF2 are), on one of two of
 StF's stages, South Island and Aurora Icefield (see Game setup). The stages are drawn from StF's stage records with its

@@ -203,8 +203,10 @@ function meshLength(d, base) {
 /* ---- the guest ------------------------------------------------------------- */
 
 /* R: import-assets' regions, R.guest (its tables) and R.models (the StF model
- * ids it kept). vf2, stf: noclip's ROM sets. */
-export function importAkira(R, vf2, stf) {
+ * ids it kept). vf2, stf: noclip's ROM sets. extraTiles: another guest's
+ * texture tiles, packed with his (packAkira's `extra`). What a guest built on
+ * his comes back as `ctx` (tools/ryo-guest.mjs). */
+export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
     const { main, polygons, textures, program } = R;
     const T = R.guest.tables;
     /* each table's room runs to the next one's (the last, to the heap) */
@@ -222,10 +224,10 @@ export function importAkira(R, vf2, stf) {
 
     /* The heap: main_data from STF_GUEST_HEAP up. */
     let heap = R.guest.heap;
-    const alloc = (b, label, align = 4) => {
+    const alloc = (b, label, align = 4, who = 'Akira') => {
         heap = (heap + align - 1) & ~(align - 1);
         const at = heap;
-        main.put(at - MAIN_DATA, b, `Akira ${label}`);
+        main.put(at - MAIN_DATA, b, `${who} ${label}`);
         heap += b.length;
         return at;
     };
@@ -402,7 +404,7 @@ export function importAkira(R, vf2, stf) {
         if (id <= 0) throw new Error('no free model ids');
         if (!R.models.has(id)) modelId.set(vf2List[modelId.size], id);
     }
-    const pack = packAkira(vf2, stf, vf2List);
+    const pack = packAkira(vf2, stf, vf2List, extraTiles);
     if (pack.problems.length) throw new Error(`pack-akira: ${pack.problems.join('; ')}`);
     /* A face's colorbase (th3 >> 6) names a palette entry, whose three
      * fields pick each channel's colorxlat row. Where StF's entry differs from
@@ -605,6 +607,7 @@ export function importAkira(R, vf2, stf) {
     /* ---- actions, records, skeleton, hands, head ---- */
     const knux = program.u32(T.CHAR_PARTS.src + CHR * 4);
     const knuxActions = program.u32(knux + 0xc);
+    const recs = [];
     const actions = [];
     for (let i = 0; i < 52; i++) actions.push(program.u16(knuxActions + i * 2));
     STF_ACTIONS.forEach((x, s) => { actions[s] = (actions[s] & ~MOTION_ID) | mid(actionMotion(x)); });
@@ -614,12 +617,14 @@ export function importAkira(R, vf2, stf) {
      * StF's category 5 (an attack with 0x1A4 bit 22: his hit's) and StF's
      * last three. */
     const stfKinds = T.ptr_DA0B4.view.getUint32(CHR * 4, true);
+    const knuxKinds = stfKinds;
     const kinds = reactions.map((r, k) => {
         const stfList = program.u32(stfKinds + k * 4);
         const tail = [41, 42, 43].map((i) => program.u32(stfList + i * 4));
         return alloc(u32s([...r.map(mid), mid(r[16]), ...tail]), `reactions ${k}`);
     });
-    T.ptr_DA0B4.view.setUint32(CHR * 4, alloc(u32s(kinds), 'reaction kinds'), true);
+    const kindsAt = alloc(u32s(kinds), 'reaction kinds');
+    T.ptr_DA0B4.view.setUint32(CHR * 4, kindsAt, true);
 
     /* motion_remap (set_motion): his motion for each StF one StF's code plays
      * him by number: its action slots' and reactions' (by place), and the
@@ -674,6 +679,7 @@ export function importAkira(R, vf2, stf) {
         scaleFloats(ranges, 0, 4);
         rv.setUint32(0x10, alloc(ranges, `ranges ${p ? 'P2' : 'P1'}`), true);
         T.CHAR_PARTS.view.setUint32((CHR + p * PLAYER2) * 4, alloc(rec, `record ${p ? 'P2' : 'P1'}`), true);
+        recs.push(rec);
     }
 
     /* His midriff, for either player (the board's guest table `midriff`):
@@ -711,6 +717,7 @@ export function importAkira(R, vf2, stf) {
         for (let k = 0; k < 4; k++) for (const c of [CHR, CHR + PLAYER2]) t.view.setUint32(t.lists + k * per + c * 4, skel, true);
     }
 
+    let rigBytes, balls;
     /* The bones his pose is solved on: off_C2058[type][character], which
      * calc_rob_angle_cont reads (not his skeleton: StF's type 0 row is one
      * for all 26). VF2 solves its whole cast on one table (VF2_RIG, which
@@ -739,6 +746,7 @@ export function importAkira(R, vf2, stf) {
         for (const at of [0x4c, 0x60]) rig.push(pt(at), [f(at + 0xc), 0, 0], [f(at + 0x10), 0, 0]);
         const b = new Uint8Array(rig.length * 12), v = new DataView(b.buffer);
         rig.flat().forEach((x, i) => v.setFloat32(i * 4, x * SCALE, true));
+        rigBytes = b;
         const rigAt = alloc(b, 'bones');
         for (let k = 0; k < 4; k++) for (const c of [CHR, CHR + PLAYER2]) t.view.setUint32(t.lists + k * per + c * 4, rigAt, true);
     }
@@ -760,7 +768,7 @@ export function importAkira(R, vf2, stf) {
             for (let k = 0; k < 4; k++) v.setUint32(k * 4, to + program.u32(t.src + k * 4) - from, true);
             Object.assign(t, { bytes: b, view: v, lists: 0x10 });
         }
-        const balls = new Uint8Array(32 * 16), part = new Array(32).fill(0);
+        const pts = new Uint8Array(32 * 16), part = new Array(32).fill(0);
         const lists = new Uint8Array(16 * 8), counts = new Uint8Array(16);
         for (let s = 0; s < 16; s++) {
             counts[s] = bytes(vf2, VF2_BALLS.counts + s, 1)[0];
@@ -768,13 +776,14 @@ export function importAkira(R, vf2, stf) {
             const list = bytes(vf2, d32(VF2_BALLS.lists + s * 4), counts[s]);
             list.forEach((x, k) => { lists[s * 8 + k] = x; part[x >> 2] = s; });
         }
-        balls.set(bytes(vf2, VF2_BALLS.points, VF2_BALLS.count * 16));
-        scaleFloats(balls, 0, VF2_BALLS.count * 4);
+        pts.set(bytes(vf2, VF2_BALLS.points, VF2_BALLS.count * 16));
+        scaleFloats(pts, 0, VF2_BALLS.count * 4);
         const rec = u32s([
-            alloc(balls, 'balls', 16), alloc(u32s(part), 'ball parts', 16),
+            alloc(pts, 'balls', 16), alloc(u32s(part), 'ball parts', 16),
             alloc(lists, 'part balls', 16), alloc(counts, 'part ball counts', 16),
         ]);
         const recAt = alloc(rec, 'ball record', 16);
+        balls = { recAt, counts, lists, part, pts };
         const at = (k) => t.view.getUint32(k * 4, true) - t.at;
         for (const list of [at(0), at(1), at(3), at(3) + 52 * 4])
             for (const c of [CHR, CHR + PLAYER2]) t.view.setUint32(list + c * 4, recAt, true);
@@ -815,5 +824,11 @@ export function importAkira(R, vf2, stf) {
         balls: VF2_BALLS.count, damage: Object.fromEntries(damages),
         lost,
     };
-    return { report, coverage, modelId, newId, parts: A.parts.map((x) => M(x.model)), p2: A.p2.parts.map((x) => M(x.model)) };
+    const ctx = {
+        alloc, heapEnd: () => heap, u32s, u16s, grow, pack, freeTaken, polyEnd: poly, modelIds: new Set(modelId.values()),
+        recs, bones, rigBytes, balls, kindsAt, knuxKinds, ownAt, own, theirs, theirsAt, actions, actionsAt, newRoot, progAt,
+        handsAt, top, mid, newId, setups, convertSetup, reactions, damage, knuxActions,
+        headOf: (p) => M((p ? A.p2 : A).parts[2].model),
+    };
+    return { report, coverage, modelId, newId, parts: A.parts.map((x) => M(x.model)), p2: A.p2.parts.map((x) => M(x.model)), ctx };
 }

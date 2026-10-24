@@ -58,8 +58,12 @@ const key = (t) => `${t.x},${t.y},${t.w},${t.h}`;
 /* The pack, for VF2 models `MODELS`: StF's main_data and textures with the
  * runs filled (`md`, `tx`, whole copies), where (`PAGE0`..`MD_END`, `HDR_SETS`,
  * the textures run up to `at`), each model's new material and UV pointers
- * (`copies`) and what the checks found (`problems`). */
-export function packAkira(vf2, stf, MODELS) {
+ * (`copies`) and what the checks found (`problems`).
+ * `extra`: more tiles to pack into the same pages after his (another guest's,
+ * tools/ryo-guest.mjs), each { w, h, levels: [nibbles a level, (w >> L) * (h >> L)
+ * row by row] } for levels 0-4; where each went is `extra[i].at`, { x, y } on
+ * sheet 1. */
+export function packAkira(vf2, stf, MODELS, extra = []) {
 
 /* ---- 1. Akira's streams and tiles ---------------------------------------- */
 
@@ -124,9 +128,15 @@ const clusters = [...groups.values()].map((members) => {
 });
 const tileCount = clusters.reduce((n, c) => n + c.cells.length, 0);
 clusters.sort((a, b) => b.cells.length - a.cells.length || b.ch * b.cw - a.ch * a.cw || a.y - b.y || a.x - b.x);
+/* The extra tiles after his, largest first, each a cluster of its own. */
+const extras = extra.map((t, i) => {
+    const cw = t.w / 32, ch = t.h / 32, cells = [];
+    for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) cells.push([x, y]);
+    return { i, t, members: [], cells, cw, ch };
+}).sort((a, b) => b.cells.length - a.cells.length || a.i - b.i);
 
 const used = PAGES.map(() => new Uint8Array(64));
-for (const c of clusters) {
+for (const c of [...clusters, ...extras]) {
     place: for (let p = 0; p < PAGES.length; p++) {
         for (let oy = 0; oy + c.ch <= 8; oy++) {
             for (let ox = 0; ox + c.cw <= 8; ox++) {
@@ -140,6 +150,7 @@ for (const c of clusters) {
     }
     if (c.page === undefined) throw new Error('out of room');
 }
+for (const c of extras) c.t.at = { x: c.nx, y: c.ny, page: c.page };
 /* Old tile origin (sheet-1 coordinates) -> new one. */
 const moved = new Map();
 for (const c of clusters) for (const t of c.members) moved.set(key(t), { x: c.nx + t.x - c.x, y: c.ny + t.y - c.y, page: c.page });
@@ -169,6 +180,12 @@ for (const c of clusters) {
             const so = levelOrigin(t.x, t.y + SHEET_H, L), no = levelOrigin(n.x, n.y + SHEET_H, L);
             for (let j = 0; j < t.h >> L; j++) for (let i = 0; i < t.w >> L; i++) setNib(want, no.x + i, no.y + j, nib(src, so.x + i, so.y + j));
         }
+    }
+}
+for (const { t } of extras) {
+    for (let L = 0; L < LEVELS; L++) {
+        const o = levelOrigin(t.at.x, t.at.y + SHEET_H, L), w = t.w >> L;
+        for (let j = 0; j < t.h >> L; j++) for (let i = 0; i < w; i++) setNib(want, o.x + i, o.y + j, t.levels[L][j * w + i]);
     }
 }
 function pageBytes(page) {

@@ -38,6 +38,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { readZipDirectory, extractZipEntry } from '../vendor/noclip/js/zip.js';
 import { loadNodeGames } from '../tests/node-roms.mjs';
 import { importAkira } from './vf2-guest.mjs';
+import { ryoTiles, importRyo } from './ryo-guest.mjs';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const ROMS = process.env.ROMS_DIR || `${process.env.HOME}/build/mameroms`;
@@ -440,10 +441,15 @@ const R = {};
 for (const [name, L] of Object.entries(SFIGHT)) if (L.pairs) R[name] = new Region(name, L, files);
 
 await importStf(R);
-/* the guests: VF2's Akira as StF's character 6 (tools/vf2-guest.mjs) */
+/* the guests: VF2's Akira as StF's character 6 (tools/vf2-guest.mjs), the
+ * Shenmue beta's Ryo as character 1 on Akira's moves (tools/ryo-guest.mjs),
+ * his textures packed with Akira's */
 const NG = await loadNodeGames();
-const akira = importAkira(R, NG.vf2.rom, NG.stf.rom);
+const ryoTex = ryoTiles(NG);
+const akira = importAkira(R, NG.vf2.rom, NG.stf.rom, { extraTiles: ryoTex.tiles });
 for (const line of akira.report) console.log(`Akira: ${line}`);
+const ryo = importRyo(R, akira.ctx, NG, ryoTex);
+for (const line of ryo.report) console.log(`Ryo: ${line}`);
 /* the guest tables, as they are after every guest's entries */
 for (const [name, t] of Object.entries(R.guest.tables)) R.main.put(t.at - MAIN_DATA, t.bytes, `guest ${name}`);
 
@@ -455,7 +461,7 @@ for (const f of [...SFIGHT.audio.singles, ...SFIGHT.samples.singles]) writeFileS
 for (const [f, n] of Object.entries(SFIGHT.billboard.zeros)) writeFileSync(`${dir}/${f}`, new Uint8Array(n));
 writeFileSync(`${OUT}/assets.txt`, manifest(data));
 /* what each guest lost on the way in (tools/grade-guest.mjs reads it) */
-writeFileSync(`${OUT}/guests.json`, JSON.stringify({ guests: [akira.coverage] }, null, 1) + '\n');
+writeFileSync(`${OUT}/guests.json`, JSON.stringify({ guests: [akira.coverage, ryo.coverage] }, null, 1) + '\n');
 for (const r of data) {
     let n = 0;
     for (const x of r.out) if (x) n++;

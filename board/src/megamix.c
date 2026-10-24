@@ -811,7 +811,10 @@ static const u16 menu_min[M_ITEMS]  = { 0, 1, 1, 0, 0, 0, 10, 0 };
 static const u16 menu_max[M_ITEMS]  = { 0, 99, 5, STAGES - 1, POSE_ANIMS - 1, POSE_ANIMS - 1, 250, 9 };
 static const u16 menu_step[M_ITEMS] = { 0, 1, 1, 1, 1, 1, 10, 1 };
 static u16 menu_val[M_ITEMS] = { 0, 30, 2, 0, 0, 1, 140, 5 };
-static const char *const fighter_name[POSE_ANIMS] = { "SONIC", "HONEY", "EGGMAN", "AKIRA" };
+static const char *const fighter_name[POSE_ANIMS] = { "SONIC", "HONEY", "EGGMAN", "AKIRA", "RYO" };
+/* The game a fighter's name line shows where it is not the one its code
+ * runs as: Ryo (Shenmue's) fights on Akira's moves, as VF2's. */
+static const char *const fighter_from[POSE_ANIMS] = { 0, 0, 0, 0, "SHENMUE" };
 static const char *const stage_name[STAGES] = { "SOUTH_ISLAND", "AURORA_ICEFIELD" };
 static u32 menu_cur;
 
@@ -874,7 +877,8 @@ static void menu_draw(void) {
         if (i == menu_cur) TILE_L1[(WIN_ROW + r) * 64u + WIN_COL + 2u] = T_CURSOR;
         win_put(3, r, menu_label[i], T_TEXT);
         if (i == M_P1 || i == M_P2) {      /* its game and name, as "VF2:AKIRA" */
-            const char *g = game_name[char_game(pose_anims[menu_val[i]].chr)];
+            const char *g = fighter_from[menu_val[i]] ? fighter_from[menu_val[i]]
+                : game_name[char_game(pose_anims[menu_val[i]].chr)];
             v = fighter_name[menu_val[i]];
             win_put(WIN_W - 3u - slen(v) - slen(g), r, g, T_INV);
             win_put(WIN_W - 3u - slen(v), r, ":", T_INV);

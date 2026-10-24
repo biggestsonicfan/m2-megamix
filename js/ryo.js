@@ -50,15 +50,15 @@ export async function loadShenmue(fetchFile) {
 
 /* Ryo's actions, by MOTION.BIN record (a play's id less one). The down and
  * the rise are Akira's: a Shenmue fight has no lying down to get up from. */
-const ACTS = {
+export const ACTS = {
     stance: 786, walkF: 839, walkB: 838, dashF: 1060, dashB: 1058,
     guard: 1002, guardEnd: 307, crouchGuard: 1003, crouchGuardEnd: 303,
     crouch: 187, toCrouch: 201, toStand: 189, jump: 521,
 };
 /* His hit reactions (DAMEGE_TOP1, _MID1, _BOT1) by level, and a guard
  * pushed back (GU_TA_PU_00). */
-const HIT = { [HIGH]: 845, [MID]: 844, [LOW]: 843 };
-const GUARD_PUSH = 310;
+export const HIT = { [HIGH]: 845, [MID]: 844, [LOW]: 843 };
+export const GUARD_PUSH = 310;
 
 /* ---- the move script (docs/SHENMUE-FIGHT.md, "The move-script VM") -------- */
 
@@ -198,7 +198,7 @@ function dirsOf(tests) {
  * u16: on a throw the one-based record the thrown fighter plays, on a
  * strike a byte read here as the level (VF2's 0 high, 1 mid, 2 low: 2 on the
  * low kick; 3, Ryo's sweep, as low), then one more. */
-function readRecord(file, index) {
+export function readRecord(file, index) {
     const m = file.motions[index];
     if (!m?.setup) return null;
     const v = file.v;
@@ -228,10 +228,10 @@ function readRecord(file, index) {
 /* Shenmue's damage is on a scale not measured (docs/SHENMUE-FIGHT.md,
  * "Damage"): the jab 3, the kicks 14-15. Here it is doubled, which puts
  * Ryo's jab and kicks beside Akira's. A throw does what VF2's do. */
-const DAMAGE_SCALE = 2;
+export const DAMAGE_SCALE = 2;
 /* …and no blow does more than the VF2 cast's most (Akira's 70). */
-const MAX_DAMAGE = 70;
-const THROW_DAMAGE = 50;
+export const MAX_DAMAGE = 70;
+export const THROW_DAMAGE = 50;
 
 /* ---- the fighter --------------------------------------------------------- */
 
@@ -298,13 +298,13 @@ export function ryoFighter(games, entry) {
  * the fingers on the hands, the toes on the feet, the face and hair on the
  * head, the clavicles and the four shoulder pieces on the chest.
  */
-const SLOT_BONES = { 0x01: S.CHEST, 0xffbd: S.HEAD, 0x05: 3, 0x06: 4, 0xffbf: 5, 0x0a: 6, 0x0b: 7, 0xffbe: 8,
+export const SLOT_BONES = { 0x01: S.CHEST, 0xffbd: S.HEAD, 0x05: 3, 0x06: 4, 0xffbf: 5, 0x0a: 6, 0x0b: 7, 0xffbe: 8,
     0x0e: S.PELVIS, 0x10: 10, 0x11: 11, 0x12: 12, 0x15: 13, 0x16: 14, 0x17: 15 };
 
 /* A model, ready to skin: each node's slot and its place on it, the rig of
  * its bone lengths, and the strips as triangles over points (a point a
  * vertex of some node, with its own UV). */
-function prepareModel(model) {
+export function prepareModel(model) {
     const rest = restMatrices(model);
     const nodes = model.nodes;
     const byBone = new Map(nodes.map((n) => [n.bone, n]));
