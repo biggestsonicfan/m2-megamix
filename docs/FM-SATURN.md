@@ -1049,6 +1049,38 @@ described" and are left undescribed here. Neither side reaches the 0.8
 distance check or `+0` bit 0x10000000. `tests/fm-saturn.test.mjs` checks
 this section against a fresh read.
 
+#### The flag at 0x0600eb62
+
+The flag test that the `tst r7,r7` at 0x0600eb52 goes on to when its `bt`
+does not branch, where "The flag at 0x0600eaee", "The flag at 0x0600eb08"
+and "The flag at 0x0600eb44" stop, the next row of "Flag tests not yet
+described", read off the disc and followed the same way. The fighter,
+field and mask in that row match the disc: 0x0600eb5a is `mov r12,r1`,
+0x0600eb5c `mov.w @(0x0600eb94),r0`, which loads 0x04a7, 0x0600eb5e
+`add r0,r1`, 0x0600eb60 `mov.b @r1,r0` and 0x0600eb62 `tst #0x01,r0`,
+then `bt` at 0x0600eb64. That is bit 0x01 of the byte +0x4a7 of this
+fighter (r12), not the opponent's: big-endian, the long +0x4a4 masked
+with 0x00000001. The `bt` branches when the bit is clear, so the branch
+is the clear side and the fall-through the set side.
+
+| Tested at | Flag | Set | Clear |
+| --- | --- | --- | --- |
+| 0x0600eb62 | +0x4a4 & 0x00000001 | goes on to 0x0600eb66, where `cmp/pz r9` and the `bt` at 0x0600eb68 go both ways: it goes on to 0x0600eb6a, or it branches to 0x0600eb6c; no store or call either way; both run on to 0x0600eb74; stops at 0x0600eb74 (+0x70 & 0x00200000) | branches to 0x0600eb6e; no store or call; stops at 0x0600eb74 (+0x70 & 0x00200000) |
+
+- **+0x4a4 & 0x00000001**: set, it goes on at 0x0600eb66 and, whichever
+  way the `bt` at 0x0600eb68 goes, runs on to 0x0600eb74; clear, it jumps
+  to 0x0600eb6e and runs on to 0x0600eb74. Neither side stores or calls
+  anything.
+
+The set side's words are 0x0600eb66 `cmp/pz r9`, 0x0600eb68 `bt`, and
+0x0600eb6a and 0x0600eb6c `neg r9,r9`; they change only r9, which
+0x0600eb58 `mov.l @(r0,r12),r9` loaded from the long +0x4d8 (the `mov.w`
+literal at 0x0600eb92). Both sides stop at 0x0600eb74, which tests this
+fighter's (r12) +0x70 & 0x00200000, parameter bit 0x20. It is a row in
+"Flag tests not yet described" and is left undescribed here. Neither side
+reaches the 0.8 distance check or `+0` bit 0x10000000.
+`tests/fm-saturn.test.mjs` checks this section against a fresh read.
+
 ### Slots
 
 The action-table slots that those handlers play, read the way 0x0600CEC8
