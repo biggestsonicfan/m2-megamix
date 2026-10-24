@@ -24,8 +24,9 @@
  * m2_obj.h). His textures are full colour, so each texel becomes its
  * brightness, and each face takes the colour of the texels it covers: the
  * ramp row, per channel, whose values at those texels' brightness come
- * nearest to the texels' colour. Faces go through StF's luma ramp (rows
- * 0..27, lumabase 0) and are lit as Akira's are.
+ * nearest to the texels' colour as the screen shows it (the board's output
+ * curve puts everything under 64 at black). Faces go through StF's luma ramp
+ * (rows 0..27, lumabase 0) and are lit as Akira's are.
  */
 import { decodeModel } from '../vendor/noclip/js/model.js';
 import { readFighters } from '../vendor/noclip/js/vf2fighters.js';
@@ -106,7 +107,12 @@ const unit = (a) => { const l = Math.hypot(...a) || 1; return [a[0] / l, a[1] / 
  * other way from the model's), `k` his size: each a corner's point, the
  * face's outward normal, the corners' UVs and its texture. A strip's point
  * on its parent node (a negative index) is placed by the two nodes' rest
- * matrices, so a part is rigid where the browser skins it. */
+ * matrices. Where the parent rides another slot, the strip spans a joint
+ * (a shoulder, an elbow, a wrist, the neck, a hip, a knee): its triangles
+ * go to that joint's seam (`seams`, by `S,O`, S the node's slot and O the
+ * parent's) and not to the rigid part, and each corner on the parent keeps
+ * its point in O's frame too (`o`), which the board carries into S's frame
+ * every frame (megamix.c seams_build). */
 function cutParts(model, k) {
     const rest = restMatrices(model), nodes = model.nodes;
     const anchor = [];
@@ -114,22 +120,25 @@ function cutParts(model, k) {
         if (n.bone in SLOT_BONES) anchor[n.index] = n.index;
         else if (n.parent >= 0 && anchor[n.parent] != null) anchor[n.index] = anchor[n.parent];
     }
-    const slots = new Map();
+    const slotOf = (i) => (anchor[i] == null ? null : SLOT_BONES[nodes[anchor[i]].bone]);
+    const slots = new Map(), seams = new Map();
     let dropped = 0;
     for (const n of nodes) {
         if (!n.mesh || anchor[n.index] == null) continue;
-        const slot = SLOT_BONES[nodes[anchor[n.index]].bone];
+        const slot = slotOf(n.index);
         const into = invRigid(rest[anchor[n.index]]);
         const own = mul4(into, rest[n.index]);
         const parent = n.parent >= 0 ? nodes[n.parent] : null;
         const up = parent ? mul4(into, rest[parent.index]) : null;
+        const other = parent && slotOf(parent.index) != null && slotOf(parent.index) !== slot ? slotOf(parent.index) : null;
+        const upO = other != null ? mul4(invRigid(rest[anchor[parent.index]]), rest[parent.index]) : null;
         const corner = (p) => {
             const [mesh, m, i] = p.vertex >= 0 ? [n.mesh, own, p.vertex] : [parent.mesh, up, parent.mesh.count + p.vertex];
-            const v = apply(m, [mesh.positions[i * 3], mesh.positions[i * 3 + 1], mesh.positions[i * 3 + 2]]);
-            return { p: [v[0] * k, v[1] * k, v[2] * k], n: turn(m, [mesh.normals[i * 3], mesh.normals[i * 3 + 1], mesh.normals[i * 3 + 2]]), uv: [p.u, p.v] };
+            const at = [mesh.positions[i * 3], mesh.positions[i * 3 + 1], mesh.positions[i * 3 + 2]];
+            const v = apply(m, at);
+            const o = p.vertex < 0 && upO ? apply(upO, at).map((x) => x * k) : null;
+            return { p: [v[0] * k, v[1] * k, v[2] * k], n: turn(m, [mesh.normals[i * 3], mesh.normals[i * 3 + 1], mesh.normals[i * 3 + 2]]), uv: [p.u, p.v], o };
         };
-        const list = slots.get(slot) ?? [];
-        slots.set(slot, list);
         for (const strip of n.mesh.strips) {
             const c = strip.points.map(corner);
             for (let j = 2; j < c.length; j++) {
@@ -139,13 +148,27 @@ function cutParts(model, k) {
                 const out = unit([a.n[0] + b.n[0] + d.n[0], a.n[1] + b.n[1] + d.n[1], a.n[2] + b.n[2] + d.n[2]]);
                 /* Akira's faces wind A, B, C about their outward side */
                 if (dot(face, out) < 0) [a, b] = [b, a];
+                /* a seam's far corners first (A, or A and B), turning the
+                 * corners round, so each is one run of words to patch */
+                const fars = [a, b, d].map((q) => !!q.o);
+                if (fars.some(Boolean)) {
+                    const n = fars.filter(Boolean).length, c3 = [a, b, d];
+                    const r = n === 1 ? fars.indexOf(true) : (fars.indexOf(false) + 1) % 3;
+                    [a, b, d] = [c3[r], c3[(r + 1) % 3], c3[(r + 2) % 3]];
+                }
                 /* stored: z the other way; the normal inward, as the ROM's are */
                 const st = (q) => [q[0], q[1], -q[2]];
-                list.push({ pts: [st(a.p), st(b.p), st(d.p)], nrm: [-out[0], -out[1], out[2]], uv: [a.uv, b.uv, d.uv], texture: strip.texture });
+                const tri = { pts: [st(a.p), st(b.p), st(d.p)], nrm: [-out[0], -out[1], out[2]], uv: [a.uv, b.uv, d.uv], texture: strip.texture };
+                const key = a.o || b.o || d.o ? `${slot},${other}` : null;
+                if (key) tri.far = [a.o, b.o, d.o].map((q) => q && st(q));
+                const into = key ? seams : slots;
+                const list = into.get(key ?? slot) ?? [];
+                into.set(key ?? slot, list);
+                list.push(tri);
             }
         }
     }
-    return { slots, dropped };
+    return { slots, seams, dropped };
 }
 
 /* A slot's triangles as a Model 2 mesh: each triangle a link of its own
@@ -189,9 +212,13 @@ export function importRyo(R, ctx, games, { tiles, byTex }) {
     report.push(`size x${k.toFixed(4)} (${fit.scale.toFixed(4)} of Akira's VF2 scale, x${SCALE.toFixed(4)})`);
 
     /* ---- his parts ---- */
-    const { slots, dropped } = cutParts(model, k);
+    const { slots, seams, dropped } = cutParts(model, k);
     const order = [...slots.keys()].sort((a, b) => a - b);
-    report.push(`${order.length} parts, ${order.reduce((n, s) => n + slots.get(s).length, 0)} triangles${dropped ? ` (${dropped} degenerate dropped)` : ''}`);
+    /* every mesh: the parts, then the seams (each drawn on its slot S) */
+    const pieces = [...order.map((slot) => ({ slot, tris: slots.get(slot) })),
+        ...[...seams].map(([key, tris]) => { const [S, O] = key.split(',').map(Number); return { slot: S, other: O, tris }; })];
+    const seamTris = [...seams.values()].reduce((n, t) => n + t.length, 0);
+    report.push(`${order.length} parts, ${pieces.reduce((n, q) => n + q.tris.length, 0)} triangles, ${seamTris} of them in ${seams.size} seams${dropped ? ` (${dropped} degenerate dropped)` : ''}`);
 
     /* ---- colour: a ramp row a channel for each face ---- */
     const cx = buildColorxlat(stf);
@@ -199,7 +226,11 @@ export function importRyo(R, ctx, games, { tiles, byTex }) {
     const ramp = (ch, row, luma) => Math.min(255, cxv.getUint16(ch * 0x4000 + row * 0x200 + luma * 2, true));
     const lram = buildLumaram(stf);
     const lumaOf = (t) => lram[t * 8 * 2];                  /* lumabase 0, texel t, full light */
-    const white = [0, 1, 2].map((ch) => ramp(ch, ROWS - 1, lumaOf(15)));
+    /* What the screen shows of a ramp value: the board's output curve, black
+     * up to 64 (MAME model2_v.cpp m_gamma_table, the monitor's bias 64 and
+     * gain 255/191). The fit is made on what is shown, so a channel the
+     * texture keeps dim does not drop into the black below 64. */
+    const shown = (x) => Math.max(0, ((x - 64) * 255) / 191);
     /* The texels under a face: a grid of 15 points across its UV triangle. */
     const BARY = [];
     for (let i = 0; i <= 4; i++) for (let j = 0; j <= 4 - i; j++) BARY.push([i / 4, j / 4, (4 - i - j) / 4]);
@@ -221,13 +252,13 @@ export function importRyo(R, ctx, games, { tiles, byTex }) {
             let best = 0, err = Infinity;
             for (let r = 0; r < ROWS; r++) {
                 let e = 0;
-                for (const q of s) { const d = ramp(ch, r, q.luma) - (q.rgb[ch] / 255) * white[ch]; e += d * d; }
+                for (const q of s) { const d = shown(ramp(ch, r, q.luma)) - q.rgb[ch]; e += d * d; }
                 if (e < err) { err = e; best = r; }
             }
             return best;
         });
     };
-    const faces = order.flatMap((s) => slots.get(s));
+    const faces = pieces.flatMap((q) => q.tris);
     for (const t of faces) t.rows = rowsOf(t);
     /* Palette entries: StF's own where one has the colour, else a free one
      * (no model the board keeps names it, nor Akira's), from the top down.
@@ -259,7 +290,7 @@ export function importRyo(R, ctx, games, { tiles, byTex }) {
     /* ---- meshes, materials and UVs; the model table ---- */
     let poly = ctx.polyEnd, tex = (ctx.pack.at + 15) & ~15;
     const ids = [];
-    for (let id = R.modelCount - 1; ids.length < order.length; id--) {
+    for (let id = R.modelCount - 1; ids.length < pieces.length; id--) {
         if (id <= 0) throw new Error('Ryo: no free model ids');
         if (!R.models.has(id) && !ctx.modelIds.has(id)) ids.push(id);
     }
@@ -276,21 +307,23 @@ export function importRyo(R, ctx, games, { tiles, byTex }) {
         return [...pair(t.uv[1]), ...pair(t.uv[0]), ...pair(t.uv[2]), 0, 0, 0, 0, 0, 0, 0, 0];
     };
     const meshes = [];
-    order.forEach((slot, i) => {
-        const tris = slots.get(slot);
+    pieces.forEach((piece, i) => {
+        const { slot, tris } = piece;
+        const what = piece.other == null ? `part ${slot}` : `seam ${slot}-${piece.other}`;
         const mesh = encodeMesh(tris);
+        piece.id = ids[i]; piece.mesh = mesh;
         poly = (poly + 3) & ~3;
         if (poly + mesh.length > POLY_RUN_END) throw new Error('Ryo: polygon run too small');
-        polygons.put(poly, mesh, `Ryo part ${slot} mesh`);
+        polygons.put(poly, mesh, `Ryo ${what} mesh`);
         const mat = u16s(tris.flatMap(thOf)), uv = u16s(tris.flatMap(uvWords));
         const matAt = tex, uvAt = (matAt + mat.length + 15) & ~15;
         tex = (uvAt + uv.length + 15) & ~15;
         if (tex > TEX_RUN_END) throw new Error('Ryo: textures run too small');
-        textures.put(matAt, mat, `Ryo part ${slot} materials`);
-        textures.put(uvAt, uv, `Ryo part ${slot} UVs`);
-        main.put(R.modelTable + ids[i] * 16, u32s([uvAt / 2, matAt / 2, 0x800000 | (poly >> 2), (tris.length << 16) | (2 * tris.length + 1)]), `Ryo part ${slot} as model ${ids[i]}`);
-        partModel.set(slot, ids[i]);
-        meshes.push({ slot, id: ids[i], tris, mesh, matAt, uvAt });
+        textures.put(matAt, mat, `Ryo ${what} materials`);
+        textures.put(uvAt, uv, `Ryo ${what} UVs`);
+        main.put(R.modelTable + ids[i] * 16, u32s([uvAt / 2, matAt / 2, 0x800000 | (poly >> 2), (tris.length << 16) | (2 * tris.length + 1)]), `Ryo ${what} as model ${ids[i]}`);
+        if (piece.other == null) partModel.set(slot, ids[i]);
+        meshes.push({ slot: what, id: ids[i], tris, mesh, matAt, uvAt });
         poly += mesh.length;
     });
     report.push(`models ${ids[ids.length - 1]}..${ids[0]}; meshes ${hex(ctx.polyEnd)}..${hex(poly)}; materials and UVs ${hex((ctx.pack.at + 15) & ~15)}..${hex(tex)}`);
@@ -357,7 +390,7 @@ export function importRyo(R, ctx, games, { tiles, byTex }) {
         for (let i = 0; i < d.positions.length; i += 3) pts.push([d.positions[i] * SCALE, d.positions[i + 1] * SCALE, -d.positions[i + 2] * SCALE]);
         return box(pts);
     };
-    const ryoBox = (s) => (slots.has(s) ? box(slots.get(s).flatMap((t) => t.pts)) : null);
+    const ryoBox = (s) => (slots.has(s) ? box(pieces.filter((q) => q.slot === s).flatMap((q) => q.tris.flatMap((t) => t.pts))) : null);
     const pts = Uint8Array.from(ctx.balls.pts), pv = new DataView(pts.buffer);
     const moved = [];
     for (let i = 0; i < 32; i++) {
@@ -386,6 +419,48 @@ export function importRyo(R, ctx, games, { tiles, byTex }) {
         alloc(ctx.balls.lists, 'part balls', 16), alloc(ctx.balls.counts, 'part ball counts', 16),
     ]), 'ball record', 16);
     report.push(`${moved.length} collision balls fitted to his parts`);
+
+    /* ---- seams: the board's guest table `seams` ----
+     * By character, a list: +0 the count m, then m pointers, each to a seam:
+     * +0 its model, +4 S | O << 8 (the slot it is drawn on, the slot its far
+     * corners ride), +8 the mesh's word count W, +12 the far points' count P,
+     * +16 the runs' count N, +20 the P points (3 floats, in O's frame as a
+     * mesh stores it), then N runs (the first word | the count << 16: the
+     * words that hold far points), then the mesh's W words (encodeMesh, its
+     * far corners where they are at rest), then W bytes: 0 for a word as it
+     * is, else 1 + 3 point + axis, the coordinate megamix.c's seams_build
+     * puts there (carried into S's frame). The board sends a seam's mesh to
+     * polygon RAM once, and after that only its runs, each frame. */
+    const seamAts = [];
+    let runWords = 0, meshWords = 0;
+    for (const q of pieces.filter((q) => q.other != null)) {
+        const pts = [], at = new Map();
+        const W = q.mesh.length / 4, patch = new Uint8Array(W);
+        const far = (tri, c, word) => {
+            const f = tri.far[c];
+            if (!f) return;
+            const key = f.join();
+            if (!at.has(key)) { at.set(key, pts.length); pts.push(f); }
+            for (let a = 0; a < 3; a++) patch[word + a] = 1 + 3 * at.get(key) + a;
+        };
+        /* encodeMesh's words: per triangle A 0, B 3, C 10 and 13; the end, C twice */
+        q.tris.forEach((t, i) => { far(t, 0, i * 20); far(t, 1, i * 20 + 3); far(t, 2, i * 20 + 10); far(t, 2, i * 20 + 13); });
+        const T = q.tris.length;
+        far(q.tris[T - 1], 2, T * 20); far(q.tris[T - 1], 2, T * 20 + 3);
+        if (pts.length * 3 + 1 > 255) throw new Error(`Ryo seam ${q.slot}-${q.other}: ${pts.length} far points`);
+        const runs = [];
+        for (let i = 0; i < W; i++) if (patch[i]) { if (i && patch[i - 1]) runs[runs.length - 1] += 1 << 16; else runs.push(i | (1 << 16)); }
+        runWords += runs.reduce((n, r) => n + 3 + (r >>> 16), 0); meshWords += W;
+        const head = new Uint8Array(20 + pts.length * 12 + runs.length * 4), hv = new DataView(head.buffer);
+        [q.id, q.slot | (q.other << 8), W, pts.length, runs.length].forEach((x, a) => hv.setUint32(a * 4, x, true));
+        pts.forEach((p, i) => p.forEach((x, a) => hv.setFloat32(20 + i * 12 + a * 4, x, true)));
+        runs.forEach((r, i) => hv.setUint32(20 + pts.length * 12 + i * 4, r, true));
+        const b = new Uint8Array((head.length + q.mesh.length + W + 3) & ~3);
+        b.set(head); b.set(q.mesh, head.length); b.set(patch, head.length + q.mesh.length);
+        seamAts.push(alloc(b, `seam ${q.slot}-${q.other}`));
+    }
+    const seamList = alloc(u32s([seamAts.length, ...seamAts]), 'seams');
+    report.push(`${seamAts.length} seams, at ${seams.size ? [...seams.keys()].join(' ') : 'none'}: ${meshWords} words of mesh, then ${runWords} a frame`);
 
     /* ---- records: Akira's, with his parts and skeleton ---- */
     const parts = new Array(16).fill(0);
@@ -424,6 +499,7 @@ export function importRyo(R, ctx, games, { tiles, byTex }) {
         T.player_foot_animation.view.setUint32(c * 4, 0, true);
         T.player_body_animation.view.setUint32(c * 4, 0, true);
         T.midriff.view.setUint32(c * 4, 0, true);
+        T.seams.view.setUint32(c * 4, seamList, true);
         for (let kind = 0; kind < H.len / 4; kind++) H.view.setUint32(H.lists + kind * H.perKind + c * 4, head, true);
         T.char_game.bytes[c] = R.guest.games.VF2;
     }

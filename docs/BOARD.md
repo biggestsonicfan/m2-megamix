@@ -858,9 +858,9 @@ put in for Akira, and import-assets runs it after Akira's.
   motions are VF3-style Shenmue ones the board cannot play yet
   (docs/VF3-SHENMUE.md).
 - **Parts.** Each of his 37 nodes rides the StF part its nearest anchored
-  bone drives (`SLOT_BONES`); a strip point on the parent node is placed by
-  the two nodes' rest matrices, so each part is rigid. 15 parts, 1793
-  triangles, scaled by `ryoFit` (1.0084 of Akira's height) × SCALE. Each
+  bone drives (`SLOT_BONES`), so each part is rigid. 15 parts, 1793
+  triangles (193 of them in the seams below), scaled by `ryoFit` (1.0084 of
+  Akira's height) × SCALE. Each
   part is one mesh of independent triangles: per triangle a triangle link
   (points A, B) and a culled quad link (points C, C) whose material step
   moves to the next triangle's record. The meshes go in the polygon ROM's
@@ -875,8 +875,12 @@ put in for Akira, and import-assets runs it after Akira's.
 - **Colour.** The board takes a face's colour from its colorbase and only the
   brightness from the texel, so each face takes, per channel, the StF ramp
   row (0..27, lumabase 0) whose values at its texels' brightness come
-  nearest to their colour (15 texels sampled across the face's UVs). 262
-  colours: StF's own palette entry where one matches, 226 new colorbases
+  nearest to their colour (15 texels sampled across the face's UVs). The
+  fit compares what the screen shows: the board's output curve is black up
+  to 64 and stretches the rest by 255/191 (MAME's `m_gamma_table`, the
+  monitor's bias and gain), so a ramp value v shows as (v − 64)·255/191.
+  Fitting the raw ramp values instead chose rows too strong. 274
+  colours: StF's own palette entry where one matches, 223 new colorbases
   from the free ones at the top. The SDK's boot copies all 1024 entries, so
   they are loaded.
 - **Skeleton, solve bones.** Akira's, with Ryo's spine, pivots and bone
@@ -886,9 +890,38 @@ put in for Akira, and import-assets runs it after Akira's.
   boxes, axis by axis, and its radius scaled by the cube root of the three
   ratios (each 0.5..2, the result 0.6..1.6).
 - **Hands, head.** His own hand parts (one shape) and head; no midriff.
+- **Seams.** A Shenmue node's strips also run through points of its parent
+  node, and where the parent rides another StF part, a cut that keeps each
+  triangle rigid on one part opens a gap at the joint when it bends (the
+  knees, elbows, wrists, hips and neck). These 193 triangles are 12 seams
+  instead, each with the part S it is drawn on and the part O its far
+  corners ride. They are rebuilt in polygon RAM, as the VF2 midriff is.
+  The guest table `seams`, by character, lists them. Each holds its model,
+  S and O, its far points (in O's frame), the runs of mesh words that hold
+  them, and the mesh with a byte a word saying which coordinate goes there.
+  The import puts a seam triangle's far corners first (A, or A and B, turning
+  its corners round), so each is one run. megamix.c's `seams_build` carries
+  the far points into S's frame (H⁻¹C p, `carry`, shared with the midriff).
+  It sends one whole seam a frame to polygon RAM (player 1 at 0x1000, player
+  2 at 0x3000; 3980 words for all 12) until all are there, and after that
+  only the runs (1446 words a frame). `draw_fighter` draws each seam after
+  part S, in geometrizer mode 2, so the board works out its normals from
+  the points.
+  - The words sent go in the frame's display list. A frame list has one of
+    the 4 buffers of 0x8000 bytes. Sending every seam whole every frame, for
+    two Ryos, ran over it, and MAME (whose `push_geo_data` does not wrap)
+    wrote past its buffer RAM and crashed.
+  - `seams_build`'s matrices and points are static. main runs on the
+    supervisor stack, from 0x5FF800 up to the end of work RAM at 0x600000,
+    and is near 0x5FFF00 there. 1.8 KB of locals ran off the end of RAM, and
+    the caller's seam list came back as garbage, so no seam was drawn.
 
 Checked in MAME (`sfight`, the shared build): Ryo vs Akira and Akira vs
 Ryo, both drawn, each knocking the other from 140 to 0 with punches.
+With the seams (#1540): Ryo vs Akira and Ryo vs Ryo in MAME, the joints
+closed standing, walking and punching, and Ryo as player 2 too. On m2-hle2,
+Ryo vs Ryo loads both players' seams and fights (player 2's energy 140 to
+49 under player 1's punches); its bridge has no screenshots.
 
 **Graded against the Dreamcast** (beta 0.400 disc 3's Free Battle in Flycast,
 full body beside a MAME shot, mean colour per region): the shape and
@@ -897,7 +930,9 @@ of every part within 5° except the jeans (190° against 211°, too cyan). The
 colours are too saturated: hair, skin and jacket s ≈ 0.97-0.99 against
 0.47-0.69, so the skin reads orange (85,33,1 against 102,72,47) and the
 jacket black-brown. The jeans are also too dark (v 0.08 against 0.19). The
-shoes match. The colour fit's ramp rows are where to fix it.
+shoes match. The cause was the output curve (Colour above). With the fit
+made on what is shown (#1540), the skin is a natural tan, the jacket brown
+and the jeans blue.
 
 Reaching Free Battle on disc 3 (from 1ST_READ.BIN, base 0x0C010000): the
 title's extras menu (table 0x0C29E008: debug, OPTION, SPACE HARRIER, HANG

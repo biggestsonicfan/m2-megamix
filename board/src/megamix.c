@@ -436,6 +436,26 @@ static void slot_mat(mat_t *m, u32 p, u32 slot) {
     for (i = 0; i < 3; i++) m->t[i] = m2_cop_gf();
 }
 
+/* Points in slot c's frame carried into slot h's: H^-1 C p for each (the
+ * slots' matrices may be scaled, so H^-1 by its cofactors). */
+static void carry(const mat_t *h, const mat_t *c, const float (*in)[3], float (*out)[3], u32 n) {
+    float d[3], x[3][3], det;
+    u32 k, j, i;
+    /* x[i]: H's other two columns crossed, so (H^-1 d)[i] = d . x[i] / det */
+    for (i = 0; i < 3; i++) {
+        const float *u = &h->r[((i + 1u) % 3u) * 3u], *v = &h->r[((i + 2u) % 3u) * 3u];
+        x[i][0] = u[1] * v[2] - u[2] * v[1];
+        x[i][1] = u[2] * v[0] - u[0] * v[2];
+        x[i][2] = u[0] * v[1] - u[1] * v[0];
+    }
+    det = h->r[0] * x[0][0] + h->r[1] * x[0][1] + h->r[2] * x[0][2];
+    for (k = 0; k < n; k++) {
+        for (j = 0; j < 3; j++)
+            d[j] = c->r[j] * in[k][0] + c->r[3 + j] * in[k][1] + c->r[6 + j] * in[k][2] + c->t[j] - h->t[j];
+        for (i = 0; i < 3; i++) out[k][i] = (d[0] * x[i][0] + d[1] * x[i][1] + d[2] * x[i][2]) / det;
+    }
+}
+
 /* The midriff of a VF2 or Fighting Vipers fighter (the guest table midriff,
  * by drawn character; tools/vf2-guest.mjs): the band from a ring on the
  * hips to a ring on the chest that closes the waist; StF's fighters have
@@ -452,26 +472,14 @@ static u32 midriff_build(u32 p) {
     const float (*ring)[3];
     const u32 *w;
     const u8 *idx;
-    float c[8][3], d[3], x[3][3], det;
+    float c[8][3];
     mat_t h, ch;
     u32 n, k, j, i;
     if (mid == 0) return 0u;
     n = mid[1]; ring = (const float (*)[3])&mid[2]; w = &mid[2 + 24]; idx = (const u8 *)&w[10u * n + 1u];
     slot_mat(&h, p, 9u);
     slot_mat(&ch, p, 1u);
-    /* x[i]: the hips' other two columns crossed, so (H^-1 d)[i] = d . x[i] / det */
-    for (i = 0; i < 3; i++) {
-        const float *u = &h.r[((i + 1u) % 3u) * 3u], *v = &h.r[((i + 2u) % 3u) * 3u];
-        x[i][0] = u[1] * v[2] - u[2] * v[1];
-        x[i][1] = u[2] * v[0] - u[0] * v[2];
-        x[i][2] = u[0] * v[1] - u[1] * v[0];
-    }
-    det = h.r[0] * x[0][0] + h.r[1] * x[0][1] + h.r[2] * x[0][2];
-    for (k = 0; k < 8u; k++) {
-        for (j = 0; j < 3; j++)
-            d[j] = ch.r[j] * ring[k][0] + ch.r[3 + j] * ring[k][1] + ch.r[6 + j] * ring[k][2] + ch.t[j] - h.t[j];
-        for (i = 0; i < 3; i++) c[k][i] = (d[0] * x[i][0] + d[1] * x[i][1] + d[2] * x[i][2]) / det;
-    }
+    carry(&h, &ch, ring, c, 8u);
     *fifo = GEO_OP_POLYDATA; *fifo = MID_POLY(p); *fifo = 10u * n + 1u;
     for (k = 0; k < n; k++, w += 10) {
         for (j = 0; j < 4u; j++) *fifo = w[j];
@@ -484,25 +492,86 @@ static u32 midriff_build(u32 p) {
     return mid[0];
 }
 
-/* rob_disp's slot 9 entry (0x195F8): the midriff on the hips' matrix, from
- * polygon RAM past the first attribute and normal, with the model's texture
- * points and material, in geometrizer mode 2: the board works out each
- * face's normal from its points, so the band shades as it bends (VF2's mode
- * 3 adds the specular VF2 draws with; the board draws in mode 0, without).
- * The list's end goes after the mode word, as after a submit. */
-static void midriff_draw(u32 model, u32 p) {
+/* A mesh built in polygon RAM, at `at`, on the current matrix: rob_disp's
+ * slot 9 entry (0x195F8) draws the midriff so on the hips' matrix, from past
+ * the first attribute and normal; a seam goes so on its slot S. The model
+ * gives the texture points and material. Geometrizer mode 2: the board works
+ * out each face's normal from its points, so the mesh shades as it bends
+ * (VF2's mode 3 adds the specular VF2 draws with; the board draws in mode 0,
+ * without). The list's end goes after the mode word, as after a submit. */
+static void poly_draw(u32 model, u32 at) {
     volatile u32 *fifo = (volatile u32 *)M2_GEOFIFO_ADDR;
     *fifo = GEO_OP_MODE; *fifo = GEO_MODE_NN_NS;
-    submit_cur_ov(model, 2u, MID_POLY(p) + 4u);
+    submit_cur_ov(model, 2u, at);
     *fifo = GEO_OP_MODE; *fifo = GEO_MODE_NP_NS;
     *(volatile u32 *)(GEO_BUFFERRAM + (*(volatile u32 *)COP_WPOS_REG & 0x0001FFFCu)) = GEO_OP_END;
+}
+
+/* The seams of a fighter whose meshes span his joints (the guest table
+ * seams, by drawn character; tools/ryo-guest.mjs): each a mesh drawn on its
+ * slot S whose far corners ride slot O, so it stretches over the joint as
+ * the mesh skins on its own game's board. Each frame each seam's far points
+ * are carried from O's frame into S's (H^-1 C p, as the midriff's ring) and
+ * written over its mesh in polygon RAM at SEAM_POLY(p) on, a command a run
+ * of words. A seam's whole mesh goes there first, one seam a frame (all of
+ * them every frame, for two fighters, ran the frame's display list over its
+ * 0x8000-byte buffer), and is drawn from the next frame on. Fills `at` with each seam's
+ * address there; returns how many are there (the first so many of `*out`'s
+ * list). Leaves the coprocessor's matrix changed. */
+#define SEAM_POLY(p) (0x1000u + ((p) << 13))
+#define SEAMS_MAX 16u
+#define SEAM_PTS 84u
+static const u32 *seam_list[2];
+static u32 seams_in[2];
+/* Not on the stack: main runs on the supervisor stack, from 0x5FF800 up to
+ * the end of work RAM at 0x600000, with little of it left by here. */
+static mat_t seam_m[16];
+static float seam_c[SEAM_PTS][3];
+static u32 seams_build(u32 p, u32 *at, const u32 **out) {
+    volatile u32 *fifo = (volatile u32 *)M2_GEOFIFO_ADDR;
+    const u32 *list = *(const u32 *const *)(STF_GUEST_seams + RB(robs[p], 0x1B0) * 4u);
+    u32 have = 0;
+    u32 addr = SEAM_POLY(p), s, n, in;
+    if (list != seam_list[p]) { seam_list[p] = list; seams_in[p] = 0; }
+    *out = list;
+    if (list == 0) return 0;
+    n = list[0] < SEAMS_MAX ? list[0] : SEAMS_MAX;
+    in = seams_in[p];
+    for (s = 0; s < n && s <= in; s++) {
+        const u32 *sm = (const u32 *)list[1u + s];
+        u32 S = sm[1] & 0xFu, O = (sm[1] >> 8) & 0xFu, W = sm[2], P = sm[3], N = sm[4], k, r;
+        const float (*pts)[3] = (const float (*)[3])&sm[5];
+        const u32 *runs = &sm[5u + 3u * P];
+        const u32 *w = &runs[N];
+        const u8 *patch = (const u8 *)&w[W];
+        if (!(have & (1u << S))) { slot_mat(&seam_m[S], p, S); have |= 1u << S; }
+        if (!(have & (1u << O))) { slot_mat(&seam_m[O], p, O); have |= 1u << O; }
+        carry(&seam_m[S], &seam_m[O], pts, seam_c, P < SEAM_PTS ? P : SEAM_PTS);
+#define SEAM_WORD(k) (patch[k] ? m2_obj_fb(seam_c[(patch[k] - 1u) / 3u][(patch[k] - 1u) % 3u]) : w[k])
+        if (s == in) {
+            *fifo = GEO_OP_POLYDATA; *fifo = addr; *fifo = W;
+            for (k = 0; k < W; k++) *fifo = SEAM_WORD(k);
+        } else
+            for (r = 0; r < N; r++) {
+                u32 k0 = runs[r] & 0xFFFFu, kn = k0 + (runs[r] >> 16);
+                *fifo = GEO_OP_POLYDATA; *fifo = addr + k0; *fifo = kn - k0;
+                for (k = k0; k < kn; k++) *fifo = SEAM_WORD(k);
+            }
+#undef SEAM_WORD
+        at[s] = addr;
+        addr += W;
+    }
+    if (in < n) seams_in[p] = in + 1u;
+    return in;
 }
 
 static void draw_fighter(const fighter_t *f, u32 p) {
     volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
     const pose_anim_t *a = f->anim;
     u32 *r = robs[p], i, model, head = 0u;
-    u32 mid = midriff_build(p);
+    u32 mid = midriff_build(p), seam_at[SEAMS_MAX], s;
+    const u32 *seams;
+    u32 nseams = seams_build(p, seam_at, &seams);
     /* the eyes are StF's (a second head model); another game's fighter has
      * them in his head */
     u32 n = char_game(a->chr) == GAME_STF ? 16u + a->nparts : 16u;
@@ -526,7 +595,12 @@ static void draw_fighter(const fighter_t *f, u32 p) {
         *cf = COP_SCALE; *cf = 0x3F800000u; *cf = RW(r, 0x27C0); *cf = 0x3F800000u;
         *cf = COP_PART; *cf = p; *cf = slot * 12u;
         submit_cur(model);
-        if (slot == 9u && i < 16u && mid) midriff_draw(mid, p);
+        if (slot == 9u && i < 16u && mid) poly_draw(mid, MID_POLY(p) + 4u);
+        if (i < 16u)
+            for (s = 0; s < nseams; s++) {
+                const u32 *sm = (const u32 *)seams[1u + s];
+                if ((sm[1] & 0xFFu) == slot) poly_draw(sm[0], seam_at[s]);
+            }
         *cf = COP_POP;
     }
 }
