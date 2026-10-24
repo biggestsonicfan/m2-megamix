@@ -940,20 +940,42 @@ other triangle gone at its bottom: dark spikes of jeans down to the shoe,
 in MAME and m2-hle2 alike. It was the faces' stored normals (#1546). The
 board culls a face by its stored normal against corner C (MAME
 `check_culling`, with `face` from normal · C), not by its winding, and each
-face was stored with its three corners' Shenmue normals averaged. The shin is
+face is stored with its three corners' Shenmue normals averaged. The shin is
 a tube of long faces from the knee ring to the hem ring, and the hem ring's
-corners share their normals with the cuff inside, so they lean down the leg.
-The faces with two hem corners (7 of the shin's 47: 0, 13, 15, 16, 20, 21,
-35) had normals 34-45° off their own, and were culled while still turned a
-little to the eye, leaving the faces between them, the ones with one hem
-corner, as spikes. The winding, the indices and the geometry were right:
-every face's normal was on its outward side, and no corner was missing.
-Now every face is stored with its own flat normal (cutParts), as a Model 2
-face is lit and culled by one normal (the seams already were, in mode 2).
-In the same MAME frames (Ryo vs Ryo, frames 720 to 900) the shins are
-whole, and the shoe meets the hem with no gap, so the ankle needs no seam.
-The rest of him shades a little differently face by face, with the same
-colours. On m2-hle2, shots t05 and t11 (the spiking ones) are whole too.
+corners share their normals with the cuff inside, so they lean down the
+leg. A face whose stored normal leans θ from its own is culled while still
+turned to the eye whenever it is seen within θ of edge-on, which a long
+shin face at a bent ankle is. The winding, the indices and the geometry
+were right: every face's normal was on its outward side, and no corner was
+missing.
+
+Only the shins changed. A shin face (slot 11, model 4995, and its mirror
+slot 14, model 4992: the two players' rear legs are opposite legs) whose
+stored normal leans more than 15° (`SHIN_LEAN`) from its own is stored with
+its own flat normal; every other face keeps the corner average, and the
+seams (normals worked out by the board, mode 2) are not touched. Faces, by
+index in the part, with the lean they had:
+
+- slot 11: 0 (44°), 1 (20), 2 (19), 11 (21), 12 (20), 13 (43), 15 (34),
+  16 (34), 20 (44), 21 (43), 22 (19), 27 (18), 28 (16), 29 (24), 30 (21),
+  33 (20), 35 (45), 36 (20), and the cuff's inner cone 40-46 (45-52).
+- slot 14: 0 (36), 1 (18), 3 (20), 8 (16), 13 (34), 14 (34), 16 (18),
+  17 (35), 18 (44), 23 (19), 24 (44), 25 (19), 26 (42), 27 (19), 34 (16),
+  36 (16), 37 (18), 38 (21), 39 (24), and the cuff 40-46 (45-52).
+
+The faces with two hem corners (slot 11's 0, 13, 15, 16, 20, 21, 35) lean
+most, 34-45°, but at 30° (those and the cuff) frame 720 still lost the long
+faces leaning about 20° at P2's rear ankle; at 15° it is whole. The other
+parts have faces leaning over 30° too (the chest 71, the arms 13-17 each,
+the feet 4-5); they are left as they were.
+
+Checked in MAME (Ryo vs Ryo, the same inputs, frames 720 to 900 every 6,
+against the ROMs before the change): the main ROMs are byte for byte the
+same and only the two shin meshes differ in the polygon ROM, so nothing
+but the shins can draw differently; in all 32 frames every pixel above row
+237 (the top of a bent shin) is the same. The bent rear shins are whole, and each shoe meets its hem with no
+gap, so the ankle needs no seam. On m2-hle2, shots t05 and t11 (the
+spiking ones) are whole too.
 
 **Graded against the Dreamcast** (beta 0.400 disc 3's Free Battle in Flycast,
 full body beside a MAME shot, mean colour per region): the shape and

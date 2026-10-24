@@ -47,6 +47,10 @@ const LEVELS = 5;                        /* a raw page's levels, 0-4 */
 const ATTR_HI = (10 << 18) | (2 << 23), Z_NEAR = 1 << 10;
 const TRI = 2, QUAD = 1, LINK_NEW = 2 << 8;       /* link type 0: the face is culled */
 const ROWS = 28;                         /* the luma ramp's rows, 0..27 */
+/* The shins (bones 0x11, 0x16), whose long faces lean from their corners'
+ * normals far enough to be culled in sight (cutParts, #1546). At 30° a bent
+ * rear ankle still lost the faces leaning about 20°; at 15° it is whole. */
+const SHINS = new Set([SLOT_BONES[0x11], SLOT_BONES[0x16]]), SHIN_LEAN = 15;
 
 const hex = (v) => '0x' + v.toString(16).toUpperCase();
 
@@ -148,14 +152,17 @@ function cutParts(model, k) {
                 const out = unit([a.n[0] + b.n[0] + d.n[0], a.n[1] + b.n[1] + d.n[1], a.n[2] + b.n[2] + d.n[2]]);
                 /* Akira's faces wind A, B, C about their outward side */
                 if (dot(face, out) < 0) [a, b] = [b, a];
-                /* The normal the face is stored with is its own, flat: the
+                /* A face is stored with its corners' normals, averaged. The
                  * board culls a face whose stored normal turns from the eye
-                 * (MAME model2_v.cpp, normal · corner C), so the corners'
-                 * normals, averaged, cull a face seen at a slant when they
-                 * lean from it. Down his shin they lean up to 45°,
-                 * the hem's corners sharing the cuff's normals: a bent rear
-                 * leg seen from the front lost half the shin's faces (#1546). */
-                const flat = unit(dot(face, out) < 0 ? face.map((x) => -x) : face);
+                 * (MAME model2_v.cpp, normal · corner C), so one that leans
+                 * far from the face is culled while the face still turns to
+                 * the eye. Down the shins the hem's corners share the cuff's
+                 * normals and lean up to 52°: a bent rear leg seen from the
+                 * front lost half the shin's faces. A shin face leaning more
+                 * than SHIN_LEAN keeps its own flat normal (#1546); a seam's
+                 * normals the board works out itself. */
+                const lean = Math.acos(Math.min(1, Math.abs(dot(unit(face), out)))) * 180 / Math.PI;
+                const stored = SHINS.has(slot) && lean > SHIN_LEAN && !(a.o || b.o || d.o) ? unit(dot(face, out) < 0 ? face.map((x) => -x) : face) : out;
                 /* a seam's far corners first (A, or A and B), turning the
                  * corners round, so each is one run of words to patch */
                 const fars = [a, b, d].map((q) => !!q.o);
@@ -166,7 +173,7 @@ function cutParts(model, k) {
                 }
                 /* stored: z the other way; the normal inward, as the ROM's are */
                 const st = (q) => [q[0], q[1], -q[2]];
-                const tri = { pts: [st(a.p), st(b.p), st(d.p)], nrm: [-flat[0], -flat[1], flat[2]], uv: [a.uv, b.uv, d.uv], texture: strip.texture };
+                const tri = { pts: [st(a.p), st(b.p), st(d.p)], nrm: [-stored[0], -stored[1], stored[2]], uv: [a.uv, b.uv, d.uv], texture: strip.texture };
                 const key = a.o || b.o || d.o ? `${slot},${other}` : null;
                 if (key) tri.far = [a.o, b.o, d.o].map((q) => q && st(q));
                 const into = key ? seams : slots;
