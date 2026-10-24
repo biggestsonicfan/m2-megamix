@@ -418,7 +418,8 @@ export function handlerReaches(game, start, from, to, avoid = []) {
  *  { kind, at } events in address order: 'store' (field, size, values:
  *  numbers, { field, times } for a field times a constant, { field, plus }
  *  for a field plus one, { field, or } or { field, and } for a field with
- *  bits set or cleared, or null),
+ *  bits set or cleared, { quot, by } for the divide unit's quotient, with
+ *  { less: [x, y] } for x - y, or null),
  *  'call' (target), 'same' (the same test again), 'param' (a parameter
  *  bit's test: bit), 'stop' (another flag's test: field, mask;
  *  of: 13 when the field is r13's, the opponent's), 'end' (jmp
@@ -451,7 +452,7 @@ export function flagSides(game, start, at) {
             else return null;
             return v?.field !== undefined && plain(v) && num(mask) ? { ...asLong(v, mask >>> 0), ...(v.of && { of: v.of }) } : null;
         };
-        const todo = [{ pc: sides[side], r: [...init], t: null, seen: new Set(), mac: null }];
+        const todo = [{ pc: sides[side], r: [...init], t: null, seen: new Set(), mac: null, div: {} }];
         while (todo.length) {
             const p = todo.pop();
             /* one instruction's effect on the registers; 'stop' at a test the side ends at */
@@ -459,6 +460,7 @@ export function flagSides(game, start, at) {
                 const w = word(a), r = p.r, n = (w >> 8) & 15, m = (w >> 4) & 15, hi = w & 0xf000, f = w & 0xf00f;
                 const load = (base, off, size) => base?.ptr !== undefined && num(off) ? { field: base.ptr + off, size, ...(base.of && { of: base.of }) } : null;
                 const store = (base, off, size, value) => {
+                    if (num(base) && num(off) && (base + off) >>> 8 === 0xffffff) p.div[(base + off) & 0xff] = value;   /* the divide unit */
                     if (base?.ptr !== undefined && num(off)) note({ kind: 'store', at: a, field: base.ptr + off, size, ...(base.of && { of: base.of }) }, value);
                 };
                 if (w === 0x0009) return;
@@ -468,18 +470,24 @@ export function flagSides(game, start, at) {
                 else if (f === 0x6003) r[n] = r[m];
                 else if (f === 0x600b) r[n] = num(r[m]) ? s32(-r[m]) : null;
                 else if (hi === 0x7000) r[n] = r[n]?.ptr !== undefined ? { ptr: r[n].ptr + ((w & 0xff) << 24 >> 24) } : num(r[n]) ? s32(r[n] + ((w & 0xff) << 24 >> 24)) : plus(r[n], (w & 0xff) << 24 >> 24);
-                else if (f === 0x3008) r[n] = num(r[n]) && num(r[m]) ? s32(r[n] - r[m]) : null;
+                else if (f === 0x3008) r[n] = num(r[n]) && num(r[m]) ? s32(r[n] - r[m]) : r[n] !== null && r[m] !== null ? { less: [r[n], r[m]] } : null;
                 else if (f === 0x300c) r[n] = num(r[n]) && num(r[m]) ? s32(r[n] + r[m]) : num(r[n]) && r[m]?.ptr !== undefined ? { ptr: r[m].ptr + r[n] }
                     : num(r[m]) && r[n]?.ptr !== undefined ? { ptr: r[n].ptr + r[m] } : num(r[m]) ? plus(r[n], r[m]) : num(r[n]) ? plus(r[m], r[n]) : null;
-                else if ((w & 0xf0ff) === 0x4028) r[n] = num(r[n]) ? s32(r[n] << 16) : null;
+                else if ((w & 0xf0ff) === 0x4028) r[n] = num(r[n]) ? s32(r[n] << 16) : r[n] !== null ? { shl16: r[n] } : null;
+                else if ((w & 0xf0ff) === 0x4029) r[n] = num(r[n]) ? r[n] >>> 16 : r[n] !== null ? { hi: r[n] } : null;
+                else if (f === 0x600f) r[n] = num(r[m]) ? r[m] << 16 >> 16 : r[m]?.hi !== undefined ? r[m] : null;
                 else if ((w & 0xf0ff) === 0x4018) r[n] = num(r[n]) ? s32(r[n] << 8) : null;
                 else if ((w & 0xf0ff) === 0x4008) r[n] = num(r[n]) ? s32(r[n] << 2) : null;
                 else if ((w & 0xf0ff) === 0x4000) r[n] = num(r[n]) ? s32(r[n] << 1) : null;
                 else if ((w & 0xf0ff) === 0x4005) r[n] = num(r[n]) ? s32(r[n] >>> 1 | r[n] << 31) : null;
-                else if ((w & 0xf0ff) === 0x4029 || (w & 0xf0ff) === 0x4021 || (w & 0xf0ff) === 0x4001) r[n] = null;
+                else if ((w & 0xf0ff) === 0x4021 || (w & 0xf0ff) === 0x4001) r[n] = null;
                 else if ((w & 0xf00c) === 0x000c && (w & 3) < 3) r[n] = load(r[m], r[0], [1, 2, 4][w & 3]);
                 else if ((w & 0xf00c) === 0x6000 && (w & 3) < 3) r[n] = load(r[m], 0, [1, 2, 4][w & 3]);
-                else if (hi === 0x5000) r[n] = load(r[m], (w & 15) * 4, 4);
+                else if (hi === 0x5000 && num(r[m]) && (r[m] + (w & 15) * 4) >>> 0 === 0xffffff1c) {
+                    /* the divide unit's quotient: DVDNTH:DVDNTL = x << 16 over DVSR = y << 16, x / y */
+                    const d = p.div, same = (u, v) => JSON.stringify(u) === JSON.stringify(v);
+                    r[n] = d[0x10]?.hi && d[0x14]?.shl16 && same(d[0x10].hi, d[0x14].shl16) && d[0x00]?.shl16 ? { quot: d[0x14].shl16, by: d[0x00].shl16 } : null;
+                } else if (hi === 0x5000) r[n] = load(r[m], (w & 15) * 4, 4);
                 else if ((w & 0xff00) === 0x8400 || (w & 0xff00) === 0x8500) r[0] = load(r[m], (w & 15) * (w & 0x100 ? 2 : 1), w & 0x100 ? 2 : 1);
                 else if ((w & 0xff00) === 0xc900 || (w & 0xff00) === 0xcb00) r[0] = plain(r[0]) ? { ...r[0], [w & 0x0200 ? 'or' : 'and']: w & 0xff } : null;   /* a bit set or cleared */
                 else if ((w & 0xff00) === 0xca00) r[0] = null;
@@ -529,7 +537,7 @@ export function flagSides(game, start, at) {
                     /* T is set when the tested bits are clear */
                     const ways = p.t === 'set' ? [!jumpIfT] : p.t === 'clear' ? [jumpIfT] : [true, false];
                     p.t = null;
-                    for (const jump of ways.slice(1)) todo.push({ pc: jump ? d8 : fall, r: [...r], t: null, seen: new Set(p.seen), mac: p.mac });
+                    for (const jump of ways.slice(1)) todo.push({ pc: jump ? d8 : fall, r: [...r], t: null, seen: new Set(p.seen), mac: p.mac, div: { ...p.div } });
                     pc = ways[0] ? d8 : fall;
                     continue;
                 }

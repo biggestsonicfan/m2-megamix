@@ -757,7 +757,9 @@ flags behind them", is set. None of these sides reaches the 0.8 distance
 check or `+0` bit 0x10000000. The flags tested at 0x0600ed36, 0x0600ed64,
 0x0600ee44 and 0x0600f340 are left undescribed.
 `tests/fm-saturn.test.mjs` checks this section the same way as the one
-before it.
+before it, and also reads 0x0600ee16's two end conditions (the compares
+before each branch, in order) and 0x0600ed2a's divide (what goes into the
+divide unit's dividend and divisor) off the disc.
 
 ### Slots
 

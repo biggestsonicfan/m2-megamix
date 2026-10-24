@@ -323,6 +323,42 @@ const asLongFlag = ({ field, size }, mask) => ({ field: field & ~3, mask: (mask 
 const fixed = (k, d) => assert.equal(+(k / 65536).toFixed(d.split('.')[1]?.length ?? 0), +d, `${h(k, 8)} is ${d}`);
 const FLAG = String.raw`(?:the opponent's )?\+0x[\da-f]+ & 0x[\da-f]{8}`;
 const eventFlag = e => `${e.of === 13 ? 'the opponent\'s ' : ''}${flagText(e.field, e.mask)}`;
+/* "with C, or C, ..., ends this frame's run (X); else stops at Y": walks the
+ * side from its start, through loads and moves only; at each bt/bf it reads
+ * the compare before it from the disc ("+A and +B both 0": or of the two
+ * fields, then tst; "the halfword +A at K or less": cmp/ge of the field
+ * against K) and the way the compare holds must be a bra to X; the other way
+ * goes on, until Y. Returns the conditions in the order the code tests them. */
+function endConditions(from, end, until) {
+    const out = [], d8 = a => ((word(a) & 0xff) << 24 >> 24) * 2 + a + 4, d12 = a => ((word(a) & 0xfff) << 20 >> 20) * 2 + a + 4;
+    const ends = a => a === end || ((word(a) & 0xf000) === 0xa000 && d12(a) === end && word(a + 2) === 0x0009);
+    const field = v => v?.field !== undefined ? `${v.size === 2 ? 'the halfword ' : ''}+${h(v.field, 2)}` : null;
+    for (let pc = from, n = 0; pc !== until; n++) {
+        assert.ok(n < 64, `${h(from, 8)}: no way to ${h(until, 8)}`);
+        const w = word(pc);
+        if ((w & 0xf000) === 0xa000) { assert.equal(word(pc + 2), 0x0009, h(pc, 8)); pc = d12(pc); continue; }
+        if ((w & 0xfd00) === 0x8900) {
+            const c = word(pc - 2), reg = (a, r) => FM.handlerReg(game, run9, a, r);
+            let cond;
+            if ((c & 0xf00f) === 0x2008 && ((c >> 8) & 15) === ((c >> 4) & 15) && (word(pc - 4) & 0xf00f) === 0x200b && ((word(pc - 4) >> 8) & 15) === ((c >> 8) & 15)) {
+                const o = word(pc - 4), [x, y] = [reg(pc - 4, (o >> 4) & 15), reg(pc - 4, (o >> 8) & 15)].map(field);
+                cond = x && y && `${x} and ${y} both 0`;
+            } else if ((c & 0xf00f) === 0x3003) {   /* cmp/ge Rm,Rn: T when Rn >= Rm */
+                const k = reg(pc - 2, (c >> 8) & 15), x = field(reg(pc - 2, (c >> 4) & 15));
+                cond = typeof k === 'number' && x && `${x} at ${k} or less`;
+            }
+            assert.ok(cond, `${h(pc - 2, 8)}: no compare read`);
+            const [whenT, otherwise] = w & 0x0200 ? [pc + 2, d8(pc)] : [d8(pc), pc + 2];
+            assert.ok(ends(whenT) && !ends(otherwise), `${h(pc, 8)}: ${cond} does not end the run at ${h(end, 8)}`);
+            out.push(cond);
+            pc = otherwise;
+            continue;
+        }
+        assert.ok(FM.handlerStore(game, run9, pc) === null && w !== 0x400b && (w & 0xf0ff) !== 0x402b && w !== 0x000b && w !== 0x4e2b, `${h(pc, 8)}: not a load or a move`);
+        pc += 2;
+    }
+    return out;
+}
 /* text: the section; flags: the section whose stops are its rows; behind:
  * the flags a "stops at" may not name */
 function checkStops(text, flags, behind) {
@@ -349,6 +385,10 @@ function checkStops(text, flags, behind) {
                 assert.ok(!behind.has(f), `${where}: ${f} is one it may not stop at`);
                 const k = cell.slice(cell.indexOf(all) + all.length).match(/^, the flag (0x[\da-f]{8}) tests/);
                 if (k) assert.equal(rowFlag.get(k[1]), f, `${where}: the flag ${k[1]} tests`);
+            }
+            for (const [all, conds, x, y] of cell.matchAll(/with ((?:(?:, or )?(?:the halfword )?\+0x[\da-f]+ (?:and \+0x[\da-f]+ both 0|at -?\d+ or less))+), ends this frame's run \((0x[\da-f]{8})\); else stops at (0x[\da-f]{8})/g)) {
+                const b = word(at + 2), target = ((b & 0xff) << 24 >> 24) * 2 + at + 6, from = (b & 0x0200 ? [target, at + 4] : [at + 4, target])[s];
+                assert.deepEqual(endConditions(from, parseInt(x, 16), parseInt(y, 16)), conds.split(', or '), `${where}: ${all}`);
             }
             /* "goes on to the test at": a test of one of this table's own flags */
             for (const [all, a, f] of cell.matchAll(new RegExp(String.raw`goes on to the test at (0x[\da-f]{8}) \((${FLAG})\)`, 'g'))) {
@@ -396,6 +436,11 @@ function checkStops(text, flags, behind) {
                     else if (verb === 'limits' && (c = after.match(/to ±(0x[\da-f]+) \(([\d.]+)\)/) ?? cell.slice(m.index).match(/to ±(0x[\da-f]+) \(([\d.]+)\)/))) {
                         assert.deepEqual([...e.values].sort((p, q) => p - q), [-parseInt(c[1], 16), parseInt(c[1], 16)], `${where}: ${a} limits`);
                         fixed(parseInt(c[1], 16), c[2]);
+                    } else if (verb === 'sets' && (c = cell.slice(m.index + m[0].length).match(/^ to \+(0x[\da-f]+) less \+(0x[\da-f]+), over the halfword \+(0x[\da-f]+), with the divide unit/))) {
+                        /* the divide unit's quotient: the value this side put in the first field, less the second, over the halfword */
+                        const put = events.filter(p => p.kind === 'store' && p.field === parseInt(c[1], 16) && p.at < x);
+                        assert.equal(put.length, 1, `${where}: ${a}: one store to +${c[1]} before it`);
+                        assert.deepEqual(e.values, [{ quot: { less: [put[0].values[0], { field: parseInt(c[2], 16), size: 4 }] }, by: { field: parseInt(c[3], 16), size: 2 } }], `${where}: ${a} divides`);
                     } else if (verb === 'sets' && (c = cell.slice(m.index).split(/[;:]/)[0].match(/to themselves times (0x[\da-f]{8}) \(([\d.]+)\)/))) {
                         assert.deepEqual(e.values, [{ field: e.field, size: e.size, times: parseInt(c[1], 16) }], `${where}: ${a} times`);
                         fixed(parseInt(c[1], 16), c[2]);
@@ -482,6 +527,11 @@ for (const [from, to] of [['| 0x0600ed2a | +0x6c0 & 0x00000040 |', '| 0x0600ed2a
     ['clears +0x20 (0x0600f324) and +0x28 (0x0600f326) and puts 0x07ae (0.03) in +0x24 (0x0600f32a); ends this frame\'s run (0x0600f3f6) |\n\n', 'clears +0x20 (0x0600f324) and puts 0x07ae (0.03) in +0x24 (0x0600f32a); ends this frame\'s run (0x0600f3f6) |\n\n'],
     ['The five flag tests', 'The four flag tests'], ['clear, nothing changes before 0x0600ed36', 'clear, nothing changes before 0x0600ed64'],
     ['set, nothing changes before 0x0600ee16', 'set, nothing changes before 0x0600ed64'], ['held within ±0.04', 'held within ±0.05'],
+    ['to +0x6f0 less +0x10,', 'to +0x6f0 less +0x14,'], ['to +0x6f0 less +0x10,', 'to +0x658 less +0x10,'], ['over the halfword +0x646,', 'over the halfword +0x644,'],
+    ['with +0x514 and +0x51c both 0', 'with +0x514 and +0x518 both 0'], ['the halfword +0x4a8 at 1 or less', 'the halfword +0x4a8 at 2 or less'],
+    ['the halfword +0x4a8 at 1 or less', 'the halfword +0x4aa at 1 or less'], ['the halfword +0x4a8 at 1 or less', '+0x4a8 at 1 or less'],
+    ['with +0x514 and +0x51c both 0, or the halfword +0x4a8 at 1 or less', 'with the halfword +0x4a8 at 1 or less, or +0x514 and +0x51c both 0'],
+    ['with +0x514 and +0x51c both 0, or the halfword +0x4a8 at 1 or less', 'with +0x514 and +0x51c both 0'],
     ['0x0600ed64,\n0x0600ee44', '0x0600ee44'], ['0x0600ee44 and 0x0600f340 are', '0x0600ee44, 0x0600ee16 and 0x0600f340 are']]) {
     assert.ok(thoseDoc.includes(from), from);
     assert.throws(() => checkStops(thoseDoc.replace(from, to), stopsDoc, theirStops), `${from} -> ${to}`);
