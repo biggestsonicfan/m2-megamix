@@ -473,6 +473,8 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
             switch (op) {
             case 4: o = [4, b[1], b[2], damage(b[3]), 0, ...b.subarray(8, 17), ...f32(2.0)]; if (b.subarray(4, 8).some((x) => x)) lost.strikeBytes++; break;
             case 5: o = [...b, 0, 0, 0, 0]; put16(o, 1, mid(b[1] | (b[2] << 8))); o[3] = damage(b[3]); break;
+            /* Op 3's float at +7 is 0x81C, the height a jump lands at: VF2's units. */
+            case 3: o = [...b]; o.splice(7, 4, ...f32(new DataView(b.buffer, b.byteOffset + 7, 4).getFloat32(0, true) * SCALE)); break;
             case 6: o = [7, b[3], b[4]]; if (b[1] || b[2]) lost.op6Bytes++; break;
             case 0xc: o = [0xc, 0, b[1], b[2]]; break;
             case 1: o = [...b]; put16(o, 1, mid(b[1] | (b[2] << 8))); break;
@@ -664,8 +666,14 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
         rv.setUint32(0, list, true); rv.setUint32(4, skel, true); rv.setUint32(8, list, true); rv.setUint32(0xc, actionsAt, true);
         /* +0x20, the jump's frames (rob+0x5BE; the second byte on action
          * bit 18): VF2's exec_command (V 0x14828) takes record +0x4C, or 32
-         * on bit 18 (docs/SHARED-CODE.md, D3). */
-        rv.setUint32(0x20, alloc(Uint8Array.of(d8(body.root + VF2_JUMP_TIME), 32), `jump time ${p ? 'P2' : 'P1'}`, 1), true);
+         * on bit 18 (docs/SHARED-CODE.md, D3). Its floats at +4..+0x10 are
+         * the reach (rob+0x724..0x730, by action bits 17/18/21; the jump goes
+         * that far a frame): VF2's exec_action (V 0x15404) has 0.05 for every
+         * kind, in StF's units here. */
+        const jump = new Uint8Array(0x14);
+        jump[0] = d8(body.root + VF2_JUMP_TIME); jump[1] = 32;
+        for (let i = 4; i < 0x14; i += 4) new DataView(jump.buffer).setFloat32(i, Math.fround(0.05) * SCALE, true);
+        rv.setUint32(0x20, alloc(jump, `jump ${p ? 'P2' : 'P1'}`, 4), true);
         /* +0x14, the weight: action_init puts it in rob+0x7DC and, with
          * sub_3261C's, rob+0x5D8 (rob_spd_control's slide, how far hits push
          * him). VF2's init_fix takes record +0x2C (docs/SHARED-CODE.md, D1). */

@@ -444,25 +444,9 @@ static void slot_mat(mat_t *m, u32 p, u32 slot) {
     for (i = 0; i < 3; i++) m->t[i] = m2_cop_gf();
 }
 
-/* Points in slot c's frame carried into slot h's: H^-1 C p for each (the
- * slots' matrices may be scaled, so H^-1 by its cofactors). */
-static void carry(const mat_t *h, const mat_t *c, const float (*in)[3], float (*out)[3], u32 n) {
-    float d[3], x[3][3], det;
-    u32 k, j, i;
-    /* x[i]: H's other two columns crossed, so (H^-1 d)[i] = d . x[i] / det */
-    for (i = 0; i < 3; i++) {
-        const float *u = &h->r[((i + 1u) % 3u) * 3u], *v = &h->r[((i + 2u) % 3u) * 3u];
-        x[i][0] = u[1] * v[2] - u[2] * v[1];
-        x[i][1] = u[2] * v[0] - u[0] * v[2];
-        x[i][2] = u[0] * v[1] - u[1] * v[0];
-    }
-    det = h->r[0] * x[0][0] + h->r[1] * x[0][1] + h->r[2] * x[0][2];
-    for (k = 0; k < n; k++) {
-        for (j = 0; j < 3; j++)
-            d[j] = c->r[j] * in[k][0] + c->r[3 + j] * in[k][1] + c->r[6 + j] * in[k][2] + c->t[j] - h->t[j];
-        for (i = 0; i < 3; i++) out[k][i] = (d[0] * x[i][0] + d[1] * x[i][1] + d[2] * x[i][2]) / det;
-    }
-}
+/* Points in slot c's frame carried into slot h's: H^-1 C p for each
+ * (carry.c, on the i960's floating point). */
+extern void carry(const mat_t *h, const mat_t *c, const float (*in)[3], float (*out)[3], u32 n);
 
 /* The midriff of a VF2 or Fighting Vipers fighter (the guest table midriff,
  * by drawn character; tools/vf2-guest.mjs): the band from a ring on the

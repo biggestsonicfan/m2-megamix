@@ -128,7 +128,26 @@ GAMES = [('STF', 0), ('VF2', 1), ('FV', 2)]      # char_game's values (GAME_<nam
 # fighter's character plays instead (motion_remap; 0: its own). A guest's
 # take the place of the ids StF's code plays by number; StF's fighters', of
 # the ones a guest's throw gives its victim.
+# ACT_RC_JUMP's takeoff: a VF2 fighter jumps under VF2's gravity in StF's
+# units (0x3B32674F * SCALE = 0x3BB4D327; StF's 0x50A000 is 9.27x VF2's, not
+# SCALE). Gravity each frame is 0x50A000 - rob+0x5CC, so 0x5CC takes the
+# difference; the next set_motion (landing, a hit) clears it.
+# ACT_RC_JUMP's landing, r5 the jump's reach (r8 the wall ahead, r9 the
+# opponent): a VF2 fighter's as VF2's exec_action (V 0x15444) clamps it, short
+# of the wall by 0.6 and outside the opponent's +-0.9, in StF's units (* SCALE:
+# 0x3F9BAF44, 0x3FE986E6), where StF has no wall and +-0.4.
 INSERT = {
+    'loc_13F18': ['ldob    0x1B1(g7), r3', 'ldob    guest_char_game[r3], r3',
+                  'cmpobne GAME_VF2, r3, loc_13F18_own', 'lda     0x3F9BAF44, r13',
+                  'subr    r13, r8, r3', 'cmpible r5, r3, loc_13F18_wall', 'mov     r3, r5',
+                  'loc_13F18_wall:', 'lda     0x3FE986E6, r4', 'addr    r4, r9, r3',
+                  'cmpibge r5, r3, loc_13F98', 'subr    r4, r9, r3',
+                  'cmpible r5, r3, loc_13F98', 'mov     r3, r5', 'b       loc_13F98',
+                  'loc_13F18_own:'],
+    'loc_13E2C': ['ldob    0x1B1(g7), r3', 'ldob    guest_char_game[r3], r3',
+                  'cmpobne GAME_VF2, r3, loc_13E2C_own', 'ld      stf_ram_50A000+0x0, r3',
+                  'lda     0x3BB4D327, r4', 'subr    r4, r3, r3', 'st      r3, 0x5CC(g7)',
+                  'loc_13E2C_own:'],
     'loc_1B044': ['ldob    0x1B1(g7), r4', 'ld      guest_motion_remap[r4*4], r4',
                   'cmpobe  0, r4, loc_1B044_own', 'lda     0x1FFF, r5', 'and     r5, g0, r6',
                   'ldos    (r4)[r6*2], r6', 'cmpobe  0, r6, loc_1B044_own', 'andnot  r5, g0, g0',

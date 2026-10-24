@@ -212,7 +212,14 @@ Branches on `char_game` (the shared code differs):
 - **B9 Jump reach and landing.** `exec_action` JUMP: StF's reach is 0.09,
   0.07, 0.16, 0.12 by jump kind, VF2's 0.05 (about 0.10 in StF's units);
   VF2 clamps at the wall and lands in ±0.9, StF ±0.4. At `loc_13EE4`,
-  `loc_13F18`.
+  `loc_13F18`. *Done (#1556):* a VF2 guest's record +0x20 block holds
+  0.05 × SCALE for all four kinds (it was two bytes, the reach floats read
+  past it); `lift-stf.py` branches at `loc_13F18` on `GAME_VF2` to VF2's
+  clamp (0.6, ±0.9, × SCALE); at `loc_13E2C` it sets rob+0x5CC so the jump
+  falls under VF2's gravity × SCALE; and `convertSetup` scales op 3's
+  landing height (0x81C). Akira's jump on the board: 32 frames, peak 2.916
+  at frame 25 (VF2 1.4386 × SCALE), forward to the band's edge; MAME and
+  m2-hle2 agree.
 - **B10 Get-ups.** `exec_action` RISE: VF2 picks among 46 (actions 31..80)
   by wall and ring-edge tests, StF's slots hold 11. His whole 84-entry
   action list as a guest table, and branches at S 0x14D68 and `loc_14DC4`.
@@ -563,7 +570,7 @@ StF labels are from rom_code1.asm (ACTUAL_MOVES, line 28271). VF2 addresses are 
      - StF also has an extra rule at 0x13f40 (0x5f4 < 0.8 and the opponent's 0x710 > 1.35).
    - (c) Target jump (19c bit 20): StF reads 0x6c8 and adds 0x8000 to the angle when 5b8 bit 0; VF2 reads 0x698 with no flip.
    - (c) Sound ids: StF 0xae1100/0xae1101 vs VF2 0x9e0e5f/0x9e0d5f. The board needs the guest's sound mapping here, if sounds are carried over at all.
-   - Board: Akira's jumps go about 0.09 instead of about 0.10 (×0.07-0.16 by kind), and land closer to the opponent (0.4 band, not 0.9) with no wall clamp. Recommendation: branch on char_game at loc_13EE4 / loc_13F18 to use 0.05×SCALE, VF2's ±0.9 band and the wall clamp. The bounce depends on [0x500828]+0x164; reading it during a board match would settle that.
+   - Board: done in #1556 (B9): 0.05×SCALE in the guest's +0x20 block, VF2's ±0.9 band and wall clamp in a branch at loc_13F18. The bounce depends on [0x500828]+0x164; reading it during a board match would settle that.
 5. **TA_GUARD**, a→7 (VF2 0x14e78, 32 instructions / StF 0x1390c, 13 instructions). Everything here is VF2-only (b):
    - If the opponent's 0x6b4 bit 0 (StF 0x6d4) is set, calls 0x1b694 (= sub_1CED4) and clears 1a4 bit 0.
    - When crouched, plays action 12 (motion 0xe8) instead of action 8.
@@ -799,7 +806,8 @@ Copro protocol differences (StF rotate ops 0x08/0x09/0x0a with an inline angle v
 Lifted lines are board/src/stf_motion.s's. "rob" fields are StF's layout unless marked VF2. VF2's
 record pointer is `ld 0x200620C[rob+0x1B0*4]` (VF2 init_fix 0x13F10, kept at rob+0x190 as in StF).
 The board runs StF's game globals: gravity 0x50A000 = 0.0252222 (0x3CCE9ED5) where VF2 has 0.0027222
-(0x3B32674F), 9.27x, not SCALE (2.0271); 0x50A004 = 1.0, 0x50A008 = 10.0 in both.
+(0x3B32674F), 9.27x, not SCALE (2.0271); 0x50A004 = 1.0, 0x50A008 = 10.0 in both. A VF2 guest's
+jump takes the difference in rob+0x5CC (B9), so it falls at 0x3B32674F × SCALE.
 
 ### set_coli_ball_data (StF 0x17C14, lifted 6278 / VF2 0x176A0)
 1. Sends each of a fighter's collision balls (list by player g0) through the coprocessor's transform.

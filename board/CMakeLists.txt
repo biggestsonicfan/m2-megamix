@@ -34,11 +34,14 @@ set(M2_STARTUP_ASM
     ${M2_SDK}/src/i_table.s
     ${M2_SDK}/src/i_handle.s)
 
-add_executable(game.elf ${M2_STARTUP_ASM} src/megamix.c src/stf_call.s src/stf_motion.s)
+add_executable(game.elf ${M2_STARTUP_ASM} src/megamix.c src/carry.c src/stf_call.s src/stf_motion.s)
 # StF's motion code keeps its ROM tables' addresses (.stfrom, 0x80000..0xFFFFF).
 set_source_files_properties(src/stf_motion.s PROPERTIES
     COMPILE_OPTIONS "-Wa,-I${CMAKE_SOURCE_DIR}/src"
     OBJECT_DEPENDS "${CMAKE_SOURCE_DIR}/src/stf_rom_80000.bin")
+# carry.c alone on the i960's floating point (the rest is soft-float, below):
+# its last -mnumerics wins over the target's -msoft-float.
+set_source_files_properties(src/carry.c PROPERTIES COMPILE_OPTIONS "-mnumerics")
 target_include_directories(game.elf PRIVATE src "${M2_SDK}/src")
 target_compile_options(game.elf PRIVATE $<$<COMPILE_LANGUAGE:C>:-O2>)
 target_compile_definitions(game.elf PRIVATE $<$<COMPILE_LANGUAGE:C>:M2_API=>)

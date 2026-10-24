@@ -101,6 +101,14 @@ pass takes 8.2 ms on South Island and 9.2 ms on Aurora Icefield (10.3 ms
 at most) in MAME. A pass that runs long still steps once per vblank it
 took.
 
+The board's C is soft-float (`M2_SOFTFLOAT`), all but `src/carry.c`, built
+with `-mnumerics` for the i960's own `mulr`/`addr`/`divr` as the lifted
+code is. It carries points from one slot's frame into another's (Ryo's
+seams and midriff, `megamix.c`); in soft-float its matrix setup took 6.75
+ms of a 7.4 ms call, and Ryo's twelve seams held the board to 30 fps (his
+`draw_fighter` 10 ms a pass where Akira's is 0.9 ms). Floats cross the two
+conventions by pointer only.
+
 Graded against VF2 (MAME `vf2`, Akira vs Lau, the same inputs: walk
 forward, punch, kick, walk back, crouch): the board plays the same motions
 with the same blends (`smooth_int` modes, length 8), flags and lengths.
