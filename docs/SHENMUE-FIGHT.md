@@ -297,6 +297,7 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
   00 00                                 s16 LE angle, 0x10000 = 360°: 0 (see "The angle after the number")
   00                                    u8: 0 (see "The byte after the angle")
   00                                    bits, not a number: 0 (see "The bits after that byte")
+  00 00 00 00 00 00 00 00               strikes only, not decoded: all 0 (see "The bytes after the bits")
   …
   ```
 
@@ -464,6 +465,39 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
     (93 of 104 groups found here), never 0 as on every strike. So the strike
     group runs longer than the throw group. The bytes after this one aren't
     decoded.
+- **The bytes after the bits (strikes only):** not decoded. Elbow Slam and
+  Twist Knuckle have the same eight bytes there, all 0, so they can't show
+  a field's width or give a number other than 0. The strikes that aren't 0
+  there don't line up as one field. Throws aren't read here (their next
+  byte is 0x0C, 0x08 or 0x0F; see the bits part).
+
+  | Move | Record | Bits | The 8 bytes after the bits | Next byte |
+  |---|---|---|---|---|
+  | Elbow Slam | 846 | 00 | 00 00 00 00 00 00 00 00 | 0b |
+  | Twist Knuckle | 793 | 80 | 00 00 00 00 00 00 00 00 | 0b |
+  | Upper Knuckle, Rain Thrust, Trample Kick | 836, 792, 848 | 80, 00, 00 | 00 00 00 00 00 00 00 00 | 0b |
+  | AKI_AKI_HIZA, JEF_TA_SU_UPPER, TAO_PU_09_00 and 7 more | 847, 1102, 510 … | 00, c0, 20 … | 00 01 00 00 00 00 00 00 | 0b (9), 0c (1) |
+  | JU_KI_SYO_M | 342 | 40 | 00 00 05 00 00 00 00 00 | 03 |
+  | AKI_AKI_OK_AO_KAITEN, _UTU_KAITEN | 1355, 1356 | 04 | 00 00 0c 11 11 00 00 00 | 08, 0c |
+  | AKIRA_SY_KI_SYO_L_VF3 | 16 | 00 | 00 00 00 13 17 00 00 00 | 0b |
+
+  - **Across the 231 strikes:** the eight bytes are all 0 on 217. The first
+    is 0 on all 231, and so are the sixth to eighth. The second is 1 on 10
+    and 0 elsewhere. The third to fifth are not 0 on 4 records only, each a
+    different shape (05; 0c 11 11; 13 17).
+  - **No one reading fits them:** the second byte is 0 or 1 with the first 0
+    beside it (one byte, or a u16 that is 0x0100 little-endian or 1
+    big-endian, can't be told apart), and the four odd records put their
+    non-zero bytes at different places and widths. With Elbow Slam and Twist
+    Knuckle both all 0, the data doesn't say whether this is one field,
+    several, or padding.
+  - **Where the span ends:** the ninth byte after the bits (0x0B on 126
+    strikes, then 0x0C, 0x06, 0x08, 0x03 …) varies, and on the 217 all-zero
+    strikes it takes the same values (0x0B 116, 0x0C 34, 0x06 23, 0x08 19 …).
+    0x0C and 0x08 are also what follows the bits on throws. So the eight
+    bytes look like a strike-only span before a next part that strikes and
+    throws share. That isn't checked further, and the ninth byte on isn't
+    decoded.
 - **Counting kind-5 groups (86, 88, 104):** the three counts are the same
   layout (header, one tag-2 block, kind 5) with different checks on the
   tag-2 words. The scans didn't walk off the hit block.
@@ -522,8 +556,10 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
   group is read (0.7 on Elbow Slam) but not named, and so are the angle after
   it (0° on Elbow Slam), the byte after that (0 on Elbow Slam, 0 on every
   throw) and the set of bits after that (none on Elbow Slam, 0x80 on Twist
-  Knuckle, none on every throw). After those bits strikes and throws
-  diverge; the record's other fields aren't decoded.
+  Knuckle, none on every throw). After those bits strikes have eight bytes,
+  all 0 on Elbow Slam and Twist Knuckle and on 217 of 231 strikes; their
+  width isn't settled (see "The bytes after the bits"). The record's other
+  fields aren't decoded.
 
 ## Other leads
 
