@@ -12,8 +12,8 @@ in `docs/VF3-SHENMUE.md` and `tools/shenmue-motion.mjs` on branch
 - Each fighter's moves are a script in `EN_<NAME>.BIN`. The script maps a button
   and a direction sequence to a skill, an action number and a motion id.
 - The Passport (0.300) has no EN_ files. Discs 1-3 of 0.400 have them.
-- Still not found: damage and frame data, and a check that the motion ids name
-  the right MOTION.BIN entries (see "Open").
+- A motion id k is MOTION.BIN's record k − 1 (see "Motion ids").
+- Still not found: damage and frame data (see "Open").
 
 ## Reading the discs
 
@@ -120,7 +120,7 @@ group and a u16 zero.
   - Those under 0x50 are kept as the last attack.
   - The script's first instruction sets action 0x50.
 - **play's word:**
-  - The low 16 bits are a motion id.
+  - The low 16 bits are a motion id, one-based: see "Motion ids".
   - Bit 28 (0x10000000) marks every throw and Swallow Flip: the paired motions.
   - FUN_0c1e867e (P) dispatches on one byte of the word through a table at
     0x0C1E8730. Its kinds are not decoded.
@@ -150,69 +150,90 @@ From `skills … --json`, one row per skill:
 
 - **Directions:** the checks in script order. They match the pad history, which
   is probably scanned newest first.
-- **Motion:** the play that follows the skill check, as a MOTION.BIN index with
-  the name #1505's list gives it. A `*` marks bit 28 (paired).
+- **Motion:** the play that follows the skill check: its motion id, and the
+  name of MOTION.BIN record id − 1. A `*` marks bit 28 (paired).
 
 | Skill | Id | Button | Directions | Action | Motion (MOTION.BIN name) |
 |---|---|---|---|---|---|
-| Mistral Flash | 12 | P | – | 0x0c | lv1 1203 AKI_AKI_NGS_JUDO_OG |
-| Twin Blades | 17 | P | held dir180 0 dir180 dir0 dir0 0 | 0x11 | lv2 779 AKI_AKI_BATTLE_IDO_FRONT |
-| Rain Thrust | 6 | P | held dir180 dir0 dir0 0 | 0x06 | lv1 793 AKI_AKI_BATTLE_PNC_FUK |
-| Elbow Assault | 3 | P | held dir180 0 held dir180 | 0x03 | lv1 1007 AKI_AKI_SAKE_MID_PNC_R_D |
-| Pit Blow | 13 | P | held dir180 | 0x0d | lv2 1165 AKI_AKI_KONGO_TYUKEN_B_MID |
-| Elbow Slam | 1 | P | held dir180 | 0x01 | lv1 847 AKI_AKI_HIZA |
-| Rising Flash | 16 | P | held dir0 0 dir0 dir180 dir180 0 | 0x10 | lv2 1145 AKI_AKI_BATTLE_PANCH_FUC_MISS2 |
-| Sleeve Strike | 5 | P | held dir0 dir180 dir180 0 | 0x05 | lv1 867 AKI_AKI_KICK_BACKROLL_JUMP |
-| Upper Knuckle | 4 | P | held dir0 0 held dir0 | 0x04 | lv1 837 AKI_AKI_BATTLE_ROLL_KICK_MID |
-| Swallow Flip | 15 | P | held dir0 | 0x0f | lv1 1178* YKI_AKI_NGR_ENSEI |
-| Twist Knuckle | 2 | P | held dir0 | 0x02 | lv1 794 AKI_AKI_BATTLE_SEIKEN_MID |
-| Cyclone Kick | 41 | K | – | 0x29 | lv2 1142 AKI_AKI_KEGA |
-| Mud Spider | 47 | K | held dir180 0 dir180 dir0 dir0 0 | 0x2f | lv2 1149 AKI_AKI_NGS_BKFRIP |
-| HoldAgainstLeg | 38 | K | held dir180 dir0 dir0 0 | 0x26 | lv1 789 AKI_AKI_BATTLE_KIC_SAC |
-| Tornado Kick | 44 | K | held dir180 0 held dir180 | 0x2c | lv1 1213 AKI_AKI_BAT_KICK_NIREN2_TOP |
-| AgainstCascade | 35 | K | held dir180 0 held dir180 | 0x23 | lv2 1438 AKI_AKI_KICK_KKT_S1 |
-| Trample Kick | 33 | K | held dir180 | 0x21 | lv1 849 AKI_AKI_SEKKIN_KAMAE_LP |
-| Crawl Cyclone | 46 | K | held dir0 0 dir0 dir180 dir180 0 | 0x2e | lv2 1107 AKI_AKI_NGS_LOW_L |
-| Thunder Kick | 37 | K | held dir0 dir180 dir180 0 | 0x25 | lv2 1439 AKI_AKI_KONGO_TYUKEN_C_MID |
-| Surplice Slash | 36 | K | held dir0 0 held dir0 | 0x24 | lv1 1328 AKI_AKI_KICK_HAZ_TOBI_TOP |
-| Swallow Dive | 43 | K | held dir0 | 0x2b | lv2 1433 AKI_AKI_KICK_ENSEN2_S1 |
-| SideReaperKick | 34 | K | held dir0 | 0x22 | lv1 788 AKI_AKI_BATTLE_KICK_SID |
-| Tiger Storm | 75 | throw | held dir180 0 dir180 dir0 dir0 0 | 0x4b | lv1 1151* AKI_AKI_DOWN_BOMBER_L; lv2 930* AKI_AKI_NGS_SEOI |
-| Tengu Drop | 70 | throw | held dir180 dir0 dir0 0 | 0x46 | lv1 1150* AKI_AKI_NGS_HED_1 |
-| Mist Reaper | 67 | throw | held dir180 0 held dir180 | 0x43 | lv1 1204* AKI_AKI_NGS_JUDO_TM |
-| Sweep Throw | 65 | throw | held dir180 | 0x41 | lv1 1476* AKI_AKI_SY_B_CHOP_01 |
-| Arm Break Fire | 74 | throw | held dir0 0 dir0 dir180 dir180 0 | 0x4a | lv1 918* AKI_AKI_NGS_SP2_WAK |
-| Shoulder Buster | 69 | throw | held dir0 dir180 dir180 0 | 0x45 | lv1 1526* AKI_AKI_NGS_WUDE2 |
-| Demon Drop | 68 | throw | held dir0 0 held dir0 | 0x44 | lv1 1292* YKI_AKI_DOWN_FLY_BACK1 |
-| Vortex Throw | 66 | throw | held dir0 | 0x42 | lv1 1205* AKI_AKI_NGS_YAG_TENTI |
-| Windmill | 42 | P+K | – | 0x2a | lv1 1329 JIJ_YAM_YAG_ITIMON |
-| TwinSwallowLeap | 48 | P+K | held dir180 0 dir180 dir0 dir0 0 | 0x30 | lv2 586 AKI_AKI_CHP_MON_MK |
-| Dark Moon | 40 | P+K | held dir180 dir0 dir0 0 | 0x28 | lv2 1431 AKI_AKI_KICK_BACKROLL_S1 |
-| AvalancheLance | 10 | P+K | held dir180 0 held dir180 | 0x0a | lv2 1290 AKI_AKI_KICK_DRAGON |
-| Double Blow | 14 | P+K | held dir180 | 0x0e | lv2 1445 AKI_AKI_YAG_ITIMON2_MID_S1 |
-| TwinHandWaves | 8 | P+K | held dir180 | 0x08 | lv1 1422 AKI_AKI_SY_HARAI |
-| Stab Armor | 18 | P+K | held dir0 0 dir0 dir180 dir180 0 | 0x12 | lv2 1428 AKI_AKI_BAT_KICK_KKT_HIT |
-| Brutal Tiger | 39 | P+K | held dir0 dir180 dir180 0 | 0x27 | lv2 1432 AKI_AKI_KICK_ENSEN1_S1 |
-| KatanaMistSlash | 11 | P+K | held dir0 0 held dir0 | 0x0b | lv1 1289 AKI_AKI_ELB_ROLL_TOP |
-| Backfist Willow | 9 | P+K | held dir0 | 0x09 | lv1 898 YKI_AKI_TUKAMI_SEOI_NAGERARE |
-| Big Wheel | 7 | P+K | – | – | lv2 1427 AKI_AKI_BATTLE_PNC_SHOTEI_S1 |
-| Shadow Reaper | 49 | 0x0A | – | 0x31 | lv2 1443 AKI_AKI_TT_NGS_SINKUU_S1 |
-| Cross Charge | 77 | 0x18 | held dir180 0 held dir180 | 0x4d | lv1 929* AKI_AKI_NGS_HED_2_S1 |
+| Mistral Flash | 12 | P | – | 0x0c | lv1 1203 AKI_AKI_BAT_RUN_ELB_TOP_R |
+| Twin Blades | 17 | P | held dir180 0 dir180 dir0 dir0 0 | 0x11 | lv2 779 DMY_AKI_AKI_CHP_MON |
+| Rain Thrust | 6 | P | held dir180 dir0 dir0 0 | 0x06 | lv1 793 AKI_AKI_BATTLE_PANCH_STR |
+| Elbow Assault | 3 | P | held dir180 0 held dir180 | 0x03 | lv1 1007 AKI_AKI_RIMONT_MID |
+| Pit Blow | 13 | P | held dir180 | 0x0d | lv2 1165 AKI_AKI_KONGO_TYUKEN_A_MID |
+| Elbow Slam | 1 | P | held dir180 | 0x01 | lv1 847 AKI_AKI_ELBOW |
+| Rising Flash | 16 | P | held dir0 0 dir0 dir180 dir180 0 | 0x10 | lv2 1145 AKI_AKI_NEWAP_S1 |
+| Sleeve Strike | 5 | P | held dir0 dir180 dir180 0 | 0x05 | lv1 867 AKI_AKI_BATTLE_SEIKEN2_MID |
+| Upper Knuckle | 4 | P | held dir0 0 held dir0 | 0x04 | lv1 837 AKI_AKI_BATTLE_PNC_APR |
+| Swallow Flip | 15 | P | held dir0 | 0x0f | lv1 1178* AKI_AKI_NGS_INASI |
+| Twist Knuckle | 2 | P | held dir0 | 0x02 | lv1 794 AKI_AKI_BATTLE_PNC_FUK |
+| Cyclone Kick | 41 | K | – | 0x29 | lv2 1142 AKI_AKI_KICK_BACKROLL_JUMP_S1 |
+| Mud Spider | 47 | K | held dir180 0 dir180 dir0 dir0 0 | 0x2f | lv2 1149 AKI_AKI_KICK_SUBERI_S1 |
+| HoldAgainstLeg | 38 | K | held dir180 dir0 dir0 0 | 0x26 | lv1 789 AKI_AKI_BATTLE_KICK_SID |
+| Tornado Kick | 44 | K | held dir180 0 held dir180 | 0x2c | lv1 1213 AKI_AKI_BAT_KICK_NIREN1_TOP |
+| AgainstCascade | 35 | K | held dir180 0 held dir180 | 0x23 | lv2 1438 AKI_AKI_KICK_KERIAGE |
+| Trample Kick | 33 | K | held dir180 | 0x21 | lv1 849 AKI_AKI_MAEGERI |
+| Crawl Cyclone | 46 | K | held dir0 0 dir0 dir180 dir180 0 | 0x2e | lv2 1107 AKI_AKI_KICK_ZEN_S1 |
+| Thunder Kick | 37 | K | held dir0 dir180 dir180 0 | 0x25 | lv2 1439 AKI_AKI_KICK_KKT_S1 |
+| Surplice Slash | 36 | K | held dir0 0 held dir0 | 0x24 | lv1 1328 AKI_AKI_KICK_HAZ_KESA_TOP |
+| Swallow Dive | 43 | K | held dir0 | 0x2b | lv2 1433 AKI_AKI_KICK_ENSEN1_S1 |
+| SideReaperKick | 34 | K | held dir0 | 0x22 | lv1 788 AKI_AKI_BATTLE_KICK_LOW |
+| Tiger Storm | 75 | throw | held dir180 0 dir180 dir0 dir0 0 | 0x4b | lv1 1151* AKI_AKI_NGS_HED_1; lv2 930* AKI_AKI_NGS_HED_2_S1 |
+| Tengu Drop | 70 | throw | held dir180 dir0 dir0 0 | 0x46 | lv1 1150* AKI_AKI_NGS_BKFRIP |
+| Mist Reaper | 67 | throw | held dir180 0 held dir180 | 0x43 | lv1 1204* AKI_AKI_NGS_JUDO_OG |
+| Sweep Throw | 65 | throw | held dir180 | 0x41 | lv1 1476* AKI_AKI_NGS_UCH |
+| Arm Break Fire | 74 | throw | held dir0 0 dir0 dir180 dir180 0 | 0x4a | lv1 918* AKI_AKI_NGS_SP1_ELB |
+| Shoulder Buster | 69 | throw | held dir0 dir180 dir180 0 | 0x45 | lv1 1526* AKI_AKI_NGS_WUDE1 |
+| Demon Drop | 68 | throw | held dir0 0 held dir0 | 0x44 | lv1 1292* AKI_AKI_NGS_MAKINAGE |
+| Vortex Throw | 66 | throw | held dir0 | 0x42 | lv1 1205* AKI_AKI_NGS_JUDO_TM |
+| Windmill | 42 | P+K | – | 0x2a | lv1 1329 AKI_AKI_KICK_HAZ_TOBI_TOP |
+| TwinSwallowLeap | 48 | P+K | held dir180 0 dir180 dir0 dir0 0 | 0x30 | lv2 586 DMY_AKI_AKI_KICK_BEST |
+| Dark Moon | 40 | P+K | held dir180 dir0 dir0 0 | 0x28 | lv2 1431 AKI_AKI_KICK_ABISEGERI_S1 |
+| AvalancheLance | 10 | P+K | held dir180 0 held dir180 | 0x0a | lv2 1290 AKI_AKI_ELB_ROLL_TOP |
+| Double Blow | 14 | P+K | held dir180 | 0x0e | lv2 1445 AKI_AKI_YAG_ITIMON1_MID_S1 |
+| TwinHandWaves | 8 | P+K | held dir180 | 0x08 | lv1 1422 AKI_AKI_SOUSYOU |
+| Stab Armor | 18 | P+K | held dir0 0 dir0 dir180 dir180 0 | 0x12 | lv2 1428 AKI_AKI_BATTLE_PNC_SHOTEI_S1 |
+| Brutal Tiger | 39 | P+K | held dir0 dir180 dir180 0 | 0x27 | lv2 1432 AKI_AKI_KICK_BACKROLL_S1 |
+| KatanaMistSlash | 11 | P+K | held dir0 0 held dir0 | 0x0b | lv1 1289 AKI_AKI_CHP_NUKE_MID |
+| Backfist Willow | 9 | P+K | held dir0 | 0x09 | lv1 898 AKI_AKI_URAKEN_ROLL_TOP |
+| Big Wheel | 7 | P+K | – | – | lv2 1427 AKI_AKI_BATTLE_PUNCH_FUK_S1 |
+| Shadow Reaper | 49 | 0x0A | – | 0x31 | lv2 1443 AKI_AKI_RUN_KICK_SURA_S1 |
+| Cross Charge | 77 | 0x18 | held dir180 0 held dir180 | 0x4d | lv1 929* AKI_AKI_NGS_FROU |
 | Shadow Step | 73 | 0x18 | held dir180 | 0x49 | (another candidate) |
 | Shadow Blade | 76 | 0x18 | – | – | (another candidate) |
 
+## Motion ids
+
+A play's motion id k names MOTION.BIN's record k − 1 (disc 3's `/MISC/MOTION.BIN`).
+`shenmue-motion.mjs --list` prints records from 0, so `--names` takes 1 off the id.
+
+- **The file's records line up:** the name list (1559 pointers at 0x12298) and the
+  table at 0x20 (1559 × 8 bytes, ending in a zero entry at 0x30D8) have the same
+  count, and every `ERROR`, `ERROR_n` name sits on the table entry pointing at
+  the shared error motion (0x105D8A, 0x3540). So record i is name i. The slip
+  was in reading the id as a record number.
+- **Id − 1 fits the moves** (notebook description → the name):
+
+  | Move | Id | Record id − 1 (now) | Record id (before) |
+  |---|---|---|---|
+  | Elbow Slam: a downward blow from the forearm | 847 | AKI_AKI_ELBOW | AKI_AKI_HIZA (knee) |
+  | Upper Knuckle: lowers, then rises to the jaw | 837 | AKI_AKI_BATTLE_PNC_APR (uppercut) | AKI_AKI_BATTLE_ROLL_KICK_MID |
+  | Twist Knuckle: a sweeping horizontal hook | 794 | AKI_AKI_BATTLE_PNC_FUK | AKI_AKI_BATTLE_SEIKEN_MID (straight) |
+  | Tornado Kick: two spin kicks | 1213 | AKI_AKI_BAT_KICK_NIREN1_TOP (two kicks) | AKI_AKI_BAT_KICK_NIREN2_TOP |
+  | Vortex Throw: the judo sacrifice throw | 1205* | AKI_AKI_NGS_JUDO_TM (tomoe nage) | AKI_AKI_NGS_YAG_TENTI |
+
+- **The rest fit too:** Rain Thrust (a straight punch) → PANCH_STR, Sleeve
+  Strike (a step-in punch) → SEIKEN2_MID, Backfist Willow → URAKEN_ROLL (a
+  spinning backfist), Mistral Flash (from a run) → BAT_RUN_ELB, Swallow Flip
+  (deflects) → NGS_INASI, Windmill (a flying kick) → KICK_HAZ_TOBI, Mud Spider →
+  KICK_SUBERI (a slide), Shoulder Buster (an armlock) → NGS_WUDE1, Demon Drop →
+  NGS_MAKINAGE. Without the − 1, Demon Drop and Backfist Willow land on YKI_
+  (the victim's side) and Windmill on JIJ_ (another character).
+- **Not checked on screen:** the names make it near certain, but no
+  breakpoint on play (ctx+0x318) has confirmed it. The code that turns the id
+  into a record isn't found either.
+
 ## Open
 
-- **Motion names:** about half the names fit their moves.
-  - Fits: Twist Knuckle → SEIKEN (straight punch), SideReaperKick → KICK_SID,
-    Tornado Kick → KICK_NIREN2, Swallow Dive → KICK_ENSEN, Dark Moon →
-    KICK_BACKROLL, Pit Blow → KONGO_TYUKEN, and the throws → NGS_*.
-  - Misses: Elbow Slam → HIZA (a knee), Upper Knuckle → ROLL_KICK, Sleeve
-    Strike → KICK_BACKROLL_JUMP and Thunder Kick → KONGO_TYUKEN.
-  - So either the ids index another list (a scene bank, or MOTION.BIN through a
-    remap) or #1505's "motion i is name i" is off in places. Running Free Battle
-    in a Dreamcast emulator with a breakpoint on play (ctx+0x318) and comparing
-    the motion on screen would settle it.
 - **Damage and frames:** these are probably in the file's two tables after the
   script (0x1BBC and 0x1D8A in Ryo's), or in the motion table's second offset
   per motion, which #1505 hasn't decoded.

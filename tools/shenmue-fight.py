@@ -12,7 +12,7 @@
 1ST_READ.BIN loads at 0x0C010000. The tables are found by their first names, so
 any of the betas works (Passport 0.300, discs 1-3 of 0.400). M.TXT is
 `node tools/shenmue-motion.mjs MOTION.BIN --list` (branch vf3-shenmue-motions),
-for the motion names. docs/SHENMUE-FIGHT.md says what it all is.
+for the motion names (motion id k is its record k - 1). docs/SHENMUE-FIGHT.md says what it all is.
 """
 import json, os, struct, sys
 
@@ -159,11 +159,12 @@ def pad(mask):
     return '+'.join(n for b, n in PAD if mask & b) or '0'
 
 def motion_names(path):
+    """shenmue-motion.mjs --list's records by play's motion id: id k is record k - 1."""
     names = {}
     for line in open(path):
         f = line.rstrip('\n').split('\t')
         if len(f) == 3 and f[0].isdigit():
-            names[int(f[0])] = f[2]
+            names[int(f[0]) + 1] = f[2]
     return names
 
 def script(en):
