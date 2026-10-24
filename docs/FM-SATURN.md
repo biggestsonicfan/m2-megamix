@@ -259,6 +259,91 @@ symmetric, so this only picks 805 or 806 for a slot.
 node tools/fm-saturn.mjs hornet --pose 10a     # each slot in the cabin's frame
 ```
 
+### The objects
+
+`daytona-hornet.mjs`'s `hornetObjects` makes Daytona's pieces into Model 2
+objects, one or more per FM slot, each in its slot's own frame. A motion that
+poses FM's Hornet then puts Daytona's pieces where FM puts its own. They are
+not imported into the board's data ROMs yet.
+
+```
+node tools/daytona-hornet.mjs --objects DIR    # DIR/<slot>-<piece>.mesh, .uv, .th, objects.json
+```
+
+| Slot | Piece | Daytona model | Polygons |
+| --- | --- | --- | --- |
+| 1, 16 | nose | 1460, faces in front of the cut | 135 |
+| 9, 24 | cabin | 1460, the rest | 190 |
+| 9, 24 | glass | 1462, whole | 14 |
+| 5, 20, 27 | front left wheel | 805 | 255 |
+| 8, 23, 30 | front right wheel | 806 | 255 |
+| 12 | rear left wheel | 805 | 255 |
+| 15 | rear right wheel | 806 | 255 |
+
+Daytona has no broken car, so 16 and 24 (FM's armour-broken nose and cabin)
+get the whole ones. 20, 23, 27 and 30, FM's other hand models, are its
+wheels again.
+
+**The format** is what the geometrizer walks (MAME's `geo_parse_*`): two
+points, then for each polygon its attribute, a normal and two points (the
+second is a dummy for a triangle). Bits 0–1 of the attribute (0 ends the
+object) say quad or triangle. Bits 8–9 are the link type, which says which
+two of this polygon's points the next one starts from, and the rasterizer
+culls a polygon whose own link type is 0. Every polygon, culled or not,
+reads its texture points (two halfwords a corner, in the order P1, P0, P2,
+P3) and a texture header (four halfwords), and the header pointer then
+moves on by bits 12–16, signed. `readObject` walks a model this way; it
+finds as many drawn polygons as noclip's decode (325 for 1460, 14 for 1462,
+255 for each tire).
+
+`encodeObject` writes the polygons out again with their own texture point
+and header streams, one header a polygon (bits 12–16 become 1). Cutting the
+body breaks its strips. Where a polygon's first two points are not what the
+previous one hands on, a culled quad (link type 0) carries them. It takes
+the next polygon's header and zero texture points, and its z sort is "old
+value", so it changes nothing drawn. The nose is 150 records for 135
+polygons, the cabin 213 for 190 and the glass 23 for 14; the tires need none.
+
+**The frames.** Model 2's axes are noclip's with z negated. FM's model files
+are on noclip's axes: FM Akira's meshes (file 147) lie along the same axes,
+the same way round, as VF2 Akira's in noclip's decode (his head up +z, his
+toes down −z). Part for part, axis for axis, their spans' median ratio is
+289 FM units to VF2's metre (quartiles 268 and 309). The two games' meshes
+are not the same, so this only supports the pose's fitted 300 (`MODEL_UNITS`);
+it does not read it. The objects use `MODEL_UNITS`, so they are in VF2's
+metres, on Model 2's axes, the units and axes VF2's own part models have.
+
+- **Nose and cabin** (`bodyMap`): the inverse of `fmToDaytona`, with the
+  nose turned half a turn about z. In FM's units the nose spans x 2…233
+  (FM's slot 1: 7…233) and the cabin −54…333 (FM's slot 9: −70…333; FM's
+  floor reaches further forward). Height and width are within 3 units.
+- **Wheels** (`wheelMap`): FM's wheel is a ten-sided tyre whose axle is its
+  thinnest axis, z for the hands and x for the feet. A point on the axle at
+  each end is its hub. One side's hub sits 8.4 units in from its face (8.6
+  on the rear wheels), the other's 18.8 (19.4). The shallow side is the outside: the dished hub and the rim
+  of a wheel face out, and in the car pose the rear wheels' shallow side
+  faces away from the car. That is +z for slot 5, −z for 8, +x for 12 and
+  −x for 15. Daytona's tire is open on the inside and has its rim and hub
+  on the outside (805's −x, 806's +x). So the tire's outside goes to FM's,
+  its centre to FM's wheel's centre, and its up to FM's −y. The up is a free
+  choice, since the tire is round; it only sets where the tread's texture
+  starts. Its size is FM's units, `FM_UNIT` metres each: radius 41 against
+  FM's 40–41, width 46 against 45–47.
+- In the car pose (0x10A), the front wheels' axles come out 26° off the
+  car's width, and their shallow side faces the car. The rear wheels'
+  axles are square. So which way the front wheels face rests on the
+  wheel's shape and on Daytona's, not on the pose. The pose's hand turn is
+  part of what is open about FM's rig.
+
+`tests/daytona-hornet.test.mjs` checks the walk against noclip's polygon
+counts. It walks each object back and gets the placed polygons, texture
+points and headers, with only the carriers culled. It checks that noclip's
+decode of the nose and cabin objects is `splitBody`'s triangles moved into
+slots 1 and 9. It checks each piece's span against FM's piece, each tire's
+axle, side and rim, and FM Akira's meshes against VF2 Akira's. Posed by
+FM's motions (the car pose, the punch 0x712 and the combo 0x5AA), the
+objects follow FM's own pieces.
+
 ## Motions
 
 ### The bank
@@ -1599,10 +1684,12 @@ that every motion's keys come out of its VF2 block unchanged, and FM Akira's
 
 ## Open
 
-- **Daytona's car on the board**: the pieces are found and cut, and each one's
-  joint is known (above). Importing them into the board's data ROMs
-  (`tools/import-assets.mjs`) and hanging them on those joints is next. That
-  includes a broken nose and cabin, if Daytona's car is to break.
+- **Daytona's car on the board**: the pieces are Model 2 objects in their
+  slots' frames ([The objects](#the-objects)). Next is importing them into
+  the board's data ROMs (`tools/import-assets.mjs`): their texture points
+  and headers name Daytona's texture ROM, so its sheets have to be packed
+  and the headers moved, as `pack-akira.mjs` does for Akira. A broken nose
+  and cabin, if Daytona's car is to break, would need meshes of their own.
 - **FM's pose rig and model scale**: which rig FM's solve uses (VF2 has one
   standard rig), and the draw's model scale (300 units a metre is fitted).
 - **Hornet's commands**: each move's input is in the Moves table. Still
