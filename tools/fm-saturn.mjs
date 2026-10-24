@@ -410,6 +410,129 @@ export function handlerReaches(game, start, from, to, avoid = []) {
     }
     return false;
 }
+/** What each side of the flag tst at `at` in a handler does, path by path:
+ *  it starts from the registers handlerReg gives at the tst, follows the
+ *  side (a later tst of the same field and mask goes the same way, a
+ *  compare's branch both ways), and stops at a tst of anything else, a
+ *  jmp or an rts. Returns { flag, set, clear }, each side a list of
+ *  { kind, at } events in address order: 'store' (field, size, values:
+ *  numbers, { field, times } for a field times a constant, or null),
+ *  'call' (target), 'same' (the same test again), 'param' (a parameter
+ *  bit's test: bit), 'stop' (another flag's test: field, mask), 'end' (jmp
+ *  @r14, the end of this frame's run) or 'return'. */
+export function flagSides(game, start, at) {
+    const prg = game.prg, word = a => prg.readUInt16BE(game.at(a));
+    const flag = handlerTest(game, start, at);
+    if (!flag) throw new Error(`${at.toString(16)}: no flag test`);
+    const init = Array.from({ length: 16 }, (_, r) => handlerReg(game, start, at, r));
+    init[12] = { ptr: 0 };
+    const num = v => typeof v === 'number', s32 = v => v | 0;
+    const b = word(at + 2), target = ((b & 0xff) << 24 >> 24) * 2 + at + 6;
+    const sides = b & 0x0200 ? { set: target, clear: at + 4 } : { set: at + 4, clear: target };
+    const out = { flag };
+    for (const side of ['set', 'clear']) {
+        const events = new Map();
+        const note = (e, value) => {
+            const k = `${e.kind}@${e.at}`, old = events.get(k);
+            if (old) { if (e.kind === 'store' && !old.values.some(v => JSON.stringify(v) === JSON.stringify(value))) old.values.push(value); return; }
+            events.set(k, e.kind === 'store' ? { ...e, values: [value] } : e);
+        };
+        const tstFlag = (w, r) => {
+            const n = (w >> 8) & 15, m = (w >> 4) & 15;
+            let v, mask;
+            if ((w & 0xff00) === 0xc800) [v, mask] = [r[0], w & 0xff];
+            else if ((w & 0xf00f) === 0x2008 && n !== m) [v, mask] = num(r[m]) ? [r[n], r[m]] : [r[m], r[n]];
+            else return null;
+            return v?.field !== undefined && v.times === undefined && num(mask) ? asLong(v, mask >>> 0) : null;
+        };
+        const todo = [{ pc: sides[side], r: [...init], t: null, seen: new Set(), mac: null }];
+        while (todo.length) {
+            const p = todo.pop();
+            /* one instruction's effect on the registers; 'stop' at a test the side ends at */
+            const exec = a => {
+                const w = word(a), r = p.r, n = (w >> 8) & 15, m = (w >> 4) & 15, hi = w & 0xf000, f = w & 0xf00f;
+                const load = (base, off, size) => base?.ptr !== undefined && num(off) ? { field: base.ptr + off, size } : null;
+                const store = (base, off, size, value) => {
+                    if (base?.ptr !== undefined && num(off)) note({ kind: 'store', at: a, field: base.ptr + off, size }, value);
+                };
+                if (w === 0x0009) return;
+                if (hi === 0xe000) r[n] = (w & 0xff) << 24 >> 24;
+                else if (hi === 0x9000) r[n] = prg.readInt16BE(game.at(a + 4 + (w & 0xff) * 2));
+                else if (hi === 0xd000) r[n] = prg.readUInt32BE(game.at(((a + 4) & ~3) + (w & 0xff) * 4));
+                else if (f === 0x6003) r[n] = r[m];
+                else if (f === 0x600b) r[n] = num(r[m]) ? s32(-r[m]) : null;
+                else if (hi === 0x7000) r[n] = r[n]?.ptr !== undefined ? { ptr: r[n].ptr + ((w & 0xff) << 24 >> 24) } : num(r[n]) ? s32(r[n] + ((w & 0xff) << 24 >> 24)) : null;
+                else if (f === 0x300c) r[n] = num(r[n]) && num(r[m]) ? s32(r[n] + r[m]) : num(r[n]) && r[m]?.ptr !== undefined ? { ptr: r[m].ptr + r[n] }
+                    : num(r[m]) && r[n]?.ptr !== undefined ? { ptr: r[n].ptr + r[m] } : null;
+                else if ((w & 0xf0ff) === 0x4028) r[n] = num(r[n]) ? s32(r[n] << 16) : null;
+                else if ((w & 0xf0ff) === 0x4018) r[n] = num(r[n]) ? s32(r[n] << 8) : null;
+                else if ((w & 0xf0ff) === 0x4008) r[n] = num(r[n]) ? s32(r[n] << 2) : null;
+                else if ((w & 0xf0ff) === 0x4000) r[n] = num(r[n]) ? s32(r[n] << 1) : null;
+                else if ((w & 0xf0ff) === 0x4005) r[n] = num(r[n]) ? s32(r[n] >>> 1 | r[n] << 31) : null;
+                else if ((w & 0xf0ff) === 0x4029 || (w & 0xf0ff) === 0x4021 || (w & 0xf0ff) === 0x4001) r[n] = null;
+                else if ((w & 0xf00c) === 0x000c && (w & 3) < 3) r[n] = load(r[m], r[0], [1, 2, 4][w & 3]);
+                else if ((w & 0xf00c) === 0x6000 && (w & 3) < 3) r[n] = load(r[m], 0, [1, 2, 4][w & 3]);
+                else if (hi === 0x5000) r[n] = load(r[m], (w & 15) * 4, 4);
+                else if ((w & 0xff00) === 0x8400 || (w & 0xff00) === 0x8500) r[0] = load(r[m], (w & 15) * (w & 0x100 ? 2 : 1), w & 0x100 ? 2 : 1);
+                else if ((w & 0xff00) === 0xc900 || (w & 0xff00) === 0xcb00 || (w & 0xff00) === 0xca00) r[0] = null;
+                else if (f === 0x2009 || f === 0x200a || f === 0x200b || f === 0x600e || f === 0x600f || f === 0x600c || f === 0x600d) r[n] = null;
+                else if ((w & 0xf00c) === 0x2000 && (w & 3) < 3) store(r[n], 0, [1, 2, 4][w & 3], r[m]);
+                else if ((w & 0xf00c) === 0x0004 && (w & 3) < 3) store(r[n], r[0], [1, 2, 4][w & 3], r[m]);
+                else if (hi === 0x1000) store(r[n], (w & 15) * 4, 4, r[m]);
+                else if ((w & 0xff00) === 0x8000 || (w & 0xff00) === 0x8100) store(r[m], (w & 15) * (w & 0x100 ? 2 : 1), w & 0x100 ? 2 : 1, r[0]);
+                else if (f === 0x2006 || f === 0x6006) { if (f === 0x6006) r[n] = null; }   /* the stack */
+                else if (f === 0x300d) p.mac = [r[m], r[n]];
+                else if ((w & 0xf0ff) === 0x000a) r[n] = null;
+                else if ((w & 0xf0ff) === 0x001a) r[n] = { mac: p.mac };
+                else if (f === 0x200d) {   /* xtrct after sts mach/macl: the 16.16 product */
+                    const [x, y] = r[n]?.mac ?? [];
+                    r[n] = num(x) && y?.field !== undefined ? { field: y.field, size: y.size, times: x >>> 0 }
+                        : num(y) && x?.field !== undefined ? { field: x.field, size: x.size, times: y >>> 0 } : null;
+                } else if ([0x3000, 0x3002, 0x3003, 0x3006, 0x3007].includes(f) || (w & 0xf0ff) === 0x4011 || (w & 0xf0ff) === 0x4015
+                    || (w & 0xff00) === 0x8800 || (f === 0x2008 && n === m)) p.t = 'both';
+                else if ((w & 0xff00) === 0xc800 || f === 0x2008) {
+                    const t = tstFlag(w, r);
+                    if (t && t.field === flag.field && t.mask === flag.mask) { note({ kind: 'same', at: a }); p.t = side; }
+                    else if (t && (t.field === 0x3c || t.field === 0x70) && t.mask && !(t.mask & ~0xff0000)) { note({ kind: 'param', at: a, bit: t.mask >>> 16 }); return 'stop'; }
+                    else if (t) { note({ kind: 'stop', at: a, field: t.field, mask: t.mask }); return 'stop'; }
+                    else p.t = 'both';
+                } else throw new Error(`${a.toString(16)}: ${w.toString(16)} not followed`);
+            };
+            for (let pc = p.pc, steps = 0; ; steps++) {
+                if (steps > 400 || p.seen.has(pc)) break;
+                p.seen.add(pc);
+                const w = word(pc), r = p.r;
+                const d8 = ((w & 0xff) << 24 >> 24) * 2 + pc + 4, d12 = ((w & 0xfff) << 20 >> 20) * 2 + pc + 4;
+                if ((w & 0xf000) === 0xa000) { exec(pc + 2); pc = d12; continue; }
+                if (w === 0x4e2b) { note({ kind: 'end', at: pc }); break; }
+                if (w === 0x000b || (w & 0xf0ff) === 0x402b) { note({ kind: 'return', at: pc }); break; }
+                if ((w & 0xf0ff) === 0x400b) {
+                    const to = r[(w >> 8) & 15];
+                    exec(pc + 2);
+                    note({ kind: 'call', at: pc, target: to });
+                    for (let i = 0; i < 8; i++) r[i] = null;
+                    pc += 4;
+                    continue;
+                }
+                if ((w & 0xf900) === 0x8900) {   /* bt, bf, bt/s, bf/s */
+                    const delayed = w & 0x0400, jumpIfT = !(w & 0x0200);
+                    if (delayed) exec(pc + 2);
+                    const fall = pc + (delayed ? 4 : 2);
+                    /* T is set when the tested bits are clear */
+                    const ways = p.t === 'set' ? [!jumpIfT] : p.t === 'clear' ? [jumpIfT] : [true, false];
+                    p.t = null;
+                    for (const jump of ways.slice(1)) todo.push({ pc: jump ? d8 : fall, r: [...r], t: null, seen: new Set(p.seen), mac: p.mac });
+                    pc = ways[0] ? d8 : fall;
+                    continue;
+                }
+                if (exec(pc) === 'stop') break;
+                pc += 2;
+            }
+        }
+        out[side] = [...events.values()].sort((x, y) => x.at - y.at);
+    }
+    return out;
+}
 const PLAYS = 0x060131d0;
 /** Where a kind's handlers test parameter bits (`bits`, the default all),
  *  and what each branch does until its next conditional branch, a return,

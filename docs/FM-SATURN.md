@@ -679,6 +679,46 @@ fresh read: that it does what the cell says and that the side can reach
 it; each "stops at" flag is the one tested there and isn't in the Behind
 column.
 
+#### The flags they stop at
+
+The five flag tests that "The flags behind them" stops at, all in the run
+handler, read off the disc. Each side is followed path by path from the
+registers at the test: a compare's branch both ways, a second test of the
+same flag the same way as the first. It ends at the run handler's
+`jmp @r14` ("ends this frame's run"), or "stops at" a test of another
+flag, which is left undescribed, or goes on to a parameter bit's test.
+A cell names every store, call and stop on its side. Constants are 16.16
+fixed point.
+
+| Tested at | Flag | Set | Clear |
+| --- | --- | --- | --- |
+| 0x0600ed20 | +0x6c0 & 0x04000000 | ends this frame's run (0x0600f3f6) and nothing else | changes nothing in the jump before it stops at 0x0600ed2a (+0x6c0 & 0x00000040) |
+| 0x0600ed4c | +0x00 & 0x04000000 | changes nothing in the jump before it stops at 0x0600ee16 (+0x6c0 & 0x40000000) | changes nothing in the jump before it stops at 0x0600ed58 (+0x6c0 & 0x20000000), the flag 0x0600f3a4 tests, on another path |
+| 0x0600ee84 | +0x6c0 & 0x80000000 | changes nothing in the jump before it stops at 0x0600ee8a (+0x6c0 & 0x00000001) | limits +0x20 (0x0600eeaa) and +0x28 (0x0600eec2) to ±0x0a3d (0.04); goes on to the 0x80 test (0x0600eeca) |
+| 0x0600f27a | +0x6c0 & 0x00040000 | scales r4, not stored before the stop, by 0x00008e35 (0x0600f27e); after the same test again (0x0600f290) puts 0x8b3 in +0x68a (0x0600f29a); stops at 0x0600f2a0 (+0x6c0 & 0x00080000) | after the same test again (0x0600f290) puts the halfword at +6 of a table entry in +0x68a (0x0600f29a); stops at 0x0600f2a0 (+0x6c0 & 0x00080000) |
+| 0x0600f3a4 | +0x6c0 & 0x20000000 | sets +0x20 (0x0600f3d6) and +0x28 (0x0600f3d8) to themselves times 0x0000cccd (0.8); clears +0x70 (0x0600f3de): the jump ends; then, if +0x52 isn't past +0x648, sets +0x2f (0x0600f3f4); ends this frame's run (0x0600f3f6) | clears +0x20 (0x0600f3ae), +0x24 (0x0600f3b0) and +0x28 (0x0600f3b2); clears +0x70 (0x0600f3de): the jump ends; then, if +0x52 isn't past +0x648, sets +0x2f (0x0600f3f4); ends this frame's run (0x0600f3f6) |
+
+- **+0x6c0 & 0x04000000**: set, the jump does nothing more this frame;
+  clear, nothing changes before 0x0600ed2a.
+- **+0x00 & 0x04000000**: set, nothing changes before 0x0600ee16; clear,
+  nothing changes before 0x0600ed58.
+- **+0x6c0 & 0x80000000**: set, nothing changes before 0x0600ee8a; clear,
+  +0x20 and +0x28 are held within ±0.04 before the 0x80 test at
+  0x0600eeca.
+- **+0x6c0 & 0x00040000**: set, +0x68a gets 0x8b3; clear, it gets a
+  halfword from a table instead.
+- **+0x6c0 & 0x20000000**: set, the jump ends with +0x20 and +0x28 scaled
+  by 0.8; clear, it ends with +0x20, +0x24 and +0x28 cleared.
+
+The 0x0000cccd at 0x0600f3a4 scales two fields; it is not the 0.8
+distance check, which none of these sides reaches, and none reaches `+0`
+bit 0x10000000. The flags tested at 0x0600ed2a, 0x0600ed58, 0x0600ee16,
+0x0600ee8a and 0x0600f2a0 are left undescribed; 0x0600ed58's is the one
+0x0600f3a4 tests, on another path.
+`tests/fm-saturn.test.mjs` checks the rows against the stops in "The
+flags behind them", and each cell against the tool's `flagSides` on a
+fresh read: every claim, and that no store, call or stop is left out.
+
 ### Slots
 
 The action-table slots that those handlers play, read the way 0x0600CEC8
