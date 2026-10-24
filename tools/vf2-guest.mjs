@@ -98,7 +98,7 @@ const STF_ACTIONS = [
     0, 1, 2, 5, 1, 8, 9, 14, 14, 15,                       /*  0 stance, crouch, steps */
     15, 21, 24, 20, 16, 22, 17, 20, 16, 21,                /* 10 walks, crouch dashes */
     16, 22, 17, 23, 17, 81, 82, 83, 28, 28,                /* 20 run, jumps */
-    29, 29, 1, 28, 28, 29, 0, 29, { motion: 0x2ce }, { motion: 0x2ce },  /* 30 landing, falls */
+    29, 30, 1, 28, 28, 29, 0, 29, { motion: 0x2ce }, { motion: 0x2ce },  /* 30 landing, falls */
     31, 36, 40, 50, 60, 51, 54, 34, 38, 35,                /* 40 down, getting up */
     39, 54,
 ];

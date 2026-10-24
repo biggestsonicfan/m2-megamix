@@ -43,7 +43,7 @@ below.
 | `rob_action` | 0x12974 | 0x142F4 | 381 / 301 | differs | D1 (done), D2 (done), D3 (done) (his record); face_mot_control is VF2-only (U9) |
 | `decide_command` | 0x12A94 | 0x1442C | 297 / 125 | differs | B5 |
 | `decide_my_command` | 0x12F98 | 0x14640 | 42 / 42 | differs | nothing (renumbered types) |
-| `exec_command` | 0x13040 | 0x146EC | 887 / 614 | differs | D3 (done), D6, B6; U6 |
+| `exec_command` | 0x13040 | 0x146EC | 887 / 614 | differs | D3 (done), D6 (done), B6; U6 |
 | `exec_action` | 0x13510 | 0x1499C | 3727 / 1974 | differs | B4, B9, B10, B11; U7 |
 | `get_game_info` | 0x16B9C | 0x1645C | 29 / 29 | same |  |
 | `calc_unit_mat` | 0x16C44 | 0x16504 | 834 / 863 | differs | nothing (dents, squash, midriff: covered or never armed) |
@@ -155,8 +155,11 @@ Guest data (his values in StF's fields; no shared code changes):
   (10, 10 before), 544 11 at 34 and 18 at 48 (15, 25), the same in MAME and
   m2-hle2. Normal fights, Akira's and Sonic's, log the same byte for byte
   in MAME as before.
-- **D6 Importer slip.** `STF_ACTIONS[31]` should be VF2 action 30, not 29
-  (harmless for Akira: his 29 and 30 are one motion).
+- **D6 Importer slip.** Done. `STF_ACTIONS[31]` is now VF2 action 30, not
+  29: StF's slot 31 (g6+0x3E, the exec_command fallback on bit 21) is
+  VF2's 30. Akira's VF2 actions 29 and 30 are both motion 726, so his slot
+  31 loads the same motion as before and the rebuilt ROM is byte-identical
+  to 43b0f09's; it matters only for a later VF2 guest.
 
 Branches on `char_game` (the shared code differs):
 
@@ -442,7 +445,7 @@ His data, read from the VF2 set: record (V 0x200620C[0]) = 0x02001208.
        +0x4C, and 32.
      - (c) the fallback motion when the commit's type-3 record is empty: StF chooses g6+0x38, 0x3A,
        0x3C or 0x3E by bits 21, 18 and old 17; VF2 chooses 0x38, 0x3A or 0x3C by bit 18 and old
-       bit 17. So StF slot 31 (0x3E) is VF2 action 30, but STF_ACTIONS[31] = 29. That does not
+       bit 17. So StF slot 31 (0x3E) is VF2 action 30; STF_ACTIONS[31] was 29 (fixed, D6). That did not
        matter for Akira (his actions 29 and 30 are both motion 726), but it would for another VF2
        guest. Bit 21 never appears in his words.
      - (c) the type cleared to 0 when 1A4 bit 12 is clear: S andnot 0x6040000, V andnot 0x9040000

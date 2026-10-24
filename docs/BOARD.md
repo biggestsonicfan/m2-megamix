@@ -352,7 +352,9 @@ with a heap after them.
   MAME and m2-hle2 his 540 and 708 load them).
 - **Actions:** all 52 of StF's action slots are given one of his motions
   (`STF_ACTIONS`), so he has his own stance, walks, guards, falls and get-ups;
-  none of Knuckles' are left.
+  none of Knuckles' are left. Slot 31 is VF2's action 30 (D6 in
+  `SHARED-CODE.md`; it was 29, the same motion 726 for Akira, so his ROM
+  did not change).
 - **Reactions:** `sub_2B94C` picks a hit reaction from a list by character
   (StF's 0xDA0B4, now the guest table `ptr_DA0B4`). Akira's is VF2's own: 30
   kinds of hit, each by category, crouch, behind and side. StF's lists ignore
