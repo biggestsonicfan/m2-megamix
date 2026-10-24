@@ -609,6 +609,71 @@ for (const [from, to] of [['| 0x0600ed36 | +0x6c0 & 0x00001000 |', '| 0x0600ed36
 assert.throws(() => checkStops(fourDoc.replace(/^\| 0x0600ee44 .*\n/m, ''), thoseDoc, thoseStops));
 assert.throws(() => checkStops(fourDoc, thoseDoc.replace('stops at 0x0600ee44 (+0x30 & 0x00000008)', 'stops at 0x0600ee78 (+0x6c0 & 0x00030000)'), thoseStops));
 
+/* The flag at 0x0600ed6a: the one stop "The flags those four stop at" left
+ * undescribed. Its flag is the one that section names and the disc's; the set
+ * side's branch lands on 0x0600ed64's set path past the stores that row names,
+ * and each side's lone stop is the one its cell names */
+const ed6aDoc = kindsDoc.split('#### The flag at 0x0600ed6a\n\n')[1].split('\n#### ')[0].split('\n### ')[0];
+function checkEd6a(text, four) {
+    const at = 0x0600ed6a, sides = FM.flagSides(game, run9, at);
+    const named = four.match(new RegExp(String.raw`stops at 0x0600ed6a \((${FLAG})\)`))[1];
+    const rows = [...text.matchAll(new RegExp(String.raw`^\| (0x[\da-f]{8}) \| (${FLAG}) \| (.*?) \| (.*?) \|$`, 'gm'))];
+    assert.deepEqual(rows.map(r => [r[1], r[2]]), [['0x0600ed6a', named]]);
+    assert.equal(eventFlag(sides.flag), named, '0x0600ed6a: the disc\'s flag');
+    const tst = word(at), mov = word(0x0600ed68), mask = game.prg.readUInt32BE(game.at((0x0600ed68 & ~3) + 4 + (mov & 0xff) * 4));
+    assert.ok((tst & 0xf00f) === 0x2008 && (mov & 0xf000) === 0xd000 && [(tst >> 8) & 15, (tst >> 4) & 15].includes((mov >> 8) & 15), '0x0600ed6a: tst with the 0x0600ed68 load');
+    assert.equal(h(mask, 8), text.match(/r3 (0x[\da-f]{8}),\nloaded at 0x0600ed68/)[1], 'the mask loaded at 0x0600ed68');
+    const bits = [...text.match(/three bits \(([^)]+)\)/)[1].matchAll(/0x[\da-f]{8}/g)].map(m => parseInt(m[0], 16));
+    assert.equal(bits.reduce((a, b) => a | b, 0), sides.flag.mask, 'the mask\'s bits');
+    assert.equal(bits.length, sides.flag.mask.toString(2).replace(/0/g, '').length, 'how many bits');
+    const [, , , set, clear] = rows[0];
+    for (const [cell, events, s] of [[set, sides.set, 'set'], [clear, sides.clear, 'clear']]) {
+        assert.equal(events.length, 1, `${s}: one event`);
+        const [stop] = events, m = cell.match(new RegExp(String.raw`stops at (0x[\da-f]{8}) \((${FLAG})\) $|stops at (0x[\da-f]{8}) \((${FLAG})\)$`));
+        assert.ok(m && cell.startsWith('changes nothing in the jump before it '), `${s}: ${cell}`);
+        assert.equal(stop.kind, 'stop', s);
+        assert.equal(h(stop.at, 8), m[1] ?? m[3], `${s}: where it stops`);
+        assert.equal(eventFlag(stop), m[2] ?? m[4], `${s}: the flag it stops at`);
+        assert.notEqual(eventFlag(stop), named, `${s}: not this flag`);
+    }
+    /* the bf at 0x0600ed6c goes to the set side: its target, past 0x0600ed64's last store */
+    const b = word(at + 2), target = ((b & 0xff) << 24 >> 24) * 2 + at + 6;
+    assert.ok((b & 0xff00) === 0x8b00, '0x0600ed6c: bf');
+    const [, to, s1, s2] = set.match(/branches to (0x[\da-f]{8}), on 0x0600ed64's set path past its stores at (0x[\da-f]{8}) and (0x[\da-f]{8}),/);
+    assert.equal(h(target, 8), to, 'the set side\'s branch');
+    const ed64 = four.match(/^\| 0x0600ed64 \| .*? \| (.*?) \| .*$/m)[1];
+    for (const x of [s1, s2]) assert.ok(ed64.includes(`(${x})`) && parseInt(x, 16) < target, `${x}: a store on 0x0600ed64's set path before ${to}`);
+    const ed64Stores = FM.flagSides(game, run9, 0x0600ed64).set.filter(e => e.kind === 'store');
+    assert.deepEqual(ed64Stores.filter(e => e.at >= 0x0600ee00).map(e => h(e.at, 8)), [s1, s2], 'the last stores before the branch target');
+    assert.ok(ed64.includes(`stops at ${h(sides.set[0].at, 8)} (${eventFlag(sides.set[0])})`), 'the set side joins 0x0600ed64\'s stop');
+    /* the bullet, and the stops left undescribed */
+    const bullet = text.match(/^- \*\*(.+?)\*\*:([^]*?)\n\n/m), body = bullet[2].replace(/\s+/g, ' ');
+    assert.equal(bullet[1], named);
+    assert.deepEqual([...body.matchAll(/nothing changes before (0x[\da-f]{8})/g)].map(m => m[1]), [sides.set, sides.clear].map(e => h(e[0].at, 8)));
+    const listed = text.match(/The\nflags tested at ([^]+?) are left undescribed/)[1].match(/0x[\da-f]{8}/g);
+    assert.deepEqual(listed, [sides.clear, sides.set].map(e => h(e[0].at, 8)).sort(), 'the undescribed stops');
+    assert.ok(thoseDoc.includes(`| ${listed[1]} | ${eventFlag(sides.set[0])} |`), '0x0600ee16\'s row in "The flags those stop at"');
+    /* 0x0600ed74: bit 0x01 of the byte +0x2e is the long +0x2c's 0x00000100 */
+    const [, bit, byte] = text.match(/0x0600ed74 tests bit (0x[\da-f]{2}) of the byte (\+0x[\da-f]+)/);
+    assert.equal(word(0x0600ed74), 0xc800 | parseInt(bit, 16), '0x0600ed74: tst #bit');
+    assert.equal(flagText(asLongFlag({ field: parseInt(byte.slice(1), 16), size: 1 }, parseInt(bit, 16)).field, asLongFlag({ field: parseInt(byte.slice(1), 16), size: 1 }, parseInt(bit, 16)).mask), eventFlag(sides.clear[0]));
+}
+checkEd6a(ed6aDoc, fourDoc);
+for (const [from, to] of [['| 0x0600ed6a | the opponent\'s +0x19f0 & 0x00024100 |', '| 0x0600ed6a | the opponent\'s +0x19f0 & 0x00004100 |'],
+    ['| 0x0600ed6a | the opponent\'s +0x19f0 & 0x00024100 |', '| 0x0600ed6a | +0x19f0 & 0x00024100 |'],
+    ['r3 0x00024100,', 'r3 0x00024000,'], ['(0x00020000, 0x00004000,\n0x00000100)', '(0x00020000, 0x00004000,\n0x00000200)'],
+    ['branches to 0x0600ee0e', 'branches to 0x0600ee10'], ['past its stores at 0x0600ee0a and 0x0600ee0c', 'past its stores at 0x0600ed8e and 0x0600ee0c'],
+    ['stops at 0x0600ee16 (+0x6c0 & 0x40000000) |', 'stops at 0x0600ee16 (+0x6c0 & 0x20000000) |'], ['stops at 0x0600ee16 (+0x6c0', 'stops at 0x0600ee18 (+0x6c0'],
+    ['stops at 0x0600ed74 (+0x2c & 0x00000100)', 'stops at 0x0600ed74 (+0x2c & 0x00000001)'], ['stops at 0x0600ed74 (+0x2c', 'stops at 0x0600ed76 (+0x2c'],
+    ['| changes nothing in the jump before it stops at 0x0600ed74', '| sets +0x20 (0x0600ed74) and stops at 0x0600ed74'],
+    ['nothing changes before 0x0600ed74', 'nothing changes before 0x0600ee16'], ['tests bit 0x01 of the byte +0x2e', 'tests bit 0x02 of the byte +0x2e'],
+    ['tests bit 0x01 of the byte +0x2e', 'tests bit 0x01 of the byte +0x2f'], ['flags tested at 0x0600ed74 and 0x0600ee16', 'flags tested at 0x0600ed74']]) {
+    assert.ok(ed6aDoc.includes(from), from);
+    assert.throws(() => checkEd6a(ed6aDoc.replace(from, to), fourDoc), `${from} -> ${to}`);
+}
+/* "The flags those four stop at" naming another mask for it fails too */
+assert.throws(() => checkEd6a(ed6aDoc, fourDoc.replace('stops at 0x0600ed6a (the opponent\'s +0x19f0 & 0x00024100)', 'stops at 0x0600ed6a (the opponent\'s +0x19f0 & 0x00004100)')));
+
 /* the Slots table: each slot the kinds play, against a fresh read of Hornet's
  * action table and banks; its Kinds column is the Kinds table's Plays */
 const slotsDoc = doc.split('### Slots')[1].split('\n## ')[0];

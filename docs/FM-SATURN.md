@@ -795,6 +795,29 @@ those stop at", 0x0600ee78's in "The flags behind them".
 `tests/fm-saturn.test.mjs` checks this section the same way, with each
 end condition and each call's nonzero and zero ways read off the disc.
 
+#### The flag at 0x0600ed6a
+
+The flag test that "The flags those four stop at" stops at on 0x0600ed64's
+clear side, in the run handler, read off the disc and followed the same
+way. The field and mask named there match the disc: 0x0600ed6a is
+`tst r3,r5`, with r5 the opponent's (r13's) +0x19f0 and r3 0x00024100,
+loaded at 0x0600ed68. The mask holds three bits (0x00020000, 0x00004000,
+0x00000100); set means any of them is.
+
+| Tested at | Flag | Set | Clear |
+| --- | --- | --- | --- |
+| 0x0600ed6a | the opponent's +0x19f0 & 0x00024100 | changes nothing in the jump before it branches to 0x0600ee0e, on 0x0600ed64's set path past its stores at 0x0600ee0a and 0x0600ee0c, and stops at 0x0600ee16 (+0x6c0 & 0x40000000) | changes nothing in the jump before it stops at 0x0600ed74 (+0x2c & 0x00000100) |
+
+- **the opponent's +0x19f0 & 0x00024100**: set, it joins 0x0600ed64's set
+  path after that path's stores, and nothing changes before 0x0600ee16;
+  clear, nothing changes before 0x0600ed74.
+
+0x0600ed74 tests bit 0x01 of the byte +0x2e, given as the long's flag.
+Neither side reaches the 0.8 distance check or `+0` bit 0x10000000. The
+flags tested at 0x0600ed74 and 0x0600ee16 are left undescribed here;
+0x0600ee16's is in "The flags those stop at". `tests/fm-saturn.test.mjs`
+checks this section against a fresh read.
+
 ### Slots
 
 The action-table slots that those handlers play, read the way 0x0600CEC8
