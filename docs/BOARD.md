@@ -926,7 +926,20 @@ Ryo, both drawn, each knocking the other from 140 to 0 with punches.
 With the seams (#1540): Ryo vs Akira and Ryo vs Ryo in MAME, the joints
 closed standing, walking and punching, and Ryo as player 2 too. On m2-hle2,
 Ryo vs Ryo loads both players' seams and fights (player 2's energy 140 to
-49 under player 1's punches); its bridge has no screenshots.
+49 under player 1's punches). Its bridge has no screenshots, so (#1545)
+m2hle ran on an Xvfb display of its own, grabbed with `ffmpeg -f x11grab`
+while stopped (`emu_stop`), and each seam drawn alone with `set_geo_isolate`
+(index = the `get_geo_captures` entry whose mesh is in polygon RAM, 0x1000
+to 0x4000). 24 seam draws a frame, 12 a player, each after its part; over
+10 shots of the fight the knees, hips, elbows, shoulders, wrists and neck
+are closed, the seams lying over them.
+
+The seams leave the ankles alone, and there a bent rear leg seen from the
+front shows the shin part (model 4995, one rigid part) with every other
+triangle gone at its bottom: dark spikes of jeans down to the shoe. MAME
+draws the same spikes in the same pose, so it is the mesh (likely the
+winding of those triangles, culled from that side), not the emulator.
+Not fixed.
 
 **Graded against the Dreamcast** (beta 0.400 disc 3's Free Battle in Flycast,
 full body beside a MAME shot, mean colour per region): the shape and
