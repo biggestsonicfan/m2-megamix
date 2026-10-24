@@ -1017,6 +1017,38 @@ described" and are left undescribed here. Neither side reaches the 0.8
 distance check or `+0` bit 0x10000000. `tests/fm-saturn.test.mjs` checks
 this section against a fresh read.
 
+#### The flag at 0x0600eb44
+
+The flag test that the clear side of "The flag at 0x0600eaf6" stops at,
+the next row of "Flag tests not yet described", read off the disc and
+followed the same way. The fighter, field and mask in that row match the
+disc: r3 still holds what 0x0600eae6 `mov #0x70,r0` and 0x0600eae8
+`mov.l @(r0,r12),r3` loaded; 0x0600eb40 is `mov #0x20,r0`, 0x0600eb42
+`shll16 r0` and 0x0600eb44 `tst r0,r3`, then `bt` at 0x0600eb46. That is
+the long +0x70 of this fighter (r12), not the opponent's, masked with
+0x00200000: parameter bit 0x20. The `bt` branches when the bit is clear,
+so the branch is the clear side and the fall-through the set side.
+
+| Tested at | Flag | Set | Clear |
+| --- | --- | --- | --- |
+| 0x0600eb44 | +0x70 & 0x00200000 | goes on to 0x0600eb48; no store or call; runs on into 0x0600eb52, where `tst r7,r7` and the `bt` at 0x0600eb54 go both ways: it goes on with no store or call and stops at 0x0600eb62 (+0x4a4 & 0x00000001); or it branches to 0x0600ebda, puts the halfword +0x1a, or that minus 0x8000, in the halfword +0x4ae (0x0600ec08); sets +0x20 (0x0600ec42); sets +0x28 (0x0600ec44); calls 0x06012d50 (0x0600ec7a); adds 1 to the byte +0x60 (0x0600ec86); stops at 0x0600ec8e (+0x70 & 0x00040000) | branches to 0x0600eb52; no store or call; from there on the same as the set side, to the same stops |
+
+- **+0x70 & 0x00200000**: set, it goes on at 0x0600eb48 and runs on into
+  0x0600eb52; clear, it jumps straight to 0x0600eb52. From there both
+  either stop at 0x0600eb62 or go on at 0x0600ebda to store +0x4ae, +0x20
+  and +0x28, call 0x06012d50 and add 1 to +0x60 before they stop at
+  0x0600ec8e.
+
+The 0x8000 is the halfword at 0x0600ec4a, read with `mov.w`, so it is
+added as −0x8000. The `tst r7,r7` at 0x0600eb52 is the one the set side
+of "The flag at 0x0600eaee" reaches, and is left undescribed here too.
+Both sides stop at 0x0600eb62, which tests this fighter's (r12) +0x4a4 &
+0x00000001, or at 0x0600ec8e, which tests this fighter's (r12) +0x70 &
+0x00040000, parameter bit 0x04. Both are rows in "Flag tests not yet
+described" and are left undescribed here. Neither side reaches the 0.8
+distance check or `+0` bit 0x10000000. `tests/fm-saturn.test.mjs` checks
+this section against a fresh read.
+
 ### Slots
 
 The action-table slots that those handlers play, read the way 0x0600CEC8
