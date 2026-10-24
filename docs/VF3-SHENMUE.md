@@ -160,6 +160,41 @@ node tools/shenmue-motion.mjs MOTION.BIN 16 --json
 `--out` writes a VF2 motion block at VF2's size; `tools/vf2-guest.mjs`'s
 SCALE is not applied. `--json` prints Shenmue's channels and VF2's.
 
+## Through Akira's import
+
+I tested one motion: Shenmue 524, TA_KI_SYO_L, converted and put in VF2's
+ROM in place of motion 738, the same move and one of the 328 that
+`importAkira` carries. Then I ran `tools/import-assets.mjs` unchanged.
+
+- **It is accepted.** The import ran through without an error, and its report
+  and `guests.json` match the plain import's. The block has VF2's key counts,
+  so it is 2248 bytes, as 738's is. The only bytes that differ in the board's
+  ROMs are the block's, at main_data 0xEA67AC.
+- **The block** in the board's ROM parses to its full length and has 738's
+  channel types. Object 17 holds its latched (0, 0, 16384). It has 50 frames
+  to VF2's 49.
+- **Accuracy:** sampled frame by frame, it is within 3.6° and 0.067 (StF's
+  units) of VF2's own 738.
+- **Size:** `scaleMotion` scaled it like any of Akira's motions. The body's
+  height at frame 1 is 2.055, against VF2's 2.057.
+
+What a converted block does not bring with it:
+
+- **A setup record.** Playback depends on one. Every motion id needs an
+  `animation_related` entry: StF's set_mot_dat reads the header (the kind word
+  0x804, 0x810..) and the ops from it. The test had 738's own VF2 setup,
+  converted. For a motion only Shenmue has, `importAkira` can't take it:
+  `readSetup` reads VF2's setup table, and ids at 1360 and above throw. A
+  Shenmue motion needs a new id with a setup that someone writes or derives.
+  A header and op 0 alone should play the motion with no hit, damage or
+  cancel timing (not tested). The timing (op 2), strike (op 4) and throw
+  (op 5) ops are the move's properties.
+- **The table's second offset.** It is only in Shenmue's file, and nothing on
+  the VF2 or StF path has a field for it. It doesn't block anything.
+- **Size scaling** is not missing. The import applies SCALE (Akira's, 2.03) to
+  objects 12–19. Shenmue's units are VF2's, so a Ryo would need only his own
+  factor for his own height. That is a property and doesn't block anything.
+
 ## Open
 
 - **Ryo's motions**: which MOTION.BIN entries Free Battle plays, and with
@@ -167,6 +202,6 @@ SCALE is not applied. `--json` prints Shenmue's channels and VF2's.
   `MISC/COLD.BIN` and `MISC/COLDINIT.PKS` hold other copies of MOTION.BIN, of
   other sizes.
 - **Setups**: Shenmue's own, and VF3's setup records (set_mot_dat's handlers)
-  against VF2's setup ops. A converted block plays, but it has no setup of its
-  own.
+  against VF2's setup ops, so that a Shenmue-only motion can get one ("Through
+  Akira's import").
 - **The table's second offset** per motion.
