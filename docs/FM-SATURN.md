@@ -1182,6 +1182,36 @@ Neither side stops at another flag test, and neither reaches the 0.8
 distance check or `+0` bit 0x10000000. `tests/fm-saturn.test.mjs` checks
 this section against a fresh read.
 
+#### The flag at 0x0600ecd0
+
+The next row of "Flag tests not yet described", read off the disc and
+followed the same way. The fighter, field and mask in that row match the
+disc: 0x0600ecc8 is `mov r12,r1`, 0x0600ecca `mov.w @(0x0600ed06),r0`,
+which loads 0x06c0, 0x0600eccc `add r0,r1`, 0x0600ecce `mov.b @r1,r0` and
+0x0600ecd0 `tst #0x02,r0`, then `bf` at 0x0600ecd2. That is bit 0x02 of
+the byte +0x6c0 of this fighter (r12), not the opponent's: big-endian,
+the long +0x6c0 masked with 0x02000000. The `bf` branches when the bit is
+set, so the branch is the set side and the fall-through the clear side.
+
+| Tested at | Flag | Set | Clear |
+| --- | --- | --- | --- |
+| 0x0600ecd0 | +0x6c0 & 0x02000000 | branches to 0x0600ecfe; no store or call; the `bra` at 0x0600ed02 jumps to 0x0600ed10; stops at 0x0600ed16 (+0x00 & 0x00000020) | goes on to 0x0600ecd4; no store or call; stops at 0x0600ecda (+0x70 & 0x00080000) |
+
+- **+0x6c0 & 0x02000000**: set, it jumps to 0x0600ecfe and on to
+  0x0600ed10 with no store or call, and stops at 0x0600ed16; clear, it
+  goes on at 0x0600ecd4 with no store or call, and stops at 0x0600ecda.
+
+The set side's words before the `bra` are 0x0600ecfe
+`mov.w @(0x0600ed06),r0`, which loads 0x06c0, and 0x0600ed00
+`mov.l @(r0,r12),r4`, which loads the long +0x6c0 into r4; they store
+nothing. The set side's stop, 0x0600ed16, tests this fighter's (r12)
++0x00 & 0x00000020; it is a row in "The flags behind them", which
+describes its sides. The clear side's stop, 0x0600ecda, tests this
+fighter's (r12) +0x70 & 0x00080000, parameter bit 0x08. It is a row in
+"Flag tests not yet described" and is left undescribed here. Neither side
+reaches the 0.8 distance check or `+0` bit 0x10000000.
+`tests/fm-saturn.test.mjs` checks this section against a fresh read.
+
 ### Slots
 
 The action-table slots that those handlers play, read the way 0x0600CEC8
