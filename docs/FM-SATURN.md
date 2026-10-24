@@ -1212,6 +1212,46 @@ fighter's (r12) +0x70 & 0x00080000, parameter bit 0x08. It is a row in
 reaches the 0.8 distance check or `+0` bit 0x10000000.
 `tests/fm-saturn.test.mjs` checks this section against a fresh read.
 
+#### The flag at 0x0600ecda
+
+The next row of "Flag tests not yet described", read off the disc and
+followed the same way. The fighter, field and mask in that row match the
+disc: 0x0600ecd4 is `mov r12,r1`, 0x0600ecd6 `add #0x71,r1`, 0x0600ecd8
+`mov.b @r1,r0` and 0x0600ecda `tst #0x08,r0`, then `bt` at 0x0600ecdc.
+That is bit 0x08 of the byte +0x71 of this fighter (r12), not the
+opponent's: big-endian, the long +0x70 masked with 0x00080000, as "The
+flag at 0x0600ecd0" names it. The `bt` branches when the bit is clear, so
+the branch is the clear side and the fall-through the set side.
+
+| Tested at | Flag | Set | Clear |
+| --- | --- | --- | --- |
+| 0x0600ecda | +0x70 & 0x00080000 | goes on to 0x0600ecde; the `bt` at 0x0600ece8 splits it at 0x0600ecfe; calls 0x060131d0 and stores +0x71 only when it does not branch; stops at 0x0600ed16 (+0x00 & 0x00000020) | branches to 0x0600ecfe; no store or call; the `bra` at 0x0600ed02 jumps to 0x0600ed10; stops at 0x0600ed16 (+0x00 & 0x00000020) |
+
+- **+0x70 & 0x00080000**: set, it goes on at 0x0600ecde, and the `bt` at
+  0x0600ece8 either jumps to 0x0600ecfe with no store or call, or goes on
+  at 0x0600ecea, calls 0x060131d0 at 0x0600ecf0 and stores the byte +0x71
+  at 0x0600ecfc; both paths stop at 0x0600ed16; clear, it jumps to
+  0x0600ecfe with no store or call, and stops at 0x0600ed16.
+
+The set side's split: 0x0600ecde `mov.w @(0x0600ed08),r0`, which loads
+0x04a8, 0x0600ece0 `mov.w @(r0,r12),r3`, 0x0600ece2
+`mov.w @(0x0600ed0a),r0`, which loads 0x04ac, 0x0600ece4
+`mov.w @(r0,r12),r4`, 0x0600ece6 `cmp/gt r4,r3` and `bt` at 0x0600ece8,
+which lands at 0x0600ecfe. It branches when this fighter's halfword
++0x4a8 is greater (signed) than its halfword +0x4ac. Not branching, it
+goes on at 0x0600ecea `mov #0x72,r0`, 0x0600ecec `mov.w @(r0,r12),r4`,
+0x0600ecee `mov.l @(0x0600ed0c),r0`, which loads 0x060131d0, and
+0x0600ecf0 `jsr @r0`, so r4 holds this fighter's halfword +0x72 for the
+call. Then 0x0600ecf4 `mov r12,r1`, `add #0x71,r1`, `mov.b @r1,r0`,
+0x0600ecfa `and #0xf7,r0` and 0x0600ecfc `mov.b r0,@r1`: it clears bit
+0x08 of the byte +0x71, the bit this test reads. The two paths meet at
+0x0600ecfe, the clear side's target, whose words "The flag at 0x0600ecd0"
+gives; the `bra` at 0x0600ed02 jumps to 0x0600ed10. Both sides stop at
+0x0600ed16, which tests this fighter's (r12) +0x00 & 0x00000020; it is a
+row in "The flags behind them", which describes its sides. Neither side
+reaches the 0.8 distance check or `+0` bit 0x10000000.
+`tests/fm-saturn.test.mjs` checks this section against a fresh read.
+
 ### Slots
 
 The action-table slots that those handlers play, read the way 0x0600CEC8
