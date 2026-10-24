@@ -856,8 +856,14 @@ sets up what StF's game loop would have set up around it.
   against fighter) takes its masks from the rob+0x1D14 tables, which
   `decide_coli_kind` picks from `off_1008`. That table's eight pointers run
   on past its label through `off_1010` into `off_1018`, so the lifter keeps
-  such tables whole (`RUN_ON`). Without that, player 2's table was garbage
+  such tables whole (`RUN_ON`, both labels). Without that, player 2's table was garbage
   and the fighters passed through each other.
+- Throws: P+G (`ACT_RC_NAGE_TOUCH`) grabs only on rob+0x720 bit 12, which
+  `get_en_info` sets against the numbers 0x5550 (facing) and 0x1018 (the
+  victim's 1A4). stfdisasm labels them `loc_5550` and `off_1018`, and the
+  lifter turns them back into numbers (`NUMBERS`). As labels they were
+  0x48D0 and 0x427C, a mask with the standing bit 9 in it, so no P+G
+  grabbed anybody, StF's fighters or Akira (docs/SHARED-CODE.md L1).
 - Walls: op 0x70 (`area_coli`, the distances at rob+0x650) reads the ring
   size from stage_x (0x50A00C, 8.0) and stage_soko (0x50A010, -100.0), as
   in the real fight RAM. With them overridden it returned 100.0 and nobody

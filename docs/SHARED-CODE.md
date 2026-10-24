@@ -161,6 +161,27 @@ Guest data (his values in StF's fields; no shared code changes):
   31 loads the same motion as before and the rebuilt ROM is byte-identical
   to 43b0f09's; it matters only for a later VF2 guest.
 
+Lifted code (not his data, and no branch):
+
+- **L1 Grab bit.** Done. "StF characters cannot grab VF2 characters": they
+  could not grab anyone. P+G commits `ACT_RC_NAGE_TOUCH` (type 41), which
+  throws only on `get_en_info`'s rob+0x720 bit 12. That bit (S 0x18FCC..
+  0x19064) tests the facing against 0x5550..0xAAA0 and the victim's 1A4
+  against the mask 0x1018. stfdisasm names both numbers as labels
+  (`lda loc_5550`, `lda off_1018`), and the lifter kept them as labels, so
+  the board compared against their new addresses, 0x48D0 and 0x427C. The
+  0x427C mask holds bit 9, which every standing fighter has in 1A4 (0x200),
+  so bit 12 never came on and every P+G whiffed, Honey's and Akira's
+  victims alike. `lift-stf.py` now makes both labels numbers (`NUMBERS`), and
+  `off_1010` joins `RUN_ON`: `off_1008`'s eight collision-ball pointers end
+  in `off_1018`'s block, which only that `lda` had kept. The lifted code
+  differs from before in the two `lda`s and an unreachable `ret` at
+  `loc_5550`. In MAME, P+G at contact now throws: Sonic 280/281 (140 →
+  110), Honey 133/134 (→ 130), Eggman 36/37 (Sonic 140 → 105, Akira 130 →
+  98), the same against Akira as against StF's fighters. m2-hle2 loads the
+  new words (0x5550 at 0xB488, 0x1018 at 0xB4AC). Every fight with a throw
+  in it now logs differently: throws were missing for everyone before.
+
 Branches on `char_game` (the shared code differs):
 
 - **B1 Head turn speed.** `calc_unit_1`: with the look gate shut, StF turns
@@ -910,6 +931,9 @@ The board runs StF's game globals: gravity 0x50A000 = 0.0252222 (0x3CCE9ED5) whe
    - (c) The tail call: VF2 kind 22 → 0x18BD4; StF kind 18 → 0x19888, the same frame (0x80A-1) and
      <= 1.4 test.
    - Same: 0x5F4, 0x5B6 and bits 0, 1, 3, 4 and 15..31.
+   - (a) StF-only: 0x720 bit 12, the grab bit `ACT_RC_NAGE_TOUCH` needs, while 0x19F is 39..41:
+     facing outside 0x5550..0xAAA0, opponent 1A4 & 0x1018 clear, dist <= rec[+0x10]+0. The lifter
+     had both numbers as labels until L1.
 4. Akira: his command program, which tools/vf2-guest.mjs copies op for op, tests 0x5B8 with op 7 (bit
    set) for bits 0 x6, 3 x6, **8 x10**, **11 x2**, 18..23 x1-2 and 26 x11 (no op 0xA). On the board, bit 8
    means "opponent moving away" instead of "in range", and bit 11 is never set. So his 10 range-gated

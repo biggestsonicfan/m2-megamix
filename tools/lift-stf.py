@@ -50,11 +50,13 @@ STUBS = ['print_mes', 'print_mes_ex', 'print_hex_w', 'debug_disp_hex', 'dsp_patt
          'char_nameplate_dsp', 'call_projectile_routine', 'sound_request_u', 'sound_request_special',
          'stage_contact_sound', 'ring_tobitiri_set', 'sub_1BCC0']
 # Labels the routines use as numbers (`lda loc_10000, r3` is 0x10000, `lda
-# off_1010, r13` the flag mask 0x1010); any other code label they load (a
+# off_1010, r13` the flag mask 0x1010; get_en_info's `lda loc_5550` and `lda
+# off_1018` are the facing bound 0x5550 and the flag mask 0x1018 its throw
+# range bit tests); any other code label they load (a
 # task's next function, a callback) is lifted and keeps its name.
 NUMBERS = {'loc_1FFC', 'loc_2AA8', 'loc_6600', 'loc_7FF8', 'loc_8020', 'loc_8040', 'loc_BFF4', 'loc_10000',
            'loc_20010', 'loc_78AFC', 'loc_2100', 'loc_7A00', 'loc_14060', 'sys_proc_table',
-           'off_1010', 'dword_4010', 'loc_AAA0'}
+           'off_1010', 'dword_4010', 'loc_AAA0', 'loc_5550', 'off_1018'}
 # The tail the move tables' inline code (opcode 0x13: `lda N, g0; b 0x1EF48`)
 # branches to, after sub_1E468, unlabelled in stfdisasm.
 NATIVE_TAIL = 'cmd_native_tail', 0x1EF48, 'ld      0x1A4(g7), r15  # unreachable code'
@@ -62,8 +64,9 @@ NATIVE_TAIL = 'cmd_native_tail', 0x1EF48, 'ld      0x1A4(g7), r15  # unreachable
 # collision-ball pointers).
 LOW_TABLES = {'off_FE8'}
 # Tables read on past their end, into the next label's (off_1008's eight
-# pointers run through off_1010 into off_1018).
-RUN_ON = {'off_1008'}
+# pointers run through off_1010 into off_1018; both labels are numbers to the
+# code, so nothing else keeps their data).
+RUN_ON = {'off_1008', 'off_1010'}
 # Jump tables in the ROM range that hold code (the camera's script steps):
 # lifted with the code, as the copied ROM holds StF's addresses.
 ROM_CODE_TABLES = {'off_9C83C', 'off_9C848'}
