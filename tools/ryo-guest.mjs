@@ -47,10 +47,11 @@ const LEVELS = 5;                        /* a raw page's levels, 0-4 */
 const ATTR_HI = (10 << 18) | (2 << 23), Z_NEAR = 1 << 10;
 const TRI = 2, QUAD = 1, LINK_NEW = 2 << 8;       /* link type 0: the face is culled */
 const ROWS = 28;                         /* the luma ramp's rows, 0..27 */
-/* The shins (bones 0x11, 0x16), whose long faces lean from their corners'
- * normals far enough to be culled in sight (cutParts, #1546). At 30° a bent
- * rear ankle still lost the faces leaning about 20°; at 15° it is whole. */
-const SHINS = new Set([SLOT_BONES[0x11], SLOT_BONES[0x16]]), SHIN_LEAN = 15;
+/* The shin faces (bones 0x11, 0x16; index in the slot's faces) the board hid
+ * while the face itself turned to the eye, in the poses where a bent rear leg
+ * spiked, on either leg (cutParts, #1546; measured in docs/BOARD.md). */
+const FLAT = new Map([[SLOT_BONES[0x11], new Set([0, 1, 2, 4, 6, 7, 9, 11, 13, 14, 15, 16, 20, 21, 30, 34, 35, 36, 40, 41, 42])],
+    [SLOT_BONES[0x16], new Set([0, 6, 14, 17, 18, 20, 24, 25, 26, 27])]]);
 
 const hex = (v) => '0x' + v.toString(16).toUpperCase();
 
@@ -158,11 +159,11 @@ function cutParts(model, k) {
                  * far from the face is culled while the face still turns to
                  * the eye. Down the shins the hem's corners share the cuff's
                  * normals and lean up to 52°: a bent rear leg seen from the
-                 * front lost half the shin's faces. A shin face leaning more
-                 * than SHIN_LEAN keeps its own flat normal (#1546); a seam's
-                 * normals the board works out itself. */
-                const lean = Math.acos(Math.min(1, Math.abs(dot(unit(face), out)))) * 180 / Math.PI;
-                const stored = SHINS.has(slot) && lean > SHIN_LEAN && !(a.o || b.o || d.o) ? unit(dot(face, out) < 0 ? face.map((x) => -x) : face) : out;
+                 * front lost faces in sight. The shin faces in FLAT, the ones
+                 * measured hidden there, keep their own flat normal (#1546); a
+                 * seam's normals the board works out itself. */
+                const flat = !(a.o || b.o || d.o) && FLAT.get(slot)?.has(slots.get(slot)?.length ?? 0);
+                const stored = flat ? unit(dot(face, out) < 0 ? face.map((x) => -x) : face) : out;
                 /* a seam's far corners first (A, or A and B), turning the
                  * corners round, so each is one run of words to patch */
                 const fars = [a, b, d].map((q) => !!q.o);

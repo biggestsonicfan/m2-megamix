@@ -949,33 +949,51 @@ shin face at a bent ankle is. The winding, the indices and the geometry
 were right: every face's normal was on its outward side, and no corner was
 missing.
 
-Only the shins changed. A shin face (slot 11, model 4995, and its mirror
-slot 14, model 4992: the two players' rear legs are opposite legs) whose
-stored normal leans more than 15° (`SHIN_LEAN`) from its own is stored with
-its own flat normal; every other face keeps the corner average, and the
-seams (normals worked out by the board, mode 2) are not touched. Faces, by
-index in the part, with the lean they had:
+Only the faces the board was seen to hide changed. In the poses that spiked
+(MAME frames 720, 750, 810, 858, 864 and 882 of the run below, and m2-hle2
+shots t05 and t11) the cull test was run again on every shin face of both
+players, slot 11 (model 4995) and slot 14 (model 4992), the two players'
+rear legs being opposite legs: the matrix each shin was drawn with (MAME's
+display list in buffer RAM, op 0Bh before the object; m2-hle2's
+`get_geo_captures`), its stored normal and its corner C. A face counts if
+the stored normal said rear (normal · C < 0) while the face's own normal
+said front. Those faces, and only those, are stored with their own flat
+normal (`FLAT` in tools/ryo-guest.mjs); every other face, on the shins too,
+keeps the corner average, and the seams (normals worked out by the board,
+mode 2) are not touched. By index in the part, with the angle between the
+stored normal and the eye when the face was hidden, then the least the
+face's own normal was from the eye:
 
-- slot 11: 0 (44°), 1 (20), 2 (19), 11 (21), 12 (20), 13 (43), 15 (34),
-  16 (34), 20 (44), 21 (43), 22 (19), 27 (18), 28 (16), 29 (24), 30 (21),
-  33 (20), 35 (45), 36 (20), and the cuff's inner cone 40-46 (45-52).
-- slot 14: 0 (36), 1 (18), 3 (20), 8 (16), 13 (34), 14 (34), 16 (18),
-  17 (35), 18 (44), 23 (19), 24 (44), 25 (19), 26 (42), 27 (19), 34 (16),
-  36 (16), 37 (18), 38 (21), 39 (24), and the cuff 40-46 (45-52).
+- slot 11: 0 (96-119°/58°), 1 (96-102/76), 2 (92-101/80), 4 (92/89),
+  6 (94/83), 7 (92/84), 9 (90-94/84), 11 (92-93/88), 13 (90-91/61),
+  14 (99-104/85), 15 (108-112/84), 16 (92-107/71), 20 (118-120/86),
+  21 (102-122/69), 30 (91-99/77), 34 (95-99/84), 35 (94-105/53),
+  36 (92/72), and the cuff's inner cone 40 (118-119/70), 41 (116-120/70),
+  42 (98-105/79).
+- slot 14: 0 (92-100/64), 6 (97-101/86), 14 (99-100/66), 17 (94-106/60),
+  18 (94-115/51), 20 (90/80), 24 (91-102/47), 25 (102-104/84),
+  26 (91-112/70), 27 (96-102/84).
 
-The faces with two hem corners (slot 11's 0, 13, 15, 16, 20, 21, 35) lean
-most, 34-45°, but at 30° (those and the cuff) frame 720 still lost the long
-faces leaning about 20° at P2's rear ankle; at 15° it is whole. The other
-parts have faces leaning over 30° too (the chest 71, the arms 13-17 each,
-the feet 4-5); they are left as they were.
+The faces measured from m2-hle2 were all among MAME's. The rear legs alone
+were not enough: correcting a front shin's face 0 without its neighbour 17
+drew a dark sliver off that ankle, so every face hidden on any of the four
+shins in those frames is in. A face's lean from its corners' normals does
+not predict it: 4, 6, 7 and 9 lean under 15°, while slot 11's 12, 22, 28
+and 29 lean 16-24° and were never hidden. Outside the spiking frames the
+run still hides a few shin faces (slot 11's 26, 27, 32; slot 14's 1, 2,
+13, 31, 34, 72-90° from the eye) with no spike seen; they are left as they
+were, and so are the other parts' leaning faces (the chest, the arms, the
+feet).
 
-Checked in MAME (Ryo vs Ryo, the same inputs, frames 720 to 900 every 6,
+Checked in MAME (Ryo vs Ryo, the same inputs, frames 720 to 906 every 6,
 against the ROMs before the change): the main ROMs are byte for byte the
-same and only the two shin meshes differ in the polygon ROM, so nothing
-but the shins can draw differently; in all 32 frames every pixel above row
-237 (the top of a bent shin) is the same. The bent rear shins are whole, and each shoe meets its hem with no
-gap, so the ankle needs no seam. On m2-hle2, shots t05 and t11 (the
-spiking ones) are whole too.
+same, and only the two shin meshes differ in the polygon ROM. A third build
+with the corrected faces collapsed to a point shows where they land. Every
+one of the 28479 pixels that changed across the 32 frames is on a corrected
+face in one build or the other, and every other pixel is the same as before.
+The bent rear shins are whole in all six spiking frames, and each shoe
+meets its hem with no gap, so the ankle needs no seam. On m2-hle2, shots
+t05 and t11 are whole too.
 
 **Graded against the Dreamcast** (beta 0.400 disc 3's Free Battle in Flycast,
 full body beside a MAME shot, mean colour per region): the shape and
