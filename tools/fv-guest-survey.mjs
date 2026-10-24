@@ -57,13 +57,23 @@ const OP_LENGTH = [
     2, 5, 2, 2, 3, 2, 1, 5, 13, 2, 2, 3, 2, 1, 1, 2,
     2, 2, 3, 2, 2, 2, 5, 2, 2, 2, 5, 2, 2, 2, 2, 2,
 ];
-/* What Akira and Ryo leave the next guest (tools/import-assets.mjs's run on
- * this branch: docs/FV-GUESTS.md, "Room"). */
+/* What Akira and Ryo leave the next guest (docs/FV-GUESTS.md, "Room"):
+ * `stf` in StF's own ROM files (tools/import-assets.mjs's run on this
+ * branch); `model2b` with the ROMs as large as a Model 2B game has them
+ * (tools/model2-rom-limits.py) and the board's own texture loading. */
 const ROOM = {
-    motionIds: 0x2000 / 4 - 879,           /* the guest motion lists hold 2048; 519..878 are Akira's */
-    heap: 0x1000000 - 0xf195ac,            /* main_data, the guest heap to the XTRA window */
-    meshes: 0x1000000 - 0xf3b568,           /* the polygon ROM's empty run, after Ryo's seams */
-    cells: 7 * 64 - 266 - 8,                /* the seven set-1 pages' 448 cells of 32x32, less Akira's and Ryo's */
+    stf: {
+        motionIds: 0x2000 / 4 - 879,           /* the guest motion lists hold 2048; 519..878 are Akira's */
+        heap: 0x1000000 - 0xf195ac,            /* main_data, the guest heap to the XTRA window */
+        meshes: 0x1000000 - 0xf3b568,           /* the polygon ROM's empty run, after Ryo's seams */
+        cells: 7 * 64 - 266 - 8,                /* the seven set-1 pages' 448 cells of 32x32, less Akira's and Ryo's */
+    },
+    model2b: {
+        motionIds: 0x2000 - 879,                /* the motion id field (13 bits), with the guest lists grown */
+        heap: 0x1000000 - 0xf195ac + 0xf00000,  /* and main_data's upper 16 MB (dyndeka2b), less StF's 1 MB there */
+        meshes: 0x1000000 - 0xf3b568 + 0x1000000, /* and the polygon ROM's second 16 MB (pltkids) */
+        cells: 24 * 64,                         /* a fight's sheet 1, loaded for the two in it: 24 slots of 256x256 */
+    },
 };
 
 const hex = (v) => '0x' + (v >>> 0).toString(16).toUpperCase();
@@ -346,6 +356,8 @@ const total = {
     heap: out.reduce((n, f) => n + f.blockBytes + f.setupBytes + f.program.bytes, 0),
     meshes: out.reduce((n, f) => n + f.meshBytes.core, 0),
     cells: out.reduce((n, f) => n + f.textures.core.cells, 0),
+    /* a fight's two: the two largest */
+    pairCells: out.map((f) => f.textures.core.cells).sort((a, b) => b - a).slice(0, 2).reduce((n, c) => n + c, 0),
 };
 
 if (JSON_OUT) {
@@ -361,5 +373,6 @@ if (JSON_OUT) {
         console.log(`  models ${f.models.core} (meshes ${f.meshBytes.core} bytes), and ${f.models.armour} more for FV's armour (${f.meshBytes.armour} bytes)`);
         for (const [k, t] of Object.entries(f.textures)) console.log(`  textures, ${k}: ${t.tiles} tiles, ${t.cells} cells of 32x32 (${Object.entries(t.sizes).map(([s, n]) => `${s} x${n}`).join(', ')})`);
     }
-    console.log(`all three: ${total.motionIds} motion ids (room ${ROOM.motionIds}), ${total.heap} heap bytes (room ${ROOM.heap}), ${total.meshes} mesh bytes without armour (room ${ROOM.meshes}), ${total.cells} cells without armour (room ${ROOM.cells})`);
+    console.log(`all three, without armour: ${total.motionIds} motion ids, ${total.heap} heap bytes, ${total.meshes} mesh bytes, ${total.cells} texture cells (the largest two in one fight ${total.pairCells})`);
+    for (const [k, r] of Object.entries(ROOM)) console.log(`  room, ${k}: ${r.motionIds} motion ids, ${r.heap} heap bytes, ${r.meshes} mesh bytes, ${r.cells} cells${k === 'stf' ? ' for every guest at once' : ' a fight, for both fighters and what they share'}`);
 }

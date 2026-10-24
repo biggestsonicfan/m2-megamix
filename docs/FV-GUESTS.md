@@ -15,9 +15,10 @@ places:
 
       node tools/fv-guest-survey.mjs [--json]
 
-None of the three is imported on the board yet. In short, motion ids and
-meshes fit. The guest heap fits one or two of them. The texture pages fit
-none of them as they are ("Room", below).
+None of the three is imported on the board yet. Within StF's own ROMs,
+motion ids and meshes fit, the guest heap fits two of them, and the
+texture pages fit none. At the sizes a Model 2B game can have, with
+textures loaded per fight, all of it fits ("Room", below).
 
 ## FV's tables, beside VF2's
 
@@ -115,34 +116,89 @@ them. For scale: Akira's 49 tiles take 266 cells.
 
 ## Room
 
-What Akira and Ryo leave (import-assets on `ryo-board`):
+Two sets of limits matter here. "StF's ROMs" is the room in StF's own ROM
+files and in texture RAM as StF lays it out. "Model 2B" is the room the
+hardware gives, as large as any Model 2B game in MAME's driver fills it.
+The board build is our own program, so it doesn't have to stop at StF's
+fill. `tools/model2-rom-limits.py` reads the ROM regions from the fork's
+`src/mame/sega/model2.cpp`; `--all` covers 2O, 2A and 2C too:
 
-| What | Left | All three FV (core) |
-|--|--|--|
-| Motion ids (guest lists hold 2048; Akira 519..878) | 1169 | 570 |
-| Guest heap, main_data 0x2F195AC..0x3000000 (setups, blocks, programs) | 944724 B | 1277040 B |
-| Polygon ROM's empty run after Ryo (0xF3B568..0x1000000) | 805528 B | 577320 B |
-| Texture cells in the seven set-1 pages (448; Akira 266, Ryo 8) | 174 | 1411 |
+| Region | StF fills | Model 2B fills | Largest | What it holds here |
+|--|--|--|--|--|
+| maincpu (program) | 1 MB | 2 MB | vonu | the board program |
+| main_data | 16 MB + 1 MB mirrored (epr-19003/4 at 0x1000000) | 32 MB | dyndeka2b | setups, motion blocks, texture pages, the guest heap |
+| polygons | 16 MB | 32 MB | pltkids | meshes |
+| textures (material and UV streams) | 16 MB | 16 MB | sfight | materials, UVs |
+| copro_data | 4 MB | 8 MB | gunblade | StF's collision and height maps |
+| samples | 8 MB | 8 MB | | sound |
 
-- **Motion ids and meshes fit** all three.
-- **The heap fits two of them** (Honey and Bahn come to 822 KB, for
-  example), not all three. The blocks are most of it. main_data has
-  larger zero runs further down (0x447484 bytes in one). But
-  import-assets drops runs of StF zeros the board reads, so a run has to
-  be shown unread before the heap can use it.
-- **The textures don't fit.** Any one of them takes 2.5-3 times the free
-  cells. FV's textures are finer than VF2's: Akira takes 266 cells, they
-  take 430-503. "Free texture RAM during a fight: none"
-  (docs/STF-BOARD-AKIRA.md), so the options are:
-  1. **Swap pages by matchup.** Load a guest's pages only when he is
-     picked, over pages the two fighters in play do not use. The board
-     loads textures at the fight's start, so this is a loader change, not
-     more RAM.
-  2. **Halve them.** Pack FV's tiles a level down (a 128×128 tile as
-     64×64): about a quarter of the cells, 108-126 a fighter. That fits
-     one beside Akira and Ryo.
-  3. **Fewer fighters.** Tokio alone at half size fits. All three need
-     option 1.
+Two more limits aren't ROM sizes:
+
+- **Texture RAM is fixed.** Every Model 2 draws from the same two sheets
+  of texture RAM, 2048×1024 4-bit texels each (`model2_v.cpp`: texsheet
+  is textureram0 or textureram1). The lower right quarter of each sheet
+  holds the mips, so a sheet has 24 full-size 256×256 slots, 1536 cells
+  of 32×32. StF puts a stage's set on sheet 0 and all of set 1, every
+  fighter's art at once, on sheet 1. The board's loader (`tex_load_set`)
+  only copies that. Loading the two fighters in the fight, plus what they
+  share, instead of all of set 1 is a loader change. It doesn't need more
+  RAM.
+- **Motion ids are 13 bits** (MOTION_ID 0x1FFF), so 8192 of them. The
+  guest lists hold 2048 because `tools/lift-stf.py` GUESTS gives
+  `offset_list_motions` and `animation_related` 0x2000 bytes each.
+
+What Akira and Ryo leave in each case (`node tools/fv-guest-survey.mjs`):
+
+| What | Room, StF's ROMs | Room, Model 2B | All three FV (core) |
+|--|--|--|--|
+| Motion ids (Akira 519..878) | 1169 | 7313, with GUESTS grown | 570 |
+| Guest heap (setups, blocks, programs) | 944724 B (0x2F195AC..0x3000000) | 16.7 MB, with main_data's upper 16 MB less StF's 1 MB | 1277040 B |
+| Meshes | 805528 B (polygon ROM 0xF3B568..0x1000000) | 17.6 MB, with the polygon ROM's second 16 MB | 577320 B |
+| Texture cells | 174 for every guest at once (set 1's seven pages, 448, less Akira's 266 and Ryo's 8) | 1536 a fight, for both fighters and what they share | 1411; the largest two 981 |
+
+With StF's ROMs, motion ids and meshes fit. The heap fits any two of the
+fighters, not all three. The textures fit none of them: each takes
+430-503 cells against 174. FV's textures are finer than VF2's; Akira's
+take 266 cells.
+
+With Model 2B's sizes, everything fits:
+
+- **Motion ids, heap and meshes** fit all three, with room for many more.
+  The armour models fit too (2.7 MB of meshes).
+- **Textures** fit a fight's two fighters: 981 cells at most (Tokio and
+  Bahn), out of sheet 1's 1536. That leaves 555 cells, about 8.7 slots,
+  for what every fight needs from set 1: effects, items and anything else
+  the two don't own. Nobody has measured that yet.
+  docs/STF-BOARD-AKIRA.md lists which fighters and unnamed models sample
+  each set-1 page. Measure it first: it decides whether FV's armour (up to
+  682 cells for Honey) fits too, or has to go in at a lower level.
+
+What it takes to get there:
+
+1. **A ROM set with the larger regions.** MAME's `sfight` has polygons
+   at 0x1000000. Its main_data upper half is one 1 MB pair, copied every
+   MB. The board build needs its own set in the fork's `model2.cpp`: a
+   `sfight` clone on `model2b` with polygons at 0x2000000 and 16 MB of
+   main_data at 0x1000000 (dyndeka2b's layout). Make it on a fork branch,
+   merge it into `shared` and rebuild with `build-shared-mame.sh`.
+   `import-assets.mjs`'s `xtra` (1 MB) and `polygons` sizes grow with it.
+2. **StF's 1 MB in the upper half.** StF reads its epr-19003/4 MB through
+   the XTRA window (0x06000000 = main_data 0x1000000). Its motion list is
+   at 0x06400004, and the scroll and pattern tables are at 0x06480000 and
+   0x06480300. With 16 MB there, the mirrors are gone, so that MB has to
+   be at every place StF reads it. Find the places (a trace of reads in
+   0x06000000..0x06FFFFFF, or of main_data 0x1000000 and up), and copy
+   the MB to each.
+3. **A per-fight texture loader.** It loads sheet 1 from the two fighters'
+   pages plus the shared pages, not set 1 whole. Each guest's material
+   records then name his tiles' places on that fight's sheet. Either he
+   packs to the same place every fight, or the board patches th2 when it
+   loads him.
+4. **The real board.** MAME's sets show 2B ROM boards with all eight
+   polygon and eight main_data sockets filled (dyndeka2b, pltkids). StF's
+   own ROM board numbers its ICs differently (main_data 7-12, polygons
+   17/18/21/22). Before burning ROMs, check that the owner's board has
+   the sockets and decodes the extra address lines.
 
 ## What importing one takes
 
@@ -156,11 +212,11 @@ vf2-guest's import is VF2-shaped throughout. For FV it needs:
 6. The hands (4 shapes) and heads (the face op's table) read FV's way.
 7. A character slot (CHR) and model ids that don't clash with Akira's or
    Ryo's.
-8. A texture plan from "Room".
+8. The larger ROM set and the per-fight texture loader ("Room").
 
 The skeleton, collision balls and the pose rig are the cast-wide tables
 VF2 has too. Their FV addresses still need finding.
 
 Akira took about 90 commits. Much of that work (the midriff, hands, heads,
-throws and the strike parts) carries over. The texture budget is the open
-question. Settle it before importing anyone.
+throws and the strike parts) carries over. What every fight needs from
+set 1 is the number to measure first.
