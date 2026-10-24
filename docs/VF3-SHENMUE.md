@@ -278,6 +278,46 @@ setup that adds op 2 and drops the kind word's bit 8:
   the stance on the board. So this one should too. That is read from the code,
   not run.
 
+### A header, op 2 and op 4
+
+The same test again (Shenmue 316 in VF2 1160, Akira's commit 0x34C57), with
+an op 4 so that the move strikes with its own data, and bit 8 back:
+
+- **The setup**, VF2's: kind word 0x0101 (738's), the rest of the header 0;
+  op 2 (hit 8, cancel 10, end 25, the same placeholders as above); 738's op 4,
+  copied byte for byte; op 0. That is 33 bytes:
+  `01 01 00 00 00 00 00 00 | 02 08 00 0a 00 19 00 |
+  04 0a 00 1e 66 66 66 3f f2 df 01 00 00 00 00 00 00 | 00`.
+  VF2's op 4 is always 17 bytes (its op-length table, V 0x1B7F6), so no strike
+  op is smaller than 738's, and 738's is the one this command already played.
+- **The import completes**, with 329 motions as before. StF id 804's setup is
+  39 bytes: the 13-byte header (01 01, then zeros), op 2 unchanged, op 4 as
+  `04 0a 00 15 00 f2 df 01 00 00 00 00 00 00 00 00 00 40`, then 0. The op 4 is
+  byte for byte the one in StF 720 (VF2 738 as the plain import has it): the
+  damage 30 becomes 21 (×140/200), VF2's bytes 4..7 (the float 0.9) are dropped
+  as for every strike, and the float 2.0 is added.
+- **What op 4 writes** (set_mot_dat's `_uk_read_move_data`, S 0x1B6E4): 0x820
+  = 10 (the attacking part), 0x821 = 0, 0x822 and 0x83D = 21 (damage), 0x83E =
+  0, 0x82A = 0xDFF2, 0x828 = 1, 0x823, 0x843 and 0x85C..0x85E = 0, and the
+  float 2.0 to 0x50A284 (0x50A30C for the second player), which
+  send_multi_ball_R passes to the copro. It also counts 0x1230 up. When rob+0
+  has bit 6 (the mirrored side) 0x820 goes through count_0_42, the other side's
+  part. Nothing after op 4 in this setup writes 0x820.
+- **Before the hit frame**: set_mot_dat runs when the motion starts, so 0x820
+  is this move's from frame 0. 0x1A4 is 0x0101, then 0x0103 with op 2's bit 1.
+  calc_attack_flag (S 0x2DC48) rebuilds 0x768 from nothing every frame: before
+  frame 8 the frame test fails and 0x768 = 0.
+- **From the hit frame to the cancel frame** (8 and 9): bit 8 is set and the
+  frame has reached 0x808, so 0x768 is the balls whose part is in
+  dword_CE020[10] = 0xC000: parts 14 and 15, his right shin and foot (VF2's
+  table has the same entry). The damage is 0x822 = 21. At the cancel frame
+  play_motion clears bit 8 and 0x768 goes back to 0.
+- **So the phantom hit is gone.** Bit 8 is set, but the balls come from this
+  op 4's part, which replaces the last move's 0x820 at the start, eight frames
+  before the first frame that can hit. The strike is 738's own: right shin and
+  foot, 21 damage. The frames are still the placeholders scaled from 738;
+  Shenmue's file has no timing. All of this is read from the code, not run.
+
 ## Open
 
 - **Ryo's motions**: which MOTION.BIN entries Free Battle plays, and with
