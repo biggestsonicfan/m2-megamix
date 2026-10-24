@@ -296,6 +296,7 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
   00 00 b3 33                           16.16 big-endian, 0.7 (see "The number after the group")
   00 00                                 s16 LE angle, 0x10000 = 360°: 0 (see "The angle after the number")
   00                                    u8: 0 (see "The byte after the angle")
+  00                                    bits, not a number: 0 (see "The bits after that byte")
   …
   ```
 
@@ -420,7 +421,7 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
     0x60, 0x42, 0x52, 0x04). Read as one u16 these give 0x8000, 0x4001,
     0x0023 …: not a count, and not the angle again (0x0023 is 0.19°, and the
     angle field's values sit just under a whole degree, these just over).
-    That second byte isn't decoded here.
+    That second byte is a set of bits (see "The bits after that byte").
   - **All of MOTION.BIN, strikes:** 20 values, 0 to 35: 0 (35), 1 (34),
     3 (32), 9 (26), 4 (17), 18 (15), 11 (13), 28 (13), 19 (11), 35 (8),
     7 (5), 25 (5), 34 (4), 12 (3), 15, 17, 22, 23 (2 each), 8, 13 (1 each).
@@ -430,6 +431,39 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
   - **Strikes agree with each other:** Elbow Slam and Twist Knuckle both
     have 0, but with different second bytes (0x00, 0x80), which is what
     splits the field there.
+- **The bits after that byte:** the next byte is a set of bits, not one
+  number. Elbow Slam's is **0x00**. What the bits mean isn't known, and they
+  aren't named here. Not checked on screen.
+
+  | Move | Kind | Byte | |
+  |---|---|---|---|
+  | Elbow Slam | 4 | 00 | no bits |
+  | Rain Thrust | 4 | 00 | no bits |
+  | Twist Knuckle | 4 | 80 | 0x80 |
+  | Upper Knuckle | 4 | 80 | 0x80 |
+  | Trample Kick | 4 | 00 | no bits |
+  | Vortex Throw, Swallow Flip, Demon Drop, Sweep Throw | 5 | 00 | |
+
+  - **Why bits:** across the 231 strikes the byte takes 13 values, all made
+    of 0x80, 0x40, 0x20, 0x10, 0x04, 0x02, 0x01 (0x08 never): 0x00 (99),
+    0x80 (47), 0x40 (32), 0xC0 (19), 0x20 (11), 0x10 (5), 0x11 (5), 0x90 (4),
+    0xC2 (3), 0x04, 0x60 (2 each), 0x42, 0x52 (1 each). 0x01 and 0x02 never
+    turn up alone, only beside a high bit. 0x80 is on 73 strikes and 0x40 on
+    58; both are on 22, about what two independent bits give (18).
+  - **Not a number:** it doesn't follow the damage (0x80 is on damage-3
+    jabs, 0x40 on damage 6–10, 0xC0 on 5–14). Read as a byte angle (0x100 =
+    360°), 0x80, 0x40, 0xC0, 0x20 would be 180°, 90°, −90°, 45°, but 0x11,
+    0x42, 0x52, 0xC2 give 24°, 93°, 115°, −87°; the bits cover all 13.
+  - **Width:** the byte after it is 0 on every strike, so a u16 LE read gives
+    the same values; the byte after that (0 or 1) moves on its own. Read
+    big-endian (0x8000, 0x4000 …) it gives nothing more.
+  - **Throws split from strikes here:** the byte is 0 on every kind-5 group,
+    which doesn't test the reading. After it the two diverge. On a strike
+    eight more bytes follow, nearly all 0, before a byte that is 11 on most
+    (126 of 231). On a throw the next byte is already 0x0C, 0x08 or 0x0F
+    (93 of 104 groups found here), never 0 as on every strike. So the strike
+    group runs longer than the throw group. The bytes after this one aren't
+    decoded.
 - **Frames (the tag-2 words): not settled.** The three words don't line up
   across Elbow Slam, Twist Knuckle and Vortex Throw, so none of them is named
   here. What the records show (frames = the motion's own count):
@@ -465,9 +499,10 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
   line up across the strikes and the throws. The last two bytes of the
   kind/damage group are named on throws only. The 16.16 number after the
   group is read (0.7 on Elbow Slam) but not named, and so are the angle after
-  it (0° on Elbow Slam) and the byte after that (0 on Elbow Slam, 0 on every
-  throw). The record's other fields, from the byte after that one on, aren't
-  decoded.
+  it (0° on Elbow Slam), the byte after that (0 on Elbow Slam, 0 on every
+  throw) and the set of bits after that (none on Elbow Slam, 0x80 on Twist
+  Knuckle, none on every throw). After those bits strikes and throws
+  diverge; the record's other fields aren't decoded.
 
 ## Other leads
 
