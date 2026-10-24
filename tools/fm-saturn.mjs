@@ -269,6 +269,18 @@ export function readKind(game, kind) {
     return { kind, accept, run, motion, slots: sorted(slots), bits: sorted(bits), dists: sorted(dists).map(d => +d.toFixed(2)) };
 }
 
+/* Kind 9's parameter picks its jump motion: 0x04 slot 46 (47 with 0x02 too),
+ * 0x20 slot 48 (docs/FM-SATURN.md's kind 9 bit table); with neither, none. */
+const JUMP_SLOTS = [[0x04, p => p & 0x02 ? 47 : 46], [0x20, () => 48]];
+/** The action-table slots a request can play: kind 9's from its parameter
+ *  bits, any other kind's every slot its handlers play (none for a kind
+ *  that plays only the request's motion), in order. */
+export function moveSlots(game, move) {
+    const kind = move.kind ?? move >>> 24, parameter = move.parameter ?? (move >> 16) & 0xff;
+    if (kind === 9) return JUMP_SLOTS.filter(([bit]) => parameter & bit).map(([, slot]) => slot(parameter)).sort((a, b) => a - b);
+    return readKind(game, kind).slots;
+}
+
 /* What a request needs. The script runs when a button is pressed (or, with
  * none, every frame), with r5 = state << 8 | buttons: P 1, K 2, G 4, and 8,
  * which no pad key gives by default (0x06072304 maps the pad: B P, C K,
@@ -628,7 +640,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         const h = (v, n) => `0x${v.toString(16).padStart(n, '0')}`;
         for (const m of readMoves(game, f)) {
             console.log(`${h(m.at, 4)}\t${h(m.move, 8)}\t${m.motion === null ? '-' : h(m.motion, 0)}` +
-                `\t${m.frames ?? '-'}\t${m.bank ?? '-'}\t${h(m.kind, 2)}\t${h(m.parameter, 2)}\t${m.input || '-'}`);
+                `\t${m.frames ?? '-'}\t${m.bank ?? '-'}\t${h(m.kind, 2)}\t${h(m.parameter, 2)}` +
+                `\t${moveSlots(game, m).join(', ') || '-'}\t${m.input || '-'}`);
         }
         process.exit(0);
     }

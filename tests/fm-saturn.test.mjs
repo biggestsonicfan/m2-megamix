@@ -62,8 +62,11 @@ const common = new Set(FM.readBank(game.archive(FM.COMMON_MOTIONS)).map(r => r.i
 assert.equal(own.size, 103);
 const doc = readFileSync(new URL('../docs/FM-SATURN.md', import.meta.url), 'utf8');
 const listed = [...doc.split('### Hornet\'s')[1].matchAll(
-    /^\| (0x[\da-f, x]+) \| (0x[\da-f]{8}) \| (\S+) \| (\S+) \| (\S+) \| (0x[\da-f]{2}) \| (0x[\da-f]{2}) \| (.+) \|$/gm)]
-    .map(([, at, move, motion, frames, bank, kind, parameter, input]) => ({ at, move, motion, frames, bank, kind, parameter, input }));
+    /^\| (0x[\da-f, x]+) \| (0x[\da-f]{8}) \| (\S+) \| (\S+) \| (\S+) \| (0x[\da-f]{2}) \| (0x[\da-f]{2}) \|(?: ([\d, ]+))? \| (.+) \|$/gm)]
+    .map(([, at, move, motion, frames, bank, kind, parameter, slots, input]) => ({ at, move, motion, frames, bank, kind, parameter, input }));
+const listedSlots = new Map([...doc.split('### Hornet\'s')[1].matchAll(
+    /^\| 0x[\da-f, x]+ \| (0x[\da-f]{8}) \|(?: \S+ \|){5}(?: ([\d, ]+))? \| .+ \|$/gm)].map(([, move, s]) => [move, s ?? '']));
+assert.equal(listedSlots.size, 81);
 assert.equal(listed.length, 81);
 for (const m of listed) {
     if (m.bank === '135') assert.ok(own.has(parseInt(m.motion, 16)), `${m.move}: ${m.motion} isn't in file 135`);
@@ -132,6 +135,30 @@ for (const r of slotRows) assert.deepEqual(r.kinds, playedBy.get(r.slot), `slot 
 const named = kindsDoc.split('\n').filter(l => /^\| 0x/.test(l)).map(l => l.split('|').at(-2))
     .flatMap(t => [...t.matchAll(/(?<![\w.+\u2212-]|bit |frame |kind |≤ |is )(\d+)(?![\w.]| frames?)/g)].map(m => +m[1]));
 assert.deepEqual([...new Set(named)].sort((a, b) => a - b), slotRows.map(r => r.slot), 'the slots the sentences name');
+/* the Moves table's Slots column: kind 9's are the slots its parameter bits
+ * pick in the kind 9 bit table (0x04: 46, or 47 with 0x02; 0x20: 48), any
+ * other kind's the slots its Kinds sentence names (none for kind 0, 0x10 and
+ * 0x2d), in order, and each is a Slots row. Checked against a fresh read of
+ * the script; a wrong slot, or a kind 0 row with one, fails. */
+const bitRow = b => jumpBits.find(([, x]) => Number(x) === b)[2];
+assert.match(bitRow(0x04), /slot 46 \(47 if also 0x02\)/);
+assert.match(bitRow(0x20), /slot 48/);
+const sentenceSlots = new Map(kinds.map(([, k, , , , , , does]) => [parseInt(k, 16), [...new Set([...does.matchAll(
+    /(?<![\w.+\u2212-]|bit |frame |kind |≤ |is )(\d+)(?![\w.]| frames?)/g)].map(m => +m[1]))].sort((a, b) => a - b)]));
+const ruleSlots = (kind, p) => kind !== 9 ? sentenceSlots.get(kind)
+    : [...(p & 0x04 ? [p & 0x02 ? 47 : 46] : []), ...(p & 0x20 ? [48] : [])].sort((a, b) => a - b);
+function checkSlots(column) {
+    for (const m of hornetMoves) {
+        const k = h(m.move, 8), want = ruleSlots(m.kind, m.parameter).join(', ');
+        assert.equal(column.get(k), want, `${k} slots`);
+        assert.equal(FM.moveSlots(game, m).join(', '), want, `${k}: moveSlots`);
+        for (const n of list(want)) assert.ok(slotRows.some(r => r.slot === +n), `${k}: slot ${n} has no Slots row`);
+    }
+}
+checkSlots(listedSlots);
+for (const [k, s] of [['0x1a000000', '22, 23, 41, 42, 44'], ['0x0914013a', '47'], ['0x00000712', '22'], ['0x09080314', '45']])
+    assert.throws(() => checkSlots(new Map([...listedSlots, [k, s]])), `${k} as ${s}`);
+assert.equal(ruleSlots(0, 0).length + ruleSlots(0x10, 4).length + ruleSlots(0x2d, 0).length, 0);
 /* the motion kind 0x1a names in its code, not a slot */
 assert.equal(FM.readBank(game.archive(FM.COMMON_MOTIONS)).find(r => r.id === 0x725).frames, 40);
 
