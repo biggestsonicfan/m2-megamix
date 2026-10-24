@@ -856,6 +856,9 @@ y + 1.0, which holds while guests are scaled to StF's size.
 
 ## The guest: Shenmue's Ryo
 
+Fighting Vipers' Honey, Tokio and Bahn are not guests yet; docs/FV-GUESTS.md
+measures what they need and what room Akira and Ryo leave.
+
 Ryo Hazuki (the Shenmue beta's, js/ryo.js) is StF character 1
 (Tails, whom Megamix does not use; 27 for player 2), picked as RYO in the
 setup. tools/ryo-guest.mjs builds him on top of what tools/vf2-guest.mjs
