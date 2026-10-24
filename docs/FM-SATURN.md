@@ -1116,6 +1116,39 @@ described" and is left undescribed here. Neither side reaches `+0` bit
 0x10000000. `tests/fm-saturn.test.mjs` checks this section against a
 fresh read.
 
+#### The flag at 0x0600ec64
+
+The flag test that the set side of "The flag at 0x0600ead0" stops at, the
+next row of "Flag tests not yet described", read off the disc and
+followed the same way. The fighter, field and mask in that row match the
+disc: 0x0600ec5c is `mov r12,r1`, 0x0600ec5e `mov.w @(0x0600ec9e),r0`,
+which loads 0x04a7, 0x0600ec60 `add r0,r1`, 0x0600ec62 `mov.b @r1,r0` and
+0x0600ec64 `tst #0x01,r0`, then `bt` at 0x0600ec66. That is bit 0x01 of
+the byte +0x4a7 of this fighter (r12), not the opponent's: big-endian,
+the long +0x4a4 masked with 0x00000001. The `bt` branches when the bit is
+clear, so the branch is the clear side and the fall-through the set side.
+
+| Tested at | Flag | Set | Clear |
+| --- | --- | --- | --- |
+| 0x0600ec64 | +0x4a4 & 0x00000001 | goes on to 0x0600ec68 and runs on to 0x0600ec6e; calls 0x06012844 (0x0600ec74); calls 0x06012d50 (0x0600ec7a); adds 1 to the byte +0x60 (0x0600ec86); stops at 0x0600ec8e (+0x70 & 0x00040000) | branches to 0x0600ec6e, and from there on it is the same as the set side, to the same stop |
+
+- **+0x4a4 & 0x00000001**: set, it goes on at 0x0600ec68 and runs on to
+  0x0600ec6e; clear, it jumps to 0x0600ec6e. From there both call
+  0x06012844 and 0x06012d50 and add 1 to +0x60 before they stop at
+  0x0600ec8e.
+
+0x0600ec58 is where the `bra` at 0x0600ead4 lands; its `mov #0x1a,r0`
+and 0x0600ec5a `mov.w @(r0,r12),r7` load the halfword +0x1a into r7. The
+set side's words are 0x0600ec68 `mov.w @(0x0600eca0),r1`, which loads
+0x8000, added as −0x8000, 0x0600ec6a `add r1,r7` and 0x0600ec6c
+`exts.w r7,r7`; they change only r1 and r7, and store nothing.
+
+Both sides stop at 0x0600ec8e, which tests this
+fighter's (r12) +0x70 & 0x00040000, parameter bit 0x04. It is a row in
+"Flag tests not yet described" and is left undescribed here. Neither side
+reaches the 0.8 distance check or `+0` bit 0x10000000.
+`tests/fm-saturn.test.mjs` checks this section against a fresh read.
+
 ### Slots
 
 The action-table slots that those handlers play, read the way 0x0600CEC8
