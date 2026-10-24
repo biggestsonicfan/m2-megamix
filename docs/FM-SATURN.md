@@ -1252,6 +1252,50 @@ row in "The flags behind them", which describes its sides. Neither side
 reaches the 0.8 distance check or `+0` bit 0x10000000.
 `tests/fm-saturn.test.mjs` checks this section against a fresh read.
 
+#### The flag at 0x0600f008
+
+The next row of "Flag tests not yet described", read off the disc and
+followed the same way. The fighter, field and mask in that row match the
+disc: 0x0600f000 is `mov r12,r1`, 0x0600f002 `mov.w @(0x0600f0a6),r0`,
+which loads 0x11d5, 0x0600f004 `add r0,r1`, 0x0600f006 `mov.b @r1,r0` and
+0x0600f008 `tst #0x10,r0`, then `bt` at 0x0600f00a. That is bit 0x10 of
+the byte +0x11d5 of this fighter (r12), not the opponent's: big-endian,
+the long +0x11d4 masked with 0x00100000. The `bt` branches when the bit
+is clear, so the branch is the clear side and the fall-through the set
+side.
+
+| Tested at | Flag | Set | Clear |
+| --- | --- | --- | --- |
+| 0x0600f008 | +0x11d4 & 0x00100000 | goes on to 0x0600f00c; stores +0x1a (0x0600f014); goes on to 0x0600f016 and from there does what the clear side does; ends this frame's run (0x0600f3f6) | branches to 0x0600f016; stores +0x6c0, +0x6c8, +0x6cc, +0x6d0, +0x33, +0x6c6, +0x6c2, +0x6f0, +0x6e0, +0x6e4, +0x6e8 and +0x6f8; no call; the `bra` at 0x0600f0a0 jumps to 0x0600f3f6; ends this frame's run (0x0600f3f6) |
+
+- **+0x11d4 & 0x00100000**: set, it goes on at 0x0600f00c, stores the
+  byte +0x1a at 0x0600f014 and goes on at 0x0600f016; clear, it jumps to
+  0x0600f016. From there both sides make the same stores, call nothing,
+  and end this frame's run at 0x0600f3f6.
+
+The set side's store: 0x0600f00c `mov r12,r1`, 0x0600f00e `add #0x1a,r1`,
+0x0600f010 `mov.b @r1,r0`, 0x0600f012 `xor #0x80,r0` and 0x0600f014
+`mov.b r0,@r1`: it flips bit 0x80 of this fighter's byte +0x1a.
+
+From 0x0600f016 both sides run the same code. 0x0600f016
+`mov.l @(0x0600f0c4),r2` loads 0x02800000, 0x0600f01c `or r2,r3` and
+0x0600f020 `mov.l r3,@(r0,r12)` store the long +0x6c0 ORed with it. Then:
+at 0x0600f030 the long +0x20 in the long +0x6c8; at 0x0600f032 the long
++0x24 in the long +0x6cc; at 0x0600f034 the long +0x28 in the long +0x6d0;
+at 0x0600f03e the byte +0x33 ANDed with 0xf7 in the byte +0x33; at
+0x0600f046 the halfword +0x63c in the halfword +0x6c6; at 0x0600f050 the
+halfword +0x6c6 less one in the halfword +0x6c6; at 0x0600f05c the byte
++0x6c2 ORed with 0x10 in the byte +0x6c2; at 0x0600f068 the long +0x658
+plus 0x0002b333 in the long +0x6f0; at 0x0600f078 the long +0xc in the
+long +0x6e0; at 0x0600f07a the long +0x10 in the long +0x6e4; at
+0x0600f07c the long +0x14 in the long +0x6e8; at 0x0600f09e the divide
+unit's quotient of the long +0x658 plus 0x0002b333, less the long +0x10,
+over the halfword +0x646, in the long +0x6f8. All are this fighter's
+(r12). The `bra` at 0x0600f0a0 jumps to 0x0600f3f6, the run handler's
+`jmp @r14`. Neither side calls anything or stops at another flag test,
+and neither reaches the 0.8 distance check or `+0` bit 0x10000000.
+`tests/fm-saturn.test.mjs` checks this section against a fresh read.
+
 ### Slots
 
 The action-table slots that those handlers play, read the way 0x0600CEC8

@@ -2150,6 +2150,133 @@ for (const [from, to] of [['`mov r12,r1`, 0x0600ecd6', '`mov r13,r1`, 0x0600ecd6
 assert.throws(() => checkEcda(ecdaDoc, newDoc.replace('| 0x0600ecda | this fighter (r12) | +0x70 | 0x00080000 |', '| 0x0600ecda | this fighter (r12) | +0x70 | 0x00040000 |')));
 assert.throws(() => checkEcda(ecdaDoc, newDoc.replace('| 0x0600ecda | this fighter (r12) | +0x70 | 0x00080000 |', '| 0x0600ecda | this fighter (r12) | +0x74 | 0x00080000 |')));
 assert.throws(() => checkEcda(ecdaDoc, newDoc, ecd0Doc.replace('fighter\'s (r12) +0x70 & 0x00080000', 'fighter\'s (r12) +0x70 & 0x00040000')));
+/* The flag at 0x0600f008: the next row of the list. The byte +0x11d5 of r12
+ * through a mov.w literal; a bt, so the branch is the clear side. The set
+ * side flips a bit of +0x1a and goes on where the clear side lands; from
+ * there both make the same stores and end this frame's run */
+const f008Doc = kindsDoc.split('#### The flag at 0x0600f008\n\n')[1].split('\n#### ')[0].split('\n### ')[0];
+function checkF008(text, list) {
+    const at = 0x0600f008, sides = FM.flagSides(game, run9, at);
+    const listed = list.match(/^\| 0x0600f008 \| this fighter \(r12\) \| (\+0x[\da-f]+) \| (0x[\da-f]{8}) \|$/m);
+    assert.ok(listed, '0x0600f008\'s row in "Flag tests not yet described"');
+    const named = `${listed[1]} & ${listed[2]}`;
+    const rows = [...text.matchAll(new RegExp(String.raw`^\| (0x[\da-f]{8}) \| (${FLAG}) \| (.*?) \| (.*?) \|$`, 'gm'))];
+    assert.deepEqual(rows.map(r => [r[1], r[2]]), [['0x0600f008', named]]);
+    assert.equal(eventFlag(sides.flag), named, '0x0600f008: the disc\'s flag');
+    const pcW = a => (assert.equal(word(a) & 0xf000, 0x9000, `${h(a, 8)}: mov.w @(disp,pc),rN`), a + 4 + (word(a) & 0xff) * 2);
+    const pcL = a => (assert.equal(word(a) & 0xf000, 0xd000, `${h(a, 8)}: mov.l @(disp,pc),rN`), (a & ~3) + 4 + (word(a) & 0xff) * 4);
+    const long = a => game.prg.readUInt32BE(game.at(a));
+    const bTarget = a => ((word(a) & 0xff) << 24 >> 24) * 2 + a + 4;
+    /* mov rM,r1; mov.w @(lit),r0; add r0,r1; mov.b @r1,r0; tst #bit,r0; bt */
+    const [, m, lit, off, bit, op] = text.match(/0x0600f000 is `mov r(\d+),r1`, 0x0600f002 `mov\.w @\((0x[\da-f]{8})\),r0`,\nwhich loads (0x[\da-f]{4}), 0x0600f004 `add r0,r1`, 0x0600f006 `mov\.b @r1,r0` and\n0x0600f008 `tst #(0x[\da-f]{2}),r0`, then `(b[tf])` at 0x0600f00a\./);
+    assert.equal(word(0x0600f000), 0x6103 | (+m << 4), 'mov rM,r1');
+    assert.equal(+m, 12, 'this fighter is r12');
+    assert.equal(word(0x0600f002) & 0x0f00, 0x0000, 'into r0');
+    assert.equal(pcW(0x0600f002), parseInt(lit, 16), 'the literal\'s address');
+    assert.equal(word(parseInt(lit, 16)), parseInt(off, 16), 'the literal');
+    assert.equal(word(0x0600f004), 0x310c, 'add r0,r1');
+    assert.equal(word(0x0600f006), 0x6010, 'mov.b @r1,r0');
+    assert.equal(word(at), 0xc800 | parseInt(bit, 16), 'tst #bit,r0');
+    assert.ok(sides.flag.of !== 13, 'not the opponent\'s');
+    const byte = parseInt(off, 16), mask = parseInt(bit, 16) << 8 * (3 - (byte & 3));
+    assert.equal(flagText(byte & ~3, mask), named, 'the byte as its long');
+    const [, bb, bf, lf, lm] = text.match(/That is bit (0x[\da-f]{2}) of\nthe byte (\+0x[\da-f]+) of this fighter \(r12\), not the opponent's: big-endian,\nthe long (\+0x[\da-f]+) masked with (0x[\da-f]{8})\./);
+    assert.deepEqual([bb, bf, `${lf} & ${lm}`], [bit, `+${h(byte, 2)}`, named], 'the byte and long named');
+    assert.equal(word(at + 2) & 0xff00, 0x8900, '0x0600f00a: bt, so the branch is the clear side');
+    assert.equal(op, 'bt', 'the branch named');
+    assert.match(text, /The `bt` branches when the bit\nis clear, so the branch is the clear side and the fall-through the set\nside\./);
+    const clear = bTarget(at + 2), set = at + 4;
+    assert.equal(clear, 0x0600f016, 'the clear side\'s target');
+    /* the set side's store: mov r12,r1; add #imm,r1; mov.b @r1,r0; xor #imm,r0; mov.b r0,@r1 */
+    const [, sImm, xImm] = text.match(/The set side's store: 0x0600f00c `mov r12,r1`, 0x0600f00e `add #(0x[\da-f]{2}),r1`,\n0x0600f010 `mov\.b @r1,r0`, 0x0600f012 `xor #(0x[\da-f]{2}),r0` and 0x0600f014\n`mov\.b r0,@r1`: it flips bit \2 of this fighter's byte \+\1\./);
+    assert.equal(word(0x0600f00c), 0x61c3, 'mov r12,r1');
+    assert.equal(word(0x0600f00e), 0x7100 | parseInt(sImm, 16), 'add #imm,r1');
+    assert.equal(word(0x0600f010), 0x6010, 'mov.b @r1,r0');
+    assert.equal(word(0x0600f012), 0xca00 | parseInt(xImm, 16), 'xor #imm,r0');
+    assert.equal(word(0x0600f014), 0x2100, 'mov.b r0,@r1');
+    const own = sides.set.filter(e => e.at < clear), shared = sides.set.filter(e => e.at >= clear);
+    assert.equal(own.length, 1);
+    assert.deepEqual([own[0].kind, own[0].at, own[0].field, own[0].size, own[0].of], ['store', 0x0600f014, parseInt(sImm, 16), 1, undefined], 'the set side\'s store');
+    assert.deepEqual(own[0].values, [null], 'flagSides does not follow the xor');
+    assert.deepEqual(shared, sides.clear, 'from 0x0600f016 the two sides match');
+    /* the shared run: stores only, then the end */
+    const end = sides.clear.at(-1), stores = sides.clear.slice(0, -1);
+    assert.deepEqual([end.kind, end.at], ['end', 0x0600f3f6]);
+    assert.equal(word(end.at), 0x4e2b, 'jmp @r14');
+    assert.ok(stores.every(e => e.kind === 'store' && e.of === undefined && e.values.length === 1), 'stores of r12 only');
+    const ba = 0x0600f0a0, bw = word(ba);
+    assert.equal(bw & 0xf000, 0xa000, '0x0600f0a0: bra');
+    assert.equal(((bw & 0xfff) << 20 >> 20) * 2 + ba + 4, end.at, 'the bra jumps to the end');
+    assert.ok(stores.every(e => e.at < ba), 'the stores come before the bra');
+    /* the first store's value: the long +0x6c0 ORed with a mov.l literal */
+    const [, oLit, oVal] = text.match(/From 0x0600f016 both sides run the same code\. 0x0600f016\n`mov\.l @\((0x[\da-f]{8})\),r2` loads (0x[\da-f]{8}), 0x0600f01c `or r2,r3` and\n0x0600f020 `mov\.l r3,@\(r0,r12\)` store the long \+0x6c0 ORed with it\./);
+    assert.equal(word(0x0600f016) & 0x0f00, 0x0200, 'into r2');
+    assert.equal(pcL(0x0600f016), parseInt(oLit, 16));
+    assert.equal(long(parseInt(oLit, 16)), parseInt(oVal, 16), 'the literal ORed in');
+    assert.equal(word(0x0600f018) & 0x0f00, 0x0000, 'into r0');
+    assert.equal(word(0x0600f01a), 0x03ce, 'mov.l @(r0,r12),r3');
+    assert.equal(word(0x0600f01c), 0x232b, 'or r2,r3');
+    assert.equal(word(0x0600f01e) & 0x0f00, 0x0000, 'into r0');
+    assert.equal(pcW(0x0600f018), pcW(0x0600f01e), 'the same field read and stored');
+    assert.equal(word(0x0600f020), 0x0c36, 'mov.l r3,@(r0,r12)');
+    const [first, ...rest] = stores;
+    assert.deepEqual([first.at, first.field, first.size, first.values], [0x0600f020, word(pcW(0x0600f018)), 4, [null]], 'the +0x6c0 store');
+    /* the rest, one clause each from the fresh read */
+    const SIZE = { 1: 'byte', 2: 'halfword', 4: 'long' }, f = v => `the ${SIZE[v.size]} +0x${v.field.toString(16)}`;
+    const value = v => v.quot ? `the divide unit's quotient of ${value(v.quot.less[0])}, less ${value(v.quot.less[1])}, over ${value(v.by)},`
+        : v.plus === -1 ? `${f(v)} less one` : v.plus !== undefined ? `${f(v)} plus ${h(v.plus, 8)}`
+        : v.and !== undefined ? `${f(v)} ANDed with ${h(v.and, 2)}` : v.or !== undefined ? `${f(v)} ORed with ${h(v.or, 2)}`
+        : (assert.deepEqual(Object.keys(v), ['field', 'size']), f(v));
+    const clauses = rest.map(e => `at ${h(e.at, 8)} ${value(e.values[0])} in ${f(e)}`);
+    const [, said] = text.match(/ store the long \+0x6c0 ORed with it\. Then:\n([^]*?)\. All are this fighter's\n\(r12\)\. The `bra` at 0x0600f0a0 jumps to 0x0600f3f6, the run handler's\n`jmp @r14`\. Neither side calls anything or stops at another flag test,\nand neither reaches the 0\.8 distance check or `\+0` bit 0x10000000\./);
+    assert.equal(said.replace(/\s+/g, ' '), clauses.join('; '), 'the shared stores');
+    for (const s of ['set', 'clear'])
+        assert.ok(!sides[s].some(e => ['call', 'stop', 'same', 'param', 'return'].includes(e.kind) || e.field === 0 && e.mask === 0x10000000), `${s}: no call or stop`);
+    assert.ok(!FM.handlerReaches(game, run9, set, 0x0600eb9e, [end.at]), 'set: no 0.8 check');
+    assert.ok(!FM.handlerReaches(game, run9, clear, 0x0600eb9e, [end.at]), 'clear: no 0.8 check');
+    /* the table cells */
+    const fields = [...new Set(stores.map(e => `+${h(e.field, 2)}`))], and = a => a.length > 1 ? `${a.slice(0, -1).join(', ')} and ${a.at(-1)}` : a[0];
+    const ends = `ends this frame's run (${h(end.at, 8)})`;
+    assert.equal(rows[0][3], `goes on to ${h(set, 8)}; stores +${h(own[0].field, 2)} (${h(own[0].at, 8)}); goes on to ${h(clear, 8)} and from there does what the clear side does; ${ends}`, 'the set cell');
+    assert.equal(rows[0][4], `branches to ${h(clear, 8)}; stores ${and(fields)}; no call; the \`bra\` at ${h(ba, 8)} jumps to ${h(end.at, 8)}; ${ends}`, 'the clear cell');
+    /* the bullet */
+    const bullet = text.match(/^- \*\*(.+?)\*\*:([^]*?)\n\n/m), body = bullet[2].replace(/\s+/g, ' ');
+    assert.equal(bullet[1], named);
+    assert.equal(body, ` set, it goes on at ${h(set, 8)}, stores the byte +${h(own[0].field, 2)} at ${h(own[0].at, 8)} and goes on at ${h(clear, 8)}; clear, it jumps to ${h(clear, 8)}. From there both sides make the same stores, call nothing, and end this frame's run at ${h(end.at, 8)}.`);
+}
+checkF008(f008Doc, newDoc);
+for (const [from, to] of [['`mov r12,r1`, 0x0600f002', '`mov r13,r1`, 0x0600f002'], ['`mov.w @(0x0600f0a6),r0`', '`mov.w @(0x0600f0a4),r0`'],
+    ['which loads 0x11d5', 'which loads 0x11d4'], ['`tst #0x10,r0`', '`tst #0x20,r0`'], ['then `bt` at', 'then `bf` at'],
+    ['| 0x0600f008 | +0x11d4 & 0x00100000 |', '| 0x0600f008 | +0x11d4 & 0x00001000 |'], ['| 0x0600f008 | +0x11d4 & 0x00100000 |', '| 0x0600f008 | +0x11d0 & 0x00100000 |'],
+    ['| 0x0600f008 | +0x11d4 & 0x00100000 |', '| 0x0600f008 | the opponent\'s +0x11d4 & 0x00100000 |'],
+    ['That is bit 0x10 of', 'That is bit 0x20 of'], ['the byte +0x11d5 of this', 'the byte +0x11d4 of this'],
+    ['the long +0x11d4 masked', 'the long +0x11d0 masked'], ['with 0x00100000. The', 'with 0x00001000. The'],
+    ['fighter (r12), not the opponent\'s: big', 'fighter (r13), not the opponent\'s: big'],
+    ['clear, so the branch is the clear side and the fall-through the set', 'clear, so the branch is the set side and the fall-through the clear'],
+    ['| goes on to 0x0600f00c;', '| goes on to 0x0600f016;'], ['stores +0x1a (0x0600f014)', 'stores +0x1b (0x0600f014)'], ['stores +0x1a (0x0600f014)', 'stores +0x1a (0x0600f012)'],
+    ['goes on to 0x0600f016 and from there', 'goes on to 0x0600f018 and from there'],
+    ['does; ends this frame\'s run (0x0600f3f6) |', 'does; ends this frame\'s run (0x0600f3f8) |'],
+    ['| branches to 0x0600f016;', '| branches to 0x0600f00c;'], ['stores +0x6c0, +0x6c8,', 'stores +0x6c4, +0x6c8,'], ['+0x6e8 and +0x6f8; no call', '+0x6e8; no call'],
+    ['+0x6e8 and +0x6f8; no call', '+0x6e8 and +0x6f8; calls 0x060131d0'],
+    ['the `bra` at 0x0600f0a0 jumps to 0x0600f3f6;', 'the `bra` at 0x0600f0a2 jumps to 0x0600f3f6;'],
+    ['set, it goes on at 0x0600f00c', 'set, it goes on at 0x0600f016'], ['stores the\n  byte +0x1a at 0x0600f014', 'stores the\n  byte +0x1b at 0x0600f014'],
+    ['clear, it jumps to\n  0x0600f016', 'clear, it jumps to\n  0x0600f00c'], ['call nothing,\n  and end', 'call 0x060131d0,\n  and end'],
+    ['run at 0x0600f3f6.\n', 'run at 0x0600f3f8.\n'],
+    ['0x0600f00e `add #0x1a,r1`', '0x0600f00e `add #0x1b,r1`'], ['`xor #0x80,r0`', '`xor #0x40,r0`'], ['flips bit 0x80', 'flips bit 0x40'],
+    ['`mov.l @(0x0600f0c4),r2` loads 0x02800000', '`mov.l @(0x0600f0c8),r2` loads 0x02800000'], ['loads 0x02800000', 'loads 0x02000000'],
+    ['at 0x0600f030 the long +0x20 in the long +0x6c8', 'at 0x0600f030 the long +0x24 in the long +0x6c8'],
+    ['at 0x0600f034 the long +0x28 in the long +0x6d0', 'at 0x0600f034 the long +0x28 in the long +0x6d4'],
+    ['the byte +0x33 ANDed with 0xf7', 'the byte +0x33 ANDed with 0xfb'], ['the halfword +0x63c in', 'the long +0x63c in'],
+    ['halfword +0x6c6 less one', 'halfword +0x6c6 plus one'], ['+0x6c2 ORed with 0x10', '+0x6c2 ORed with 0x20'],
+    ['at 0x0600f068 the long +0x658\nplus 0x0002b333', 'at 0x0600f068 the long +0x658\nplus 0x0002b334'], ['at\n0x0600f07c the long +0x14', 'at\n0x0600f07e the long +0x14'],
+    ['quotient of the long +0x658', 'quotient of the long +0x65c'], ['less the long +0x10,\nover', 'less the long +0x14,\nover'], ['over the halfword +0x646', 'over the halfword +0x648'],
+    ['in the long +0x6f8.', 'in the long +0x6fc.'], ['Neither side calls anything or stops', 'The set side calls 0x060131d0 and neither side stops']]) {
+    assert.ok(f008Doc.includes(from), from);
+    assert.throws(() => checkF008(f008Doc.replace(from, to), newDoc), `${from} -> ${to}`);
+}
+/* the list's row naming another field or mask fails too */
+assert.throws(() => checkF008(f008Doc, newDoc.replace('| 0x0600f008 | this fighter (r12) | +0x11d4 | 0x00100000 |', '| 0x0600f008 | this fighter (r12) | +0x11d4 | 0x00200000 |')));
+assert.throws(() => checkF008(f008Doc, newDoc.replace('| 0x0600f008 | this fighter (r12) | +0x11d4 | 0x00100000 |', '| 0x0600f008 | this fighter (r12) | +0x11d0 | 0x00100000 |')));
 const sentenceSlots = new Map(kinds.map(([, k, , , , , , does]) => [parseInt(k, 16), [...new Set([...does.matchAll(
     /(?<![\w.+\u2212-]|bit |frame |kind |≤ |is )(\d+)(?![\w.]| frames?)/g)].map(m => +m[1]))].sort((a, b) => a - b)]));
 const ruleSlots = (kind, p) => kind !== 9 ? sentenceSlots.get(kind)
