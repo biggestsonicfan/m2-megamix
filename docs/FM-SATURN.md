@@ -1348,6 +1348,36 @@ side calls anything else or stops at another flag test, and neither
 reaches the 0.8 distance check or `+0` bit 0x10000000.
 `tests/fm-saturn.test.mjs` checks this section against a fresh read.
 
+#### The flag at 0x0600f290
+
+The next row of "Flag tests not yet described", read off the disc and
+followed the same way. It is not a byte test: 0x0600f260
+`mov.w @(0x0600f2d8),r0` loads 0x06c0 and 0x0600f262
+`mov.l @(r0,r12),r8` loads the long +0x6c0 of this fighter (r12), not the
+opponent's, into r8. 0x0600f28c `mov #0x04,r0` and 0x0600f28e
+`shll16 r0` make the mask 0x00040000, 0x0600f290 is `tst r0,r8`, then
+`bf` at 0x0600f292. That is the long +0x6c0 masked with 0x00040000, as
+the row names it. The `bf` branches when the bit is set, so the branch
+is the set side and the fall-through the clear side.
+
+| Tested at | Flag | Set | Clear |
+| --- | --- | --- | --- |
+| 0x0600f290 | +0x6c0 & 0x00040000 | branches to 0x0600f298; stores +0x68a (0x0600f29a); stops at 0x0600f2a0 (+0x6c0 & 0x00080000) | goes on to 0x0600f294; stores +0x68a (0x0600f29a); stops at 0x0600f2a0 (+0x6c0 & 0x00080000) |
+
+- **+0x6c0 & 0x00040000**: set, it jumps to 0x0600f298 and puts 0x08b3
+  in the halfword +0x68a; clear, it puts the halfword at +6 of r11 there
+  instead; neither side calls anything, and both stop at 0x0600f2a0.
+
+Both sides store with 0x0600f298 `mov.w @(0x0600f2de),r0`, which loads
+0x068a, and 0x0600f29a `mov.w r3,@(r0,r12)`. The set side's r3 is from
+0x0600f28a `mov.w @(0x0600f2dc),r3`, which loads 0x08b3, before the
+test. The clear side sets it at 0x0600f294 `mov.w @(6,r11),r0` and
+0x0600f296 `mov r0,r3`, a value `flagSides` does not follow. The stop at
+0x0600f2a0 tests this fighter's (r12) +0x6c0 & 0x00080000; it is a row
+in "The flags those stop at", which describes its sides. Neither side
+reaches the 0.8 distance check or `+0` bit 0x10000000.
+`tests/fm-saturn.test.mjs` checks this section against a fresh read.
+
 ### Slots
 
 The action-table slots that those handlers play, read the way 0x0600CEC8

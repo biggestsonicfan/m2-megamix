@@ -2444,6 +2444,100 @@ for (const [from, to] of [['`mov r12,r1`, 0x0600f1f0', '`mov r13,r1`, 0x0600f1f0
 assert.throws(() => checkF1f6(f1f6Doc, newDoc.replace('| 0x0600f1f6 | this fighter (r12) | +0x6c0 | 0x00080000 |', '| 0x0600f1f6 | this fighter (r12) | +0x6c0 | 0x00040000 |'), fourDoc, thoseDoc));
 assert.throws(() => checkF1f6(f1f6Doc, newDoc.replace('| 0x0600f1f6 | this fighter (r12) | +0x6c0 | 0x00080000 |', '| 0x0600f1f6 | this fighter (r12) | +0x6c4 | 0x00080000 |'), fourDoc, thoseDoc));
 assert.throws(() => checkF1f6(f1f6Doc, newDoc, fourDoc.replace('| 0x0600f340 | +0x6c0 & 0x01000000 |', '| 0x0600f340 | +0x6c0 & 0x02000000 |'), thoseDoc));
+const f290Doc = kindsDoc.split('#### The flag at 0x0600f290\n\n')[1].split('\n#### ')[0].split('\n### ')[0];
+function checkF290(text, list, those) {
+    const at = 0x0600f290, sides = FM.flagSides(game, run9, at);
+    const listed = list.match(/^\| 0x0600f290 \| this fighter \(r12\) \| (\+0x[\da-f]+) \| (0x[\da-f]{8}) \|$/m);
+    assert.ok(listed, '0x0600f290\'s row in "Flag tests not yet described"');
+    const named = `${listed[1]} & ${listed[2]}`;
+    const rows = [...text.matchAll(new RegExp(String.raw`^\| (0x[\da-f]{8}) \| (${FLAG}) \| (.*?) \| (.*?) \|$`, 'gm'))];
+    assert.deepEqual(rows.map(r => [r[1], r[2]]), [['0x0600f290', named]]);
+    assert.equal(eventFlag(sides.flag), named, '0x0600f290: the disc\'s flag');
+    assert.ok(sides.flag.of !== 13, 'not the opponent\'s');
+    const pcW = a => (assert.equal(word(a) & 0xf000, 0x9000, `${h(a, 8)}: mov.w @(disp,pc),rN`), a + 4 + (word(a) & 0xff) * 2);
+    const bTarget = a => ((word(a) & 0xff) << 24 >> 24) * 2 + a + 4;
+    /* mov.w @(lit),r0; mov.l @(r0,r12),r8; ...; mov #imm,r0; shll16 r0; tst r0,r8; bf */
+    const [, lit, off, m, imm, mask, op, lf, lm] = text.match(/0x0600f260\n`mov\.w @\((0x[\da-f]{8})\),r0` loads (0x[\da-f]{4}) and 0x0600f262\n`mov\.l @\(r0,r(\d+)\),r8` loads the long \+0x6c0 of this fighter \(r12\), not the\nopponent's, into r8\. 0x0600f28c `mov #(0x[\da-f]{2}),r0` and 0x0600f28e\n`shll16 r0` make the mask (0x[\da-f]{8}), 0x0600f290 is `tst r0,r8`, then\n`(b[tf])` at 0x0600f292\. That is the long (\+0x[\da-f]+) masked with (0x[\da-f]{8}), as\nthe row names it\./);
+    assert.equal(word(0x0600f260) & 0x0f00, 0x0000, 'into r0');
+    assert.equal(pcW(0x0600f260), parseInt(lit, 16), 'the literal\'s address');
+    assert.equal(word(parseInt(lit, 16)), parseInt(off, 16), 'the literal');
+    assert.equal(word(0x0600f262), 0x080e | (+m << 4), 'mov.l @(r0,rM),r8');
+    assert.equal(+m, 12, 'this fighter is r12');
+    assert.equal(word(0x0600f28c), 0xe000 | parseInt(imm, 16), 'mov #imm,r0');
+    assert.equal(word(0x0600f28e), 0x4028, 'shll16 r0');
+    assert.equal(parseInt(imm, 16) << 16, parseInt(mask, 16), 'the mask');
+    assert.equal(word(at), 0x2808, 'tst r0,r8');
+    assert.equal(flagText(parseInt(off, 16), parseInt(mask, 16)), named, 'the long and mask');
+    assert.equal(`${lf} & ${lm}`, named, 'the long named');
+    assert.equal(word(at + 2) & 0xff00, 0x8b00, '0x0600f292: bf, so the branch is the set side');
+    assert.equal(op, 'bf', 'the branch named');
+    assert.match(text, /The `bf` branches when the bit is set, so the branch\nis the set side and the fall-through the clear side\./);
+    const set = bTarget(at + 2), clear = at + 4;
+    /* both sides: one halfword store, then the stop */
+    for (const [side, ev] of [['set', sides.set], ['clear', sides.clear]]) {
+        assert.deepEqual(ev.map(e => [e.kind, e.at, e.of]), [['store', 0x0600f29a, undefined], ['stop', 0x0600f2a0, undefined]], side);
+        assert.deepEqual([ev[0].field, ev[0].size], [0x68a, 2], `${side}: the halfword +0x68a`);
+    }
+    const stopName = eventFlag(sides.set[1]);
+    assert.equal(eventFlag(sides.clear[1]), stopName);
+    assert.ok(those.includes(`\n| 0x0600f2a0 | ${stopName} |`), 'the stop\'s row in "The flags those stop at"');
+    const [, sLit, sOff, sVal, cDisp] = text.match(/Both sides store with 0x0600f298 `mov\.w @\((0x[\da-f]{8})\),r0`, which loads\n(0x[\da-f]{4}), and 0x0600f29a `mov\.w r3,@\(r0,r12\)`\. The set side's r3 is from\n0x0600f28a `mov\.w @\(0x0600f2dc\),r3`, which loads (0x[\da-f]{4}), before the\ntest\. The clear side sets it at 0x0600f294 `mov\.w @\((\d+),r11\),r0` and\n0x0600f296 `mov r0,r3`, a value `flagSides` does not follow\./);
+    assert.equal(set, 0x0600f298, 'the bf\'s target');
+    assert.equal(word(set) & 0x0f00, 0x0000, 'into r0');
+    assert.equal(pcW(set), parseInt(sLit, 16));
+    assert.equal(word(parseInt(sLit, 16)), parseInt(sOff, 16));
+    assert.equal(parseInt(sOff, 16), sides.set[0].field, 'the store\'s field');
+    assert.equal(word(0x0600f29a), 0x0c35, 'mov.w r3,@(r0,r12)');
+    assert.equal(word(0x0600f28a) & 0x0f00, 0x0300, 'into r3');
+    assert.equal(pcW(0x0600f28a), 0x0600f2dc);
+    assert.equal(word(0x0600f2dc), parseInt(sVal, 16), 'the set side\'s value');
+    assert.deepEqual(sides.set[0].values, [parseInt(sVal, 16)], 'set: the value flagSides reports');
+    assert.deepEqual(sides.clear[0].values, [null], 'clear: a value flagSides does not follow');
+    assert.equal(clear, 0x0600f294);
+    assert.equal(word(clear), 0x85b0 | +cDisp / 2, 'mov.w @(disp,r11),r0');
+    assert.equal(word(0x0600f296), 0x6303, 'mov r0,r3');
+    assert.match(text, /The stop at\n0x0600f2a0 tests this fighter's \(r12\) \+0x6c0 & 0x00080000; it is a row\nin "The flags those stop at", which describes its sides\./);
+    assert.equal(stopName, '+0x6c0 & 0x00080000');
+    assert.ok(!FM.handlerReaches(game, run9, set, 0x0600eb9e, [0x0600f2a0]), 'set: no 0.8 check');
+    assert.ok(!FM.handlerReaches(game, run9, clear, 0x0600eb9e, [0x0600f2a0]), 'clear: no 0.8 check');
+    assert.ok(![...sides.set, ...sides.clear].some(e => e.field === 0 && e.mask === 0x10000000), 'no +0 bit 0x10000000');
+    assert.match(text, /Neither side\nreaches the 0\.8 distance check or `\+0` bit 0x10000000\./);
+    /* the table cells */
+    const cell = (how, to, ev) => `${how} ${h(to, 8)}; stores +${h(ev[0].field, 2)} (${h(ev[0].at, 8)}); stops at ${h(ev[1].at, 8)} (${stopName})`;
+    assert.equal(rows[0][3], cell('branches to', set, sides.set), 'the set cell');
+    assert.equal(rows[0][4], cell('goes on to', clear, sides.clear), 'the clear cell');
+    /* the bullet */
+    const bullet = text.match(/^- \*\*(.+?)\*\*:([^]*?)\n\n/m), body = bullet[2].replace(/\s+/g, ' ');
+    assert.equal(bullet[1], named);
+    assert.equal(body, ` set, it jumps to ${h(set, 8)} and puts ${sVal} in the halfword +${h(sides.set[0].field, 2)}; clear, it puts the halfword at +${cDisp} of r11 there instead; neither side calls anything, and both stop at ${h(sides.set[1].at, 8)}.`);
+}
+checkF290(f290Doc, newDoc, thoseDoc);
+for (const [from, to] of [['`mov.w @(0x0600f2d8),r0`', '`mov.w @(0x0600f2da),r0`'], ['loads 0x06c0 and', 'loads 0x06c4 and'],
+    ['`mov.l @(r0,r12),r8`', '`mov.l @(r0,r13),r8`'], ['`mov #0x04,r0`', '`mov #0x08,r0`'], ['make the mask 0x00040000', 'make the mask 0x00080000'],
+    ['then\n`bf` at 0x0600f292', 'then\n`bt` at 0x0600f292'], ['the long +0x6c0 masked with 0x00040000, as', 'the long +0x6c4 masked with 0x00040000, as'],
+    ['masked with 0x00040000, as', 'masked with 0x00000400, as'],
+    ['branches when the bit is set, so the branch\nis the set side and the fall-through the clear side', 'branches when the bit is set, so the branch\nis the clear side and the fall-through the set side'],
+    ['| 0x0600f290 | +0x6c0 & 0x00040000 |', '| 0x0600f290 | +0x6c0 & 0x00080000 |'], ['| 0x0600f290 | +0x6c0 & 0x00040000 |', '| 0x0600f290 | the opponent\'s +0x6c0 & 0x00040000 |'],
+    ['| branches to 0x0600f298;', '| branches to 0x0600f29a;'], ['| goes on to 0x0600f294;', '| goes on to 0x0600f292;'],
+    ['0x0600f298; stores +0x68a (0x0600f29a);', '0x0600f298; stores +0x68c (0x0600f29a);'], ['0x0600f294; stores +0x68a (0x0600f29a);', '0x0600f294; no store or call;'],
+    ['(0x0600f29a); stops at 0x0600f2a0 (+0x6c0 & 0x00080000) | goes', '(0x0600f29a); stops at 0x0600f340 (+0x6c0 & 0x01000000) | goes'],
+    ['(+0x6c0 & 0x00080000) |\n', '(+0x6c0 & 0x00040000) |\n'],
+    ['jumps to 0x0600f298 and puts 0x08b3', 'jumps to 0x0600f29a and puts 0x08b3'], ['puts 0x08b3\n  in the halfword', 'puts 0x08b4\n  in the halfword'],
+    ['the halfword +0x68a; clear', 'the long +0x68a; clear'], ['at +6 of r11 there', 'at +4 of r11 there'],
+    ['neither side calls anything', 'the clear side calls 0x06010dda'], ['both stop at 0x0600f2a0.', 'both stop at 0x0600f340.'],
+    ['`mov.w @(0x0600f2de),r0`, which loads\n0x068a', '`mov.w @(0x0600f2de),r0`, which loads\n0x068c'], ['`mov.w @(0x0600f2de),r0`', '`mov.w @(0x0600f2e0),r0`'],
+    ['`mov.w r3,@(r0,r12)`', '`mov.w r3,@(r0,r13)`'], ['0x0600f28a `mov.w @(0x0600f2dc),r3`', '0x0600f28a `mov.w @(0x0600f2de),r3`'],
+    ['which loads 0x08b3, before', 'which loads 0x068a, before'], ['`mov.w @(6,r11),r0`', '`mov.w @(4,r11),r0`'],
+    ['0x0600f2a0 tests this fighter\'s (r12) +0x6c0 & 0x00080000', '0x0600f2a0 tests this fighter\'s (r12) +0x6c0 & 0x00040000'],
+    ['in "The flags those stop at", which', 'in "The flags those four stop at", which'],
+    ['Neither side\nreaches the 0.8', 'The set side\nreaches the 0.8']]) {
+    assert.ok(f290Doc.includes(from), from);
+    assert.throws(() => checkF290(f290Doc.replace(from, to), newDoc, thoseDoc), `${from} -> ${to}`);
+}
+/* the list's row naming another field or mask fails too */
+assert.throws(() => checkF290(f290Doc, newDoc.replace('| 0x0600f290 | this fighter (r12) | +0x6c0 | 0x00040000 |', '| 0x0600f290 | this fighter (r12) | +0x6c0 | 0x00080000 |'), thoseDoc));
+assert.throws(() => checkF290(f290Doc, newDoc.replace('| 0x0600f290 | this fighter (r12) | +0x6c0 | 0x00040000 |', '| 0x0600f290 | this fighter (r12) | +0x6c4 | 0x00040000 |'), thoseDoc));
+assert.throws(() => checkF290(f290Doc, newDoc, thoseDoc.replace('| 0x0600f2a0 | +0x6c0 & 0x00080000 |', '| 0x0600f2a0 | +0x6c0 & 0x00040000 |')));
 const sentenceSlots = new Map(kinds.map(([, k, , , , , , does]) => [parseInt(k, 16), [...new Set([...does.matchAll(
     /(?<![\w.+\u2212-]|bit |frame |kind |≤ |is )(\d+)(?![\w.]| frames?)/g)].map(m => +m[1]))].sort((a, b) => a - b)]));
 const ruleSlots = (kind, p) => kind !== 9 ? sentenceSlots.get(kind)
