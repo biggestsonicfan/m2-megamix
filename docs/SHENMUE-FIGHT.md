@@ -509,8 +509,6 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
       0x00050000, 0x000C1111, 0x00001317 big-endian: nothing that reads as
       one number across the four. As u16s, at either alignment the KAITEN
       bytes 0c 11 11 split across two of them.
-    - Not shown to be a set of bits: every value is under 0x20, so bits
-      aren't ruled out, but nothing here tests that.
     - So no field and no width is read here. Elbow Slam and Twist Knuckle
       are all 0 there under any reading.
 - **Counting kind-5 groups (86, 88, 104):** the three counts are the same
