@@ -130,8 +130,8 @@ group and a u16 zero.
     angle table at 0x0C47BC6C.
   - 0x400 and 0x800 OR in the facing-relative forward and back (ctx+0x7DC and
     ctx+0x7E0).
-  - The tool prints them as dir0, dir180, … because which of dir0 and dir180 is
-    "forward" isn't checked yet.
+  - The tool prints them as dir0, dir180, …. Going by the notebook text,
+    dir180 (0x20) is forward and dir0 (0x10) is back: see "Which way is forward".
 - **Root dispatch:** the script starts with a run of switches on ctx+0x7C8, the
   buttons pressed. Ryo's branches:
   - 1: the hand moves (P)
@@ -201,6 +201,40 @@ From `skills … --json`, one row per skill:
 | Shadow Step | 73 | 0x18 | held dir180 | 0x49 | (another candidate) |
 | Shadow Blade | 76 | 0x18 | – | – | (another candidate) |
 
+## Which way is forward
+
+dir180 (0x20) is forward, toward the opponent, and dir0 (0x10) is back. This
+comes from the notebook descriptions (1ST_READ.BIN 0x26EB10 on, one per move in
+the name list's order) laid against the script's checks. The game doesn't confirm
+it: the notebook text gives no commands, and it isn't checked on screen.
+
+- **Reading a check:** the script lists the newest input first, so a row reads
+  backwards in time. `held dir180 0 held dir180` is dir180, let go, dir180 held
+  with the button: a double tap. `held dir180 dir0 dir0 0` is dir0, then dir180
+  with the button. Ryo's script uses only dir0 and dir180: no up or down.
+- **A double tap of dir180 rushes in:**
+  - Elbow Assault: "a full-body rush".
+  - Cross Charge: "moves in for an elbow strike".
+  - Tiger Storm: "aggressively lunging into the opponent". Its check ends in the
+    same double tap.
+  - Mud Spider: "slides toward the opponent". Its check ends the same way too.
+  A dash is a double tap forward; a double tap back is a back step.
+- **dir180 held steps in:** TwinHandWaves ("advancing a step forward") and
+  Double Blow ("begins with a step forward"). Trample Kick, a front kick
+  (AKI_AKI_MAEGERI), is dir180 too.
+- **dir0 held goes back:** Vortex Throw is the sacrifice throw, in which Ryo
+  "falls backward" (AKI_AKI_NGS_JUDO_TM, tomoe nage). Swallow Flip deflects the
+  attack (AKI_AKI_NGS_INASI, a parry). Both are moves you'd do pulling back.
+- **Against it:**
+  - KatanaMistSlash "advances one step with the forward leg" but is a dir0
+    double tap.
+  - Stab Armor is "stepping in deeper", and its check ends dir0 held.
+  These are two to the nine above. The step may belong to the motion, not to
+  the stick.
+- **Still to check on screen:** in Free Battle, dir180 + P should play Elbow
+  Slam (AKI_AKI_ELBOW) and dir0 + P Twist Knuckle (AKI_AKI_BATTLE_PNC_FUK), with
+  Ryo facing either way.
+
 ## Motion ids
 
 A play's motion id k names MOTION.BIN's record k − 1 (disc 3's `/MISC/MOTION.BIN`).
@@ -237,7 +271,6 @@ A play's motion id k names MOTION.BIN's record k − 1 (disc 3's `/MISC/MOTION.B
 - **Damage and frames:** these are probably in the file's two tables after the
   script (0x1BBC and 0x1D8A in Ryo's), or in the motion table's second offset
   per motion, which #1505 hasn't decoded.
-- **The pad's directions:** which of dir0 and dir180 is forward.
 
 ## Other leads
 
