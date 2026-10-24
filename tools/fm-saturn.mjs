@@ -163,16 +163,148 @@ export function readScript(buf) {
 }
 
 /** A fighter's moves: every request in its script, with the motion it plays
- *  (from its own bank, or the common one) and that motion's length. */
+ *  (from its own bank, or the common one), that motion's length, and the
+ *  inputs that reach it (readInputs, written out by inputText; '' if none). */
 export function readMoves(game, fighter) {
     const own = new Map(readBank(game.archive(fighter.motions)).map(r => [r.id, r]));
     const common = new Map(readBank(game.archive(COMMON_MOTIONS)).map(r => [r.id, r]));
-    return readScript(game.archive(fighter.file9)).filter(o => REQUESTS.has(o.op)).map(({ at, op, bytes }) => {
+    const script = game.archive(fighter.file9), inputs = readInputs(script);
+    const moves = readScript(script).filter(o => REQUESTS.has(o.op)).map(({ at, op, bytes }) => {
         const move = bytes.readUInt32BE(4), motion = move & 0xfff;
         const row = motion ? own.get(motion) ?? common.get(motion) : undefined;
         return { at, op, move, kind: move >>> 24, parameter: (move >> 16) & 0xff, motion: motion || null,
             bank: row ? (own.has(motion) ? fighter.motions : COMMON_MOTIONS) : null, frames: row?.frames ?? null };
     });
+    const byAt = new Map(moves.map(m => [m.at, m]));
+    const motionAt = at => byAt.get(at)?.motion ? `0x${byAt.get(at).motion.toString(16)}` : `@0x${at.toString(16)}`;
+    for (const m of moves) m.input = (inputs.get(m.at) ?? []).map(q => inputText(q, motionAt)).join('; ');
+    return moves;
+}
+
+/* What a request needs. The script runs when a button is pressed (or, with
+ * none, every frame), with r5 = state << 8 | buttons: P 1, K 2, G 4, and 8,
+ * which no pad key gives by default (0x06072304 maps the pad: B P, C K,
+ * A G, X P+G, Y K+G, Z P+K+G). The state is 0 on the ground, 1-4 in the air
+ * (0x06016e28, where up asks for kind 9, the jump), 5-10 other states
+ * (0x06016d4a). Then it matches the stick history newest first, from the
+ * frame of the press back (+0x1274, 64 entries of {held, held', pressed,
+ * released}): the stick bits are down 0x10, up 0x20, and +0x123C/+0x1240,
+ * the pad's left or right as the fighter faces (0x06016546), so forward and
+ * back. A match holds while the stick stays as it was. */
+const STATES = ['', 'air 1 ', 'air 2 ', 'air 3 ', 'air 4 ', 'state 5 ', 'state 6 ', 'state 7 ',
+    'state 8 ', 'state 9 ', 'state 10 '];
+const BUTTONS = ['', 'P', 'K', 'P+K', 'G', 'P+G', 'K+G', 'P+K+G'];
+function stick(dirs, f, b) {
+    const v = (dirs & 0x10 ? 'd' : '') + (dirs & 0x20 ? 'u' : '');
+    const h = (f ? 'f' : '') + (b ? 'b' : '');
+    return v && h ? `${v}/${h}` : v || h || 'n';
+}
+/* stick operands: ops 0x00/0x01/0x03 {u8 flags (1 forward, 2 back), u8 dirs};
+ * ops 0x02/0x2B a u16: 0x100 forward, 0x200 back, else the dirs */
+const byteStick = bytes => stick(bytes[3], bytes[2] & 1, bytes[2] & 2);
+const wordStick = bytes => { const w = bytes.readUInt16BE(2); return w & 0x100 ? 'f' : w & 0x200 ? 'b' : stick(w & 0xff); };
+/* ops that test a flag word of the fighter: pass if set (or clear) */
+const FLAG_TESTS = { 0x07: '+4a4', 0x0a: '!+4a4', 0x08: '+0', 0x0b: '!+0', 0x09: '+2c', 0x0c: '!+2c',
+    0x1c: '+70', 0x36: '+578', 0x37: '!+578', 0x3a: '+6c0', 0x3b: '!+6c0', 0x43: '+6b4' };
+
+/** Every way the script reaches each request: { at → [{ entry, after, r5, stick, tests }] }.
+ *  entry is 0 or a follow-up point (set by 0x0D/0x38 while a move plays); after
+ *  is the requests that set it; r5 the switch case; stick the history ops,
+ *  oldest first; tests the flag checks on the way. */
+export function readInputs(buf) {
+    const ops = readScript(buf), byAt = new Map(ops.map((o, i) => [o.at, i]));
+    const paths = new Map(), follows = new Map();   /* follow-up point → requests before it */
+    const add = (m, k, v) => { if (!m.has(k)) m.set(k, []); if (!m.get(k).includes(v)) m.get(k).push(v); };
+    function walk(entry, i, p, seen) {
+        for (; i !== undefined && i < ops.length; i++) {
+            const { at, op, bytes } = ops[i];
+            if (seen.has(at)) return;
+            seen = new Set(seen).add(at);
+            /* a follow-up that goes back to the top is a fresh press: walked already */
+            const jump = off => entry && off === 0 ? undefined : walk(entry, byAt.get(off), p, seen);
+            if (op === 0x0e) {   /* if r5 == v goto */
+                const v = bytes.readUInt32BE(4);
+                if (p.r5 === undefined ? !p.not.includes(v) : p.r5 === v)
+                    walk(entry, byAt.get(bytes.readUInt32BE(8)), { ...p, r5: v, not: [] }, seen);
+                if (p.r5 === v) return;
+                p = { ...p, not: [...p.not, v] };
+            } else if (op === 0x16) {   /* pass if r5 == v */
+                const v = bytes.readUInt32BE(4);
+                if (p.r5 !== undefined && p.r5 !== v) return;
+                p = { ...p, r5: v };
+            } else if (op === 0x4a) {   /* r5 = a halfword of the fighter (0x50: its motion) */
+                p = { ...p, r5: undefined, not: [], r5of: bytes.readUInt16BE(2), outer: p.outer ?? p.r5 };
+            } else if (op === 0x0f || op === 0x27 || op === 0x3f || op === 0x40) {   /* try; on failure go to */
+                jump(bytes.readUInt32BE(4));
+            } else if (op === 0x10) return;
+            else if (op === 0x11) return jump(bytes.readUInt32BE(4));
+            else if (op === 0x28) {   /* the stick at this frame: forward, back, neither */
+                const s = ['f*', 'b*', 'not f/b'];
+                [4, 8, 12].forEach((k, j) => walk(entry, byAt.get(bytes.readUInt32BE(k)),
+                    { ...p, stick: [...p.stick, s[j]] }, seen));
+                return;
+            } else if (op === 0x00 || op === 0x01) p = { ...p, stick: [...p.stick, byteStick(bytes)] };
+            else if (op === 0x02) p = { ...p, stick: [...p.stick, wordStick(bytes) + '*'] };
+            else if (op === 0x2b) p = { ...p, stick: [...p.stick, `not ${wordStick(bytes)}`] };
+            else if (op === 0x0d || op === 0x38) {   /* the next press runs from here, while this move plays */
+                p = { ...p, follow: bytes.readUInt32BE(4) };
+                if (op === 0x38) return;
+            } else if (FLAG_TESTS[op]) {
+                const t = `${FLAG_TESTS[op]}&${bytes.readUInt32BE(4).toString(16)}`;
+                if (p.tests.includes(t[0] === '!' ? t.slice(1) : `!${t}`)) return;   /* can't both pass */
+                if (!p.tests.includes(t)) p = { ...p, tests: [...p.tests, t] };
+            } else if (op === 0x1a || op === 0x1b) {   /* +0x4D8, the distance to the opponent (16.16, 0x06011d3e): at least, or under */
+                const t = `dist${op === 0x1a ? '>=' : '<'}${+(bytes.readInt32BE(4) / 65536).toFixed(2)}`;
+                if (!p.tests.includes(t)) p = { ...p, tests: [...p.tests, t] };
+            } else if (REQUESTS.has(op)) {
+                add(paths, at, { entry, r5: p.r5 ?? null, r5of: p.r5of ?? null, outer: p.outer ?? null,
+                    stick: [...p.stick].reverse(), tests: p.tests });
+                if (p.follow !== undefined) add(follows, p.follow, at);
+                return;   /* 0x06 and 0x32 stop too, requesting or not (0x06017466, 0x06017738) */
+            }
+        }
+    }
+    const start = { r5: undefined, not: [], stick: [], tests: [] };
+    walk(0, 0, start, new Set());
+    for (let done = new Set(), more = true; more;) {
+        more = false;
+        for (const x of follows.keys()) if (!done.has(x)) { done.add(x); more = true; walk(x, byAt.get(x), start, new Set()); }
+    }
+    const SIDES = ['f*', 'b*', 'not f/b'];
+    for (const [at, list] of paths) {
+        /* op 0x28's three ways that all reach the request: the side didn't matter */
+        const seen = new Set(list.map(q => JSON.stringify(q)));
+        for (const q of list) for (let k = q.stick.length - 1; k >= 0; k--) {
+            if (!SIDES.includes(q.stick[k])) continue;
+            const all = SIDES.every(x => seen.has(JSON.stringify({ ...q, stick: q.stick.map((y, j) => j === k ? x : y) })));
+            if (all) q.stick = q.stick.filter((_, j) => j !== k);
+        }
+        for (const q of list) q.after = q.entry ? follows.get(q.entry) ?? [] : [];
+        /* P+K falls through to P's checks, and a later alternative can carry the
+         * stick an earlier one matched: keep only the paths that ask least */
+        const key = q => JSON.stringify([q.entry, (q.outer ?? q.r5) >> 8, q.r5of, q.r5of === null ? 0 : q.r5]);
+        const bits = q => (q.outer ?? q.r5) & 0xff;
+        const within = (a, b) => { let i = 0; for (const x of b) if (x === a[i]) i++; return i === a.length; };
+        const covers = (o, q) => key(o) === key(q) && (bits(o) & bits(q)) === bits(o)
+            && within(o.stick, q.stick) && o.tests.every(t => q.tests.includes(t));
+        paths.set(at, list.filter((q, i) => !list.some((o, j) => j !== i && covers(o, q) && (!covers(q, o) || j < i))));
+    }
+    return paths;
+}
+
+/** One way to a request, written out: "d,d/f+P", "air 1 K", "after 0x4da: P". */
+export function inputText(q, motionAt = at => `0x${at.toString(16)}`) {
+    const r5 = q.outer ?? q.r5, buttons = r5 === null ? '' : (BUTTONS[r5 & 7] ?? '') + (r5 & 8 ? (r5 & 7 ? '+8' : '8') : '');
+    const state = r5 === null ? '' : STATES[r5 >> 8] ?? `state ${r5 >> 8} `;
+    /* the stick at the press (op 0x28) only matters when nothing else is checked */
+    let s = q.stick.filter(x => x !== 'not f/b');
+    s = s.length > 1 ? s.filter(x => x !== 'f*' && x !== 'b*') : s.map(x => x.replace(/^([fb])\*$/, '$1'));
+    let text = s.join(',').replace(/not b,not f|not f,not b/g, 'not f/b');
+    if (buttons) text = text ? `${text}+${buttons}` : buttons;
+    text = state + (text || (r5 === 0 ? 'no button' : 'any'));
+    if (q.r5of === 0x50 && q.r5 !== null) text += ` during 0x${q.r5.toString(16)}`;
+    if (q.after.length) text = `after ${q.after.map(motionAt).join('/')}: ${text}`;
+    return q.tests.length ? `${text} [${q.tests.join(' ')}]` : text;
 }
 
 /* Where a fighter's model file keeps its slot table: four tables of 32
@@ -408,7 +540,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         const h = (v, n) => `0x${v.toString(16).padStart(n, '0')}`;
         for (const m of readMoves(game, f)) {
             console.log(`${h(m.at, 4)}\t${h(m.move, 8)}\t${m.motion === null ? '-' : h(m.motion, 0)}` +
-                `\t${m.frames ?? '-'}\t${m.bank ?? '-'}`);
+                `\t${m.frames ?? '-'}\t${m.bank ?? '-'}\t${h(m.kind, 2)}\t${h(m.parameter, 2)}\t${m.input || '-'}`);
         }
         process.exit(0);
     }

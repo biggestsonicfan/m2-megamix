@@ -55,28 +55,42 @@ for (let c = 0; c < 60; c++) {
 }
 /* Hornet's moves, as docs/FM-SATURN.md lists them: every motion from his
  * bank is one of the 103 in file 135, the others are in the common bank,
- * and the table is what the script says */
+ * and the table, kinds and inputs too, is what the script says */
 const hornet = game.fighters[14];
 const own = new Set(FM.readBank(game.archive(hornet.motions)).map(r => r.id));
 const common = new Set(FM.readBank(game.archive(FM.COMMON_MOTIONS)).map(r => r.id));
 assert.equal(own.size, 103);
 const doc = readFileSync(new URL('../docs/FM-SATURN.md', import.meta.url), 'utf8');
-const listed = [...doc.split('### Hornet\'s')[1].matchAll(/^\| (0x[\da-f, x]+) \| (0x[\da-f]{8}) \| (\S+) \| (\S+) \| (\S+) \|$/gm)]
-    .map(([, at, move, motion, frames, bank]) => ({ at, move, motion, frames, bank }));
+const listed = [...doc.split('### Hornet\'s')[1].matchAll(
+    /^\| (0x[\da-f, x]+) \| (0x[\da-f]{8}) \| (\S+) \| (\S+) \| (\S+) \| (0x[\da-f]{2}) \| (0x[\da-f]{2}) \| (.+) \|$/gm)]
+    .map(([, at, move, motion, frames, bank, kind, parameter, input]) => ({ at, move, motion, frames, bank, kind, parameter, input }));
 assert.equal(listed.length, 81);
 for (const m of listed) {
     if (m.bank === '135') assert.ok(own.has(parseInt(m.motion, 16)), `${m.move}: ${m.motion} isn't in file 135`);
     else if (m.bank === '352') assert.ok(common.has(parseInt(m.motion, 16)) && !own.has(parseInt(m.motion, 16)), m.move);
     else assert.equal(m.motion, '-', m.move);
 }
-const h = (v, n) => `0x${v.toString(16).padStart(n, '0')}`, read = new Map();
-for (const m of FM.readMoves(game, hornet)) {
+const h = (v, n) => `0x${v.toString(16).padStart(n, '0')}`, read = new Map(), inputs = new Map();
+const hornetMoves = FM.readMoves(game, hornet);
+for (const m of hornetMoves) {
     const k = h(m.move, 8), r = read.get(k);
+    if (!inputs.has(k)) inputs.set(k, []);
+    inputs.get(k).push(`${h(m.at, 4)}: ${m.input || '(unreached)'}`);
     if (r) r.at += `, ${h(m.at, 4)}`;
     else read.set(k, { at: h(m.at, 4), move: k, motion: m.motion === null ? '-' : h(m.motion, 0),
-        frames: String(m.frames ?? '-'), bank: String(m.bank ?? '-') });
+        frames: String(m.frames ?? '-'), bank: String(m.bank ?? '-'), kind: h(m.kind, 2), parameter: h(m.parameter, 2) });
 }
+for (const [k, r] of read) { const i = inputs.get(k); r.input = i.length === 1 ? i[0].slice(8) : i.join('; '); }
 assert.deepEqual(listed, [...read.values()]);
+/* a few read by hand off the script: the dashes, a follow-up, a throw-like
+ * P+G, an air attack, and the dead block at 0x0A28 */
+const inputAt = at => hornetMoves.find(m => m.at === at).input;
+assert.equal(inputAt(0x0bd4), 'f,n,f');
+assert.equal(inputAt(0x0bf4), 'b,n,b');
+assert.equal(inputAt(0x0250), 'after 0x4da: P');
+assert.equal(inputAt(0x08e0), 'b+P+G [+0&10000000 +578&1]');
+assert.equal(inputAt(0x0d60), 'air 3 b+K [+0&10000000]');
+assert.equal(inputAt(0x0a84), '');
 
 /* every fighter's script decodes to its move list, its jumps land on opcodes,
  * and its motions are in its bank or the common one */

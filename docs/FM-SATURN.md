@@ -342,12 +342,72 @@ file's start. Each opcode is 4, 8, 12 or 16 bytes, read off its handler's
 - **0x0F, 0x27**: push the u32 offset as the alternative. **0x10**: fail
   back to the last alternative. **0x11**: goto. **0x28**: a three-way branch
   on the stick (three u32 offsets).
-- **0x01, 0x03**: match the input. The low byte is buttons; flags in byte 2
-  add the toward/away bits at fighter +0x123C and +0x1240. These aren't
-  named yet.
-- **0x05**: request a move and stop. **0x06**: the same, unless a flag is
-  set. **0x32**: the same, if the u16 at +2 (a motion id) passes
-  FUN_06017c5e.
+- **0x00, 0x01, 0x02, 0x2B, 0x03, 0x04**: match the stick history (see
+  Inputs). **0x07–0x0C, 0x1C, 0x36, 0x37, 0x3A, 0x3B, 0x43**: pass if a
+  flag of the fighter is set or clear. **0x1A, 0x1B**: pass if the distance
+  to the opponent (+0x4D8, 16.16, worked out at 0x06011d3e) is at least, or
+  under, a value.
+- **0x0D, 0x38**: set the follow-up point (+0x124C). While the move plays,
+  the next press runs the script from there instead of from the top.
+- **0x05**: request a move and stop. **0x06**: the same, unless +0x31
+  bit 0x40 is set (then it stops without a request). **0x32**: the same, if
+  FUN_06017c5e passes: +0x2C bit 0x10 is set and the fighter's +0x4A8 has
+  reached the motion's +6 (an air attack needs height). All three end the
+  run (0x06017422, 0x06017466, 0x06017738).
+
+### Inputs
+
+The script runs when a button is pressed (and once a frame without one).
+r5 holds state << 8 | buttons. The pad goes through the table at 0x06072304
+(P2: 0x0607233C):
+
+- B is P (1), C is K (2), A is G (4);
+- X is P+G, Y is K+G, Z is P+K+G;
+- L, R and Start give nothing.
+
+Bit 8 is a fourth button that no default key gives.
+
+The state is 0 on the ground and 1–4 in the air (0x06016e28: up there
+requests kind 9, the jump). States 5–10 come from other flags of the
+fighter (0x06016d4a). Hornet's script only uses 0–4, plus 8 in the case
+for button 8.
+
+Before any of this, the engine asks for its own default moves: 1 idle,
+3 forward, 4/7 back, 9 jump (parameter 1 forward, 2 back, 0 straight up),
+0x0A crouch guard, 0x0B guard.
+
+The stick history is fighter +0x1274: 64 entries of {held, held', pressed,
+released}. The bits are:
+
+- down 0x10 and up 0x20;
+- +0x123C forward and +0x1240 back. These are the pad's left and right as
+  the fighter faces, set at 0x06016546 from +0 bit 0x08000000, which
+  0x06011bc0 sets from the fighter's yaw against the camera.
+
+The ops match the history newest first, from the frame of the press back:
+
+- **0x00**: a tap. The stick was pressed into exactly this.
+- **0x01**: held exactly this.
+- **0x02**: held includes it.
+- **0x2B**: held lacks it.
+- **0x03**: let these through for n frames.
+- **0x04**: the window for the next match.
+- **0x28**: a three-way branch: forward, back or neither, at the press.
+
+`readInputs` walks every path to each request. It drops the paths a
+simpler path covers, and the paths whose flag tests contradict each other.
+`inputText` writes a path out:
+
+- the stick oldest first, then `+` and the buttons;
+- `n` is neutral, `d*` is down held (with anything else), and
+  `not f/b` means neither forward nor back;
+- `air 1`–`air 4` is the state;
+- `after 0x…:` is a follow-up, pressed while that motion plays;
+- `[…]` lists the flag and distance tests on the way: `+0&10000000` means
+  fighter +0 & 0x10000000 is set, and `!` means clear.
+
+Most of those flags aren't named yet. When several paths reach a move, they
+are separated by `;`. A path that is listed earlier in the script wins.
 
 A **move** is the u32 that a request opcode stores in the fighter's +0x3C:
 { u8 kind, u8 parameter, u16 motion }. The kind picks one of 104 handlers at
@@ -377,98 +437,121 @@ Hornet's script makes 95 requests, which come to 81 different moves:
 
 Below, "at" is the request's offset in 134 (every one, if a move is
 requested from more than one place). "Frames" is the motion's length in the
-bank. Hornet's kinds are 0, 0x10 (0x7D4–0xB44), 0x2D (one move), and 9 with
-a parameter of 0, 4, 8, 0x0C or 0x14 (the block from 0xC5C to 0xDBC). What
-the kinds and parameters mean isn't decoded.
+bank. "Kind" and "Parameter" are the move's top two bytes. "Input" is
+`inputText` for every path to the request (with its offset, on a row of
+more than one).
 
-| At | Move | Motion | Frames | Bank |
-| --- | --- | --- | --- | --- |
-| 0x01f4 | 0x00000712 | 0x712 | 51 | 135 |
-| 0x0220 | 0x00000659 | 0x659 | 41 | 352 |
-| 0x0230 | 0x000004da | 0x4da | 41 | 352 |
-| 0x0250 | 0x000008ee | 0x8ee | 32 | 135 |
-| 0x0294 | 0x000005aa | 0x5aa | 70 | 135 |
-| 0x02d8 | 0x000008dc | 0x8dc | 70 | 135 |
-| 0x030c | 0x00000653 | 0x653 | 60 | 135 |
-| 0x0340 | 0x000000ff | 0xff | 64 | 135 |
-| 0x0350 | 0x000006bf | 0x6bf | 50 | 135 |
-| 0x0390 | 0x000006be | 0x6be | 62 | 135 |
-| 0x03bc, 0x0938 | 0x000008f3 | 0x8f3 | 81 | 135 |
-| 0x03e4 | 0x000005ae | 0x5ae | 60 | 135 |
-| 0x0400 | 0x0000075e | 0x75e | 60 | 135 |
-| 0x0428 | 0x000006ff | 0x6ff | 60 | 135 |
-| 0x0450 | 0x00000110 | 0x110 | 44 | 135 |
-| 0x0458 | 0x000006c1 | 0x6c1 | 50 | 135 |
-| 0x0474 | 0x000006f3 | 0x6f3 | 60 | 135 |
-| 0x04b4 | 0x000006b7 | 0x6b7 | 70 | 135 |
-| 0x04f4 | 0x000006b9 | 0x6b9 | 92 | 135 |
-| 0x0504 | 0x000006b8 | 0x6b8 | 92 | 135 |
-| 0x0534 | 0x000006b2 | 0x6b2 | 80 | 135 |
-| 0x0574 | 0x000008e0 | 0x8e0 | 80 | 135 |
-| 0x05a0 | 0x000008e5 | 0x8e5 | 80 | 135 |
-| 0x05d4 | 0x0000014d | 0x14d | 60 | 135 |
-| 0x05f8 | 0x0000014e | 0x14e | 62 | 135 |
-| 0x060c, 0x0b68 | 0x00000656 | 0x656 | 27 | 352 |
-| 0x062c | 0x000008ed | 0x8ed | 24 | 135 |
-| 0x064c | 0x000008ef | 0x8ef | 32 | 135 |
-| 0x0654 | 0x0000010f | 0x10f | 33 | 135 |
-| 0x0688 | 0x2d000146 | 0x146 | 70 | 135 |
-| 0x06b4 | 0x0000056c | 0x56c | 52 | 352 |
-| 0x06bc, 0x0ab0 | 0x000006db | 0x6db | 71 | 135 |
-| 0x06e8 | 0x00000658 | 0x658 | 57 | 352 |
-| 0x06f8 | 0x000004d6 | 0x4d6 | 57 | 352 |
-| 0x0734 | 0x000008e6 | 0x8e6 | 49 | 135 |
-| 0x074c | 0x0000010e | 0x10e | 46 | 135 |
-| 0x0768 | 0x00000652 | 0x652 | 50 | 135 |
-| 0x0784 | 0x000006dd | 0x6dd | 60 | 135 |
-| 0x078c, 0x0a8c | 0x0000010d | 0x10d | 46 | 135 |
-| 0x07ac | 0x0000066c | 0x66c | 63 | 135 |
-| 0x07d4, 0x07dc | 0x10000100 | 0x100 | 71 | 135 |
-| 0x0804 | 0x10040098 | 0x98 | 66 | 135 |
-| 0x0814 | 0x10040096 | 0x96 | 66 | 135 |
-| 0x0844, 0x084c | 0x1000088c | 0x88c | 71 | 135 |
-| 0x08ac | 0x100000c9 | 0xc9 | 109 | 135 |
-| 0x08b4, 0x08e8, 0x0914, 0x0b4c | 0x00000432 | 0x432 | 50 | 352 |
-| 0x08e0 | 0x1000080d | 0x80d | 66 | 135 |
-| 0x090c | 0x100000fd | 0xfd | 230 | 135 |
-| 0x098c, 0x0b0c | 0x0000024b | 0x24b | 60 | 352 |
-| 0x09c0 | 0x00000776 | 0x776 | 81 | 135 |
-| 0x09f8 | 0x0000010b | 0x10b | 42 | 135 |
-| 0x0a1c | 0x0000010a | 0x10a | 42 | 135 |
-| 0x0a84 | 0x0000010c | 0x10c | 62 | 135 |
-| 0x0b44 | 0x10000440 | 0x440 | 100 | 135 |
-| 0x0b88 | 0x00000883 | 0x883 | 30 | 352 |
-| 0x0ba8 | 0x00000884 | 0x884 | 30 | 352 |
-| 0x0bb0 | 0x00000700 | 0x700 | 60 | 135 |
-| 0x0bd4, 0x0df4 | 0x1a000000 | - | - | - |
-| 0x0bf4, 0x0e0c | 0x13000000 | - | - | - |
-| 0x0c20 | 0x1d000000 | - | - | - |
-| 0x0c44 | 0x1e000000 | - | - | - |
-| 0x0c5c, 0x0d24 | 0x0914013a | 0x13a | 100 | 135 |
-| 0x0c64 | 0x090c0561 | 0x561 | 50 | 135 |
-| 0x0c84 | 0x0904089d | 0x89d | 51 | 135 |
-| 0x0c9c, 0x0ccc | 0x090402fb | 0x2fb | 49 | 135 |
-| 0x0cb4 | 0x090402ee | 0x2ee | 57 | 352 |
-| 0x0cd4 | 0x090402f9 | 0x2f9 | 49 | 135 |
-| 0x0cdc | 0x090c055f | 0x55f | 79 | 135 |
-| 0x0cf0 | 0x090402ef | 0x2ef | 44 | 135 |
-| 0x0d04 | 0x090c02fc | 0x2fc | 46 | 352 |
-| 0x0d0c | 0x090c02f6 | 0x2f6 | 53 | 352 |
-| 0x0d2c | 0x09080314 | 0x314 | 80 | 135 |
-| 0x0d38 | 0x0900030d | 0x30d | 100 | 352 |
-| 0x0d48 | 0x09080561 | 0x561 | 50 | 135 |
-| 0x0d60 | 0x09080301 | 0x301 | 59 | 352 |
-| 0x0d74 | 0x090802ff | 0x2ff | 69 | 352 |
-| 0x0d88 | 0x09000302 | 0x302 | 60 | 352 |
-| 0x0d98 | 0x09000303 | 0x303 | 49 | 352 |
-| 0x0dac | 0x09080304 | 0x304 | 60 | 352 |
-| 0x0dbc | 0x09080305 | 0x305 | 44 | 352 |
-| 0x0e1c | 0x31000000 | - | - | - |
+What the inputs say about the kinds:
+
+- **0**: just plays the motion.
+- **9**: the jump's kind. With a parameter of 0, 4, 8, 0x0C or 0x14 it is an
+  air attack, from states 1–4. Bit 2 of the parameter goes with P, but
+  the bits aren't decoded.
+- **0x10**: P+G moves that test +0x578, so probably throws. 0x578 is maybe
+  the opponent's state.
+- **0x1A**: f,n,f, a forward dash. **0x13**: b,n,b, a back dash.
+- **0x1D, 0x1E**: d/f twice and d/b twice.
+- **0x2D**: one move (n,d*+K). **0x31**: button 8 on its own. Its follow-up
+  (0xE24) waits a frame and goes back to the top.
+
+The kinds' handlers at 0x06012AEC aren't read yet. Three requests have no
+path:
+
+- 0x0A84 and 0x0A8C sit in 0x0A28–0x0A94, which nothing branches to;
+- 0x0844 needs +0 bit 0x10000000 both set (0x0824) and clear (0x083C).
+
+Hornet's 22 throws aren't requests at all. Op 0x46 in the P+G block
+(0xE7C–0x11D8) asks for kind 0x1B plus the opponent's +0x6AC, so they
+aren't in this table.
+
+| At | Move | Motion | Frames | Bank | Kind | Parameter | Input |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0x01f4 | 0x00000712 | 0x712 | 51 | 135 | 0x00 | 0x00 | P [+0&10000000 +2c&8000000] |
+| 0x0220 | 0x00000659 | 0x659 | 41 | 352 | 0x00 | 0x00 | d+P [+0&10000000 +4a4&1] |
+| 0x0230 | 0x000004da | 0x4da | 41 | 352 | 0x00 | 0x00 | P [+0&10000000 +4a4&1] |
+| 0x0250 | 0x000008ee | 0x8ee | 32 | 135 | 0x00 | 0x00 | after 0x4da: P |
+| 0x0294 | 0x000005aa | 0x5aa | 70 | 135 | 0x00 | 0x00 | f,d,d/f+P [+0&10000000] |
+| 0x02d8 | 0x000008dc | 0x8dc | 70 | 135 | 0x00 | 0x00 | after 0x5aa: n,f,d,d/f+P |
+| 0x030c | 0x00000653 | 0x653 | 60 | 135 | 0x00 | 0x00 | d/b,d/f+P [+0&10000000 +0&10] |
+| 0x0340 | 0x000000ff | 0xff | 64 | 135 | 0x00 | 0x00 | n,f,n,f+P [!+0&10000000] |
+| 0x0350 | 0x000006bf | 0x6bf | 50 | 135 | 0x00 | 0x00 | n,f,n,f+P |
+| 0x0390 | 0x000006be | 0x6be | 62 | 135 | 0x00 | 0x00 | after 0x6bf: f+P |
+| 0x03bc, 0x0938 | 0x000008f3 | 0x8f3 | 81 | 135 | 0x00 | 0x00 | 0x03bc: after 0x6bf: b,f+P+K; 0x0938: P+K [+0&10000000 +2c&8000000] |
+| 0x03e4 | 0x000005ae | 0x5ae | 60 | 135 | 0x00 | 0x00 | d/f+P [+0&10000000 +0&10] |
+| 0x0400 | 0x0000075e | 0x75e | 60 | 135 | 0x00 | 0x00 | d/f+P [+0&10000000] |
+| 0x0428 | 0x000006ff | 0x6ff | 60 | 135 | 0x00 | 0x00 | b,f+P [+0&10000000] |
+| 0x0450 | 0x00000110 | 0x110 | 44 | 135 | 0x00 | 0x00 | f+P [!+0&10000000] |
+| 0x0458 | 0x000006c1 | 0x6c1 | 50 | 135 | 0x00 | 0x00 | f+P |
+| 0x0474 | 0x000006f3 | 0x6f3 | 60 | 135 | 0x00 | 0x00 | f+P [+0&10000000] |
+| 0x04b4 | 0x000006b7 | 0x6b7 | 70 | 135 | 0x00 | 0x00 | b,d,d/b+P [+0&10000000] |
+| 0x04f4 | 0x000006b9 | 0x6b9 | 92 | 135 | 0x00 | 0x00 | after 0x6b7: f,d,d/f+P |
+| 0x0504 | 0x000006b8 | 0x6b8 | 92 | 135 | 0x00 | 0x00 | after 0x6b7: P |
+| 0x0534 | 0x000006b2 | 0x6b2 | 80 | 135 | 0x00 | 0x00 | b,not d+P [+0&10000000] |
+| 0x0574 | 0x000008e0 | 0x8e0 | 80 | 135 | 0x00 | 0x00 | after 0x6b2: b,not d+P [+2c&4] |
+| 0x05a0 | 0x000008e5 | 0x8e5 | 80 | 135 | 0x00 | 0x00 | after 0x6b2: f,not d+P [+2c&4] |
+| 0x05d4 | 0x0000014d | 0x14d | 60 | 135 | 0x00 | 0x00 | d+P [+0&10000000 +4a4&20] |
+| 0x05f8 | 0x0000014e | 0x14e | 62 | 135 | 0x00 | 0x00 | after 0x14d: P |
+| 0x060c, 0x0b68 | 0x00000656 | 0x656 | 27 | 352 | 0x00 | 0x00 | 0x060c: d*+P; 0x0b68: d*+P+K+G [+0&10000000] |
+| 0x062c | 0x000008ed | 0x8ed | 24 | 135 | 0x00 | 0x00 | P [+0&10000000 dist<1.3] |
+| 0x064c | 0x000008ef | 0x8ef | 32 | 135 | 0x00 | 0x00 | P [+0&10000000 dist>=2] |
+| 0x0654 | 0x0000010f | 0x10f | 33 | 135 | 0x00 | 0x00 | P |
+| 0x0688 | 0x2d000146 | 0x146 | 70 | 135 | 0x2d | 0x00 | n,d*+K [+0&10000000 +4a4&20] |
+| 0x06b4 | 0x0000056c | 0x56c | 52 | 352 | 0x00 | 0x00 | d*+K [+0&10000000 +2c&8000000] |
+| 0x06bc, 0x0ab0 | 0x000006db | 0x6db | 71 | 135 | 0x00 | 0x00 | 0x06bc: K [+0&10000000 +2c&8000000]; 0x0ab0: P+K+G [+0&10000000 +2c&8000000] |
+| 0x06e8 | 0x00000658 | 0x658 | 57 | 352 | 0x00 | 0x00 | d*+K [+0&10000000 +4a4&1] |
+| 0x06f8 | 0x000004d6 | 0x4d6 | 57 | 352 | 0x00 | 0x00 | K [+0&10000000 +4a4&1] |
+| 0x0734 | 0x000008e6 | 0x8e6 | 49 | 135 | 0x00 | 0x00 | f,n,f+K [+0&10000000] |
+| 0x074c | 0x0000010e | 0x10e | 46 | 135 | 0x00 | 0x00 | d/f+K |
+| 0x0768 | 0x00000652 | 0x652 | 50 | 135 | 0x00 | 0x00 | d*+K |
+| 0x0784 | 0x000006dd | 0x6dd | 60 | 135 | 0x00 | 0x00 | f+K [+0&10000000] |
+| 0x078c, 0x0a8c | 0x0000010d | 0x10d | 46 | 135 | 0x00 | 0x00 | 0x078c: K; 0x0a8c: (unreached) |
+| 0x07ac | 0x0000066c | 0x66c | 63 | 135 | 0x00 | 0x00 | P+G [+0&10000000 +2c&8000000] |
+| 0x07d4, 0x07dc | 0x10000100 | 0x100 | 71 | 135 | 0x10 | 0x00 | 0x07d4: P+G [+578&8 !+0&10000000]; 0x07dc: P+G [+578&8] |
+| 0x0804 | 0x10040098 | 0x98 | 66 | 135 | 0x10 | 0x04 | P+G [+0&10000000 +578&4000000] |
+| 0x0814 | 0x10040096 | 0x96 | 66 | 135 | 0x10 | 0x04 | P+G [+0&10000000 +578&8000000] |
+| 0x0844, 0x084c | 0x1000088c | 0x88c | 71 | 135 | 0x10 | 0x00 | 0x0844: (unreached); 0x084c: P+G [+0&10000000 +578&10] |
+| 0x08ac | 0x100000c9 | 0xc9 | 109 | 135 | 0x10 | 0x00 | n,d/b,f+P+G [+0&10000000 +578&1] |
+| 0x08b4, 0x08e8, 0x0914, 0x0b4c | 0x00000432 | 0x432 | 50 | 352 | 0x00 | 0x00 | 0x08b4: n,d/b,f+P+G [+0&10000000]; 0x08e8: b+P+G [+0&10000000]; 0x0914: not d+P+G; 0x0b4c: b,f+P+K+G [+0&10000000] |
+| 0x08e0 | 0x1000080d | 0x80d | 66 | 135 | 0x10 | 0x00 | b+P+G [+0&10000000 +578&1] |
+| 0x090c | 0x100000fd | 0xfd | 230 | 135 | 0x10 | 0x00 | not d+P+G [+578&1] |
+| 0x098c, 0x0b0c | 0x0000024b | 0x24b | 60 | 352 | 0x00 | 0x00 | 0x098c: n,b+P+K [!+0&10000000]; 0x0b0c: n,f,b,f,b+P+K+G [!+0&10000000] |
+| 0x09c0 | 0x00000776 | 0x776 | 81 | 135 | 0x00 | 0x00 | n,b,f,n,f+P+K [+0&10000000] |
+| 0x09f8 | 0x0000010b | 0x10b | 42 | 135 | 0x00 | 0x00 | n,b,d/f+P+K [+0&10000000 !+0&10] |
+| 0x0a1c | 0x0000010a | 0x10a | 42 | 135 | 0x00 | 0x00 | d/f+P+K [+0&10000000 +0&10] |
+| 0x0a84 | 0x0000010c | 0x10c | 62 | 135 | 0x00 | 0x00 | (unreached) |
+| 0x0b44 | 0x10000440 | 0x440 | 100 | 135 | 0x10 | 0x00 | b,f+P+K+G [+0&10000000 +578&1] |
+| 0x0b88 | 0x00000883 | 0x883 | 30 | 352 | 0x00 | 0x00 | b+P+K+G [+0&10000000] |
+| 0x0ba8 | 0x00000884 | 0x884 | 30 | 352 | 0x00 | 0x00 | f+P+K+G [+0&10000000] |
+| 0x0bb0 | 0x00000700 | 0x700 | 60 | 135 | 0x00 | 0x00 | P+K+G |
+| 0x0bd4, 0x0df4 | 0x1a000000 | - | - | - | 0x1a | 0x00 | 0x0bd4: f,n,f; 0x0df4: f+8 |
+| 0x0bf4, 0x0e0c | 0x13000000 | - | - | - | 0x13 | 0x00 | 0x0bf4: b,n,b; 0x0e0c: b+8 |
+| 0x0c20 | 0x1d000000 | - | - | - | 0x1d | 0x00 | d/f,not f/b,d/f [+0&10] |
+| 0x0c44 | 0x1e000000 | - | - | - | 0x1e | 0x00 | d/b,not f/b,d/b [+0&10] |
+| 0x0c5c, 0x0d24 | 0x0914013a | 0x13a | 100 | 135 | 0x09 | 0x14 | 0x0c5c: air 2 P [+0&10000000 +4a4&20]; 0x0d24: air 1 P [+0&10000000 +4a4&20] |
+| 0x0c64 | 0x090c0561 | 0x561 | 50 | 135 | 0x09 | 0x0c | air 2 P [+0&10000000] |
+| 0x0c84 | 0x0904089d | 0x89d | 51 | 135 | 0x09 | 0x04 | air 2 K [+0&10000000 +6c0&40000 +70&10000] |
+| 0x0c9c, 0x0ccc | 0x090402fb | 0x2fb | 49 | 135 | 0x09 | 0x04 | 0x0c9c: air 2 K [+0&10000000 +6c0&40000]; 0x0ccc: air 2 K [+0&10000000 +70&10000] |
+| 0x0cb4 | 0x090402ee | 0x2ee | 57 | 352 | 0x09 | 0x04 | air 2 K [+0&10000000 +4a4&1] |
+| 0x0cd4 | 0x090402f9 | 0x2f9 | 49 | 135 | 0x09 | 0x04 | air 2 K [+0&10000000] |
+| 0x0cdc | 0x090c055f | 0x55f | 79 | 135 | 0x09 | 0x0c | air 4 P [+0&10000000] |
+| 0x0cf0 | 0x090402ef | 0x2ef | 44 | 135 | 0x09 | 0x04 | air 4 K [+0&10000000] |
+| 0x0d04 | 0x090c02fc | 0x2fc | 46 | 352 | 0x09 | 0x0c | air 4 d*+K [+0&10000000] |
+| 0x0d0c | 0x090c02f6 | 0x2f6 | 53 | 352 | 0x09 | 0x0c | air 4 K [+0&10000000] |
+| 0x0d2c | 0x09080314 | 0x314 | 80 | 135 | 0x09 | 0x08 | air 1 P [+0&10000000] |
+| 0x0d38 | 0x0900030d | 0x30d | 100 | 352 | 0x09 | 0x00 | air 1 K [+0&10000000] |
+| 0x0d48 | 0x09080561 | 0x561 | 50 | 135 | 0x09 | 0x08 | air 3 P [+0&10000000] |
+| 0x0d60 | 0x09080301 | 0x301 | 59 | 352 | 0x09 | 0x08 | air 3 b+K [+0&10000000] |
+| 0x0d74 | 0x090802ff | 0x2ff | 69 | 352 | 0x09 | 0x08 | air 3 f+K [+0&10000000] |
+| 0x0d88 | 0x09000302 | 0x302 | 60 | 352 | 0x09 | 0x00 | air 3 d*+K [+0&10000000] |
+| 0x0d98 | 0x09000303 | 0x303 | 49 | 352 | 0x09 | 0x00 | air 3 K [+0&10000000] |
+| 0x0dac | 0x09080304 | 0x304 | 60 | 352 | 0x09 | 0x08 | air 3 d*+K [+0&10000000] |
+| 0x0dbc | 0x09080305 | 0x305 | 44 | 352 | 0x09 | 0x08 | air 3 K [+0&10000000] |
+| 0x0e1c | 0x31000000 | - | - | - | 0x31 | 0x00 | 8 |
 
 `tests/fm-saturn.test.mjs` reads this table back. It checks that every motion
 listed with bank 135 is one of the 103 in Hornet's bank, that the 352 ones
-are in the common bank, and that the table is what the tool reads off the
-disc.
+are in the common bank, and that the table, inputs included, is what the
+tool reads off the disc.
 
 ## The tool
 
@@ -498,8 +581,14 @@ that every motion's keys come out of its VF2 block unchanged, and FM Akira's
   includes a broken nose and cabin, if Daytona's car is to break.
 - **FM's pose rig and model scale**: which rig FM's solve uses (VF2 has one
   standard rig), and the draw's model scale (300 units a metre is fitted).
-- **Hornet's commands**: which input each move takes. That needs the bit
-  layout behind opcodes 0x01/0x03/0x28 and fighter +0x123C/+0x1240, plus the
-  move list's rows. The kinds' handlers at 0x06012AEC are not decoded either.
+- **Hornet's commands**: each move's input is in the Moves table. Still
+  open:
+  - what the flags it tests mean (+0 bit 0x10000000 above all; nothing
+    found sets it with a literal);
+  - the kinds' handlers at 0x06012AEC, and kind 9's parameter bits;
+  - the move list's rows after the script (the in-game command list's
+    glyphs, probably).
+  - The decode is from reading the SH-2 with Capstone. It hasn't been
+    checked in Ghidra, or against the game running.
 - **The action table's slots** (stance, walk, …).
 - **The fighter rows' numbers** past +4.
