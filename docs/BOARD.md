@@ -985,6 +985,18 @@ run still hides a few shin faces (slot 11's 26, 27, 32; slot 14's 1, 2,
 were, and so are the other parts' leaning faces (the chest, the arms, the
 feet).
 
+Those eight were checked in the frames (#1549): a build with them flat too,
+the same run, 32 frames, every pixel that differs and lies on one of them
+traced to its face. None opens a hole or a spike. They are near edge-on,
+so drawn they only add pixels along the leg's outline: 26 adds none, 13, 27
+and 31 at most 5 pixels a frame, 34 at most 8, 32 a line up to 2 pixels
+wide (P1's rear shin, frame 822). The largest are slot 14's face 1 and face 2,
+a wedge up to 3 pixels wide at the back of a cuff (face 1: P1, frame 870;
+face 2: P2, frame 840). At 2x the frames with and without them look the
+same, and the shoe meets the hem in both. Flat, they also relight wherever
+they are seen (up to 130 pixels a frame elsewhere on the shins, frame 858), so they stay
+on their corners' normals.
+
 Checked in MAME (Ryo vs Ryo, the same inputs, frames 720 to 906 every 6,
 against the ROMs before the change): the main ROMs are byte for byte the
 same, and only the two shin meshes differ in the polygon ROM. A third build
