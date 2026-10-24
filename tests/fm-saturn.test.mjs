@@ -115,6 +115,26 @@ const jumpBits = [...kindsDoc.split('Kind 9\'s parameter bits')[1].matchAll(/^\|
 assert.deepEqual(jumpBits.map(([, b]) => Number(b)), FM.readKind(game, 9).bits);
 assert.deepEqual([...new Set(hornetMoves.filter(m => m.kind === 9).map(m => m.parameter))].sort((a, b) => a - b), [0, 4, 8, 12, 20]);
 
+/* the Slots table: each slot the kinds play, against a fresh read of Hornet's
+ * action table and banks; its Kinds column is the Kinds table's Plays */
+const slotsDoc = doc.split('### Slots')[1].split('\n## ')[0];
+const slotRows = [...slotsDoc.matchAll(/^\| (\d+) \| (0x[\da-f]+) \| (\d+) \| (\d+) \| ([\da-fx, ]+) \|$/gm)]
+    .map(([, slot, motion, frames, bank, ks]) => ({ slot: +slot, motion, frames, bank, kinds: ks.split(', ') }));
+const playedBy = new Map();
+for (const [, k] of kinds) for (const n of FM.readKind(game, parseInt(k, 16)).slots) playedBy.set(n, [...playedBy.get(n) ?? [], k]);
+assert.deepEqual(slotRows.map(r => r.slot), [...playedBy.keys()].sort((a, b) => a - b));
+assert.deepEqual(slotRows.map(({ slot, motion, frames, bank }) => ({ slot, motion, frames, bank })),
+    FM.readSlots(game, hornet, slotRows.map(r => r.slot)).map(s => ({ slot: s.slot, motion: h(s.motion, 0),
+        frames: String(s.frames), bank: String(s.bank) })));
+for (const r of slotRows) assert.deepEqual(r.kinds, playedBy.get(r.slot), `slot ${r.slot} kinds`);
+/* every number the Kinds sentences and the kind 9 bit table say, bar bits,
+ * frames, kinds, stages and decimals, is a slot, and has a row */
+const named = kindsDoc.split('\n').filter(l => /^\| 0x/.test(l)).map(l => l.split('|').at(-2))
+    .flatMap(t => [...t.matchAll(/(?<![\w.+\u2212-]|bit |frame |kind |≤ |is )(\d+)(?![\w.]| frames?)/g)].map(m => +m[1]));
+assert.deepEqual([...new Set(named)].sort((a, b) => a - b), slotRows.map(r => r.slot), 'the slots the sentences name');
+/* the motion kind 0x1a names in its code, not a slot */
+assert.equal(FM.readBank(game.archive(FM.COMMON_MOTIONS)).find(r => r.id === 0x725).frames, 40);
+
 /* every fighter's script decodes to its move list, its jumps land on opcodes,
  * and its motions are in its bank or the common one */
 const JUMPS = { 0x0d: [4], 0x0e: [8], 0x0f: [4], 0x11: [4], 0x27: [4], 0x28: [4, 8, 12], 0x38: [4] };

@@ -595,13 +595,54 @@ addresses against the words at 0x06012AEC, and the Plays, Bits and
 Distances columns against what the tool's `readKind` reads from those
 handlers. A row whose handler no longer does what it says fails.
 
+### Slots
+
+The action-table slots that those handlers play, read the way 0x0600CEC8
+reads the table: the fighter row's +4 (Hornet's row is at 0x0608DFE0), stored
+in the fighter's +0x34, 66 halfword motion ids. A handler takes slot n's id
+from +0x34 + 2n and plays it through 0x060131D0, which looks id & 0xFFF up
+in the motion directory at 0x06091CB0 + (id − 1) × 4. 0x0601FC70 fills that
+from player 1's bank, then player 2's, then the common one (file 352,
+loaded at 0x278000 by 0x0602E8AC), so an id that both banks hold plays the
+common copy: 0x11E and 0x6D0 are in file 135 too, with the same keys.
+Frames are the motion's length from its bank row.
+
+| Slot | Motion | Frames | Bank | Kinds |
+| --- | --- | --- | --- | --- |
+| 22 | 0x11b | 36 | 135 | 0x1a |
+| 23 | 0x11b | 36 | 135 | 0x1a |
+| 24 | 0x11a | 36 | 135 | 0x13 |
+| 25 | 0x11a | 36 | 135 | 0x13 |
+| 26 | 0x119 | 40 | 135 | 0x1d |
+| 27 | 0x117 | 40 | 135 | 0x1e |
+| 28 | 0x117 | 40 | 135 | 0x1e |
+| 41 | 0x112 | 26 | 135 | 0x1a |
+| 42 | 0x111 | 12 | 135 | 0x1a |
+| 43 | 0x111 | 12 | 135 | 0x1a |
+| 45 | 0x6cf | 77 | 352 | 0x09 |
+| 46 | 0x6d0 | 51 | 352 | 0x09 |
+| 47 | 0x6d0 | 51 | 352 | 0x09 |
+| 48 | 0x8c1 | 73 | 352 | 0x09 |
+| 62 | 0x11d | 28 | 135 | 0x31 |
+| 63 | 0x11e | 28 | 352 | 0x31 |
+| 64 | 0x679 | 30 | 352 | 0x31 |
+| 65 | 0x67a | 30 | 352 | 0x31 |
+
+The near and far slots of a dash (22/23, 24/25) and of 0x1E (27/28) hold
+the same motion for Hornet, and so do 42/43 and 46/47. Kind 0x1A's 0x725
+is a motion id in its code (file 352, 40 frames), not a slot. `--actions`
+prints all 66 slots this way. `tests/fm-saturn.test.mjs` checks the table
+against a fresh read of Hornet's action table and banks, that its Kinds
+column is the Plays column above, and that every slot the Kinds sentences
+and the kind 9 bit table name is a row of it.
+
 ## The tool
 
 ```
 node tools/fm-saturn.mjs --fighters
 node tools/fm-saturn.mjs hornet --list          # id, frames, data and setup offsets
 node tools/fm-saturn.mjs hornet --bones
-node tools/fm-saturn.mjs hornet --actions
+node tools/fm-saturn.mjs hornet --actions        # slot, motion, frames, bank
 node tools/fm-saturn.mjs hornet --moves         # at, move, motion, frames, bank
 node tools/fm-saturn.mjs hornet --pose 10a 1    # the car pose, in the cabin's frame
 node tools/fm-saturn.mjs hornet 0x11c --out stance.bin
@@ -632,5 +673,6 @@ that every motion's keys come out of its VF2 block unchanged, and FM Akira's
     glyphs, probably).
   - The decode is from reading the SH-2 with Capstone. It hasn't been
     checked in Ghidra, or against the game running.
-- **The action table's slots** (stance, walk, …).
+- **The action table's other slots** (stance, walk, …): only those the
+  kinds above play are in [Slots](#slots).
 - **The fighter rows' numbers** past +4.

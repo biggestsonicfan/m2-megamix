@@ -124,6 +124,24 @@ export function readActions(game, fighter) {
     return Array.from({ length: ACTIONS }, (_, i) => game.prg.readUInt16BE(p + 2 * i));
 }
 
+/* The motion directory: 0x060131d0 plays id & 0xfff through the words at
+ * 0x06091cb0 + (id - 1) * 4, which 0x0601fc70 fills from player 1's bank
+ * (0x2a0000), player 2's (0x2d0000) and then the common one (0x278000, file
+ * 352, loaded by 0x0602e8ac). So an id in both a fighter's bank and the
+ * common one plays the common copy (Hornet's 0x11e and 0x6d0, the same keys). */
+/** Action-table slots [{slot, motion, frames, bank}], the bank being the one
+ *  the directory ends up pointing at (null if neither has it). */
+export function readSlots(game, fighter, slots = Array.from({ length: ACTIONS }, (_, i) => i)) {
+    const own = new Map(readBank(game.archive(fighter.motions)).map(r => [r.id, r]));
+    const common = new Map(readBank(game.archive(COMMON_MOTIONS)).map(r => [r.id, r]));
+    const ids = readActions(game, fighter);
+    return slots.map(slot => {
+        const motion = ids[slot] & 0xfff, row = common.get(motion) ?? own.get(motion);
+        return { slot, motion, frames: row?.frames ?? null,
+            bank: common.has(motion) ? COMMON_MOTIONS : own.has(motion) ? fighter.motions : null };
+    });
+}
+
 /* The command script (a fighter's file9; Hornet's 134). 0x06017366 runs it a
  * byte opcode at a time through the 82 handlers at 0x06072394; offsets in it
  * are from the file's start. A move is a request: a u32 the script puts in
@@ -615,8 +633,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         process.exit(0);
     }
     if (what === '--actions') {
-        const ids = new Set(rows.map(r => r.id));
-        readActions(game, f).forEach((id, i) => console.log(`${i}\t0x${id.toString(16)}${ids.has(id) ? '' : '\t(not in the bank)'}`));
+        for (const s of readSlots(game, f)) console.log(`${s.slot}\t0x${s.motion.toString(16)}\t${s.frames ?? '-'}\t${s.bank ?? '-'}`);
         process.exit(0);
     }
     const id = parseInt(what, 16), row = rows.find(r => r.id === id);
