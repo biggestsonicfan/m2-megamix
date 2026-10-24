@@ -293,7 +293,7 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
   21 01 20 00 00 00 00 00 00 00 00 00   header: byte 0 0x21 strike, 0x31 two hits, 0xA1/0xE1 throw
   02 00 08 00 0c 00 1b 00               tag 2, u16 LE 8, 12, 27 (the motion has 27 frames)
   04 04 01 0e                           kind (4 strike, 5 throw), damage, then u16 LE: on a throw the victim's motion id
-  00 00 b3 33                           16.16 0.7 (1.1-1.5 on bigger moves)
+  00 00 b3 33                           16.16 big-endian, 0.7 (see "The number after the group")
   …
   ```
 
@@ -350,6 +350,33 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
     has no number under this reading. As two bytes, a strike has 0–5 in the
     first (2 on SideReaperKick, KICK_LOW) and 3–80 in the second. That
     doesn't name either byte.
+- **The number after the group:** the four bytes after kind, damage and the
+  last two are a 16.16 fixed-point number, **big-endian** (unlike the tag-2
+  words, which are little-endian; EN_RYOU's 1.8 and 3.0 are big-endian 16.16
+  too). Elbow Slam's is **0.7**. What it scales isn't known. Not checked on
+  screen.
+
+  | Move | Kind | Damage | Bytes | Number |
+  |---|---|---|---|---|
+  | Elbow Slam | 4 | 4 | 00 00 b3 33 | 0.7 |
+  | Twist Knuckle | 4 | 5 | 00 00 b3 33 | 0.7 |
+  | Upper Knuckle | 4 | 5 | 00 00 b3 33 | 0.7 |
+  | Vortex Throw | 5 | 30 | 00 01 33 33 | 1.2 |
+  | Demon Drop, Sweep Throw | 5 | 45, 35 | 00 01 33 33 | 1.2 |
+  | Swallow Flip | 5 | 0 | 00 01 80 00 | 1.5 |
+
+  - **The same reading holds for strikes and throws,** unlike the last two
+    bytes. Read little-endian the bytes give nothing round (0x33B30000).
+  - **All of MOTION.BIN:** of the 317 kind-4/5 groups, 264 give a multiple of
+    0.05 between 0.7 and 1.7: 0.7 (41), 0.8 (1), 0.9 (39), 1.0 (17), 1.05 (3),
+    1.1 (49), 1.2 (103, 72 of them throws), 1.5 (9), 1.6 (1), 1.7 (1). 52
+    are 0, and one is `ff bf 00 00` (−65). Big-endian, 0x199A, 0x3333, 0xB333
+    … are what 0.1, 0.2, 0.7 … round to in 16.16, so the field is a number
+    someone typed in tenths.
+  - **It isn't the damage:** Elbow Slam (4) and Upper Knuckle (5) both have
+    0.7; Swallow Flip (0) has 1.5. Most throws have 1.2.
+  - The four bytes after it (`00 00 00 00` on Elbow Slam, `f8 7f 00 00` on
+    Vortex Throw, `f6 9f 00 00` on Swallow Flip) aren't decoded.
 - **Frames (the tag-2 words): not settled.** The three words don't line up
   across Elbow Slam, Twist Knuckle and Vortex Throw, so none of them is named
   here. What the records show (frames = the motion's own count):
@@ -383,8 +410,9 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
   30. Neither is checked.
 - **Frame data:** what the tag-2 words are (see "Damage", Frames): they don't
   line up across the strikes and the throws. The last two bytes of the
-  kind/damage group are named on throws only. The record's other fields
-  aren't decoded.
+  kind/damage group are named on throws only. The 16.16 number after the
+  group is read (0.7 on Elbow Slam) but not named. The record's other
+  fields aren't decoded.
 
 ## Other leads
 
