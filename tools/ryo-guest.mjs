@@ -547,6 +547,17 @@ export function importRyo(R, ctx, games, { tiles, byTex }) {
         const at = (kind) => t.view.getUint32(kind * 4, true) - t.at;
         for (const l of [at(0), at(1), at(3), at(3) + 52 * 4]) for (const c of chars) t.view.setUint32(l + c * 4, ballRec, true);
     }
+    /* The afterimage (StF's zanzou, which the strikes he plays turn on:
+     * vf2-guest.mjs trailOf): each part's copies are that part, YKB_B's,
+     * the model Shenmue blurs him with, the same at every age (three u16s
+     * a part, 8 bytes apart, in off_B540C[type][character]). The board
+     * draws a copy every other frame, opaque, as StF does its cards. */
+    {
+        const t = T.off_B540C, e = new Array(16 * 4).fill(0);
+        for (let s = 0; s < 16; s++) e.fill(parts[s], s * 4, s * 4 + 3);
+        const at = alloc(u16s(e), 'trail models');
+        for (let k = 0; k < 4; k++) for (const c of chars) t.view.setUint32(t.view.getUint32(k * 4, true) - t.at + c * 4, at, true);
+    }
     const hands = [...new Array(16).fill(parts[5]), ...new Array(16).fill(parts[8])];
     const handsAt = alloc(u16s(hands), 'hands');
     const head = alloc(u16s([0, 0, parts[2], parts[2], 0, 0, 0, 0, 0, 0, 0, 0]), 'head');

@@ -357,6 +357,8 @@ static void fight_step(const u32 pad[2]) {
     stf_task((void (*)(void))RW(stf_coli, 0xC), stf_coli, robs[0], robs[1]);
     stf_task(stf_get_game_info, stf_ctl[0], robs[0], robs[1]);
     stf_task(stf_cam_mode_10, stf_cam, robs[0], robs[1]);
+    /* the afterimages: the projectile task's (sub_89FB8) last call */
+    stf_call(stf_zanzou_control, robs[0], robs[1], 0u);
 }
 
 /* A round: both fighters back to their marks, the collision task, the
@@ -603,6 +605,37 @@ static void draw_fighter(const fighter_t *f, u32 p) {
 
 /* StF's frame_counter (see stage_col_cycle). */
 static u32 frame_counter;
+
+/* The afterimages: the coprocessor's ring of 128 copies, which
+ * zanzou_control (fight_step) lays from each fighter's parts while his
+ * motion's op 0x26 holds a part mask. zanzou_disp (0x8ACD0), under the
+ * camera: for each ring slot, Fn_zanzou_get_info (0x85: part, player, life,
+ * step, the model its age picks) and, while it has life and frame_counter
+ * plus the slot is odd (the copies flicker, out of step with their
+ * neighbours: StF draws them opaque), Fn_zanzou_mul_matrix_inner (0x84: the
+ * copy's matrix onto the current one) and the model. StF turns it about X
+ * by the projectile module's +0x5C first, which is 0. Each copy's faces go
+ * to its fighter's count. A model 0 (a part with no card) draws nothing. */
+#define COP_ZANZOU_INFO COP_CMD(0x85)
+#define COP_ZANZOU_MUL COP_CMD(0x84)
+static void zanzou_draw(u32 pn[3]) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    u32 slot, k, info[5];
+    *cf = COP_WMATRIX;
+    for (k = 0; k < 9; k++) *cf = m2_obj_fb(cam_l.r[k]);
+    for (k = 0; k < 3; k++) *cf = m2_obj_fb(cam_l.t[k]);
+    for (slot = 0; slot < 128u; slot++) {
+        u32 before = polys;
+        *cf = COP_ZANZOU_INFO; *cf = slot;
+        for (k = 0; k < 5u; k++) info[k] = *cf;
+        if ((int)info[2] <= 0 || !((frame_counter + slot) & 1u) || info[4] == 0u) continue;
+        *cf = COP_PUSH;
+        *cf = COP_ZANZOU_MUL; *cf = slot;
+        submit_cur(info[4] & 0xFFFFu);
+        *cf = COP_POP;
+        pn[1u + (info[1] & 1u)] += polys - before;
+    }
+}
 
 /* move_tpd_req and move_tpd_send: once a frame a stage hands move_tpd_req a
  * block, and move_tpd_send uploads what its handler makes of it to the
@@ -1158,6 +1191,7 @@ int main(void) {
           } }
         if (!in_menu) hud_draw();
         for (i = 0; i < 2u; i++) { polys = 0u; draw_fighter(&fs[i], i); pn[1u + i] = polys; }
+        zanzou_draw(pn);
         if (in_menu) poly_win_draw(pn);
         *(volatile u32 *)ZCLIP_REG = 0xFFFF00FFu;
         m2_frame_commit();

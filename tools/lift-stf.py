@@ -39,11 +39,14 @@ import tempfile
 # collision: the collision task (hits, damage, the walls); get_game_info:
 # the task after it (each fighter's own state, and the angle and distance to
 # the other, which the fighters turn by); cam_mode_9 and cam_mode_10: the
-# fight's camera (camera_work's modes for a round: 9 places it, 10 follows).
+# fight's camera (camera_work's modes for a round: 9 places it, 10 follows);
+# zanzou_control: the afterimages (the projectile task's last call: reserves
+# a fighter's trailing parts in the geometrizer's ring while play op 0x26's
+# mask is set, megamix.c zanzou_draw draws them).
 ROOTS = ['set_motion', 'calc_rob_angle', 'calc_rob_angle_cont', 'calc_unit_mat', 'smooth_int', 'sub_7F0E8',
          'action_init', 'rob_action', 'sub_1D47C', 'coli_init', 'collision', 'get_game_info', 'cmd_native_tail',
          'cop_initialize_end2', '_Scroll_Initialize', 'energy_disp', 'barrier_left_disp', 'time_dsp',
-         'win_lamp_dsp', 'win_lamp_int', 'cam_mode_9', 'cam_mode_10']
+         'win_lamp_dsp', 'win_lamp_int', 'cam_mode_9', 'cam_mode_10', 'zanzou_control']
 # Routines the board does not run (debug text, name plates, projectiles,
 # sound, ring scatter, Super Sonic's hair objects): `ret`.
 STUBS = ['print_mes', 'print_mes_ex', 'print_hex_w', 'debug_disp_hex', 'dsp_pattern_right',
@@ -52,11 +55,13 @@ STUBS = ['print_mes', 'print_mes_ex', 'print_hex_w', 'debug_disp_hex', 'dsp_patt
 # Labels the routines use as numbers (`lda loc_10000, r3` is 0x10000, `lda
 # off_1010, r13` the flag mask 0x1010; get_en_info's `lda loc_5550` and `lda
 # off_1018` are the facing bound 0x5550 and the flag mask 0x1018 its throw
-# range bit tests); any other code label they load (a
+# range bit tests; zanzou_control's `lda loc_32180+1` is the word it sends
+# Fn 0x49 before zanzou_ma, `lda loc_1C38` the slot bits it swaps for a
+# mirrored fighter); any other code label they load (a
 # task's next function, a callback) is lifted and keeps its name.
 NUMBERS = {'loc_1FFC', 'loc_2AA8', 'loc_6600', 'loc_7FF8', 'loc_8020', 'loc_8040', 'loc_BFF4', 'loc_10000',
            'loc_20010', 'loc_78AFC', 'loc_2100', 'loc_7A00', 'loc_14060', 'sys_proc_table',
-           'off_1010', 'dword_4010', 'loc_AAA0', 'loc_5550', 'off_1018'}
+           'off_1010', 'dword_4010', 'loc_AAA0', 'loc_5550', 'off_1018', 'loc_32180', 'loc_1C38'}
 # The tail the move tables' inline code (opcode 0x13: `lda N, g0; b 0x1EF48`)
 # branches to, after sub_1E468, unlabelled in stfdisasm.
 NATIVE_TAIL = 'cmd_native_tail', 0x1EF48, 'ld      0x1A4(g7), r15  # unreachable code'
@@ -110,6 +115,10 @@ GUEST_BASE = 0x02E00000
 # the bones calc_rob_angle_cont solves the pose on (15 points: the chest,
 # the head, each arm's and leg's pivot and two bones, the pelvis); the
 # lists are copied into its room.
+# off_B540C: a list by skeleton type (rob+0x84C) of lists by character of
+# the afterimage models (16 parts, each 3 model ids and a pad), which
+# zanzou_control reserves for each slot in play op 0x26's mask; the lists
+# are copied into its room.
 GUESTS = [('CHAR_PARTS', 0x100, 52 * 4), ('SKELETON_TYPE_DATA', 0x400, 4 * 4),
           ('MOVESET_ARRAY', 0x100, 24 * 4), ('player_hand_animations', 0x100, 52 * 4),
           ('player_foot_animation', 0x100, 52 * 4), ('player_body_animation', 0x100, 52 * 4),
@@ -117,7 +126,7 @@ GUESTS = [('CHAR_PARTS', 0x100, 52 * 4), ('SKELETON_TYPE_DATA', 0x400, 4 * 4),
           ('offset_list_motions', 0x2000, 519 * 4), ('ptr_DA0B4', 0x80, 26 * 4),
           ('motion_remap', 0x80, 26 * 4), ('char_game', 0x40, 52),
           ('rob_coli_ball_types', 0x400, 4 * 4), ('midriff', 0x100, 52 * 4),
-          ('off_C2058', 0x400, 4 * 4), ('seams', 0x100, 52 * 4)]
+          ('off_C2058', 0x400, 4 * 4), ('seams', 0x100, 52 * 4), ('off_B540C', 0x400, 4 * 4)]
 GAMES = [('STF', 0), ('VF2', 1), ('FV', 2)]      # char_game's values (GAME_<name>)
 # Code put in at a label of StF's, before what is there. sub_2B94C picks a
 # hit's reaction from the defender's table: (side)[category * 8], +2 from

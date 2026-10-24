@@ -30,6 +30,9 @@ export const CHR = 6;                    /* StF's Knuckles */
 const PLAYER2 = 26;
 const FIRST_MOTION = 519;                /* StF's own are 0..518 */
 const MOTION_ID = 0x1fff;
+/* StF's program ROM: calc_attack_flag's part masks, by attack id (rob+0x820). */
+const STRIKE_PARTS = 0x0ce020;
+const TRAIL_LEAD = 4;
 
 /* VF2 (program 0x1D1FC: the command programs by character; main_data the
  * setups and the motion list; noclip games.js vf2) */
@@ -460,6 +463,31 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
         damages.set(v, d);
         return d;
     };
+    /* The afterimage (StF's play op 0x26, which VF2 has none of): on each
+     * strike, from TRAIL_LEAD frames before the attack opens (setup op 2's
+     * first u16, +0x808) to the frame after it closes (its second), a
+     * trail on the parts the strike hits with: setup op 4's attack id (its
+     * byte 1, +0x820) through calc_attack_flag's table of part masks
+     * (STRIKE_PARTS), the arms as they are, a leg's thigh or shin moved to
+     * its foot (Ryo's are in seams, with no model to copy). The motions are
+     * Akira's and Ryo's both: it is Ryo's trail (his row of the trail
+     * models, tools/ryo-guest.mjs); Akira's row is empty (below), so his
+     * copies draw nothing, as VF2's never do. */
+    let trails = 0;
+    function trailOf(s) {
+        const st = s.setup.find((x) => x.op === 4), win = s.setup.find((x) => x.op === 2);
+        if (!st || !win) return null;
+        const parts = program.u32(STRIKE_PARTS + st.b[1] * 4);
+        let mask = parts & 0x1f8;
+        if (parts & 0x1c00) mask |= 1 << 12;
+        if (parts & 0xe000) mask |= 1 << 15;
+        if (!mask) return null;
+        const open = win.b[1] | (win.b[2] << 8), close = win.b[3] | (win.b[4] << 8);
+        return { mask, on: Math.max(1, open - TRAIL_LEAD), off: close + 1 };
+    }
+    /* [0x26|0x80][frame][mask -> +0xC60][step -> +0xC62][turn -> +0xA1E][spacing -> zanzou_ma],
+     * StF's usual step and spacing */
+    const trailOp = (frame, mask) => [0xa6, frame & 0xff, frame >> 8, mask & 0xff, mask >> 8, 0xfa, 0xff, 0, 0, ...f32(0.1)];
     function convertSetup(id) {
         const s = setups.get(id);
         const h = s.head;
@@ -484,9 +512,14 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
             }
             out.push(...o);
         }
-        out.push(s.end);
-        if (s.end === 8) {
-            for (const { op, b } of s.play) {
+        const trail = trailOf(s);
+        if (trail) trails++;
+        out.push(trail ? 8 : s.end);
+        if (s.end === 8 || trail) {
+            const at = (o) => o[1] | (o[2] << 8);
+            const ons = trail ? [trailOp(trail.on, trail.mask), trailOp(trail.off, 0)] : [];
+            const put = (o) => { while (ons.length && at(ons[0]) <= at(o)) out.push(...ons.shift()); out.push(...o); };
+            for (const { op, b } of s.end === 8 ? s.play : []) {
                 const to = op in PLAY_TO ? PLAY_TO[op] : op;
                 if (to === null) { tally(lost.playOps, hex(op)); continue; }
                 /* Op 5 sets a bit of the rob's flags (0x1A4). VF2's thrown motions set
@@ -494,8 +527,7 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
                  * of its commit table: keep only the bits StF itself sets. */
                 if (op === 5 && !STF_FLAG_BITS.has(b[3])) { tally(lost.flagBits, b[3]); continue; }
                 if (to === 'hand') {
-                    const o = [0x10 | (b[0] & 0x80), b[1], b[2], b[3] === 1 ? 5 : 8, shapeIndex(b[4])];
-                    out.push(...o);
+                    put([0x10 | (b[0] & 0x80), b[1], b[2], b[3] === 1 ? 5 : 8, shapeIndex(b[4])]);
                     continue;
                 }
                 const o = [...b];
@@ -503,8 +535,9 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
                 if (PLAY_MOTION[op]) put16(o, PLAY_MOTION[op], mid(b[PLAY_MOTION[op]] | (b[PLAY_MOTION[op] + 1] << 8)));
                 /* Op 8 (damage) takes byte +3 off the rob's energy, VF2's 200 as above. */
                 if (op === 8) o[3] = damage(b[3]);
-                out.push(...o);
+                put(o);
             }
+            for (const o of ons) out.push(...o);
             out.push(0);
         }
         return Uint8Array.from(out);
@@ -529,7 +562,7 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
         motions.view.setUint32(copyId.get(id) * 4, alloc(scaleMotion(r.data.slice(r.off, r.off + len), THROWN), `thrown motion ${id}`), true);
         setupT.view.setUint32(copyId.get(id) * 4, setupT.view.getUint32(newId.get(id) * 4, true), true);
     }
-    report.push(`motion blocks ${motionBytes} bytes`);
+    report.push(`motion blocks ${motionBytes} bytes; ${trails} strikes trail`);
     report.push(`damage x140/200: ${[...damages].sort((a, b) => a[0] - b[0]).map(([v, d]) => `${v}->${d}`).join(', ')}`);
 
     /* ---- the command program, converted ---- */
@@ -795,6 +828,15 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
         const at = (k) => t.view.getUint32(k * 4, true) - t.at;
         for (const list of [at(0), at(1), at(3), at(3) + 52 * 4])
             for (const c of [CHR, CHR + PLAYER2]) t.view.setUint32(list + c * 4, recAt, true);
+    }
+
+    /* The afterimage's part models (zanzou_control: off_B540C[type][character],
+     * three u16s a part, 8 bytes apart): none. His strikes carry trails for
+     * Ryo, who plays them (trailOf), and a copy with model 0 draws nothing. */
+    {
+        const t = T.off_B540C, none = alloc(new Uint8Array(16 * 8), 'trail models');
+        for (let k = 0; k < 4; k++)
+            for (const c of [CHR, CHR + PLAYER2]) t.view.setUint32(t.view.getUint32(k * 4, true) - t.at + c * 4, none, true);
     }
 
     const hands = [];

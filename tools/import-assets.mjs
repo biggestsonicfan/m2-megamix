@@ -173,6 +173,7 @@ const CHAR_PARTS = 0x0c5268;              /* program ROM: each character's recor
 const PLAYER2 = 26;                       /* character c's player 2 is c + 26 */
 const HAND_MODELS = 0x0c6570, FOOT_MODELS = 0x0c6640, BODY_MODELS = 0x0c6710;   /* program ROM, by character */
 const HEAD_LIST = 0x0c540c;
+const TRAIL_MODELS = 0x0b540c, TRAIL_OPTION = 0x0b5408;   /* program ROM: zanzou_control's models, by skeleton */
 const SET_FIGHTERS = 1;
 const MOTION_LIST = 0x06400004, MOTIONS = 519;
 const SCROLL_TABLE = 0x06480000;          /* _ScrollCG_Initialize / _ScrollColor_Initialize */
@@ -231,6 +232,13 @@ async function importStf(R) {
             if (!h) continue;
             const step = program.u16(h + 4 + 8), frames = step ? Math.floor(program.u16(h) / step) + 1 : 1;
             for (let f = 0; f < frames; f++) for (let w = 0; w < 4; w++) model(program.u16(h + 4 + f * 0x14 + w * 2));
+        }
+        /* the afterimage's streak cards (zanzou_control): each part's three,
+         * u16s at entries + part * 8, entries the character's in
+         * TRAIL_MODELS[skeleton] or, while he holds an option, TRAIL_OPTION */
+        for (const list of [...[0, 1, 2, 3].map((k) => program.u32(TRAIL_MODELS + k * 4)), program.u32(TRAIL_OPTION)]) {
+            const e = program.u32(list + ch * 4);
+            if (e) for (let s = 0; s < 16; s++) for (let i = 0; i < 3; i++) model(program.u16(e + s * 8 + i * 2));
         }
     }
     const colorbases = new Set();
@@ -357,6 +365,18 @@ async function importStf(R) {
         new DataView(all.buffer).setUint32(k * 4, heads.at + to, true);
     }
     Object.assign(heads, { bytes: all, view: new DataView(all.buffer), lists: kindsAt, perKind });
+    /* off_B540C (TRAIL_MODELS) is a list by skeleton type of lists by
+     * character of the afterimage's part models: the lists (two: types 0
+     * to 2 share one) are copied after it in its room, each skeleton's
+     * pointer moved onto its copy. */
+    {
+        const t = tables.off_B540C, srcs = [0, 1, 2, 3].map((k) => t.view.getUint32(k * 4, true));
+        const from = Math.min(...srcs), n = Math.max(...srcs) - from + 52 * 4;
+        const b = new Uint8Array(0x10 + n), v = new DataView(b.buffer);
+        for (let i = 0; i < n; i += 4) v.setUint32(0x10 + i, program.u32(from + i), true);
+        srcs.forEach((a, k) => v.setUint32(k * 4, t.at + 0x10 + a - from, true));
+        Object.assign(t, { bytes: b, view: v, lists: 0x10 });
+    }
     R.guest = { ...G, tables };
 
     /* The HUD's tiles (_Scroll_Initialize n: _ScrollCG_Initialize n, then

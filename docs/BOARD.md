@@ -878,6 +878,20 @@ put in for Akira, and import-assets runs it after Akira's.
   with their textures in MODELS.PKF; the disc has no other Ryo between them
   (YKB_Z, 2835, is a bigger one). `RYO_MODEL=M node tools/import-assets.mjs`
   builds him with YKB_M instead. The web page draws YKB_M.
+- **Afterimages.** StF's (see The fight). Akira's setups get play op 0x26
+  on each strike (vf2-guest `trailOf`; 81 of them): from 4 frames before
+  the attack opens (setup op 2) to the frame after it closes, on the parts
+  the strike hits with (setup op 4's attack id through calc_attack_flag's
+  part masks at 0xCE020; a thigh or shin moves to its foot, as YKB_B's are
+  seams only), step -6, spacing 0.1. Ryo's row of `off_B540C` gives each
+  slot its own YKB_B part three times; Akira's row is all 0, so his copies
+  draw nothing, as VF2 has no afterimage. Shenmue draws its Blur model
+  whole and translucent instead; the board has no translucency, so StF's
+  opaque flickering parts stand in. Cost: at most 26 copies live in a
+  punch-kick string, each a part of 4-10 triangles (under 260 polygons).
+  Check: MAME, Ryo against Honey: the punches (masks 0x30 and 0x180) trail
+  sleeve and fist copies, the kick (0x8000) shoe copies; with the mask
+  zeroed every frame, none.
 - **Parts.** Each node rides the StF part its nearest anchored bone drives
   (`SLOT_BONES`), so each part is rigid. YKB_B: 11 parts and 288 triangles,
   112 of them in the seams below (YKB_M: 15 parts, 1793, 193). YKB_B's
@@ -1177,6 +1191,20 @@ sets up what StF's game loop would have set up around it.
   0xF8 target), aimed at (0, 2.1, 0); as they part to 14 it backs off to
   (0.2, 6.6, -9.9) and stays on the midpoint; snapshots keep both in
   frame.
+- Afterimages (#1556): StF's own. `fight_step` ends with `zanzou_control`
+  (lifted; in StF the projectile task's last call), which each frame ages
+  the geometrizer's ring (Fn 0x49, 0x82) and, for a fighter whose mask
+  (rob+0xC60, set by play op 0x26 and cleared when a motion starts) is not
+  0, reserves the slots in it (Fn 0x80: the mask, the step +0xC62, and per
+  slot its 3 models from `off_B540C`[skeleton][character], a guest table).
+  The ring holds the slot matrices of the last frame (Fn 0x7F, sent by the
+  lifted `calc_unit_mat`). `zanzou_draw` (megamix.c) is StF's
+  `zanzou_disp`: for each ring entry (Fn 0x85) with life left, on every
+  other frame (frame_counter + entry odd), it composes the entry's matrix
+  onto the camera (Fn 0x84) and draws its model, opaque, so the copies
+  flicker as in StF. Each frame's copies count toward their fighter in the
+  polygon window. Check: Sonic with the mask forced draws his streak cards
+  behind him.
 - Characters: rob+0x1B0 is the character drawn (the alternates are +26),
   rob+0x1B1 the parent. `ADV_CPU_BATTLE_INT` sets 1B1 = 1B0 - 0x1A, and a
   real P2 Honey alternate has 1B0 0x24, 1B1 0x0A.
