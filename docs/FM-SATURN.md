@@ -1081,6 +1081,41 @@ fighter's (r12) +0x70 & 0x00200000, parameter bit 0x20. It is a row in
 reaches the 0.8 distance check or `+0` bit 0x10000000.
 `tests/fm-saturn.test.mjs` checks this section against a fresh read.
 
+#### The flag at 0x0600eb74
+
+The flag test that both sides of "The flag at 0x0600eb62" stop at, the
+next row of "Flag tests not yet described", read off the disc and
+followed the same way. The fighter, field and mask in that row match the
+disc: 0x0600eb6e is `mov r12,r1`, 0x0600eb70 `add #0x71,r1`, 0x0600eb72
+`mov.b @r1,r0` and 0x0600eb74 `tst #0x20,r0`, then `bf` at 0x0600eb76.
+That is bit 0x20 of the byte +0x71 of this fighter (r12), not the
+opponent's: big-endian, the long +0x70 masked with 0x00200000, parameter
+bit 0x20. The `bf` branches when the bit is set, so the branch is the
+set side and the fall-through the clear side.
+
+| Tested at | Flag | Set | Clear |
+| --- | --- | --- | --- |
+| 0x0600eb74 | +0x70 & 0x00200000 | branches to 0x0600ebda; puts the halfword +0x1a, or that minus 0x8000, in the halfword +0x4ae (0x0600ec08); sets +0x20 (0x0600ec42); sets +0x28 (0x0600ec44); calls 0x06012d50 (0x0600ec7a); adds 1 to the byte +0x60 (0x0600ec86); stops at 0x0600ec8e (+0x70 & 0x00040000) | goes on to 0x0600eb78; no store or call; the `bt` at 0x0600eb80 or the one at 0x0600eb88 branches to 0x0600eb98 and stops at the 0.8 distance check there; if neither branches, the `bra` at 0x0600eb8c jumps to 0x0600ebda, and from there on it is the same as the set side, to the same stop |
+
+- **+0x70 & 0x00200000**: set, it jumps to 0x0600ebda to store +0x4ae,
+  +0x20 and +0x28, call 0x06012d50 and add 1 to +0x60 before it stops at
+  0x0600ec8e; clear, it goes on at 0x0600eb78 with no store or call, and
+  either stops at the 0.8 distance check at 0x0600eb98 or jumps to
+  0x0600ebda and goes on the same way as the set side.
+
+0x0600ebda is where the `bt` after the `tst r7,r7` at 0x0600eb52 lands,
+the path "The flag at 0x0600eb08" names; the 0x8000 is the `mov.w`
+halfword at 0x0600ec4a, added as −0x8000. The clear side's words up to
+0x0600eb8e only move, add, subtract and compare registers. The 0.8
+distance check starts at 0x0600eb98, `mov.l` of 0x0000cccd, compared at
+0x0600eb9e with the long +0x4d8; it is the only one in kind 9's handlers,
+and is not explained here. It is not the 0.8 scale at 0x0600f3a4. Both
+sides' other stop is 0x0600ec8e, which tests this fighter's (r12) +0x70 &
+0x00040000, parameter bit 0x04. It is a row in "Flag tests not yet
+described" and is left undescribed here. Neither side reaches `+0` bit
+0x10000000. `tests/fm-saturn.test.mjs` checks this section against a
+fresh read.
+
 ### Slots
 
 The action-table slots that those handlers play, read the way 0x0600CEC8

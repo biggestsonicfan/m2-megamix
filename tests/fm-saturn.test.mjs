@@ -1576,6 +1576,131 @@ for (const [from, to] of [['`mov r12,r1`', '`mov r13,r1`'], ['`mov.w @(0x0600eb9
 assert.throws(() => checkEb62(eb62Doc, newDoc.replace('| 0x0600eb62 | this fighter (r12) | +0x4a4 | 0x00000001 |', '| 0x0600eb62 | this fighter (r12) | +0x4a4 | 0x00000002 |')));
 assert.throws(() => checkEb62(eb62Doc, newDoc.replace('| 0x0600eb62 | this fighter (r12) | +0x4a4 | 0x00000001 |', '| 0x0600eb62 | this fighter (r12) | +0x4a8 | 0x00000001 |')));
 assert.throws(() => checkEb62(eb62Doc, newDoc.replace(/^\| 0x0600eb74 .*\n/m, '')), '0x0600eb74');
+/* The flag at 0x0600eb74: where both sides of 0x0600eb62 stop. The byte
+ * +0x71 of r12; a bf, so the branch is the set side. The set side jumps to
+ * the store path at 0x0600ebda; the clear side either branches to the 0.8
+ * distance check, where it stops, or a bra takes it to the same path */
+const eb74Doc = kindsDoc.split('#### The flag at 0x0600eb74\n\n')[1].split('\n#### ')[0].split('\n### ')[0];
+function checkEb74(text, list) {
+    const at = 0x0600eb74, sides = FM.flagSides(game, run9, at);
+    const listed = list.match(/^\| 0x0600eb74 \| this fighter \(r12\) \| (\+0x[\da-f]+) \| (0x[\da-f]{8}) \|$/m);
+    assert.ok(listed, '0x0600eb74\'s row in "Flag tests not yet described"');
+    const named = `${listed[1]} & ${listed[2]}`;
+    const rows = [...text.matchAll(new RegExp(String.raw`^\| (0x[\da-f]{8}) \| (${FLAG}) \| (.*?) \| (.*?) \|$`, 'gm'))];
+    assert.deepEqual(rows.map(r => [r[1], r[2]]), [['0x0600eb74', named]]);
+    assert.equal(eventFlag(sides.flag), named, '0x0600eb74: the disc\'s flag');
+    assert.ok(eb62Doc.includes(`stops at 0x0600eb74 (${named})`), '0x0600eb62 names this flag');
+    /* mov rM,r1; add #byte,r1; mov.b @r1,r0; tst #bit,r0; bf */
+    const [, m, byteText, bit, op] = text.match(/0x0600eb6e is `mov r(\d+),r1`, 0x0600eb70 `add #(0x[\da-f]{2}),r1`, 0x0600eb72\n`mov\.b @r1,r0` and 0x0600eb74 `tst #(0x[\da-f]{2}),r0`, then `(b[tf])` at 0x0600eb76\./);
+    assert.equal(word(0x0600eb6e), 0x6103 | (+m << 4), 'mov rM,r1');
+    assert.equal(word(0x0600eb70), 0x7100 | parseInt(byteText, 16), 'add #byte,r1');
+    assert.equal(word(0x0600eb72), 0x6010, 'mov.b @r1,r0');
+    assert.equal(word(at), 0xc800 | parseInt(bit, 16), 'tst #bit,r0');
+    assert.equal(+m, 12, 'this fighter is r12');
+    assert.ok(sides.flag.of !== 13, 'not the opponent\'s');
+    const byte = parseInt(byteText, 16), long = byte & ~3, mask = parseInt(bit, 16) << 8 * (3 - (byte & 3));
+    assert.equal(flagText(long, mask), named, 'the byte as its long');
+    const [, bb, bf, lf, lm, pb] = text.match(/That is bit (0x[\da-f]{2}) of the byte (\+0x[\da-f]+) of this fighter \(r12\), not the\nopponent's: big-endian, the long (\+0x[\da-f]+) masked with (0x[\da-f]{8}), parameter\nbit (0x[\da-f]{2})\./);
+    assert.deepEqual([bb, bf, `${lf} & ${lm}`, parseInt(pb, 16)], [bit, `+${h(byte, 2)}`, named, mask >>> 16], 'the byte and long named');
+    const b = word(at + 2), set = ((b & 0xff) << 24 >> 24) * 2 + at + 6;
+    assert.equal(b & 0xff00, 0x8b00, '0x0600eb76: bf, so the branch is the set side');
+    assert.equal(op, 'bf', 'the branch named');
+    assert.match(text, /The `bf` branches when the bit is set, so the branch is the\nset side and the fall-through the clear side\./);
+    /* both sides list the same events, all on the path from the set side's target */
+    assert.deepEqual(sides.set, sides.clear, 'both sides list the same');
+    assert.ok(sides.set.every(e => e.at >= set), 'nothing before the set side\'s target');
+    const stop = sides.set.at(-1), stopAt = h(stop.at, 8);
+    assert.equal(stop.kind, 'param');
+    assert.equal(sides.set.filter(e => e.kind === 'param').length, 1, 'one stop');
+    const stopFlag = flagText(0x70, stop.bit << 16), st = FM.handlerTest(game, run9, stop.at);
+    assert.equal(stopFlag, flagText(st.field, st.mask), 'the stop\'s flag');
+    assert.equal(st.of, undefined, `${stopAt} tests r12`);
+    const v = e => e.values.map(x => x && `${h(x.field, 2)}${x.plus > 0 ? '+' : ''}${x.plus || ''}`).join(' ');
+    const said = sides.set.map(e => e.kind === 'call' ? `call ${h(e.target, 8)} ${h(e.at, 8)}` : e.kind === 'store' ? `store ${h(e.field, 2)}/${e.size} ${h(e.at, 8)} ${v(e)}` : `stop ${h(e.at, 8)}`);
+    assert.deepEqual(said, ['store 0x4ae/2 0x0600ec08 0x1a 0x1a-32768', 'store 0x20/4 0x0600ec42 ', 'store 0x28/4 0x0600ec44 ', 'call 0x06012d50 0x0600ec7a',
+        'store 0x60/1 0x0600ec86 0x60+1', `stop ${stopAt}`], 'the events');
+    assert.equal(word(0x0600ec4a), 0x8000, 'the 0x8000 is the mov.w halfword at 0x0600ec4a');
+    const stops = `stops at ${stopAt} (${stopFlag})`;
+    assert.equal(rows[0][3], `branches to ${h(set, 8)}; puts the halfword +0x1a, or that minus 0x8000, in the halfword +0x4ae (0x0600ec08); sets +0x20 (0x0600ec42); sets +0x28 (0x0600ec44); calls 0x06012d50 (0x0600ec7a); adds 1 to the byte +0x60 (0x0600ec86); ${stops}`, 'the set cell');
+    /* the set side: forward branches only, never back to the 0.8 check */
+    const DIST = 0x0600eb98, CMP = 0x0600eb9e;
+    assert.ok(!FM.handlerReaches(game, run9, set, CMP, [stop.at]), 'the set side does not reach the 0.8 check');
+    /* the clear side: two bts to the check, else a bra to the set side's target */
+    const tgt = a => ((word(a) & 0xff) << 24 >> 24) * 2 + a + 4, isBt = a => (word(a) & 0xff00) === 0x8900;
+    const [, b1, b2, ck, bra, to] = rows[0][4].match(/^goes on to 0x0600eb78; no store or call; the `bt` at (0x[\da-f]{8}) or the one at (0x[\da-f]{8}) branches to (0x[\da-f]{8}) and stops at the 0\.8 distance check there; if neither branches, the `bra` at (0x[\da-f]{8}) jumps to (0x[\da-f]{8}), and from there on it is the same as the set side, to the same stop$/);
+    assert.equal(at + 4, 0x0600eb78, 'the clear side goes on');
+    for (const a of [b1, b2].map(x => parseInt(x, 16))) {
+        assert.ok(isBt(a), `${h(a, 8)}: bt`);
+        assert.equal(tgt(a), parseInt(ck, 16), `${h(a, 8)}: to the check`);
+    }
+    const ba = parseInt(bra, 16), bw = word(ba);
+    assert.equal(bw & 0xf000, 0xa000, `${bra}: bra`);
+    assert.equal(((bw & 0xfff) << 20 >> 20) * 2 + ba + 4, parseInt(to, 16), 'the bra\'s target');
+    assert.equal(parseInt(to, 16), set, 'the bra lands on the set side\'s target');
+    assert.equal(word(ba + 2), 0x0009, 'its delay slot is a nop');
+    /* nothing on the way stores, calls or branches elsewhere: register moves, adds, subtracts and compares */
+    const regOnly = w => (w & 0xf000) === 0x9000 || (w & 0xf00f) === 0x6003 || (w & 0xf00f) === 0x300c || (w & 0xf00f) === 0x3008 || (w & 0xf00b) === 0x3003;
+    for (let a = at + 4; a < ba + 4; a += 2)
+        if (![parseInt(b1, 16), parseInt(b2, 16), ba, ba + 2].includes(a)) assert.ok(regOnly(word(a)), `${h(a, 8)}: a register word`);
+    assert.ok(parseInt(b1, 16) < parseInt(b2, 16) && parseInt(b2, 16) < ba && ba + 4 <= parseInt(ck, 16), 'in that order');
+    /* the 0.8 distance check: mov.l 0x0000cccd; mov.w 0x04d8; mov.l @(r0,r12); cmp/gt; the only one */
+    assert.equal(parseInt(ck, 16), DIST);
+    const lit32 = a => game.prg.readUInt32BE(game.at(((a + 4) & ~3) + (word(a) & 0xff) * 4)), lit16 = a => word(a + 4 + (word(a) & 0xff) * 2);
+    assert.equal(word(DIST) & 0xf000, 0xd000, 'mov.l @(disp,pc)');
+    assert.equal(lit32(DIST), 0x0000cccd, '0.8');
+    assert.equal(word(DIST + 2) & 0xff00, 0x9000, 'mov.w @(disp,pc),r0');
+    assert.equal(lit16(DIST + 2), 0x04d8, '+0x4d8');
+    assert.equal(word(DIST + 4) & 0xf0ff, 0x00ce, 'mov.l @(r0,r12)');
+    assert.equal(word(CMP) & 0xf00f, 0x3007, 'cmp/gt');
+    assert.deepEqual([(word(CMP) >> 4) & 15, (word(CMP) >> 8) & 15], [(word(DIST) >> 8) & 15, (word(DIST + 4) >> 8) & 15], 'the literal against the distance');
+    assert.deepEqual(FM.readKind(game, 9).dists, [0.8], 'kind 9\'s one distance');
+    assert.ok(FM.handlerReaches(game, run9, at + 4, DIST, [stop.at, set]), 'the clear side reaches the check');
+    assert.match(text, /The 0\.8\ndistance check starts at 0x0600eb98, `mov\.l` of 0x0000cccd, compared at\n0x0600eb9e with the long \+0x4d8; it is the only one in kind 9's handlers,\nand is not explained here\. It is not the 0\.8 scale at 0x0600f3a4\./);
+    /* the bullet */
+    const bullet = text.match(/^- \*\*(.+?)\*\*:([^]*?)\n\n/m), body = bullet[2].replace(/\s+/g, ' ');
+    assert.equal(bullet[1], named);
+    assert.equal(body, ` set, it jumps to ${h(set, 8)} to store +0x4ae, +0x20 and +0x28, call 0x06012d50 and add 1 to +0x60 before it stops at ${stopAt}; clear, it goes on at ${h(at + 4, 8)} with no store or call, and either stops at the 0.8 distance check at ${h(DIST, 8)} or jumps to ${h(set, 8)} and goes on the same way as the set side.`);
+    /* 0x0600ebda: where the tst r7,r7's bt lands */
+    const r7 = 0x0600eb52;
+    assert.equal(word(r7), 0x2778, 'tst r7,r7');
+    assert.equal(tgt(r7 + 2), set, 'its bt lands at 0x0600ebda');
+    assert.ok(isBt(r7 + 2));
+    assert.match(text, /^0x0600ebda is where the `bt` after the `tst r7,r7` at 0x0600eb52 lands,$/m);
+    /* the stop: a row of the list, no section of its own */
+    const described = describedAt(kindsDoc), before = kindsDoc.split('\n#### The flag at 0x0600eb74\n')[0];
+    assert.ok(list.includes(`| ${stopAt} | this fighter (r12) | ${stopFlag.replace(' & ', ' | ')} |`), `${stopAt}'s row in the list`);
+    assert.ok(!described.has(stopAt), `${stopAt} is no other section's`);
+    assert.ok(!before.includes(`#### The flag at ${stopAt}`), `${stopAt} has no section of its own`);
+    const [, s1, f1, p1] = text.match(/Both\nsides' other stop is (0x[\da-f]{8}), which tests this fighter's \(r12\) (\+0x[\da-f]+ &\n0x[\da-f]{8}), parameter bit (0x[\da-f]{2})\. It is a row in "Flag tests not yet\ndescribed" and is left undescribed here\./);
+    assert.deepEqual([s1, f1.replace('\n', ' '), parseInt(p1, 16)], [stopAt, stopFlag, stop.bit], 'the stop named');
+    for (const s of ['set', 'clear']) assert.ok(!sides[s].some(e => e.field === 0 && e.mask === 0x10000000), `${s}: not +0 bit 0x10000000`);
+}
+checkEb74(eb74Doc, newDoc);
+for (const [from, to] of [['`mov r12,r1`', '`mov r13,r1`'], ['`add #0x71,r1`', '`add #0x70,r1`'], ['`tst #0x20,r0`', '`tst #0x10,r0`'], ['then `bf` at', 'then `bt` at'],
+    ['| 0x0600eb74 | +0x70 & 0x00200000 |', '| 0x0600eb74 | +0x70 & 0x00020000 |'], ['| 0x0600eb74 | +0x70 & 0x00200000 |', '| 0x0600eb74 | +0x6c & 0x00200000 |'],
+    ['| 0x0600eb74 | +0x70 & 0x00200000 |', '| 0x0600eb74 | the opponent\'s +0x70 & 0x00200000 |'],
+    ['bit 0x20 of the byte +0x71', 'bit 0x20 of the byte +0x70'], ['the long +0x70 masked', 'the long +0x6c masked'], ['with 0x00200000, parameter', 'with 0x20000000, parameter'],
+    ['fighter (r12), not the', 'fighter (r13), not the'], ['parameter\nbit 0x20.', 'parameter\nbit 0x02.'],
+    ['so the branch is the\nset side and the fall-through the clear side', 'so the branch is the\nclear side and the fall-through the set side'],
+    ['| branches to 0x0600ebda; puts', '| branches to 0x0600eb78; puts'], ['(0x0600ec08); sets', '(0x0600ec0a); sets'], ['sets +0x28 (0x0600ec44);', 'sets +0x2c (0x0600ec44);'],
+    ['calls 0x06012d50 (0x0600ec7a)', 'calls 0x06012d54 (0x0600ec7a)'], ['adds 1 to the byte +0x60 (0x0600ec86)', 'adds 2 to the byte +0x60 (0x0600ec86)'],
+    ['(0x0600ec86); stops at 0x0600ec8e (+0x70 & 0x00040000)', '(0x0600ec86); stops at 0x0600ec64 (+0x70 & 0x00040000)'],
+    ['(0x0600ec86); stops at 0x0600ec8e (+0x70 & 0x00040000)', '(0x0600ec86); stops at 0x0600ec8e (+0x70 & 0x00080000)'],
+    ['| goes on to 0x0600eb78; no store', '| goes on to 0x0600eb7a; no store'], ['the `bt` at 0x0600eb80 or', 'the `bt` at 0x0600eb82 or'],
+    ['the one at 0x0600eb88 branches', 'the one at 0x0600eb86 branches'], ['branches to 0x0600eb98 and stops', 'branches to 0x0600eb9a and stops'],
+    ['no store or call; the `bt`', 'sets +0x20 (0x0600eb7a); the `bt`'], ['the `bra` at 0x0600eb8c jumps', 'the `bra` at 0x0600eb8e jumps'],
+    ['jumps to 0x0600ebda, and from', 'jumps to 0x0600ebd0, and from'],
+    ['set, it jumps to 0x0600ebda', 'set, it jumps to 0x0600ebd0'], ['stops at the 0.8 distance check at 0x0600eb98', 'stops at the 0.8 distance check at 0x0600eba0'],
+    ['`mov.l` of 0x0000cccd', '`mov.l` of 0x0000cccc'], ['compared at\n0x0600eb9e', 'compared at\n0x0600eba0'], ['with the long +0x4d8;', 'with the long +0x56c;'],
+    ['`tst r7,r7` at 0x0600eb52', '`tst r7,r7` at 0x0600eb54'],
+    ['sides\' other stop is 0x0600ec8e', 'sides\' other stop is 0x0600ec64'], ['(r12) +0x70 &\n0x00040000', '(r12) +0x70 &\n0x00080000'], ['parameter bit 0x04. It', 'parameter bit 0x08. It']]) {
+    assert.ok(eb74Doc.includes(from), from);
+    assert.throws(() => checkEb74(eb74Doc.replace(from, to), newDoc), `${from} -> ${to}`);
+}
+/* the list's row naming another field or mask, or losing the stop's row, fails too */
+assert.throws(() => checkEb74(eb74Doc, newDoc.replace('| 0x0600eb74 | this fighter (r12) | +0x70 | 0x00200000 |', '| 0x0600eb74 | this fighter (r12) | +0x70 | 0x00040000 |')));
+assert.throws(() => checkEb74(eb74Doc, newDoc.replace('| 0x0600eb74 | this fighter (r12) | +0x70 | 0x00200000 |', '| 0x0600eb74 | this fighter (r12) | +0x6c | 0x00200000 |')));
+assert.throws(() => checkEb74(eb74Doc, newDoc.replace(/^\| 0x0600ec8e .*\n/m, '')), '0x0600ec8e');
 const sentenceSlots = new Map(kinds.map(([, k, , , , , , does]) => [parseInt(k, 16), [...new Set([...does.matchAll(
     /(?<![\w.+\u2212-]|bit |frame |kind |≤ |is )(\d+)(?![\w.]| frames?)/g)].map(m => +m[1]))].sort((a, b) => a - b)]));
 const ruleSlots = (kind, p) => kind !== 9 ? sentenceSlots.get(kind)
