@@ -841,6 +841,39 @@ sides stop at 0x0600ee16, whose flag is in "The flags those stop at" and
 is left undescribed here. `tests/fm-saturn.test.mjs` checks this section
 against a fresh read.
 
+#### Flag tests not yet described
+
+The flag tests in kind 9's run handler, 0x0600ea14 to 0x0600f400, whose
+address no Kinds subsection above has as the flag it tests, read off the
+disc: every `tst` that a `bt` or `bf` branches on and that the tool's
+`flagSides` reads as a fighter field and mask, in address order, whether
+or not Hornet's parameters reach it. A byte test is given as the long
+holding it, big-endian, as above; +0x70 is the current action, so its
+masks are parameter bits.
+
+| Tested at | Fighter | Field | Mask |
+| --- | --- | --- | --- |
+| 0x0600ea64 | this fighter (r12) | +0x70 | 0x00080000 |
+| 0x0600ead0 | this fighter (r12) | +0x70 | 0x00100000 |
+| 0x0600eaee | this fighter (r12) | +0x70 | 0x00020000 |
+| 0x0600eaf6 | this fighter (r12) | +0x70 | 0x00040000 |
+| 0x0600eb08 | this fighter (r12) | +0x70 | 0x00200000 |
+| 0x0600eb44 | this fighter (r12) | +0x70 | 0x00200000 |
+| 0x0600eb62 | this fighter (r12) | +0x4a4 | 0x00000001 |
+| 0x0600eb74 | this fighter (r12) | +0x70 | 0x00200000 |
+| 0x0600ec64 | this fighter (r12) | +0x4a4 | 0x00000001 |
+| 0x0600ec8e | this fighter (r12) | +0x70 | 0x00040000 |
+| 0x0600ecd0 | this fighter (r12) | +0x6c0 | 0x02000000 |
+| 0x0600ecda | this fighter (r12) | +0x70 | 0x00080000 |
+| 0x0600f008 | this fighter (r12) | +0x11d4 | 0x00100000 |
+| 0x0600f1f6 | this fighter (r12) | +0x6c0 | 0x00080000 |
+| 0x0600f290 | this fighter (r12) | +0x6c0 | 0x00040000 |
+| 0x0600f37e | this fighter (r12) | +0x70 | 0x00040000 |
+
+Not listed: the `tst`s of a register against itself, and those at
+0x0600edfa, 0x0600ee02 and 0x0600efa0, whose value isn't a fighter field.
+`tests/fm-saturn.test.mjs` checks this list against a fresh read.
+
 ### Slots
 
 The action-table slots that those handlers play, read the way 0x0600CEC8

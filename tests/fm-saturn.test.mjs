@@ -769,6 +769,68 @@ assert.deepEqual([...new Set(named)].sort((a, b) => a - b), slotRows.map(r => r.
 const bitRow = b => jumpBits.find(([, x]) => Number(x) === b)[2];
 assert.match(bitRow(0x04), /slot 46 \(47 if also 0x02\)/);
 assert.match(bitRow(0x20), /slot 48/);
+/* Flag tests not yet described: every tst in the run handler that a bt or bf
+ * branches on and flagSides reads as a fighter field and mask, less the ones
+ * another Kinds subsection has in its "Tested at" column, in address order */
+const RUN9_END = 0x0600f400;
+const newDoc = kindsDoc.split('#### Flag tests not yet described\n\n')[1].split('\n#### ')[0].split('\n### ')[0];
+function describedAt(kinds) {
+    const out = new Set();
+    for (const part of kinds.split('\n#### ').slice(1).filter(p => !p.startsWith('Flag tests not yet described'))) {
+        const lines = part.split('\n'), head = lines.findIndex(l => /^\| .*Tested at/.test(l));
+        if (head < 0) continue;
+        const col = lines[head].split('|').map(c => c.trim()).indexOf('Tested at');
+        for (const l of lines.slice(head + 2)) {
+            if (!l.startsWith('|')) break;
+            out.add(l.split('|').map(c => c.trim())[col]);
+        }
+    }
+    return out;
+}
+function runTests() {
+    const tests = [], other = [];
+    for (let a = run9; a <= RUN9_END; a += 2) {
+        const w = word(a), b = word(a + 2), n = (w >> 8) & 15, m = (w >> 4) & 15;
+        if (!((w & 0xff00) === 0xc800 || (w & 0xf00f) === 0x2008 && n !== m) || (b & 0xf900) !== 0x8900) continue;
+        assert.ok(FM.handlerReaches(game, run9, run9, a), `${h(a, 8)}: in the run handler`);
+        const t = FM.handlerTest(game, run9, a);
+        if (!t) { other.push(h(a, 8)); continue; }
+        tests.push([h(a, 8), t.of === 13 ? 'the opponent (r13)' : 'this fighter (r12)', `+${h(t.field, 2)}`, h(t.mask, 8)]);
+    }
+    return { tests, other };
+}
+function checkUndescribed(text, kinds) {
+    const described = describedAt(kinds), { tests, other } = runTests();
+    for (const a of ['0x0600ed16', '0x0600eeca', '0x0600f3a4']) assert.ok(described.has(a), `${a} described`);
+    const rows = [...text.matchAll(/^\| (0x[\da-f]{8}) \| (.+?) \| (.+?) \| (.+?) \|$/gm)].map(r => r.slice(1));
+    const want = tests.filter(([a]) => !described.has(a));
+    assert.deepEqual(rows, want, 'the undescribed flag tests');
+    for (const [a] of rows) {
+        const sides = FM.flagSides(game, run9, parseInt(a, 16));
+        assert.equal(eventFlag(sides.flag), rows.find(r => r[0] === a).slice(2).join(' & '), `${a}: flagSides' flag`);
+    }
+    const [, from, to] = text.match(/kind 9's run handler, (0x[\da-f]{8}) to (0x[\da-f]{8}),/);
+    assert.deepEqual([from, to], [h(run9, 8), h(RUN9_END, 8)], 'the range');
+    const listed = text.match(/and those at\n?([^]+?), whose value isn't a fighter field/)[1].match(/0x[\da-f]{8}/g);
+    assert.deepEqual(listed, other, 'the tsts that read no fighter field');
+}
+checkUndescribed(newDoc, kindsDoc);
+const firstRow = newDoc.match(/^\| 0x0600ea64 .*\n/m)[0];
+for (const [from, to] of [[firstRow, ''], ['| 0x0600f37e | this fighter (r12) | +0x70 | 0x00040000 |\n', ''],
+    [firstRow, '| 0x0600ed16 | this fighter (r12) | +0x00 | 0x00000020 |\n' + firstRow],
+    ['| 0x0600f37e |', '| 0x0600f3a4 | this fighter (r12) | +0x6c0 | 0x20000000 |\n| 0x0600f37e |'],
+    ['| 0x0600eb62 | this fighter (r12) | +0x4a4 |', '| 0x0600eb62 | this fighter (r12) | +0x4a7 |'],
+    ['| 0x0600f008 | this fighter (r12) | +0x11d4 | 0x00100000 |', '| 0x0600f008 | this fighter (r12) | +0x11d4 | 0x00000010 |'],
+    ['| 0x0600ecd0 | this fighter (r12) | +0x6c0 | 0x02000000 |', '| 0x0600ecd0 | this fighter (r12) | +0x6c0 | 0x04000000 |'],
+    ['| 0x0600ea64 | this fighter (r12) |', '| 0x0600ea64 | the opponent (r13) |'],
+    ['| 0x0600eb44 |', '| 0x0600eb46 |'], ['0x0600ee02 and 0x0600efa0', '0x0600efa0']]) {
+    assert.ok(newDoc.includes(from), from);
+    assert.throws(() => checkUndescribed(newDoc.replace(from, to), kindsDoc), `${from} -> ${to}`);
+}
+/* a row swapped out of address order fails, and so does a Kinds subsection losing a row */
+const r1 = newDoc.match(/^\| 0x0600eaee .*\n/m)[0], r2 = newDoc.match(/^\| 0x0600eaf6 .*\n/m)[0];
+assert.throws(() => checkUndescribed(newDoc.replace(r1 + r2, r2 + r1), kindsDoc));
+assert.throws(() => checkUndescribed(newDoc, kindsDoc.replace(/^\| 0x0600ed74 \| \+0x2c .*\n/m, '')));
 const sentenceSlots = new Map(kinds.map(([, k, , , , , , does]) => [parseInt(k, 16), [...new Set([...does.matchAll(
     /(?<![\w.+\u2212-]|bit |frame |kind |≤ |is )(\d+)(?![\w.]| frames?)/g)].map(m => +m[1]))].sort((a, b) => a - b)]));
 const ruleSlots = (kind, p) => kind !== 9 ? sentenceSlots.get(kind)

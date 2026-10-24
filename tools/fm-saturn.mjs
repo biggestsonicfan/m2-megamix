@@ -478,12 +478,19 @@ export function flagSides(game, start, at) {
                 else if ((w & 0xf0ff) === 0x4029) r[n] = num(r[n]) ? r[n] >>> 16 : r[n] !== null ? { hi: r[n] } : null;
                 else if (f === 0x600f) r[n] = num(r[m]) ? r[m] << 16 >> 16 : r[m]?.hi !== undefined ? r[m] : null;
                 else if ((w & 0xf0ff) === 0x4018) r[n] = num(r[n]) ? s32(r[n] << 8) : null;
+                else if ((w & 0xf0ff) === 0x4009) r[n] = num(r[n]) ? r[n] >>> 2 : null;
+                else if ((w & 0xf0ff) === 0x4019) r[n] = num(r[n]) ? r[n] >>> 8 : null;
                 else if ((w & 0xf0ff) === 0x4008) r[n] = num(r[n]) ? s32(r[n] << 2) : null;
                 else if ((w & 0xf0ff) === 0x4000) r[n] = num(r[n]) ? s32(r[n] << 1) : null;
                 else if ((w & 0xf0ff) === 0x4005) r[n] = num(r[n]) ? s32(r[n] >>> 1 | r[n] << 31) : null;
                 else if ((w & 0xf0ff) === 0x4021 || (w & 0xf0ff) === 0x4001) r[n] = null;
                 else if ((w & 0xf00c) === 0x000c && (w & 3) < 3) r[n] = load(r[m], r[0], [1, 2, 4][w & 3]);
                 else if ((w & 0xf00c) === 0x6000 && (w & 3) < 3) r[n] = load(r[m], 0, [1, 2, 4][w & 3]);
+                else if ((w & 0xf00e) === 0x6004 && n !== 15 && m !== 15) {   /* mov.b/w @Rm+,Rn */
+                    const size = [1, 2][w & 1], base = r[m];
+                    r[n] = load(base, 0, size);
+                    if (n !== m) r[m] = base?.ptr !== undefined ? { ...base, ptr: base.ptr + size } : num(base) ? s32(base + size) : null;
+                }
                 else if (hi === 0x5000 && num(r[m]) && (r[m] + (w & 15) * 4) >>> 0 === 0xffffff1c) {
                     /* the divide unit's quotient: DVDNTH:DVDNTL = x << 16 over DVSR = y << 16, x / y */
                     const d = p.div, same = (u, v) => JSON.stringify(u) === JSON.stringify(v);
