@@ -31,6 +31,8 @@ import { resolveData } from '../vendor/noclip/js/motion.js';
 import { decodeModel } from '../vendor/noclip/js/model.js';
 import { buildTexram } from '../vendor/noclip/js/texture.js';
 import { levelOrigin, texelByte, SHEET_BYTES, SHEET_H } from '../vendor/noclip/js/atlas.js';
+import { loadScrollCG, scrollAt } from '../vendor/noclip/js/scroll.js';
+import { buildColorxlat } from '../vendor/noclip/js/colors.js';
 
 /* VF2's stage slots the board has: Tou-rin, then the Colosseum. */
 export const VF2_STAGE_SLOTS = [0, 1];
@@ -94,6 +96,92 @@ export function vf2StagePlan(games) {
     const models = [...set].sort((a, b) => a - b);
     const idOf = new Map(models.map((m, i) => [m, VF2_STAGE_TOP - i]));
     return { stages, models, idOf };
+}
+
+/*
+ * The skies (noclip scroll.js buildVf2Sky): what 0x24314 loads at stage start
+ * from the record at 0x2502C + stage * 32, as the board loads it.
+ *
+ * The characters: VF2 keeps a palette group's tiles in the 128-character
+ * block of the same number (a tile's group is its char >> 7), Tou-rin's in
+ * blocks 56-71 and the Colosseum's in 59-95 and 100-117. The board's own
+ * tiles fill blocks 0-39 and StF's fight CG 84-106, so a block goes where it
+ * is if that is free, else to the next free one (the Colosseum's 84-95 and
+ * 100-106 to 40-58), its group with it, and every tile in the panorama is
+ * renumbered to match.
+ *
+ * The colours: palette_w (MAME model2.cpp) shows each 5-bit component through
+ * colorxlat row c at luma 0x40 and the gamma table. VF2's column there runs
+ * 0, 68, 72 .. 202, StF's (the board's) 0, 28, 35 .. 224, so each component
+ * becomes the one whose colour on the board is nearest VF2's (never 0: the
+ * board's row 0 at luma 0x40 is not StF's 0).
+ *
+ * The panorama: patterns 0-15 of the list side by side, `rows` rows of 512
+ * tiles, which the board streams into the tilemap a column pair at a time as
+ * VF2's 0x24534 does from its copy at 0x579000.
+ */
+const VF2_SKY_RECORDS = 0x2502c;
+const VF2_SKY_PATTERNS = 16;
+const SKY_FREE_BLOCKS = [...Array.from({ length: 44 }, (_, i) => 40 + i), ...Array.from({ length: 21 }, (_, i) => 107 + i)];
+/* The skies' place in main_data: free room above the guests' heap. */
+export const VF2_SKY_AT = 0x02f80000;
+const SKY_END = 0x03000000;
+const gamma = (i) => Math.trunc(Math.max(((i - 64) * 255) / 191, 0));
+const lumaCol = (cx, p) => Array.from({ length: 32 }, (_, r) => cx[p * 0x4000 + r * 0x200 + 0x80]);
+
+export function vf2SkyPlan(games) {
+    const vf2 = games.vf2.rom, stf = games.stf.rom, cpu = vf2.mainCpuView;
+    const stfCx = buildColorxlat(stf, { colorSet: games.stf.stages[0].texSet[1], tint: games.stf.stages[0].tint, fighters: [] });
+    const parts = [];
+    let at = VF2_SKY_AT;
+    const place = (bytes) => { const a = at; parts.push(bytes); at += (bytes.length + 15) & ~15; if (bytes.length & 15) parts.push(new Uint8Array(16 - (bytes.length & 15))); return a; };
+    const skies = VF2_STAGE_SLOTS.map((slot) => {
+        const st = games.vf2.stages.find((s) => s.slot === slot);
+        const rec = VF2_SKY_RECORDS + st.num * 32;
+        const list = cpu.getUint32(rec + 0x10, true);
+        const rows = cpu.getUint16(list, true), voff = cpu.getUint8(list + 2);
+        const { chars, pal } = loadScrollCG(vf2, cpu.getUint32(rec + 0x08, true), cpu.getUint32(rec + 0x0c, true), 0x80000);
+        const cells = new Uint16Array(rows * 512);
+        for (let i = 0; i < VF2_SKY_PATTERNS; i++) {
+            const p = cpu.getUint32(list + 4 + i * 4, true);
+            for (let r = 0; r < rows; r++) for (let x = 0; x < 32; x++) {
+                const A = scrollAt(vf2, p + r * 64 + x * 2);
+                cells[r * 512 + i * 32 + x] = A.view.getUint16(A.off, true);
+            }
+        }
+        const used = [...new Set(Array.from(cells, (v) => (v & 0x3fff) >> 7))].sort((a, b) => a - b);
+        if (cells.some((v) => v & 0xc000)) throw new Error(`VF2 sky ${st.name}: a tile in front or in groups 128 up`);
+        const taken = new Set(used.filter((b) => SKY_FREE_BLOCKS.includes(b)));
+        const spare = SKY_FREE_BLOCKS.filter((b) => !taken.has(b));
+        const dest = used.map((b) => (taken.has(b) ? b : spare.shift()));
+        if (dest.some((b) => b === undefined)) throw new Error(`VF2 sky ${st.name}: ${used.length} blocks, not enough free`);
+        const to = new Map(used.map((b, i) => [b, dest[i]]));
+        for (let i = 0; i < cells.length; i++) cells[i] = (to.get(cells[i] >> 7) << 7) | (cells[i] & 0x7f);
+        const vCx = buildColorxlat(vf2, { colorSet: st.texSet[1], tint: st.tint, fighters: [] });
+        const near = [0, 1, 2].map((p) => {
+            const v = lumaCol(vCx, p), b = lumaCol(stfCx, p);
+            return v.map((x) => {
+                let best = 1;
+                for (let w = 2; w < 32; w++) if (Math.abs(gamma(b[w]) - gamma(x)) < Math.abs(gamma(b[best]) - gamma(x))) best = w;
+                return best;
+            });
+        });
+        const pb = new Uint8Array(used.length * 32), pv = new DataView(pb.buffer);
+        used.forEach((b, k) => {
+            for (let i = 0; i < 16; i++) {
+                const c = pal[b * 16 + i];
+                pv.setUint16((k * 16 + i) * 2, near[0][c & 31] | near[1][(c >> 5) & 31] << 5 | near[2][(c >> 10) & 31] << 10, true);
+            }
+        });
+        const cb = new Uint8Array(used.length * 4096);
+        used.forEach((b, k) => cb.set(chars.subarray(b * 4096, (b + 1) * 4096), k * 4096));
+        return { name: st.name, rows, voff, dest, chars: place(cb), pal: place(pb), pano: place(new Uint8Array(cells.buffer)) };
+    });
+    if (at > SKY_END) throw new Error(`VF2 skies: 0x${(at - VF2_SKY_AT).toString(16)} bytes, past main_data's end`);
+    const blob = new Uint8Array(at - VF2_SKY_AT);
+    let o = 0;
+    for (const b of parts) { blob.set(b, o); o += b.length; }
+    return { skies, blob };
 }
 
 const hex = (v) => '0x' + v.toString(16).toUpperCase();
@@ -296,6 +384,11 @@ export function importVf2Stages(R, games, ctx) {
     if (!isFree(main, dataTable + DATA_INDEX * 4, 4)) throw new Error(`VF2 stages: destination list ${DATA_INDEX} is StF's`);
     main.put(dataTable + DATA_INDEX * 4, u32s([dAt]), `destination list ${DATA_INDEX}`);
     report.push(`sets ${sets.join(', ')} as ${sets.map((_, k) => VF2_SET0 + k).join(', ')}: ${list[0]} pages each, ${(pageBytes / 1024).toFixed(0)} KB`);
+    /* the skies, at the fixed place bake-board.mjs gives the board */
+    const sky = vf2SkyPlan(games);
+    if (!isFree(main, VF2_SKY_AT - MAIN_DATA, sky.blob.length)) throw new Error('VF2 skies: their room in main_data is taken');
+    main.put(VF2_SKY_AT - MAIN_DATA, sky.blob, 'VF2 stage skies');
+    report.push(`skies ${sky.skies.map((k) => `${k.name} ${k.dest.length} blocks`).join(', ')}: ${(sky.blob.length / 1024).toFixed(0)} KB`);
     const problems = checkVf2Stages(R, games, plan, sets);
     if (problems.length) throw new Error(`VF2 stages: ${problems.slice(0, 8).join('; ')}`);
     report.push(`every model decodes through the board's ROMs as through VF2's: points at its scale, UVs, tile sizes, texels at levels 0-3`);

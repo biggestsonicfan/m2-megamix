@@ -34,7 +34,7 @@ import { readFrameTables, buildStageDisplayList, opsAt } from '../vendor/noclip/
 import { makeFighter } from '../js/fighters.js';
 import { buildColorxlat } from '../vendor/noclip/js/colors.js';
 import { stormSchedule } from '../vendor/noclip/js/vf2.js';
-import { vf2StagePlan, VF2_SET0, VF2_RING, SCALE as VF2_SCALE } from './vf2-stages.mjs';
+import { vf2StagePlan, vf2SkyPlan, VF2_SET0, VF2_RING, SCALE as VF2_SCALE } from './vf2-stages.mjs';
 
 const OUT = process.argv[2] ?? new URL('../board/src/poses.h', import.meta.url).pathname;
 /* StF's fighters: their models and textures are already on the board. */
@@ -182,11 +182,17 @@ out.push('typedef struct { u32 model; float m[12]; float x0, x1; } stage_draw_t;
  * (stormSchedule's bit 3, in storm[] by frame of FLASH_FRAMES), lit with
  * flash (VF2 0x2468C's light: bright, vx, vy).
  * wind, wind_at: Tou-rin's wind (kind 12, 0x30E74), draw wind_at's model is
- * wind[(frame >> wind_shift) & 255] (0: none that frame). */
+ * wind[(frame >> wind_shift) & 255] (0: none that frame).
+ * sky: VF2's sky (tools/vf2-stages.mjs vf2SkyPlan), in main_data: its
+ * character blocks (4 KB each, to the blocks dest[] names), their palette
+ * groups (to the groups of the same numbers) and the panorama, rows of 512
+ * tiles; voff, the list's vertical offset byte. */
 out.push('typedef struct { u16 kind, model, n, words; const short *v; } tpd_t;');
+out.push('typedef struct { u32 chars, pal, pano; u16 rows, voff, nblocks; const u8 *dest; } vf2_sky_t;');
 out.push('typedef struct { const char *name; u32 texset; u32 ndraws; const stage_draw_t *draws; cx_run_t cx; const u32 *mat; u16 bg; float bright; short vx, vy;');
 out.push('                 u16 cset; u8 tint[3]; const u16 *cyc; tpd_t tpd;');
-out.push('                 float ring; const u16 *lit; const u8 *storm; float flash[3]; const u16 *wind; u16 wind_at, wind_shift; } stage_t;\n');
+out.push('                 float ring; const u16 *lit; const u8 *storm; float flash[3]; const u16 *wind; u16 wind_at, wind_shift;');
+out.push('                 const vf2_sky_t *sky; } stage_t;\n');
 {
     /* color_intensity's TST_*_ADD and TST_*_MUL, the same for every stage. */
     const C = stf.rom.game.colors;
@@ -253,7 +259,7 @@ stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
         tpd = `{${t.kind}, ${t.model}, ${count}, ${words}, stage${n}_tpd}`;
     }
     const tint = st.tint.map((t) => Math.round(t * 128)).join(', ');
-    stages.push(`{"${st.name}", ${st.texSets.at(-1)}, ${list.length}, stage${n}_draws, {0, 28, 0, 64, stage${n}_cx}, stage${n}_mat, 0x${st.bgColor555.toString(16)}, ${f32(st.bright)}, ${st.vecter[0]}, ${st.vecter[1]}, ${st.texSet[1]}, {${tint}}, stage${n}_cyc, ${tpd}, 0, 0, 0, {0, 0, 0}, 0, 0, 0}`);
+    stages.push(`{"${st.name}", ${st.texSets.at(-1)}, ${list.length}, stage${n}_draws, {0, 28, 0, 64, stage${n}_cx}, stage${n}_mat, 0x${st.bgColor555.toString(16)}, ${f32(st.bright)}, ${st.vecter[0]}, ${st.vecter[1]}, ${st.texSet[1]}, {${tint}}, stage${n}_cyc, ${tpd}, 0, 0, 0, {0, 0, 0}, 0, 0, 0, 0}`);
     console.log('stage', n, st.name, 'set', st.texSets.at(-1), 'draws', list.length);
 });
 /*
@@ -267,7 +273,7 @@ stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
  * Materials: VF2's 32 at 0x118F0 (the coefficients at 0x11868 are StF's).
  */
 {
-    const vf2 = games.vf2, plan = vf2StagePlan(games), vr = vf2.rom.mainCpuView;
+    const vf2 = games.vf2, plan = vf2StagePlan(games), vr = vf2.rom.mainCpuView, skies = vf2SkyPlan(games).skies;
     const id = (m) => (m ? plan.idOf.get(m) : 0);
     const FLASH = [9999, 0x9d00 - 0x10000, 0xbf00 - 0x10000];
     /* the guests' size on StF (VF2's units to StF's), for the ring out's ground */
@@ -299,12 +305,15 @@ stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
             out.push(`static const u16 ${name}_wind[256] = {${draws[w].frames.map(id).join(',')}};`);
             wind = `${name}_wind`; windAt = w; windShift = draws[w].shift;
         }
+        const k = skies[n];
+        out.push(`static const u8 ${name}_skyb[] = {${k.dest.join(',')}};`);
+        out.push(`static const vf2_sky_t ${name}_sky = {0x${k.chars.toString(16)}u, 0x${k.pal.toString(16)}u, 0x${k.pano.toString(16)}u, ${k.rows}, ${k.voff}, ${k.dest.length}, ${name}_skyb};`);
         const base = vf2.rom.game.stageTable.vf2.at + st.num * 256;
         const bright = vr.getFloat32(base + 0x6c, true), vx = vr.getInt16(base + 0x70, true), vy = vr.getInt16(base + 0x72, true);
         const tint = st.tint.map((t) => Math.round(t * 128)).join(', ');
         const nm = st.name.toUpperCase();
         stages.push(`{"${nm}", ${VF2_SET0 + n}, ${draws.length}, ${name}_draws, {0, 28, 0, 64, ${name}_cx}, ${name}_mat, 0x0, ${f32(bright)}, ${vx}, ${vy}, 0, {${tint}}, ${name}_cyc, {0, 0, 0, 0, 0}, ` +
-            `${f32(VF2_RING * VF2_SCALE)}, ${lit}, ${storm}, ${flash}, ${wind}, ${windAt}, ${windShift}}`);
+            `${f32(VF2_RING * VF2_SCALE)}, ${lit}, ${storm}, ${flash}, ${wind}, ${windAt}, ${windShift}, &${name}_sky}`);
         console.log('stage', stages.length - 1, nm, 'VF2 set', st.texSets[0], 'as', VF2_SET0 + n, 'draws', draws.length);
     });
 }

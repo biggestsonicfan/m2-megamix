@@ -872,6 +872,65 @@ static void send_materials(const u32 *mat) {
     for (i = 0; i < 0x20u; i++) { *fifo = mat[i]; *fifo = geo_mat_int[i]; }
 }
 
+/* VF2's sky (tools/vf2-stages.mjs vf2SkyPlan), as 0x24314 sets it up at
+ * stage start and 0x24534 moves it every frame. The tilemap's map2 holds 32
+ * column pairs of the 256 in the panorama (pair c in slot c & 31); map3,
+ * which split mode 1 draws above the line the vertical scroll names, is the
+ * top row's first eight tiles over and over, and map2 below the strip the
+ * last row's (0x24444, 0x243E0). VF2 reads its camera's pitch (+0x24) and
+ * heading (+0x26) two frames late (0x503010, 0x503012), the board's StF
+ * camera has the same fields. Across, the strip keeps VF2's 16 heading
+ * units a pixel, a turn to its 4096 pixels: on StF's wider view (FOCUS 280
+ * to VF2's 600) it turns faster than the stage behind it. */
+#define TILE_L3 ((volatile u16 *)0x01006000u)
+static u16 sky_have[32], sky_head[2];
+static short sky_pitch[2];
+
+static void sky_load(const vf2_sky_t *s) {
+    const volatile u16 *pano;
+    u32 b, i;
+    if (!s) { M2_L2_VPOS = 0x8000u; return; }    /* StF's stages: map2 off, as m2_init leaves it */
+    for (b = 0; b < s->nblocks; b++) {
+        volatile u32 *o = (volatile u32 *)(M2_CHARGFX + s->dest[b] * 4096u);
+        const volatile u32 *c = (const volatile u32 *)(s->chars + b * 4096u);
+        const volatile u16 *pal = (const volatile u16 *)(s->pal + b * 32u);
+        for (i = 0; i < 1024u; i++) o[i] = c[i];
+        for (i = 0; i < 16u; i++) M2_PALETTE[s->dest[b] * 16u + i] = pal[i];
+    }
+    pano = (const volatile u16 *)s->pano;
+    for (i = 0; i < 64u * 64u; i++) {
+        TILE_L3[i] = pano[i & 7u];
+        if (i >= s->rows * 64u) M2_TILE_BG[i] = pano[(s->rows - 1u) * 512u + (i & 7u)];
+    }
+    for (i = 0; i < 32u; i++) sky_have[i] = 0xFFFFu;
+    sky_pitch[0] = sky_pitch[1] = (short)RH(stf_cam, 0x24);
+    sky_head[0] = sky_head[1] = RH(stf_cam, 0x26);
+}
+
+static void sky_frame(const vf2_sky_t *s) {
+    const volatile u32 *pano;
+    u32 y, c, k, r;
+    int p;
+    if (!s) return;
+    p = sky_pitch[1]; y = (u16)-(int)sky_head[1];
+    sky_pitch[1] = sky_pitch[0]; sky_head[1] = sky_head[0];
+    sky_pitch[0] = (short)RH(stf_cam, 0x24); sky_head[0] = RH(stf_cam, 0x26);
+    /* split mode 1 at VF2's V = 8 * list[2] - (pitch - 0x2E0) / 16, which
+     * puts the strip's row 238 + 8 * list[2] on the eye line, screen row
+     * 192 + pitch / 16 (its focal, 600). The board's is StF's, FOCUS, so the
+     * same row goes on the board's eye line, 192 + FOCUS tan(pitch). */
+    M2_L2_VPOS = (u16)(0x2000u + ((u32)(238 + 8 * (int)s->voff - 192 -
+                       m2_cop_f2int(m2_cop_fmul(FOCUS, m2_cop_tan((u32)p & 0xFFFFu)))) & 0x3FFu));
+    pano = (const volatile u32 *)s->pano;
+    for (k = 0; k < 32u; k++) {
+        c = ((y >> 8) + k) & 255u;
+        if (sky_have[c & 31u] == c) continue;
+        sky_have[c & 31u] = (u16)c;
+        for (r = 0; r < s->rows; r++) ((volatile u32 *)M2_TILE_BG)[r * 32u + (c & 31u)] = pano[r * 256u + c];
+    }
+    M2_L2_HPOS = (u16)((0u - (y >> 4)) & 0x1FFu);
+}
+
 /* A stage: its texture set (each page to the bank its own origin names, as
  * StF's loader does), its colour bases, its rows of colorxlat and their
  * cycling curve, its backdrop colour and its light. */
@@ -880,6 +939,7 @@ static void load_stage(const stage_t *st) {
     cur_stage = st;
     tex_load_set(st->texset);
     cx_put(&st->cx);
+    sky_load(st->sky);                   /* after the colorxlat: palette_w reads it */
     make_lay_col_256_tbl(st);
     m2_backdrop(st->bg);                 /* scr_bg_int: the record's stage_bg_color */
     stage_light(st);
@@ -1230,6 +1290,7 @@ int main(void) {
         m2_obj_frame_setup();
         send_materials(stages[stage].mat);
         camera_stf(&stages[stage]);
+        sky_frame(stages[stage].sky);
         m2_geo_fifo_light(m2_obj_fb(light[0]), m2_obj_fb(light[1]), m2_obj_fb(light[2]));
         move_tpd_send(&stages[stage].tpd);
         polys = 0u;
