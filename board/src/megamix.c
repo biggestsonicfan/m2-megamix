@@ -147,11 +147,11 @@ static float light[3];
 /* StF's frame_counter (see stage_col_cycle). */
 static u32 frame_counter;
 
-/* VF2's Colosseum storm: while channel 3 of the storm (VF2 0x2468C) is on,
- * the arena is lit, each draw its lit twin and the light the flash's. */
+/* VF2's Colosseum storm (VF2 0x2468C), storm[] its four channels by frame:
+ * while channel 3 is on, the arena is lit, each draw its lit twin and the
+ * light the flash's. */
 static u32 storm_lit(const stage_t *st) {
-    u32 f = frame_counter % FLASH_FRAMES;
-    return st->storm && (st->storm[f >> 3] >> (f & 7u) & 1u);
+    return st->storm && (st->storm[frame_counter % FLASH_FRAMES] & 8u);
 }
 
 static void stage_light(const stage_t *st) {
@@ -885,6 +885,7 @@ static void send_materials(const u32 *mat) {
 #define TILE_L3 ((volatile u16 *)0x01006000u)
 static u16 sky_have[32], sky_head[2];
 static short sky_pitch[2];
+static u8 sky_storm;
 
 static void sky_load(const vf2_sky_t *s) {
     const volatile u16 *pano;
@@ -903,6 +904,7 @@ static void sky_load(const vf2_sky_t *s) {
         if (i >= s->rows * 64u) M2_TILE_BG[i] = pano[(s->rows - 1u) * 512u + (i & 7u)];
     }
     for (i = 0; i < 32u; i++) sky_have[i] = 0xFFFFu;
+    sky_storm = 0;
     sky_pitch[0] = sky_pitch[1] = (short)RH(stf_cam, 0x24);
     sky_head[0] = sky_head[1] = RH(stf_cam, 0x26);
 }
@@ -929,6 +931,35 @@ static void sky_frame(const vf2_sky_t *s) {
         for (r = 0; r < s->rows; r++) ((volatile u32 *)M2_TILE_BG)[r * 32u + (c & 31u)] = pano[r * 256u + c];
     }
     M2_L2_HPOS = (u16)((0u - (y >> 4)) & 0x1FFu);
+}
+
+/* The storm's sky (VF2 0x2468C's channels 0..2): channel 0 flashes the sky's
+ * palette, channel 1 the far one's (each entry its on and off colour, which
+ * VF2 writes as the channel steps on or off), and channel 2 draws the bolt
+ * on the panorama's column pairs 24..31 from row 8, where those are on the
+ * map (VF2 0x8F1C). sky_frame streams a column back unlit, so a lit bolt is
+ * drawn every frame. */
+static void sky_storm_frame(const stage_t *st) {
+    const vf2_sky_t *s = st->sky;
+    const volatile u32 *pano;
+    u32 b, ch, i, k, r, n;
+    const u16 *e;
+    if (!s || !s->bolt || !st->storm) return;
+    b = st->storm[frame_counter % FLASH_FRAMES];
+    for (ch = 0, e = s->storm_pal; ch < 2u; e += 3u * s->storm_n[ch], ch++) {
+        if (!((b ^ sky_storm) >> ch & 1u)) continue;
+        for (i = 0, n = s->storm_n[ch]; i < n; i++) M2_PALETTE[e[3u * i]] = e[3u * i + (b >> ch & 1u ? 1u : 2u)];
+    }
+    if ((b | sky_storm) & 4u) {
+        pano = (const volatile u32 *)s->pano;
+        for (k = 0; k < 8u; k++) {
+            if (sky_have[24u + k] != 24u + k) continue;
+            for (r = 0; r < 18u; r++)
+                ((volatile u32 *)M2_TILE_BG)[(8u + r) * 32u + 24u + k] =
+                    b & 4u ? s->bolt[k * 18u + r] : pano[(8u + r) * 256u + 24u + k];
+        }
+    }
+    sky_storm = (u8)b;
 }
 
 /* A stage: its texture set (each page to the bank its own origin names, as
@@ -1291,6 +1322,7 @@ int main(void) {
         send_materials(stages[stage].mat);
         camera_stf(&stages[stage]);
         sky_frame(stages[stage].sky);
+        sky_storm_frame(&stages[stage]);
         m2_geo_fifo_light(m2_obj_fb(light[0]), m2_obj_fb(light[1]), m2_obj_fb(light[2]));
         move_tpd_send(&stages[stage].tpd);
         polys = 0u;

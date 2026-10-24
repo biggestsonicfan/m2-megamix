@@ -1168,12 +1168,20 @@ the data ROMs, and `bake-board.mjs` bakes their records into `poses.h`.
 - The Colosseum's storm (0x2468C): four channels started by the low byte of
   VF2's random number, each stepping the shared 27-step timeline at 0x24D70
   (0 on, 1 off, 2 hold). VF2's schedule (stormSchedule, 1800 frames from a
-  fixed seed) is baked as a bitmap of channel 3, the arena flash. While it
-  is on each draw takes its entry in the lit record (0x6FE38, 0x20AFC), one
+  fixed seed) is baked as a byte a frame, a bit for each channel. Channel 3
+  lights the arena: while it is on each draw takes its entry in the lit record (0x6FE38, 0x20AFC), one
   for one, and the light is the flash's (9999, X 0x9D00, Y 0xBF00, 0x1FC00).
   Four lit stands (VF2 2620, 2622, 2663, 2664) have 16 faces fewer than
   their twins; they split the same faces into fewer coplanar polygons, so
-  the flash leaves no hole. Channels 0..2 are the sky's, not ported.
+  the flash leaves no hole. Channels 0..2 are the sky's (`sky_storm_frame`):
+  0 flashes the sky, writing palette 0x3B0 (37 groups x 16), 0x641 and 0x701
+  from its on and off lists (0x24C6C.., 0x24C8C..); 1 the far sky's entries
+  0x645 and 0x706; 2 draws the bolt (VF2 0x8F1C, data 0x2AA8346 + 0x54 k, off
+  0x2AA85E6) on map column pairs 24..31 from row 8, where they are on the
+  map. Measured in MAME (demo stage 0, frames 4700..6300): only channel 0
+  changes the sky, (22,10,29) to (46,22,58); under channel 3 the sky stays
+  as it is (#1567's (126,131,145) was lit 3D, not sky). On the board the
+  sky goes from (13,4,30) to (38,13,57) on channel 0's frames.
 - Skies: VF2 scrolls a panorama on tile map 2, split with map 3 (0x2000 in
   its vscroll), for Tou-rin's day sky and the Colosseum's storm (record
   0x2502C + stage * 32: rows, row offset, the scroll CG). `vf2SkyPlan` bakes
@@ -1185,7 +1193,7 @@ the data ROMs, and `bake-board.mjs` bakes their records into `poses.h`.
   turns, hscroll `-(Y >> 4)`. VF2 has a focal length of 600 and StF 280, so
   the board puts the horizon row on its own eye line (192 + 280 tan pitch)
   instead of using VF2's pitch formula; across the screen the sky still turns
-  at VF2's rate, faster than the stage. The sky flash is not ported.
+  at VF2's rate, faster than the stage. The storm's sky flash: see above.
 - An entry of 0xFFFF in VF2's lists draws nothing; the plan has 0 for it
   and the board skips model 0.
 - Check: `checkVf2Stages` decodes every model from VF2 and from the patched

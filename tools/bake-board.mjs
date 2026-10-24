@@ -188,7 +188,7 @@ out.push('typedef struct { u32 model; float m[12]; float x0, x1; } stage_draw_t;
  * groups (to the groups of the same numbers) and the panorama, rows of 512
  * tiles; voff, the list's vertical offset byte. */
 out.push('typedef struct { u16 kind, model, n, words; const short *v; } tpd_t;');
-out.push('typedef struct { u32 chars, pal, pano; u16 rows, voff, nblocks; const u8 *dest; } vf2_sky_t;');
+out.push('typedef struct { u32 chars, pal, pano; u16 rows, voff, nblocks; const u8 *dest; const u16 *storm_pal; u16 storm_n[2]; const u32 *bolt; } vf2_sky_t;');
 out.push('typedef struct { const char *name; u32 texset; u32 ndraws; const stage_draw_t *draws; cx_run_t cx; const u32 *mat; u16 bg; float bright; short vx, vy;');
 out.push('                 u16 cset; u8 tint[3]; const u16 *cyc; tpd_t tpd;');
 out.push('                 float ring; const u16 *lit; const u8 *storm; float flash[3]; const u16 *wind; u16 wind_at, wind_shift;');
@@ -294,10 +294,9 @@ stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
         let lit = '0', storm = '0', flash = '{0, 0, 0}', wind = '0', windAt = 0, windShift = 0;
         if (draws.some((d) => d.lit !== undefined)) {
             out.push(`static const u16 ${name}_lit[] = {${draws.map((d) => id(d.lit)).join(',')}};`);
-            const sch = stormSchedule(vf2.rom), bits = new Array(sch.length >> 3).fill(0);
-            sch.forEach((v, f) => { if (v & 8) bits[f >> 3] |= 1 << (f & 7); });
+            const sch = stormSchedule(vf2.rom);
             out.push(`#define FLASH_FRAMES ${sch.length}`);
-            out.push(`static const u8 ${name}_storm[] = {${bits.join(',')}};`);
+            out.push(`static const u8 ${name}_storm[] = {${sch.join(',')}};`);
             lit = `${name}_lit`; storm = `${name}_storm`; flash = `{${f32(FLASH[0])}, ${f32(FLASH[1])}, ${f32(FLASH[2])}}`;
         }
         const w = draws.findIndex((d) => d.frames);
@@ -307,7 +306,14 @@ stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
         }
         const k = skies[n];
         out.push(`static const u8 ${name}_skyb[] = {${k.dest.join(',')}};`);
-        out.push(`static const vf2_sky_t ${name}_sky = {0x${k.chars.toString(16)}u, 0x${k.pal.toString(16)}u, 0x${k.pano.toString(16)}u, ${k.rows}, ${k.voff}, ${k.dest.length}, ${name}_skyb};`);
+        let spal = '0', sn = '{0, 0}', bolt = '0';
+        if (k.storm) {
+            out.push(`static const u16 ${name}_skyst[] = {${k.storm.pal.flat().map((e) => e.join(',')).join(', ')}};`);
+            const b32 = new Uint32Array(k.storm.bolt.buffer.slice(k.storm.bolt.byteOffset, k.storm.bolt.byteOffset + k.storm.bolt.byteLength));
+            out.push(`static const u32 ${name}_bolt[] = {${Array.from(b32, (v) => `0x${v.toString(16)}u`).join(',')}};`);
+            spal = `${name}_skyst`; sn = `{${k.storm.pal[0].length}, ${k.storm.pal[1].length}}`; bolt = `${name}_bolt`;
+        }
+        out.push(`static const vf2_sky_t ${name}_sky = {0x${k.chars.toString(16)}u, 0x${k.pal.toString(16)}u, 0x${k.pano.toString(16)}u, ${k.rows}, ${k.voff}, ${k.dest.length}, ${name}_skyb, ${spal}, ${sn}, ${bolt}};`);
         const base = vf2.rom.game.stageTable.vf2.at + st.num * 256;
         const bright = vr.getFloat32(base + 0x6c, true), vx = vr.getInt16(base + 0x70, true), vy = vr.getInt16(base + 0x72, true);
         const tint = st.tint.map((t) => Math.round(t * 128)).join(', ');

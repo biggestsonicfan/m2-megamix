@@ -119,9 +119,30 @@ export function vf2StagePlan(games) {
  * The panorama: patterns 0-15 of the list side by side, `rows` rows of 512
  * tiles, which the board streams into the tilemap a column pair at a time as
  * VF2's 0x24534 does from its copy at 0x579000.
+ *
+ * The Colosseum's storm (its record's frame routine, 0x2468C): channels 0
+ * and 1 write fixed colours over the sky's groups as they turn on and off,
+ * channel 2 the bolt over the tilemap (js/scroll.js has the picture). In the
+ * attract fight channel 0 is the sky's flash: every cloud colour at once,
+ * (22,10,29) to (46,22,58) in MAME, while channel 3 (the arena's light)
+ * leaves the sky as it is. `storm.pal[ch]` is (board entry, on, off) for
+ * each entry channel ch writes in a group the sky uses, snapped as the
+ * palette is; `storm.bolt` the bolt's 8 column pairs of `BOLT.rows` rows
+ * (tiles renumbered, their blocks loaded with the sky's), which go over map
+ * rows 8 up in the slots of columns 24-31 while those columns are in.
  */
 const VF2_SKY_RECORDS = 0x2502c;
 const VF2_SKY_PATTERNS = 16;
+const STORM_SKY = 0x2468c;
+/* 0x2468C's palette writes, channel by channel: [first entry, groups, count,
+ * on colours, off colours] (0x24744 on, 0x249BC off). */
+const STORM_PAL = [
+    [[0x3b0, 37, 16, 0x24c6c, 0x24c8c], [0x641, 12, 4, 0x24c76, 0x24c96], [0x701, 6, 4, 0x24c78, 0x24c98]],
+    [[0x645, 12, 11, 0x24cb6, 0x24cd6], [0x706, 6, 11, 0x24cf8, 0x24d18]],
+];
+/* Channel 2's blocks for 0x8F1C (s16 added, s16 0 for byte entries, u32
+ * rows, u32 width), one a column pair from map row 8, on and off. */
+export const BOLT = { on: 0x2aa8346, off: 0x2aa85e6, step: 0x54, pairs: 8, col: 24, row: 8, rows: 18 };
 const SKY_FREE_BLOCKS = [...Array.from({ length: 44 }, (_, i) => 40 + i), ...Array.from({ length: 21 }, (_, i) => 107 + i)];
 /* The skies' place in main_data: free room above the guests' heap. */
 export const VF2_SKY_AT = 0x02f80000;
@@ -149,7 +170,18 @@ export function vf2SkyPlan(games) {
                 cells[r * 512 + i * 32 + x] = A.view.getUint16(A.off, true);
             }
         }
-        const used = [...new Set(Array.from(cells, (v) => (v & 0x3fff) >> 7))].sort((a, b) => a - b);
+        const storm = cpu.getUint32(rec + 4, true) === STORM_SKY;
+        const bolt = storm ? boltCells(vf2, BOLT.on, rows) : new Uint16Array(0);
+        if (storm) {
+            /* the off blocks put back the panorama's own tiles */
+            const off = boltCells(vf2, BOLT.off, rows);
+            off.forEach((v, i) => {
+                const k = i / (BOLT.rows * 2) | 0, r = (i >> 1) % BOLT.rows, x = i & 1;
+                const own = cells[(BOLT.row + r) * 512 + (BOLT.col + k) * 2 + x];
+                if (v !== own) throw new Error(`VF2 sky ${st.name}: the bolt's off block is not the panorama at pair ${BOLT.col + k} row ${r}`);
+            });
+        }
+        const used = [...new Set(Array.from([...cells, ...bolt], (v) => (v & 0x3fff) >> 7))].sort((a, b) => a - b);
         if (cells.some((v) => v & 0xc000)) throw new Error(`VF2 sky ${st.name}: a tile in front or in groups 128 up`);
         const taken = new Set(used.filter((b) => SKY_FREE_BLOCKS.includes(b)));
         const spare = SKY_FREE_BLOCKS.filter((b) => !taken.has(b));
@@ -157,6 +189,7 @@ export function vf2SkyPlan(games) {
         if (dest.some((b) => b === undefined)) throw new Error(`VF2 sky ${st.name}: ${used.length} blocks, not enough free`);
         const to = new Map(used.map((b, i) => [b, dest[i]]));
         for (let i = 0; i < cells.length; i++) cells[i] = (to.get(cells[i] >> 7) << 7) | (cells[i] & 0x7f);
+        for (let i = 0; i < bolt.length; i++) bolt[i] = (to.get(bolt[i] >> 7) << 7) | (bolt[i] & 0x7f);
         const vCx = buildColorxlat(vf2, { colorSet: st.texSet[1], tint: st.tint, fighters: [] });
         const near = [0, 1, 2].map((p) => {
             const v = lumaCol(vCx, p), b = lumaCol(stfCx, p);
@@ -166,22 +199,54 @@ export function vf2SkyPlan(games) {
                 return best;
             });
         });
+        const snap = (c) => near[0][c & 31] | near[1][(c >> 5) & 31] << 5 | near[2][(c >> 10) & 31] << 10;
+        const stormPal = !storm ? null : STORM_PAL.map((writes) => writes.flatMap(([first, groups, count, on, off]) => {
+            const out = [];
+            for (let g = 0; g < groups; g++) {
+                const grp = (first >> 4) + g;
+                if (!to.has(grp)) continue;
+                for (let e = 0; e < count; e++) {
+                    out.push([to.get(grp) * 16 + (first & 15) + e,
+                        snap(cpu.getUint16(on + e * 2, true)), snap(cpu.getUint16(off + e * 2, true))]);
+                }
+            }
+            return out;
+        }));
         const pb = new Uint8Array(used.length * 32), pv = new DataView(pb.buffer);
         used.forEach((b, k) => {
             for (let i = 0; i < 16; i++) {
                 const c = pal[b * 16 + i];
-                pv.setUint16((k * 16 + i) * 2, near[0][c & 31] | near[1][(c >> 5) & 31] << 5 | near[2][(c >> 10) & 31] << 10, true);
+                pv.setUint16((k * 16 + i) * 2, snap(c), true);
             }
         });
         const cb = new Uint8Array(used.length * 4096);
         used.forEach((b, k) => cb.set(chars.subarray(b * 4096, (b + 1) * 4096), k * 4096));
-        return { name: st.name, rows, voff, dest, chars: place(cb), pal: place(pb), pano: place(new Uint8Array(cells.buffer)) };
+        return { name: st.name, rows, voff, dest, chars: place(cb), pal: place(pb), pano: place(new Uint8Array(cells.buffer)),
+            storm: storm ? { pal: stormPal, bolt } : null };
     });
     if (at > SKY_END) throw new Error(`VF2 skies: 0x${(at - VF2_SKY_AT).toString(16)} bytes, past main_data's end`);
     const blob = new Uint8Array(at - VF2_SKY_AT);
     let o = 0;
     for (const b of parts) { blob.set(b, o); o += b.length; }
     return { skies, blob };
+}
+
+/* Channel 2's bolt as 0x8F1C writes it: BOLT.pairs blocks of BOLT.rows rows
+ * of a column pair, pair by pair. */
+function boltCells(rom, base, rows) {
+    if (BOLT.row + BOLT.rows > rows) throw new Error(`VF2 sky: the bolt runs past the panorama's ${rows} rows`);
+    const out = new Uint16Array(BOLT.pairs * BOLT.rows * 2);
+    for (let k = 0; k < BOLT.pairs; k++) {
+        const R = resolveData(rom, base + k * BOLT.step);
+        const add = R.view.getInt16(R.off, true), bytes = R.view.getInt16(R.off + 2, true) === 0;
+        const n = R.view.getUint32(R.off + 4, true), w = R.view.getUint32(R.off + 8, true);
+        if (n !== BOLT.rows || w !== 2) throw new Error(`VF2 sky: bolt block ${k} is ${n} by ${w}`);
+        for (let i = 0; i < n * w; i++) {
+            const v = bytes ? R.view.getInt8(R.off + 12 + i) : R.view.getInt16(R.off + 12 + i * 2, true);
+            out[k * BOLT.rows * 2 + i] = (v + add) & 0xffff;
+        }
+    }
+    return out;
 }
 
 const hex = (v) => '0x' + v.toString(16).toUpperCase();
