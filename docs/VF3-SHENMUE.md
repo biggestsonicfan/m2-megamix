@@ -232,6 +232,52 @@ instead. The import is unchanged.
 
   The least that makes it a move is op 2. Op 4 makes it a hit.
 
+### A header and op 2
+
+The same test (Shenmue 316 in VF2 1160, Akira's commit 0x34C57), with a
+setup that adds op 2 and drops the kind word's bit 8:
+
+- **The setup**, VF2's: kind word 0x0001, the rest of the header 0; op 2
+  (hit 8, cancel 10, end 25); op 0. That is 16 bytes. The frames are 738's
+  (12, 16, 38 of 49) scaled to the motion's 32. They are placeholders,
+  because Shenmue's file has no timing. VF2 has setups like this: motion 40
+  (kind 0x0009, op 2 hit 1 cancel 4 end 18, no op 4).
+- **Why bit 8 goes:** the strike data at 0x820 (the attacking part) is
+  written only by op 4, and set_mot_dat doesn't clear it. calc_attack_flag
+  (S 0x2DC48) builds the attack balls (0x768) from 0x820 whenever 0x1A4 has
+  bit 8 and the frame has reached 0x808. Bit 8 is cleared only at the cancel
+  frame. So a kind word with bit 8 and no op 4 would strike with the last
+  move's part from the hit frame to the cancel frame, for 0 damage (set_mot_dat
+  does clear 0x823). With bit 8 clear, 0x768 stays 0 and the move cannot hit.
+- **The import completes.** It has 329 motions, the same as the header-only
+  test. VF2 1160 is StF id 804. `animation_related[804]` points at 21 bytes:
+  the 13-byte header (01 00, then zeros), `02 08 00 0a 00 19 00`, then 0.
+  Op 2 is copied unchanged and there is no op 4. The converted commit (op 5,
+  type 0) names 804 where the plain import names 720.
+- **set_mot_dat** (S 0x1B26C):
+  - 0x804 and 0x1A4 get 0x0001;
+  - 0x800 gets the block's 32 frames;
+  - op 2 (sub_1B628): 0x808 = 8, 0x80A = 10, 0x80C = 25, 0xA00 = 1, and
+    0x1A4 bit 1 set, so 0x0003;
+  - op 0: the play script is the empty one.
+- **play_motion** (S 0x1BDA4), frame 0x1AA, 0x1A4:
+
+  | frame | 0xA00 | 0x1A4 | what happens |
+  |---|---|---|---|
+  | 1–7 | 1 | 0x0003 | basic_begin waits for the hit frame |
+  | 8 (hit) | 2 | 0x0001 | bit 1 cleared; no attack (bit 8 clear) |
+  | 10 (cancel) | 3 | 0x0005 | bits 8, 16 and 26 cleared, bit 2 (cancel) set; 0x1224 and 0x1248 cleared |
+  | 25 (end) | 4 | 0x0004 | bits 0 and 12 cleared |
+  | 26–32 | +3 a frame | 0x0004 | 0xA00 = 4 matches no case, so the phases run again each frame and change nothing |
+  | 33 on | | 0x0004 | 0x802 = 0: it holds frame 32 |
+
+  basic_follow1's early end (the end at cancel + 4) needs rob+0 bit 18, the
+  Super Sonic path, and its jump-follow end needs bit 12. Akira has neither.
+- **After the end** it holds frame 32 with bit 0 clear and bit 2 set. 738 does
+  the same: it has no op 1 (next motion) either, and Akira's strikes return to
+  the stance on the board. So this one should too. That is read from the code,
+  not run.
+
 ## Open
 
 - **Ryo's motions**: which MOTION.BIN entries Free Battle plays, and with
