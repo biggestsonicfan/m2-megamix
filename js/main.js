@@ -56,7 +56,13 @@ async function load() {
         return;
     }
     stages = GAMES.flatMap((g) => games[g.key].stages.map((stage) => ({ game: games[g.key], stage })));
-    renderer = new Renderer(document.getElementById('view'));
+    try {
+        renderer = new Renderer(document.getElementById('view'));
+    } catch (e) {
+        $text.textContent = `COULD NOT START THE RENDERER\n\n${e.message}`;
+        mode = 'need';
+        return;
+    }
     for (const [k, v] of params) if (k in menu) menu[k] = typeof menu[k] === 'boolean' ? v === '1' : Number(v);
     mode = 'menu';
     if (params.has('start')) start();
