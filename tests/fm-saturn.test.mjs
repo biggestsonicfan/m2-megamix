@@ -319,11 +319,15 @@ assert.throws(() => checkFlags(flagsDoc, bitsDoc.replace('0x0600ed16 +0x00 & 0x0
 /* The flags they stop at: its rows are the flag tests "The flags behind them"
  * stops at; each cell against the tool's flagSides on a fresh read: what each
  * address does, that no store, call or stop is left out, and the bullets */
+const asLongFlag = ({ field, size }, mask) => ({ field: field & ~3, mask: (mask << (size === 4 ? 0 : (4 - size - (field & 3)) * 8)) >>> 0 });
 const fixed = (k, d) => assert.equal(+(k / 65536).toFixed(d.split('.')[1]?.length ?? 0), +d, `${h(k, 8)} is ${d}`);
-function checkStops(text, flags, bits) {
+const FLAG = String.raw`(?:the opponent's )?\+0x[\da-f]+ & 0x[\da-f]{8}`;
+const eventFlag = e => `${e.of === 13 ? 'the opponent\'s ' : ''}${flagText(e.field, e.mask)}`;
+/* text: the section; flags: the section whose stops are its rows; behind:
+ * the flags a "stops at" may not name */
+function checkStops(text, flags, behind) {
     const stops = new Map();
-    for (const [, a, f] of flags.matchAll(/stops at (0x[\da-f]{8}) \((\+0x[\da-f]+ & 0x[\da-f]{8})\)/g)) stops.set(a, f);
-    const behind = new Set([...bits.matchAll(/(\+0x[\da-f]+ & 0x[\da-f]{8}) (?:set|clear)/g)].map(m => m[1]));
+    for (const [, a, f] of flags.matchAll(new RegExp(String.raw`stops at (0x[\da-f]{8}) \((${FLAG})\)`, 'g'))) stops.set(a, f);
     const rows = [...text.matchAll(/^\| (0x[\da-f]{8}) \| (\+0x[\da-f]+ & 0x[\da-f]{8}) \| (.*?) \| (.*?) \|$/gm)];
     assert.deepEqual(rows.map(([, a, f]) => [a, f]), [...stops].sort(([a], [b]) => parseInt(a, 16) - parseInt(b, 16)));
     assert.match(text, new RegExp(`^The ${['', '', '', '', '', 'five'][rows.length]} flag tests`));
@@ -339,17 +343,32 @@ function checkStops(text, flags, bits) {
                 claimed.add(e);
                 return e;
             };
-            for (const [all, a, f] of cell.matchAll(/stops at (0x[\da-f]{8}) \((\+0x[\da-f]+ & 0x[\da-f]{8})\)/g)) {
+            for (const [all, a, f] of cell.matchAll(new RegExp(String.raw`stops at (0x[\da-f]{8}) \((${FLAG})\)`, 'g'))) {
                 const e = event('stop', a);
-                assert.equal(flagText(e.field, e.mask), f, `${where}: ${all}`);
-                assert.ok(!behind.has(f), `${where}: ${f} is in the Behind column`);
+                assert.equal(eventFlag(e), f, `${where}: ${all}`);
+                assert.ok(!behind.has(f), `${where}: ${f} is one it may not stop at`);
                 const k = cell.slice(cell.indexOf(all) + all.length).match(/^, the flag (0x[\da-f]{8}) tests/);
                 if (k) assert.equal(rowFlag.get(k[1]), f, `${where}: the flag ${k[1]} tests`);
+            }
+            /* "goes on to the test at": a test of one of this table's own flags */
+            for (const [all, a, f] of cell.matchAll(new RegExp(String.raw`goes on to the test at (0x[\da-f]{8}) \((${FLAG})\)`, 'g'))) {
+                assert.equal(eventFlag(event('stop', a)), f, `${where}: ${all}`);
+                assert.equal(rowFlag.get(a), f, `${where}: ${a} is not in this table`);
             }
             for (const m of cell.matchAll(/\((0x0600[\da-f]{4})\)/g)) {
                 const a = m[1], x = parseInt(a, 16), before = cell.slice(0, m.index), after = cell.slice(m.index + m[0].length).split(/[,;:]/)[0];
                 let k;
                 if (/ends this frame's run $/.test(before)) event('end', a);
+                else if (/skips the call $/.test(before)) event('call', a);
+                else if ((k = before.match(/\b(sets|clears) (\+0x[\da-f]+) & (0x[\da-f]{8}) $/))) {
+                    /* a bit of a field set (or) or cleared (and) in place, given as the long's flag */
+                    const e = event('store', a), [v] = e.values, bit = k[1] === 'sets' ? v?.or : ~v?.and & 0xff;
+                    assert.ok(e.values.length === 1 && v?.field === e.field && v.size === e.size && (v.or ?? v.and) !== undefined, `${where}: ${a} is no bit`);
+                    assert.equal(flagText(asLongFlag(e, bit).field, asLongFlag(e, bit).mask), `${k[2]} & ${k[3]}`, `${where}: ${a}`);
+                } else if ((k = before.match(/takes one from (\+0x[\da-f]+) $/))) {
+                    const e = event('store', a);
+                    assert.deepEqual(e.values, [{ field: parseInt(k[1], 16), size: e.size, plus: -1 }], `${where}: ${a}`);
+                }
                 else if (/the same test again $/.test(before)) event('same', a);
                 else if ((k = before.match(/the (0x[\da-f]{2}) test $/))) assert.equal(event('param', a).bit, parseInt(k[1], 16), `${where}: ${a}`);
                 else if ((k = before.match(/calls (0x[\da-f]{8}) $/))) assert.equal(event('call', a).target, parseInt(k[1], 16), `${where}: ${a}`);
@@ -363,10 +382,17 @@ function checkStops(text, flags, bits) {
                 } else if ((k = before.match(/(\+0x[\da-f]+) $/))) {
                     const e = event('store', a), verb = before.split(/[;:]/).pop().match(/.*\b(clears|sets|puts|limits) /)?.[1];
                     assert.equal(e.field, parseInt(k[1], 16), `${where}: store ${a}`);
-                    const put = before.split(/[;:]/).pop().match(/puts (0x[\da-f]+|.+?) in \+0x[\da-f]+ $/);
+                    const put = before.split(/[;:]/).pop().match(/^.*(?:puts |, | and )([^,]+?) in \+0x[\da-f]+ $/);
                     let c;
                     if (verb === 'clears') assert.deepEqual(e.values, [0], `${where}: ${a} clears`);
-                    else if (verb === 'puts') assert.deepEqual(e.values, [/^0x/.test(put[1]) ? parseInt(put[1], 16) : null], `${where}: ${a} puts ${put[1]}`);
+                    else if (verb === 'puts') {
+                        /* a number (with its 16.16 value), a field, a field plus a number, or something else (null) */
+                        const v = put[1].match(/^(-?0x[\da-f]+)(?: \((-?[\d.]+)\))?$/), f = put[1].match(/^\+(0x[\da-f]+)(?: plus (0x[\da-f]+) \(([\d.]+)\))?$/);
+                        const want = v ? parseInt(v[1], 16) : f ? { field: parseInt(f[1], 16), size: e.values[0]?.size, ...(f[2] && { plus: parseInt(f[2], 16) }) } : null;
+                        assert.deepEqual(e.values, [want], `${where}: ${a} puts ${put[1]}`);
+                        if (v?.[2]) fixed(parseInt(v[1], 16), v[2]);
+                        if (f?.[3]) fixed(parseInt(f[2], 16), f[3]);
+                    }
                     else if (verb === 'limits' && (c = after.match(/to ±(0x[\da-f]+) \(([\d.]+)\)/) ?? cell.slice(m.index).match(/to ±(0x[\da-f]+) \(([\d.]+)\)/))) {
                         assert.deepEqual([...e.values].sort((p, q) => p - q), [-parseInt(c[1], 16), parseInt(c[1], 16)], `${where}: ${a} limits`);
                         fixed(parseInt(c[1], 16), c[2]);
@@ -380,7 +406,7 @@ function checkStops(text, flags, bits) {
                 assert.ok([...claimed].some(e => e.at === parseInt(a, 16)) || rowFlag.has(a), `${where}: ${a} unchecked`);
             /* nothing left out: every store, call, stop, end and parameter test is in the cell */
             for (const e of events) if (e.kind !== 'same') assert.ok(claimed.has(e), `${where}: ${e.kind} at ${h(e.at, 8)} left out`);
-            if (/changes nothing in the jump before it stops at|and nothing else/.test(cell))
+            if (/changes nothing in the jump before it (?:stops at|goes on to)|and nothing else/.test(cell))
                 assert.ok(events.filter(e => e.kind !== 'same').length === 1, `${where}: something changes`);
         });
     }
@@ -392,7 +418,7 @@ function checkStops(text, flags, bits) {
         assert.ok(sides && sides[1].trim() && sides[2].trim(), `${f}: a bullet needs its set side and its clear side`);
         [1, 2].forEach(s => {
             for (const [, a] of sides[s].matchAll(/nothing changes before (0x[\da-f]{8})/g))
-                assert.ok(row[2 + s].includes(`changes nothing in the jump before it stops at ${a}`), `${f} ${['', 'set', 'clear'][s]}: ${a}`);
+                assert.match(row[2 + s], new RegExp(`changes nothing in the jump before it (?:stops at|goes on to the test at) ${a}`), `${f} ${['', 'set', 'clear'][s]}: ${a}`);
             for (const [, v] of sides[s].matchAll(/\+0x68a gets (0x[\da-f]+)/g)) assert.match(row[2 + s], new RegExp(`puts ${v} in \\+0x68a`), `${f}: ${v}`);
             for (const [, x, y] of sides[s].matchAll(/within ±([\d.]+)|scaled by ([\d.]+)/g)) for (const d of [x ?? y]) assert.ok(row[2 + s].includes(`(${d})`), `${f}: ${d}`);
         });
@@ -402,8 +428,9 @@ function checkStops(text, flags, bits) {
     assert.deepEqual(listed, [...new Set(rows.flatMap(r => [...(r[3] + r[4]).matchAll(/stops at (0x[\da-f]{8})/g)].map(m => m[1])))]
         .sort((a, b) => parseInt(a, 16) - parseInt(b, 16)), 'the undescribed stops');
 }
-const stopsDoc = kindsDoc.split('#### The flags they stop at\n\n')[1].split('\n### ')[0];
-checkStops(stopsDoc, flagsDoc, bitsDoc);
+const stopsDoc = kindsDoc.split('#### The flags they stop at\n\n')[1].split('\n#### ')[0].split('\n### ')[0];
+const behindFlags = new Set([...bitsDoc.matchAll(/(\+0x[\da-f]+ & 0x[\da-f]{8}) (?:set|clear)/g)].map(m => m[1]));
+checkStops(stopsDoc, flagsDoc, behindFlags);
 for (const [from, to] of [['| 0x0600ed20 | +0x6c0 & 0x04000000 |', '| 0x0600ed20 | +0x6c0 & 0x08000000 |'],
     ['stops at 0x0600ed2a (+0x6c0 & 0x00000040)', 'stops at 0x0600ed2a (+0x6c0 & 0x00000080)'], ['stops at 0x0600ee16', 'stops at 0x0600ee18'],
     ['the flag 0x0600f3a4 tests', 'the flag 0x0600f27a tests'], ['limits +0x20 (0x0600eeaa)', 'limits +0x24 (0x0600eeaa)'], ['to ±0x0a3d (0.04)', 'to ±0x0a3e (0.04)'],
@@ -417,13 +444,53 @@ for (const [from, to] of [['| 0x0600ed20 | +0x6c0 & 0x04000000 |', '| 0x0600ed20
     ['set, +0x68a gets 0x8b3', 'set, +0x68a gets 0x8b4'], ['within ±0.04', 'within ±0.05'], ['scaled\n  by 0.8', 'scaled\n  by 0.9'],
     ['0x0600ed58, 0x0600ee16,', '0x0600ed58,'], ['; clear,\n  nothing changes before 0x0600ed58.', '.']]) {
     assert.ok(stopsDoc.includes(from), from);
-    assert.throws(() => checkStops(stopsDoc.replace(from, to), flagsDoc, bitsDoc), `${from} -> ${to}`);
+    assert.throws(() => checkStops(stopsDoc.replace(from, to), flagsDoc, behindFlags), `${from} -> ${to}`);
 }
 /* the set and clear cells of 0x0600f27a swapped, a row dropped, or "The flags behind them" naming another stop */
 const f27a = stopsDoc.match(/^\| 0x0600f27a \| (.+?) \| (.+?) \| (.+?) \|$/m);
-assert.throws(() => checkStops(stopsDoc.replace(f27a[0], `| 0x0600f27a | ${f27a[1]} | ${f27a[3]} | ${f27a[2]} |`), flagsDoc, bitsDoc));
-assert.throws(() => checkStops(stopsDoc.replace(/^\| 0x0600ee84 .*\n/m, ''), flagsDoc, bitsDoc));
-assert.throws(() => checkStops(stopsDoc, flagsDoc.replace('stops at 0x0600ee84 (+0x6c0 & 0x80000000)', 'stops at 0x0600ee8a (+0x6c0 & 0x00000001)'), bitsDoc));
+assert.throws(() => checkStops(stopsDoc.replace(f27a[0], `| 0x0600f27a | ${f27a[1]} | ${f27a[3]} | ${f27a[2]} |`), flagsDoc, behindFlags));
+assert.throws(() => checkStops(stopsDoc.replace(/^\| 0x0600ee84 .*\n/m, ''), flagsDoc, behindFlags));
+assert.throws(() => checkStops(stopsDoc, flagsDoc.replace('stops at 0x0600ee84 (+0x6c0 & 0x80000000)', 'stops at 0x0600ee8a (+0x6c0 & 0x00000001)'), behindFlags));
+
+/* The flags those stop at: the same check, one step on; its rows are the
+ * stops "The flags they stop at" names, and none of its own stops may be one
+ * of them; a changed claim fails */
+const thoseDoc = kindsDoc.split('#### The flags those stop at\n\n')[1].split('\n#### ')[0].split('\n### ')[0];
+const theirStops = new Set([...stopsDoc.matchAll(new RegExp(String.raw`stops at 0x[\da-f]{8} \((${FLAG})\)`, 'g'))].map(m => m[1]));
+checkStops(thoseDoc, stopsDoc, theirStops);
+for (const [from, to] of [['| 0x0600ed2a | +0x6c0 & 0x00000040 |', '| 0x0600ed2a | +0x6c0 & 0x00000080 |'],
+    ['| 0x0600f2a0 | +0x6c0 & 0x00080000 |', '| 0x0600f2a0 | +0x6c0 & 0x00040000 |'],
+    ['clears +0x30 & 0x00000008 (0x0600f03e)', 'clears +0x30 & 0x00000004 (0x0600f03e)'], ['clears +0x30 & 0x00000008 (0x0600f03e)', 'sets +0x30 & 0x00000008 (0x0600f03e)'],
+    ['puts +0x63c in +0x6c6', 'puts +0x63e in +0x6c6'], ['takes one from +0x6c6 (0x0600f050)', 'takes one from +0x6c4 (0x0600f050)'],
+    ['sets +0x6c0 & 0x00001000 (0x0600f05c)', 'sets +0x6c0 & 0x00002000 (0x0600f05c)'], ['plus 0x0002b333 (2.7)', 'plus 0x0002b333 (2.8)'], ['plus 0x0002b333 (2.7)', 'plus 0x0002b334 (2.7)'],
+    ['puts +0xc in +0x6e0 (0x0600f078), +0x10 in +0x6e4', 'puts +0xc in +0x6e0 (0x0600f078), +0x14 in +0x6e4'], ['and +0x14 in +0x6e8', 'and +0x10 in +0x6e8'],
+    ['sets +0x6f8 (0x0600f09e)', 'sets +0x6f4 (0x0600f09e)'],
+    ['stops at 0x0600ed36 (+0x6c0 & 0x00001000)', 'stops at 0x0600ed36 (+0x6c0 & 0x00002000)'],
+    ['goes on to the test at 0x0600ee16 (+0x6c0 & 0x40000000)', 'stops at 0x0600ee16 (+0x6c0 & 0x40000000)'],
+    ['goes on to the test at 0x0600ee16 (+0x6c0 & 0x40000000)', 'goes on to the test at 0x0600ee16 (+0x6c0 & 0x20000000)'],
+    ['stops at 0x0600ed64 (the opponent\'s +0x19f0 & 0x00002000)', 'stops at 0x0600ed64 (+0x19f0 & 0x00002000)'],
+    ['stops at 0x0600ed64 (the opponent\'s +0x19f0 & 0x00002000)', 'stops at 0x0600ed64 (the opponent\'s +0x19f0 & 0x00001000)'],
+    ['else stops at 0x0600ee44 (+0x30 & 0x00000008)', 'else stops at 0x0600ee44 (+0x30 & 0x00000080)'],
+    ['| ends this frame\'s run (0x0600f3f6) and nothing else |\n| 0x0600ee8a', '| changes nothing in the jump before it stops at 0x0600ee44 (+0x30 & 0x00000008) |\n| 0x0600ee8a'],
+    ['limits +0x20 (0x0600eeaa) and +0x28 (0x0600eec2) to ±0x0a3d (0.04); goes on to the 0x80 test (0x0600eeca) |', 'limits +0x20 (0x0600eeaa) and +0x28 (0x0600eec2) to ±0x0a3d (0.04); goes on to the 0x40 test (0x0600eeca) |'],
+    ['| ends this frame\'s run (0x0600f3f6) and nothing else |\n| 0x0600f2a0', '| ends this frame\'s run (0x0600f3f6) |\n| 0x0600f2a0'.replace(' |\n', '; goes on to the 0x80 test (0x0600eeca) |\n')],
+    ['sets +0x6c0 & 0x00400000 (0x0600f304)', 'sets +0x6c0 & 0x00800000 (0x0600f304)'], ['clears +0x6c0 & 0x00400000 (0x0600f320)', 'sets +0x6c0 & 0x00400000 (0x0600f320)'],
+    ['skips the call (0x0600f2cc) as that halfword is negative, and ', ''], ['puts -0x07ae (-0.03) in +0x24 (0x0600f2f2); else calls 0x06010dda (0x0600f30e)', 'puts 0x07ae (0.03) in +0x24 (0x0600f2f2); else calls 0x06010dda (0x0600f30e)'],
+    ['puts -0x07ae (-0.03) in +0x24 (0x0600f2f2); else calls 0x06010dda (0x0600f2cc)', 'puts -0x07ae (-0.04) in +0x24 (0x0600f2f2); else calls 0x06010dda (0x0600f2cc)'],
+    ['calls 0x06010dda (0x0600f30e)', 'calls 0x06014ca4 (0x0600f30e)'], ['stops at 0x0600f340 (+0x6c0 & 0x01000000)', 'stops at 0x0600f340 (+0x6c0 & 0x02000000)'],
+    ['and puts 0x07ae (0.03) in +0x24 (0x0600f32a); ends this frame\'s run (0x0600f3f6) |\n\n', 'and puts 0x07ae (0.03) in +0x28 (0x0600f32a); ends this frame\'s run (0x0600f3f6) |\n\n'],
+    ['clears +0x20 (0x0600f324) and +0x28 (0x0600f326) and puts 0x07ae (0.03) in +0x24 (0x0600f32a); ends this frame\'s run (0x0600f3f6) |\n\n', 'clears +0x20 (0x0600f324) and puts 0x07ae (0.03) in +0x24 (0x0600f32a); ends this frame\'s run (0x0600f3f6) |\n\n'],
+    ['The five flag tests', 'The four flag tests'], ['clear, nothing changes before 0x0600ed36', 'clear, nothing changes before 0x0600ed64'],
+    ['set, nothing changes before 0x0600ee16', 'set, nothing changes before 0x0600ed64'], ['held within ±0.04', 'held within ±0.05'],
+    ['0x0600ed64,\n0x0600ee44', '0x0600ee44'], ['0x0600ee44 and 0x0600f340 are', '0x0600ee44, 0x0600ee16 and 0x0600f340 are']]) {
+    assert.ok(thoseDoc.includes(from), from);
+    assert.throws(() => checkStops(thoseDoc.replace(from, to), stopsDoc, theirStops), `${from} -> ${to}`);
+}
+/* a row dropped, set and clear swapped on 0x0600ee8a, or "The flags they stop at" naming another stop */
+assert.throws(() => checkStops(thoseDoc.replace(/^\| 0x0600ee16 .*\n/m, ''), stopsDoc, theirStops));
+const ee8a = thoseDoc.match(/^\| 0x0600ee8a \| (.+?) \| (.+?) \| (.+?) \|$/m);
+assert.throws(() => checkStops(thoseDoc.replace(ee8a[0], `| 0x0600ee8a | ${ee8a[1]} | ${ee8a[3]} | ${ee8a[2]} |`), stopsDoc, theirStops));
+assert.throws(() => checkStops(thoseDoc, stopsDoc.replace('stops at 0x0600ee16 (+0x6c0 & 0x40000000)', 'stops at 0x0600ee44 (+0x30 & 0x00000008)'), theirStops));
 
 /* the Slots table: each slot the kinds play, against a fresh read of Hornet's
  * action table and banks; its Kinds column is the Kinds table's Plays */

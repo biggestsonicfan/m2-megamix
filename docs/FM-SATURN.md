@@ -719,6 +719,46 @@ bit 0x10000000. The flags tested at 0x0600ed2a, 0x0600ed58, 0x0600ee16,
 flags behind them", and each cell against the tool's `flagSides` on a
 fresh read: every claim, and that no store, call or stop is left out.
 
+#### The flags those stop at
+
+The five flag tests that "The flags they stop at" stops at, all in the run
+handler, read off the disc and followed the same way. Each field and mask
+there matches the disc, 0x0600f2a0's too. r13 holds the opponent, as for
+kind 0x10. A test of one of these five is "goes on to" it, in this table;
+a test of any other flag "stops at" it. A bit set or cleared is given as
+the flag it is, a byte as the long holding it.
+
+| Tested at | Flag | Set | Clear |
+| --- | --- | --- | --- |
+| 0x0600ed2a | +0x6c0 & 0x00000040 | clears +0x30 & 0x00000008 (0x0600f03e); puts +0x63c in +0x6c6 (0x0600f046); takes one from +0x6c6 (0x0600f050); sets +0x6c0 & 0x00001000 (0x0600f05c); puts +0x658 plus 0x0002b333 (2.7) in +0x6f0 (0x0600f068); puts +0xc in +0x6e0 (0x0600f078), +0x10 in +0x6e4 (0x0600f07a) and +0x14 in +0x6e8 (0x0600f07c); sets +0x6f8 (0x0600f09e) to +0x6f0 less +0x10, over the halfword +0x646, with the divide unit; ends this frame's run (0x0600f3f6) | changes nothing in the jump before it stops at 0x0600ed36 (+0x6c0 & 0x00001000) |
+| 0x0600ed58 | +0x6c0 & 0x20000000 | changes nothing in the jump before it goes on to the test at 0x0600ee16 (+0x6c0 & 0x40000000) | changes nothing in the jump before it stops at 0x0600ed64 (the opponent's +0x19f0 & 0x00002000) |
+| 0x0600ee16 | +0x6c0 & 0x40000000 | with +0x514 and +0x51c both 0, or the halfword +0x4a8 at 1 or less, ends this frame's run (0x0600f3f6); else stops at 0x0600ee44 (+0x30 & 0x00000008) | ends this frame's run (0x0600f3f6) and nothing else |
+| 0x0600ee8a | +0x6c0 & 0x00000001 | limits +0x20 (0x0600eeaa) and +0x28 (0x0600eec2) to ±0x0a3d (0.04); goes on to the 0x80 test (0x0600eeca) | ends this frame's run (0x0600f3f6) and nothing else |
+| 0x0600f2a0 | +0x6c0 & 0x00080000 | sets +0x6c0 & 0x00400000 (0x0600f304); with the table entry's halfword at +4 negative, goes the clear side's way: sets +0x20 (0x0600f2b2) and +0x28 (0x0600f2c2), skips the call (0x0600f2cc) as that halfword is negative, and puts -0x07ae (-0.03) in +0x24 (0x0600f2f2); else calls 0x06010dda (0x0600f30e) with it: if that returns zero, stops at 0x0600f340 (+0x6c0 & 0x01000000); if nonzero, clears +0x6c0 & 0x00400000 (0x0600f320), clears +0x20 (0x0600f324) and +0x28 (0x0600f326) and puts 0x07ae (0.03) in +0x24 (0x0600f32a); ends this frame's run (0x0600f3f6) | sets +0x20 (0x0600f2b2) and +0x28 (0x0600f2c2); with the table entry's halfword at +4 negative, puts -0x07ae (-0.03) in +0x24 (0x0600f2f2); else calls 0x06010dda (0x0600f2cc) with it, and if that returns nonzero, clears +0x20 (0x0600f324) and +0x28 (0x0600f326) and puts 0x07ae (0.03) in +0x24 (0x0600f32a); ends this frame's run (0x0600f3f6) |
+
+- **+0x6c0 & 0x00000040**: set, it sets +0x6c0 & 0x00001000 and starts
+  the +0x6c6 counter from +0x63c, aims +0x6f0 at 2.7 above +0x658 and
+  ends the frame; clear, nothing changes before 0x0600ed36.
+- **+0x6c0 & 0x20000000**: set, nothing changes before 0x0600ee16; clear,
+  nothing changes before 0x0600ed64.
+- **+0x6c0 & 0x40000000**: set, the frame ends or it goes on to the
+  +0x30 & 0x00000008 test; clear, the frame ends.
+- **+0x6c0 & 0x00000001**: set, +0x20 and +0x28 are held within ±0.04
+  before the 0x80 test at 0x0600eeca, as on 0x0600ee84's clear side;
+  clear, the frame ends.
+- **+0x6c0 & 0x00080000**: set, it marks +0x6c0 & 0x00400000 and asks
+  0x06010dda about the table halfword; clear, +0x24 gets -0.03, or 0.03
+  with +0x20 and +0x28 cleared.
+
+Neither side of 0x0600ed58 joins 0x0600f3a4's path before it stops: set
+goes to 0x0600ee16, clear stops at the opponent's flag. 0x0600ed2a's set
+side is where +0x6c0 & 0x00001000, the flag 0x0600ed36 tests in "The
+flags behind them", is set. None of these sides reaches the 0.8 distance
+check or `+0` bit 0x10000000. The flags tested at 0x0600ed36, 0x0600ed64,
+0x0600ee44 and 0x0600f340 are left undescribed.
+`tests/fm-saturn.test.mjs` checks this section the same way as the one
+before it.
+
 ### Slots
 
 The action-table slots that those handlers play, read the way 0x0600CEC8
