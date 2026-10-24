@@ -301,6 +301,7 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
   0b                                    on strikes, not decoded: 11 (see "The byte after those eight")
   00                                    on strikes, not decoded: 0 (see "The byte after that")
   00                                    on strikes, not decoded: 0 (see "The byte after that one")
+  00                                    on strikes, not decoded: 0 (see "The fourth byte after those eight")
   …
   ```
 
@@ -628,6 +629,26 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
     | 0x17 (23) | 1 | YKI_AKI_UKRARE_L_HIZA 1268 |
     | 0x04 (4) | 1 | AKI_KIS_KICK_NIKI 1336 |
     | 0x14 (20) | 1 | AKI_AKI_SOUSYOU 1421 |
+- **The fourth byte after those eight (read on strikes):** r[p+23], where
+  p is the kind byte (4). Not decoded. It isn't the same on every strike:
+  it is 0 on 221 of the 231, and 3 other values share the other 10. Elbow
+  Slam's is **0**, and so is Twist Knuckle's. Throws aren't read here. The
+  byte after it isn't read either.
+
+  | Move | Record | The byte |
+  |---|---|---|
+  | Elbow Slam | 846 | 00 (0) |
+  | Twist Knuckle | 793 | 00 (0) |
+  | Upper Knuckle, Rain Thrust, Trample Kick | 836, 792, 848 | 00 (0) |
+
+  - **Across the 231 strikes:** 4 values.
+
+    | Value | Strikes | Records |
+    |---|---|---|
+    | 0x00 (0) | 221 | AKIRA_KI_00_13 9, AKIRA_KI_01 10, AKI_AKI_ELBOW 846, … |
+    | 0x04 (4) | 5 | AKI_AKI_HAGAI_SARE_KERI 1080, AKI_AKI_UDEKIME_L_KICK_B 1230, AKI_AKI_UDEKIME_L_KICK_F 1231, AKI_AKI_UDEKIME_L_KICK_L 1232, AKI_AKI_UDEKIME_L_KICK_R 1233 |
+    | 0x7F (127) | 3 | AK_RUF_541_02 176, AK_RUF_551_02 177, RUF_551_02 447 |
+    | 0x01 (1) | 2 | SUI_DRP_092_00 494, SUI_DRP_132_02 497 |
 - **Counting kind-5 groups (86, 88, 104):** the three counts are the same
   layout (header, one tag-2 block, kind 5) with different checks on the
   tag-2 words. The scans didn't walk off the hit block.
@@ -695,7 +716,10 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
   the strikes, and takes 21 values in all; it isn't decoded (see "The byte
   after that"). The byte after that one is 0 on Elbow Slam and Twist
   Knuckle and on 185 of the strikes, and takes 30 values in all; it isn't
-  decoded (see "The byte after that one").
+  decoded (see "The byte after that one"). The fourth byte after those
+  eight is 0 on Elbow Slam and Twist Knuckle and on 221 of the strikes, and
+  takes 4 values in all; it isn't decoded (see "The fourth byte after those
+  eight").
   The record's other fields aren't decoded.
 
 ## Other leads
