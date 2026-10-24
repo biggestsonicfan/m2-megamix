@@ -13,7 +13,9 @@ in `docs/VF3-SHENMUE.md` and `tools/shenmue-motion.mjs` on branch
   and a direction sequence to a skill, an action number and a motion id.
 - The Passport (0.300) has no EN_ files. Discs 1-3 of 0.400 have them.
 - A motion id k is MOTION.BIN's record k − 1 (see "Motion ids").
-- Still not found: damage and frame data (see "Open").
+- Damage is a byte in each motion's record in MOTION.BIN, the one the table's
+  second offset points to. Elbow Slam's is 4 (see "Damage"). Frame data sits
+  in the same record but isn't decoded.
 
 ## Reading the discs
 
@@ -266,11 +268,71 @@ A play's motion id k names MOTION.BIN's record k − 1 (disc 3's `/MISC/MOTION.B
   breakpoint on play (ctx+0x318) has confirmed it. The code that turns the id
   into a record isn't found either.
 
+## Damage
+
+Each move's damage is in its motion's record in MOTION.BIN, not in EN_RYOU.
+Elbow Slam's damage is **4**. It hasn't been checked on screen.
+
+- **EN_RYOU's tables after the script have none.** None has one entry per
+  skill (45):
+  - **0x17F8–0x1BB8:** 48 records of 20 bytes, then 0x7F. A record is up to
+    10 input bytes (0x01 P, 0x02 K, 0x10/0x20 the directions, 0x21 dir180+P …)
+    ending 0x7F, padded, then one byte per input (1 or 5). These look like
+    command strings, maybe for the CPU, not damage.
+  - **0x1BBC:** 0x1BB8 (that table's end), the fixed-point numbers 1.8 and
+    3.0, some bytes and colours, then at 0x1C44 40 u16 motion ids (0x00BC …
+    0x04F0): the basic motions. 0x1D2A holds more motion ids.
+  - **0x1D8A:** 0x1C44 (that list), then 1.6 four times, 3.0, 0x41 and 1.
+- **The motion record:** a MOTION.BIN table entry's second word is a file
+  offset, between the table's end and the names (0x30E0–0x12298). The
+  records are 80–124 bytes, in record order. Every skill motion of Ryo's has
+  one. Like this one, Elbow Slam's (id 847, record 846, at 0x8CE4):
+
+  ```
+  21 01 20 00 00 00 00 00 00 00 00 00   header: byte 0 0x21 strike, 0x31 two hits, 0xA1/0xE1 throw
+  02 00 08 00 0c 00 1b 00               tag 2, u16 LE 8, 12, 27 (the motion has 27 frames)
+  04 04 01 0e                           kind (4 strike, 5 throw), damage, ?, ?
+  00 00 b3 33                           16.16 0.7 (1.1-1.5 on bigger moves)
+  …
+  ```
+
+- **Why the second byte is damage** (kind, damage, then the next two bytes):
+
+  | Move | Kind | Damage | Next two |
+  |---|---|---|---|
+  | Double Blow, Pit Blow, Big Wheel, Elbow Assault | 4 | 3–5 | |
+  | Elbow Slam | 4 | 4 | 1, 14 |
+  | Twist Knuckle | 4 | 5 | 0, 6 |
+  | Upper Knuckle | 4 | 5 | 1, 12 |
+  | Rain Thrust, Stab Armor, Sleeve Strike | 4 | 6 | |
+  | HoldAgainstLeg, Mud Spider, Shadow Reaper | 4 | 9 | |
+  | Trample Kick | 4 | 10 | 1, 12 |
+  | Tornado Kick and most kicks | 4 | 14–15 | |
+  | AvalancheLance, KatanaMistSlash, Backfist Willow | 4 | 26–27 | |
+  | TwinHandWaves | 4 | 40 | |
+  | Swallow Flip (a parry) | 5 | **0** | 0x9C, 4 |
+  | Arm Break Fire, Tiger Storm | 5 | 15, 20 | |
+  | Vortex Throw | 5 | 30 | 0x42, 3 |
+  | Sweep Throw, Shoulder Buster, Tiger Storm lv2 | 5 | 34–35 | |
+  | Mist Reaper, Tengu Drop, Demon Drop, Cross Charge | 5 | 40–47 | |
+
+  - The jabs and elbows are the weakest, the kicks do more, and the throws the
+    most. Swallow Flip, which only deflects, does 0.
+  - The byte after it is 0–2 on most strikes, and 2 on SideReaperKick
+    (KICK_LOW) alone: maybe the hit level. On throws it's larger.
+  - The fourth byte, 3–40, isn't damage: a throw has 3–5 there.
+  - The scale isn't known: Shenmue's life bar isn't measured here.
+- **Frames:** the first two tag-2 words are most likely the hit's first and
+  last active frames: Elbow Slam 8–12, Twist Knuckle 6–8. The third (27, 21)
+  is the motion's length for Elbow Slam but not for Twist Knuckle (24 frames).
+  Tornado Kick's record adds a tag-3 block (7–12, 20) before the tag-2 one, and
+  Dark Moon's one (9–12, 17): their first kick. Not decoded further.
+
 ## Open
 
-- **Damage and frames:** these are probably in the file's two tables after the
-  script (0x1BBC and 0x1D8A in Ryo's), or in the motion table's second offset
-  per motion, which #1505 hasn't decoded.
+- **Damage on screen:** Elbow Slam should take 4 off in Free Battle, Vortex Throw
+  30. Neither is checked.
+- **Frame data:** the record's other fields (see "Damage").
 
 ## Other leads
 
