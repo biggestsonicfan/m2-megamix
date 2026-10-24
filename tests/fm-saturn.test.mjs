@@ -776,7 +776,7 @@ const RUN9_END = 0x0600f400;
 const newDoc = kindsDoc.split('#### Flag tests not yet described\n\n')[1].split('\n#### ')[0].split('\n### ')[0];
 function describedAt(kinds) {
     const out = new Set();
-    for (const part of kinds.split('\n#### ').slice(1).filter(p => !p.startsWith('Flag tests not yet described'))) {
+    for (const part of kinds.split('\n#### The flag at 0x0600ea64\n')[0].split('\n#### ').slice(1).filter(p => !p.startsWith('Flag tests not yet described'))) {
         const lines = part.split('\n'), head = lines.findIndex(l => /^\| .*Tested at/.test(l));
         if (head < 0) continue;
         const col = lines[head].split('|').map(c => c.trim()).indexOf('Tested at');
@@ -831,6 +831,99 @@ for (const [from, to] of [[firstRow, ''], ['| 0x0600f37e | this fighter (r12) | 
 const r1 = newDoc.match(/^\| 0x0600eaee .*\n/m)[0], r2 = newDoc.match(/^\| 0x0600eaf6 .*\n/m)[0];
 assert.throws(() => checkUndescribed(newDoc.replace(r1 + r2, r2 + r1), kindsDoc));
 assert.throws(() => checkUndescribed(newDoc, kindsDoc.replace(/^\| 0x0600ed74 \| \+0x2c .*\n/m, '')));
+
+/* The flag at 0x0600ea64: the earliest row of "Flag tests not yet described".
+ * The five words that load and test it, this fighter's (r12) long; a bt, so
+ * the branch is the clear side. Each cell is rebuilt from flagSides' events
+ * on a fresh read, with the compare, the bit cleared and the call's literal
+ * read off the disc; the stop is a row of that list and of no other section */
+const ea64Doc = kindsDoc.split('#### The flag at 0x0600ea64\n\n')[1].split('\n#### ')[0].split('\n### ')[0];
+function checkEa64(text, list) {
+    const at = 0x0600ea64, sides = FM.flagSides(game, run9, at);
+    const listed = list.match(/^\| 0x0600ea64 \| this fighter \(r12\) \| (\+0x[\da-f]+) \| (0x[\da-f]{8}) \|$/m);
+    assert.ok(listed, '0x0600ea64\'s row in "Flag tests not yet described"');
+    const named = `${listed[1]} & ${listed[2]}`;
+    const rows = [...text.matchAll(new RegExp(String.raw`^\| (0x[\da-f]{8}) \| (${FLAG}) \| (.*?) \| (.*?) \|$`, 'gm'))];
+    assert.deepEqual(rows.map(r => [r[1], r[2]]), [['0x0600ea64', named]]);
+    assert.equal(eventFlag(sides.flag), named, '0x0600ea64: the disc\'s flag');
+    /* mov #field,r0; mov.l @(r0,rM),r3; mov #bit,r0; shll16 r0; tst r0,r3; bt */
+    const [, field, m, bit, op] = text.match(/0x0600ea5c is `mov #(0x[\da-f]+),r0`, 0x0600ea5e\n`mov\.l @\(r0,r(\d+)\),r3`, 0x0600ea60 `mov #(0x[\da-f]{2}),r0`, 0x0600ea62 `shll16 r0`\nand 0x0600ea64 `tst r0,r3`, then `(b[tf])` at 0x0600ea66/);
+    assert.equal(word(0x0600ea5c), 0xe000 | parseInt(field, 16), 'mov #field,r0');
+    assert.equal(word(0x0600ea5e), 0x030e | (+m << 4), 'mov.l @(r0,rM),r3');
+    assert.equal(word(0x0600ea60), 0xe000 | parseInt(bit, 16), 'mov #bit,r0');
+    assert.equal(word(0x0600ea62), 0x4028, 'shll16 r0');
+    assert.equal(word(at), 0x2308, 'tst r0,r3');
+    assert.equal(+m, 12, 'this fighter is r12');
+    assert.ok(sides.flag.of !== 13 && !named.startsWith('the opponent'), 'not the opponent\'s');
+    assert.equal(flagText(parseInt(field, 16), parseInt(bit, 16) << 16), named, 'the field and the bit shifted up 16');
+    const [, lf, who, lm, pbit] = text.match(/That is the long\n?(\+0x[\da-f]+) of (this fighter \(r12\)), not the opponent's, masked with (0x[\da-f]{8}):\nparameter bit (0x[\da-f]{2})\./);
+    assert.equal(`${lf} & ${lm}`, named, 'the long and mask named');
+    assert.equal(parseInt(pbit, 16), sides.flag.mask >>> 16, 'the parameter bit');
+    const b = word(at + 2), target = ((b & 0xff) << 24 >> 24) * 2 + at + 6;
+    assert.equal(b & 0xff00, 0x8900, '0x0600ea66: bt, so the branch is the clear side');
+    assert.equal(op, 'bt', 'the branch named');
+    assert.match(text, /The `bt` branches when the bit is clear, so the\nbranch is the clear side and the fall-through the set side\./);
+    /* what flagSides lists, in words */
+    const say = e => e.kind === 'call' ? `calls ${h(e.target, 8)} (${h(e.at, 8)})`
+        : e.kind === 'param' ? `stops at ${h(e.at, 8)} (${flagText(0x70, e.bit << 16)})`
+        : e.kind === 'store' && e.values.length === 1 && e.values[0] === null ? `sets +${h(e.field, 2)} (${h(e.at, 8)})`
+        : e.kind === 'store' && e.values.length === 1 && e.values[0]?.size === 1 && e.size === 2 && Object.keys(e.values[0]).length === 2
+            ? `puts the byte +${h(e.values[0].field, 2)} in the halfword +${h(e.field, 2)} (${h(e.at, 8)})` : assert.fail(JSON.stringify(e));
+    const [st, call, ...rest] = sides.set;
+    assert.deepEqual([st.kind, st.field, st.size, call.kind], ['store', 0x70, 4, 'call'], 'set: the store to +0x70, then the call');
+    assert.deepEqual(rest.map(e => e.kind), ['store', 'store', 'param'], 'set: two stores, then the stop');
+    /* the store: +0x70 as loaded at 0x0600ea5e, and'd with a literal: the bit cleared */
+    const lit = a => game.prg.readUInt32BE(game.at(((a + 4) & ~3) + (word(a) & 0xff) * 4));
+    assert.deepEqual([word(st.at - 6) & 0xff00, word(st.at - 4), word(st.at - 2), word(st.at)], [0xd000, 0x2309, 0xe070, 0x0c36], 'mov.l lit,r0; and r0,r3; mov #0x70,r0; mov.l r3,@(r0,r12)');
+    const clears = `clears ${flagText(0x70, ~lit(st.at - 6) >>> 0)} (${h(st.at, 8)})`;
+    /* the compare: the halfwords +A and +B, cmp/gt, and a bt past the call's delay slot */
+    const hw = a => game.prg.readInt16BE(game.at(a + 4 + (word(a) & 0xff) * 2));
+    assert.deepEqual([word(0x0600ea68) & 0xff00, word(0x0600ea6a), word(0x0600ea6c) & 0xff00, word(0x0600ea6e), word(0x0600ea70), word(0x0600ea72) & 0xff00],
+        [0x9000, 0x01cd, 0x9000, 0x02cd, 0x3127, 0x8900], 'r1 = the halfword +A, r2 = +B, cmp/gt r2,r1, bt');
+    const skip = ((word(0x0600ea72) & 0xff) << 24 >> 24) * 2 + 0x0600ea76;
+    assert.equal(skip, call.at + 4, 'the bt skips the store and the call');
+    const unless = `unless the halfword +${h(hw(0x0600ea68), 2)} is over the halfword +${h(hw(0x0600ea6c), 2)} (0x0600ea70)`;
+    const tail = rest.map(say).join('; ');
+    assert.equal(rows[0][3], `${unless}, ${clears} and ${say(call)}; ${tail}`, 'the set cell');
+    /* clear: the branch lands on the call's literal load and joins the set side */
+    assert.deepEqual(sides.clear, sides.set.slice(1), 'clear: the set side from the call on');
+    assert.equal(word(target) & 0xff00, 0xd000, 'the branch loads the call\'s target');
+    assert.deepEqual([lit(target), target + 2], [call.target, call.at], 'the call it loads');
+    assert.equal(rows[0][4], `branches to ${h(target, 8)}, where the set side's call is loaded, and ${say(call)}; ${tail}`, 'the clear cell');
+    /* the stop: a row of the list, no other section's, and named with its fighter */
+    const stop = rest.at(-1), stopAt = h(stop.at, 8), stopFlag = flagText(0x70, stop.bit << 16);
+    assert.equal(FM.handlerTest(game, run9, stop.at).of, undefined, 'the stop tests r12');
+    assert.ok(list.includes(`| ${stopAt} | this fighter (r12) | +0x70 | ${h(stop.bit << 16, 8)} |`), `${stopAt}'s row in the list`);
+    assert.ok(!describedAt(kindsDoc).has(stopAt), `${stopAt} is no other section's`);
+    const [, sa, sf, sp] = text.match(/Both sides stop at (0x[\da-f]{8}), which tests this fighter's \(r12\) (\+0x[\da-f]+ &\n?0x[\da-f]{8}), parameter bit (0x[\da-f]{2}); it is a row in "Flag tests not yet\ndescribed" and is left undescribed here\./);
+    assert.deepEqual([sa, sf.replace('\n', ' '), parseInt(sp, 16)], [stopAt, stopFlag, stop.bit], 'the stop named');
+    for (const s of ['set', 'clear']) assert.ok(!sides[s].some(e => e.field === 0 && e.mask === 0x10000000), `${s}: not +0 bit 0x10000000`);
+    /* the bullet */
+    const bullet = text.match(/^- \*\*(.+?)\*\*:([^]*?)\n\n/m), body = bullet[2].replace(/\s+/g, ' ');
+    assert.equal(bullet[1], named);
+    assert.equal(body, ` set, it clears this same bit and calls ${h(call.target, 8)}, unless the halfword +${h(hw(0x0600ea68), 2)} is over +${h(hw(0x0600ea6c), 2)}; clear, it calls ${h(call.target, 8)} with no compare. Both sides then put the byte +${h(rest[0].values[0].field, 2)} in +${h(rest[0].field, 2)} and set +${h(rest[1].field, 2)} before they stop at ${stopAt}.`);
+    assert.equal(lit(st.at - 6), ~sides.flag.mask >>> 0, 'the bit cleared is this flag');
+}
+checkEa64(ea64Doc, newDoc);
+for (const [from, to] of [['`mov #0x70,r0`', '`mov #0x71,r0`'], ['`mov.l @(r0,r12),r3`', '`mov.l @(r0,r13),r3`'], ['`mov #0x08,r0`', '`mov #0x10,r0`'],
+    ['then `bt` at', 'then `bf` at'], ['| 0x0600ea64 | +0x70 & 0x00080000 |', '| 0x0600ea64 | +0x70 & 0x00100000 |'],
+    ['| 0x0600ea64 | +0x70 & 0x00080000 |', '| 0x0600ea64 | the opponent\'s +0x70 & 0x00080000 |'], ['| 0x0600ea64 | +0x70 & 0x00080000 |', '| 0x0600ea64 | +0x74 & 0x00080000 |'],
+    ['long\n+0x70 of', 'long\n+0x74 of'], ['masked with 0x00080000', 'masked with 0x00008000'], ['parameter bit 0x08', 'parameter bit 0x80'],
+    ['branch is the clear side and the fall-through the set side', 'branch is the set side and the fall-through the clear side'],
+    ['branches to 0x0600ea7c', 'branches to 0x0600ea7e'], ['(0x0600ea70), clears', '(0x0600ea72), clears'],
+    ['clears +0x70 & 0x00080000 (0x0600ea7a)', 'clears +0x70 & 0x00100000 (0x0600ea7a)'],
+    ['(0x0600ea7e); puts the byte +0x4aa in the halfword +0x4a8 (0x0600ea88); sets +0x24 (0x0600eac8); stops at 0x0600ead0 (+0x70 & 0x00100000) |\n', '(0x0600ea7e); puts the byte +0x4aa in the halfword +0x4a8 (0x0600ea88); sets +0x24 (0x0600eac8); stops at 0x0600ead2 (+0x70 & 0x00100000) |\n'],
+    ['0x0600ead0 (+0x70 & 0x00100000) |\n', '0x0600ead0 (+0x70 & 0x00200000) |\n'],
+    ['calls 0x060131d0 (0x0600ea7e); puts', 'calls 0x06024094 (0x0600ea7e); puts'],
+    ['| unless the halfword', '| branches to 0x0600ea7c, where the set side\'s call is loaded, and calls 0x060131d0 (0x0600ea7e); puts the byte'],
+    ['Both sides stop at 0x0600ead0', 'Both sides stop at 0x0600ed16'], ['which tests this fighter\'s (r12) +0x70 &\n0x00100000', 'which tests this fighter\'s (r12) +0x70 &\n0x00200000'],
+    ['set, it clears this same bit', 'set, it sets this same bit'], ['before they stop at 0x0600ead0.', 'before they stop at 0x0600ee16.']]) {
+    assert.ok(ea64Doc.includes(from), from);
+    assert.throws(() => checkEa64(ea64Doc.replace(from, to), newDoc), `${from} -> ${to}`);
+}
+/* the list's row naming another field or mask, or losing the stop's row, fails too */
+assert.throws(() => checkEa64(ea64Doc, newDoc.replace('| 0x0600ea64 | this fighter (r12) | +0x70 | 0x00080000 |', '| 0x0600ea64 | this fighter (r12) | +0x70 | 0x00100000 |')));
+assert.throws(() => checkEa64(ea64Doc, newDoc.replace(/^\| 0x0600ead0 .*\n/m, '')));
 const sentenceSlots = new Map(kinds.map(([, k, , , , , , does]) => [parseInt(k, 16), [...new Set([...does.matchAll(
     /(?<![\w.+\u2212-]|bit |frame |kind |≤ |is )(\d+)(?![\w.]| frames?)/g)].map(m => +m[1]))].sort((a, b) => a - b)]));
 const ruleSlots = (kind, p) => kind !== 9 ? sentenceSlots.get(kind)

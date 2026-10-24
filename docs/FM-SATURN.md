@@ -874,6 +874,32 @@ Not listed: the `tst`s of a register against itself, and those at
 0x0600edfa, 0x0600ee02 and 0x0600efa0, whose value isn't a fighter field.
 `tests/fm-saturn.test.mjs` checks this list against a fresh read.
 
+#### The flag at 0x0600ea64
+
+The earliest row of "Flag tests not yet described", in the run handler,
+read off the disc and followed the same way. The fighter, field and mask
+in that row match the disc: 0x0600ea5c is `mov #0x70,r0`, 0x0600ea5e
+`mov.l @(r0,r12),r3`, 0x0600ea60 `mov #0x08,r0`, 0x0600ea62 `shll16 r0`
+and 0x0600ea64 `tst r0,r3`, then `bt` at 0x0600ea66. That is the long
++0x70 of this fighter (r12), not the opponent's, masked with 0x00080000:
+parameter bit 0x08. The `bt` branches when the bit is clear, so the
+branch is the clear side and the fall-through the set side.
+
+| Tested at | Flag | Set | Clear |
+| --- | --- | --- | --- |
+| 0x0600ea64 | +0x70 & 0x00080000 | unless the halfword +0x4a8 is over the halfword +0x4ac (0x0600ea70), clears +0x70 & 0x00080000 (0x0600ea7a) and calls 0x060131d0 (0x0600ea7e); puts the byte +0x4aa in the halfword +0x4a8 (0x0600ea88); sets +0x24 (0x0600eac8); stops at 0x0600ead0 (+0x70 & 0x00100000) | branches to 0x0600ea7c, where the set side's call is loaded, and calls 0x060131d0 (0x0600ea7e); puts the byte +0x4aa in the halfword +0x4a8 (0x0600ea88); sets +0x24 (0x0600eac8); stops at 0x0600ead0 (+0x70 & 0x00100000) |
+
+- **+0x70 & 0x00080000**: set, it clears this same bit and calls
+  0x060131d0, unless the halfword +0x4a8 is over +0x4ac; clear, it calls
+  0x060131d0 with no compare. Both sides then put the byte +0x4aa in
+  +0x4a8 and set +0x24 before they stop at 0x0600ead0.
+
+Both sides stop at 0x0600ead0, which tests this fighter's (r12) +0x70 &
+0x00100000, parameter bit 0x10; it is a row in "Flag tests not yet
+described" and is left undescribed here. Neither side reaches the 0.8
+distance check or `+0` bit 0x10000000. `tests/fm-saturn.test.mjs` checks
+this section against a fresh read.
+
 ### Slots
 
 The action-table slots that those handlers play, read the way 0x0600CEC8
