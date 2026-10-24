@@ -958,8 +958,15 @@ against 0.13); the jacket and jeans are a little darker (the stage's light is
 not the warehouse's). The hair is near black in both, where saturation
 means little. The jeans were the one part still clearly off, 32° too cyan:
 green and blue stopped at the top row (Colour above). With the hue kept they
-are 21° off by the mean, 9° by the median; the rest is the board's
-lighting over pixels near black. The first Dreamcast shot (#1536) gave
+are 21° off by the mean, 9° by the median. What the fit wrote for the jeans
+(parts 9, 10, 11, 13 and 14, every face, at each texel's full-light luma)
+is 203° (201-205° part by part), against 206° in the texture itself. Dimmed
+to 0.5 of that luma it stays 203-205°, so dimming does not move their hue,
+and the screen's median (202°) is the fitted colour. Of the 21°, about 13°
+is in the screen's mean and not in what the fit wrote. That mean is not
+explained (a few off-hue pixels in the boxes, not traced). 3° is the fit
+(206° to 203°), and 5° is the texture against the Dreamcast's own screen
+(206° to 211°), which no fit to the texture can reach. The first Dreamcast shot (#1536) gave
 hair 29° 0.47 0.05, skin 27° 0.54 0.40, jacket 25° 0.69 0.12, jeans 211°
 0.60 0.19 and shoes 217° 0.17 0.25, close to the new one.
 
