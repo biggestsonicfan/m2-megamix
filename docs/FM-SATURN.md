@@ -1495,6 +1495,47 @@ anything or stops at another flag test, and neither reaches the 0.8
 distance check or `+0` bit 0x10000000.
 `tests/fm-saturn.test.mjs` checks this section against a fresh read.
 
+#### The flag at 0x0600efa0
+
+The next test the sentence under "Flag tests not yet described" leaves
+out, read off the disc and followed the same way. It is not a
+fighter-field test: 0x0600ef94 `mov #0x04,r0` and 0x0600ef96
+`mov.b @(r0,r12),r5` load the byte +0x04 of this fighter (r12) into r5;
+0x0600ef98 `mov.l @(0x0600efc8),r0` loads 0x0606922c, 0x0600ef9a
+`shll r5` doubles the byte and 0x0600ef9c `mov.w @(r0,r5),r5` loads the
+halfword it picks from the table at 0x0606922c. 0x0600ef9e
+`mov #0x08,r0` makes the mask 0x00000008, 0x0600efa0 is `tst r0,r5`,
+then `bt` at 0x0600efa2. That is bit 0x00000008 of the table's halfword
+for this fighter's byte +0x04, not of a field, so `flagSides` gives no
+fighter field for the test. The `bt` branches when the bit is clear, so
+the branch is the clear side and the fall-through the set side.
+
+| Tested at | Flag | Set | Clear |
+| --- | --- | --- | --- |
+| 0x0600efa0 | the table at 0x0606922c's halfword for the byte +0x04 & 0x00000008 | goes on to 0x0600efa4; stores +0x4fc (0x0600efaa) and +0x68a (0x0600efae); the `bra` at 0x0600efb0 jumps to 0x0600f3f6; ends this frame's run (0x0600f3f6) | branches to 0x0600efa6; stores +0x4fc (0x0600efaa) and +0x68a (0x0600efae); the `bra` at 0x0600efb0 jumps to 0x0600f3f6; ends this frame's run (0x0600f3f6) |
+
+- **the table at 0x0606922c's halfword for the byte +0x04 & 0x00000008**:
+  set, it puts 0x1f in the byte +0x4fc and 0x0308 in the halfword
+  +0x68a; clear, it jumps to 0x0600efa6 and puts 0x1f in the byte +0x4fc
+  and 0x0307 in the halfword +0x68a; neither side calls anything, and
+  both end this frame's run at 0x0600f3f6.
+
+The only way in is the `bt` at 0x0600eecc, which jumps to 0x0600ef60;
+from there no branch comes before the test, and none lands between
+0x0600ef60 and it. 0x0600ef92 `mov.w @(0x0600efba),r3` loads 0x0307
+into r3 before the test; the set side replaces it at 0x0600efa4
+`mov.w @(0x0600efbc),r3`, which loads 0x0308, and goes on to 0x0600efa6.
+From there both sides run 0x0600efa6 `mov #0x1f,r2`, 0x0600efa8
+`mov.w @(0x0600efbe),r0`, which loads 0x04fc, and 0x0600efaa
+`mov.b r2,@(r0,r12)`; then 0x0600efac `mov.w @(0x0600efc0),r0`, which
+loads 0x068a, and 0x0600efae `mov.w r3,@(r0,r12)`. Both stores are to
+this fighter (r12). The `bra` at 0x0600efb0, with a `nop` in its slot,
+jumps to 0x0600f3f6, the run handler's `jmp @r14`, so both sides end
+this frame's run there. Neither side calls anything or stops at another
+flag test, and neither reaches the 0.8 distance check or `+0` bit
+0x10000000.
+`tests/fm-saturn.test.mjs` checks this section against a fresh read.
+
 ### Slots
 
 The action-table slots that those handlers play, read the way 0x0600CEC8
