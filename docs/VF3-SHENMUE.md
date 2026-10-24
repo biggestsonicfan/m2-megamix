@@ -318,6 +318,51 @@ an op 4 so that the move strikes with its own data, and bit 8 back:
   foot, 21 damage. The frames are still the placeholders scaled from 738;
   Shenmue's file has no timing. All of this is read from the code, not run.
 
+### What 720 has that 804 doesn't
+
+VF2 738's setup is the test's plus two ops and another end:
+`… 04 (17) | 0b 00 00 22 00 00 00 00 00 00 00 | 0c 0a 04 | 08 | 04 09 00 5f 12 9e 00 | 00`.
+`convertSetup` copies op 0xB, makes op 0xC `0c 00 0a 04`, and drops the play
+op 4 (PLAY_TO 0x04: null). So StF 720 ends `… 0b (11) 0c 00 0a 04 08 00`, and
+804 ends `… 00`. set_mot_dat's op table is at S 0x1B568. Each item below is
+read from stfdisasm, not run:
+
+- **Op 0xB, sub_1B934.** It puts bytes 1–4 in 0x844 (738: 0x00220000, bits
+  17 and 21; bit 15 is flipped on the mirrored side), its low 15 bits in
+  0x6DA, and bytes 5–10 in 0x848–0x84B, 0x84E and 0x84F (738: all 0). Only
+  get_en_info reads 0x844, and it reads the opponent's copy (g8). While the
+  attacker's 0x1A4 bit 8 is set and the two face each other, it ORs the bits
+  of 0x3FF8000 that apply at that distance into the opponent's
+  en_flag (0x5B8). Bits 26–29 count only up to frame 0x84E, and bit 27 is the
+  0x1911C shortcut. 0x6DA is a condition in the opponent's command program
+  (loc_1EAE4: "the other fighter's 0x6DA is X"). 0x848's one load (S 0x2AC48) has no xref. Nothing here
+  writes 0x768, 0x1A4 or 0x820.
+  So 804 strikes, cancels and ends as 720 does. What differs is what the
+  defender reads about the strike: 0x844 = 0 (set_mot_dat clears it), so
+  the defender's en_flag gets no attack bits from this move. 0x6DA
+  and 0x848 keep the last op 0xB's values, because set_mot_dat clears neither.
+- **Op 0xC, sub_1B9B4.** It puts bytes 1–3 in 0x840, 0x841 and 0x842
+  (720: 0, 10, 4). The only reader is player control (sub_1D47C, at
+  S 0x1D908). On a new command, if 0x842 ≤ frame ≤ 0x840, it gives action
+  0x14 (0x194 = 0x14000000). That action, loc_164DC, clears 0x1A4 bits 8 and 1,
+  sets bit 2, steps the frame back two, and can end the move at 0x841.
+  `convertSetup` always sets 0x840 to 0, and set_mot_dat clears 0x840 too.
+  So on every VF2 import the window is frame ≤ 0: it is empty for 720
+  (0x842 = 4). For 804 it can open only at frame 0, if the 0x842 left by an
+  earlier op 0xC is 0 or less. Every motion without op 0xC has that same edge.
+  Op 0xC doesn't change this clip's hit, cancel or end.
+- **Op 8 instead of op 0, loc_1B5CC.** It skips the 8 and starts the play
+  script (0x82C) after it. 720's play script is just the `00`, because its one play op
+  was dropped. So both play scripts are empty.
+
+**The playable-move setup test is complete from the code.** 804's
+hit (frames 8–9, part 10, 21 damage), cancel (10) and end (25) come from
+op 2 and op 4 alone. None of 720's other ops writes the hit spheres, 0x1A4
+or the strike at 0x820. No op is needed to make the move play. If a later
+pin wants the defender to read it as 738's strike, the op to add is op 0xB,
+copied from 738 (11 bytes: 0x844 bits 17 and 21, and 0x6DA reset to 0). It changes the defender's en_flag and nothing in Akira's
+move.
+
 ## Open
 
 - **Ryo's motions**: which MOTION.BIN entries Free Battle plays, and with
