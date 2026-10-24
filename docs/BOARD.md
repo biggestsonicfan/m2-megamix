@@ -890,6 +890,25 @@ put in for Akira, and import-assets runs it after Akira's.
 Checked in MAME (`sfight`, the shared build): Ryo vs Akira and Akira vs
 Ryo, both drawn, each knocking the other from 140 to 0 with punches.
 
+**Graded against the Dreamcast** (beta 0.400 disc 3's Free Battle in Flycast,
+full body beside a MAME shot, mean colour per region): the shape and
+proportions match (head ≈ 0.135 of his height in both), and so does the hue
+of every part within 5° except the jeans (190° against 211°, too cyan). The
+colours are too saturated: hair, skin and jacket s ≈ 0.97-0.99 against
+0.47-0.69, so the skin reads orange (85,33,1 against 102,72,47) and the
+jacket black-brown. The jeans are also too dark (v 0.08 against 0.19). The
+shoes match. The colour fit's ramp rows are where to fix it.
+
+Reaching Free Battle on disc 3 (from 1ST_READ.BIN, base 0x0C010000): the
+title's extras menu (table 0x0C29E008: debug, OPTION, SPACE HARRIER, HANG
+ON, STAFF ROLL, FREE BATTLE) opens when Start comes while the title state
+(0x0C226100) is 0. That is the first moments after the title appears at
+boot; in state 2 Start gives the START MENU instead. The triggers (game
+bits 0x00C0, the pad byte-swapped) step the items. FREE BATTLE needs disc
+number 3 (0x0C0200E4) and sets scene 3, area `MFBT`, entry 99
+(0x0C20D220/4/8). Start begins it. In RetroArch the triggers need keys
+(`input_player1_l2/r2`).
+
 ## The fight
 
 The rounds run on StF's own code, lifted by `tools/lift-stf.py`; the board
