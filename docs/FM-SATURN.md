@@ -1378,6 +1378,40 @@ in "The flags those stop at", which describes its sides. Neither side
 reaches the 0.8 distance check or `+0` bit 0x10000000.
 `tests/fm-saturn.test.mjs` checks this section against a fresh read.
 
+#### The flag at 0x0600f37e
+
+The next row of "Flag tests not yet described", read off the disc and
+followed the same way. 0x0600f378 is `mov r12,r1`, 0x0600f37a
+`add #0x71,r1`, 0x0600f37c `mov.b @r1,r0` and 0x0600f37e
+`tst #0x04,r0`, then `bf` at 0x0600f380. That is bit 0x04 of the byte
++0x71 of this fighter (r12), not the opponent's: big-endian, the long
++0x70 masked with 0x00040000, as the row names it. The `bf` branches
+when the bit is set, so the branch is the set side and the fall-through
+the clear side.
+
+| Tested at | Flag | Set | Clear |
+| --- | --- | --- | --- |
+| 0x0600f37e | +0x70 & 0x00040000 | branches to 0x0600f394; calls 0x06014ca4 (0x0600f398); stops at 0x0600f3a4 (+0x6c0 & 0x20000000) | goes on to 0x0600f382; calls 0x06014ca4 (0x0600f386); the `bra` at 0x0600f38a jumps to 0x0600f39c; stops at 0x0600f3a4 (+0x6c0 & 0x20000000) |
+
+- **+0x70 & 0x00040000**: set, it jumps to 0x0600f394 and calls
+  0x06014ca4 with r4 = 2; clear, it calls 0x06014ca4 with r4 = 1 and
+  the `bra` at 0x0600f38a jumps to 0x0600f39c; neither side stores
+  anything, and both stop at 0x0600f3a4.
+
+The set side: 0x0600f394 `mov #0x02,r4`, 0x0600f396
+`mov.l @(0x0600f3bc),r0`, which loads 0x06014ca4, and 0x0600f398
+`jsr @r0`, then 0x0600f39c `mov r12,r1`. The clear side: 0x0600f382
+`mov #0x01,r4`, 0x0600f384 `mov.l @(0x0600f390),r0`, which loads
+0x06014ca4, and 0x0600f386 `jsr @r0`, then the `bra` at 0x0600f38a,
+with `nop` in its delay slot, lands at 0x0600f39c. From there both go on
+with 0x0600f39e `mov.w @(0x0600f3b8),r0`, which loads 0x06c0, `add r0,r1`,
+`mov.b @r1,r0` and 0x0600f3a4 `tst #0x20,r0`. That stop tests this
+fighter's (r12) +0x6c0 & 0x20000000; it is a row in "The flags they stop
+at", which describes its sides. Neither side calls anything else or
+stops at another flag test, and neither reaches the 0.8 distance check
+or `+0` bit 0x10000000.
+`tests/fm-saturn.test.mjs` checks this section against a fresh read.
+
 ### Slots
 
 The action-table slots that those handlers play, read the way 0x0600CEC8
