@@ -164,7 +164,7 @@ function checkBits(text) {
     assert.deepEqual(nine.replace(' and', ',').split(', ').map(Number),
         [...new Set(hornetMoves.filter(m => m.kind === 9).map(m => m.parameter))].sort((a, b) => a - b));
 }
-const bitsDoc = kindsDoc.split('#### Bits 0x40 and 0x80\n\n')[1];
+const bitsDoc = kindsDoc.split('#### Bits 0x40 and 0x80\n\n')[1].split('\n#### ')[0];
 checkBits(bitsDoc);
 for (const [from, to] of [['| 0x0600dce0 |', '| 0x0600dce2 |'], ['| plays motion 0x8b3 |', '| plays motion 0x8b4 |'],
     ['0x0600dc80 +0x6c0 & 0x02000000 clear', '0x0600dc80 +0x6c0 & 0x02000000 set'], ['0x0600ed36 +0x6c0 & 0x00001000', '0x0600ed36 +0x6c0 & 0x00002000'],
@@ -174,6 +174,115 @@ for (const [from, to] of [['| 0x0600dce0 |', '| 0x0600dce2 |'], ['| plays motion
     assert.ok(bitsDoc.includes(from), from);
     assert.throws(() => checkBits(bitsDoc.replace(from, to)), `${from} -> ${to}`);
 }
+
+/* The flags behind them: the Behind column's distinct flag tests, each side
+ * of each followed on a fresh read; every address in a cell must do what
+ * the words before it say and be reachable from that side; a changed claim
+ * fails */
+const PLAYS = 0x060131d0, word = a => game.prg.readUInt16BE(game.at(a));
+const flagText = (field, mask) => `+${h(field, 2)} & ${h(mask, 8)}`;
+function checkFlags(text, bits) {
+    const behind = new Map();
+    for (const [, handler, , , via] of bits.matchAll(/^\| (accept|run) \| (0x[\da-f]{2}) \| (0x[\da-f]{8}) \| (.+?) \|/gm))
+        for (const g of via.split('; ')) {
+            const [, at, flag] = g.match(/^(0x[\da-f]{8}) (\+0x[\da-f]+ & 0x[\da-f]{8}) (set|clear)$/);
+            behind.set(at, `${handler} ${flag}`);
+        }
+    const rows = [...text.matchAll(/^\| (0x[\da-f]{8}) \| (accept|run) \| (\+0x[\da-f]+ & 0x[\da-f]{8}) \| (.+?) \| (.+?) \|$/gm)];
+    assert.deepEqual(rows.map(([, at, handler, flag]) => [at, `${handler} ${flag}`]), [...behind].sort(([a], [b]) => parseInt(a, 16) - parseInt(b, 16)));
+    const named = new Set(rows.map(r => r[3]));
+    assert.match(text, new RegExp(`^The ${['', '', '', '', '', '', 'six'][rows.length]} distinct flag tests`));
+    for (const [, atText, handler, flag, ...cells] of rows) {
+        const at = parseInt(atText, 16), start = handler === 'accept' ? accept9 : run9, t = FM.handlerTest(game, start, at);
+        assert.equal(flagText(t.field, t.mask), flag, atText);
+        const b = word(at + 2), target = ((b & 0xff) << 24 >> 24) * 2 + at + 6;
+        assert.equal(b & 0xfd00, 0x8900, `${atText}: bt/bf`);
+        const sides = b & 0x0200 ? [target, at + 4] : [at + 4, target];   /* set, clear */
+        cells.forEach((cell, s) => {
+            const from = sides[s], where = `${atText} ${['set', 'clear'][s]}`;
+            const reach = a => assert.ok(FM.handlerReaches(game, start, from, a, [at]), `${where}: ${h(a, 8)} out of reach`);
+            const reg = (a, r) => FM.handlerReg(game, start, a, r), regs = a => Array.from({ length: 16 }, (_, r) => reg(a, r));
+            const isField = (v, f, size) => v?.field === f && (!size || v.size === size);
+            const claimed = new Set();
+            /* stops: a flag test not in the Behind column */
+            for (const [all, a, f] of cell.matchAll(/stops at (0x[\da-f]{8}) \((\+0x[\da-f]+ & 0x[\da-f]{8})\)/g)) {
+                const y = parseInt(a, 16), st = FM.handlerTest(game, start, y);
+                assert.equal(st && flagText(st.field, st.mask), f, `${where}: ${all}`);
+                assert.ok(!named.has(f) && st.field !== 0x3c && st.field !== 0x70, `${where}: ${f} is named or a parameter bit`);
+                reach(y);
+                claimed.add(a);
+                /* "whichever way it goes": what follows is reachable from both of its sides */
+                const rest = cell.slice(cell.indexOf(all) + all.length);
+                if (/^; whichever way it goes/.test(rest)) {
+                    const yb = word(y + 2), yt = ((yb & 0xff) << 24 >> 24) * 2 + y + 6;
+                    for (const [, x] of rest.matchAll(/\((0x0600[\da-f]{4})\)/g))
+                        for (const yf of [y + 4, yt]) assert.ok(FM.handlerReaches(game, start, yf, parseInt(x, 16), [at, y]), `${where}: ${x} after ${a}`);
+                }
+            }
+            for (const m of cell.matchAll(/\((0x0600[\da-f]{4})\)/g)) {
+                const x = parseInt(m[1], 16), before = cell.slice(0, m.index), w = word(x);
+                let k, verb;
+                if ((k = before.match(/calls (0x[\da-f]{8}) $/))) assert.ok(w === 0x400b && reg(x, 0) === parseInt(k[1], 16), `${where}: call ${m[1]}`);
+                else if (/plays the request's motion $/.test(before)) assert.ok(w === 0x400b && reg(x, 0) === PLAYS && (isField(reg(x, 4), 0x3e) || isField(reg(x, 4), 0x72)), `${where}: ${m[1]}`);
+                else if ((k = before.match(/the (0x[\da-f]{2}) test $/))) {
+                    const st = FM.handlerTest(game, start, x);
+                    assert.ok((st?.field === 0x3c || st?.field === 0x70) && st.mask === parseInt(k[1], 16) << 16, `${where}: ${m[1]}`);
+                }
+                else if ((k = before.match(/the (\+0x[\da-f]+ & 0x[\da-f]{8}) test $/))) {
+                    const st = FM.handlerTest(game, start, x);
+                    assert.ok(st && flagText(st.field, st.mask) === k[1] && named.has(k[1]), `${where}: ${m[1]}`);
+                } else if (/the motion-id test $/.test(before)) assert.ok((w & 0xf00f) === 0x2008 && ((w >> 8) & 15) === ((w >> 4) & 15) && isField(reg(x, (w >> 8) & 15), 0x3e), `${where}: ${m[1]}`);
+                else if (/the \+0x6c6 counter $/.test(before)) assert.ok((w & 0xf00f) === 0x2008 && ((w >> 8) & 15) === ((w >> 4) & 15) && isField(reg(x, (w >> 8) & 15), 0x6c6, 2), `${where}: ${m[1]}`);
+                else if (/the stage test $/.test(before)) assert.ok((w & 0xf00f) === 0x3007 && regs(x).some(v => isField(v, 0x60, 1)), `${where}: ${m[1]}`);
+                else if (/adds \+0x70's bits to the request $/.test(before)) assert.ok((w & 0xff0f) === 0x2b0b && isField(reg(x, (w >> 4) & 15), 0x70, 4), `${where}: ${m[1]}`);
+                else if (/ends this frame's run $/.test(before)) assert.equal(w, 0x4e2b, `${where}: ${m[1]}`);
+                else if (/stores the request in \+0x70 $/.test(before)) {
+                    const st = FM.handlerStore(game, start, x);
+                    assert.ok(st?.field === 0x70 && st.size === 4 && isField(st.value, 0x3c, 4), `${where}: ${m[1]}`);
+                } else if ((k = before.match(/(\+0x[\da-f]+)(?:, [^,()]+,)? $/)) && (verb = before.split(/[;:]/).pop().match(/.*\b(clears?|sets?|in) /)?.[1])) {
+                    /* a store: the field just before, the verb the clause's last clear(s), set(s) or in */
+                    const st = FM.handlerStore(game, start, x);
+                    assert.equal(st?.field, parseInt(k[1], 16), `${where}: store ${m[1]}`);
+                    if (verb.startsWith('clear')) assert.equal(st.value, 0, `${where}: ${m[1]} clears`);
+                } else assert.fail(`${where}: nothing says what ${m[1]} is`);
+                reach(x);
+                claimed.add(m[1]);
+            }
+            for (const [a] of cell.matchAll(/0x0600[\da-f]{4}/g)) assert.ok(claimed.has(a), `${where}: ${a} unchecked`);
+            if (/plays no motion/.test(cell))
+                for (let a = start; a < start + 0x1000; a += 2)
+                    if (word(a) === 0x400b && reg(a, 0) === PLAYS) assert.ok(!FM.handlerReaches(game, start, from, a, [at]), `${where}: plays at ${h(a, 8)}`);
+        });
+    }
+    /* the bullets: each is a row's flag; a test named in one is a parameter test the row's set side reaches */
+    for (const [, f, body] of text.matchAll(/^- \*\*(.+?)\*\*([^]*?)(?=\n- |\n\n)/gm)) {
+        const row = rows.find(r => r[3] === f);
+        assert.ok(row, f);
+        for (const [, bit, a] of body.matchAll(/the (0x[\da-f]{2}) test at\s+(0x[\da-f]{8})/g)) {
+            const start = row[2] === 'accept' ? accept9 : run9, x = parseInt(a, 16), at = parseInt(row[1], 16);
+            assert.equal(FM.handlerTest(game, start, x)?.mask, parseInt(bit, 16) << 16, a);
+            assert.ok(FM.handlerReaches(game, start, at + 4, x, [at]) || FM.handlerReaches(game, start, ((word(at + 2) & 0xff) << 24 >> 24) * 2 + at + 6, x, [at]), a);
+        }
+    }
+}
+const flagsDoc = kindsDoc.split('#### The flags behind them\n\n')[1].split('\n### ')[0];
+checkFlags(flagsDoc, bitsDoc);
+for (const [from, to] of [['| 0x0600ed36 | run |', '| 0x0600ed38 | run |'], ['| +0x6c0 & 0x00030000 |', '| +0x6c0 & 0x00010000 |'],
+    ['stops at 0x0600ee84 (+0x6c0 & 0x80000000)', 'stops at 0x0600ee84 (+0x6c0 & 0x40000000)'], ['stops at 0x0600ed4c (+0x00 & 0x04000000)', 'stops at 0x0600ed4c (+0x00 & 0x00000020)'],
+    ['| stops at 0x0600ee84 (+0x6c0 & 0x80000000) | ends this frame\'s run (0x0600f3f6) |', '| ends this frame\'s run (0x0600f3f6) | stops at 0x0600ee84 (+0x6c0 & 0x80000000) |'],
+    ['clears +0x50 (0x0600db42)', 'clears +0x52 (0x0600db42)'], ['+0x60, the stage, (0x0600db46)', '+0x60, the stage, (0x0600db42)'],
+    ['calls 0x06012efc (0x0600f182)', 'calls 0x06014ca4 (0x0600f182)'], ['the 0x40 test (0x0600dce0)', 'the 0x80 test (0x0600dce0)'],
+    ['it plays the request\'s motion (0x0600dc9c)', 'it plays the request\'s motion (0x0600dc9a)'], ['plays no motion;', 'plays no motion; plays the request\'s motion (0x0600dc9c);'],
+    ['sets +0x4ac, the hold, (0x0600dcc4); plays no motion', 'sets +0x4ac, the hold, (0x0600dcc4); plays no motion; ends this frame\'s run (0x0600f3f6)'],
+    ['| stops at 0x0600ed4c (+0x00 & 0x04000000) |', '| plays no motion |'], ['clears +0x70 (0x0600f3de)', 'clears +0x70 (0x0600f3d6)'],
+    ['the +0x6c6 counter (0x0600f0d0)', 'the +0x6c6 counter (0x0600f0ce)'], ['stores the request in +0x70 (0x0600da7c) |\n| 0x0600dc80', 'stores the request in +0x70 (0x0600da7a) |\n| 0x0600dc80'],
+    ['The six distinct', 'The five distinct'], ['- **+0x6c0 & 0x00030000**', '- **+0x6c0 & 0x00070000**'], ['test at\n  0x0600eeca', 'test at\n  0x0600eecc']]) {
+    assert.ok(flagsDoc.includes(from), from);
+    assert.throws(() => checkFlags(flagsDoc.replace(from, to), bitsDoc), `${from} -> ${to}`);
+}
+/* a row dropped from the table, or the Behind column gaining a flag, fails too */
+assert.throws(() => checkFlags(flagsDoc.replace(/^\| 0x0600ee78 .*\n/m, ''), bitsDoc));
+assert.throws(() => checkFlags(flagsDoc, bitsDoc.replace('0x0600ed16 +0x00 & 0x00000020 set;', '0x0600ed16 +0x00 & 0x00000020 set; 0x0600ed20 +0x6c0 & 0x04000000 clear;')));
 
 /* the Slots table: each slot the kinds play, against a fresh read of Hornet's
  * action table and banks; its Kinds column is the Kinds table's Plays */

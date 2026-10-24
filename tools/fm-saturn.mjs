@@ -377,6 +377,39 @@ export function handlerTest(game, start, at) {
     const code = handlerCode(game, start), i = code.findIndex(([a]) => a === at);
     return i < 0 ? null : tstOf(game, code, i);
 }
+/** What register r holds at `at` in a handler, as regValue works it out: a
+ *  number, { field, size } for a load from the fighter, { ptr } for an
+ *  address in it, or null. */
+export function handlerReg(game, start, at, r) {
+    const code = handlerCode(game, start), i = code.findIndex(([a]) => a === at);
+    return i < 0 ? null : regValue(game, code, i, r);
+}
+/** The fighter field a store at `at` writes ({ field, size, value }, value
+ *  as handlerReg gives it), or null if `at` is no store into the fighter. */
+export function handlerStore(game, start, at) {
+    const code = handlerCode(game, start), i = code.findIndex(([a]) => a === at);
+    if (i < 0) return null;
+    const w = code[i][1], n = (w >> 8) & 15, m = (w >> 4) & 15, val = r => regValue(game, code, i, r);
+    let field, size, value;
+    if ((w & 0xf00c) === 0x2000 && (w & 3) < 3) [field, size, value] = [val(n)?.ptr, [1, 2, 4][w & 3], val(m)];   /* mov Rm,@Rn */
+    else if ((w & 0xf00c) === 0x0004 && n === 12) [field, size, value] = [val(0), [1, 2, 4][w & 3], val(m)];   /* mov Rm,@(r0,r12) */
+    else if ((w & 0xf000) === 0x1000 && n === 12) [field, size, value] = [(w & 15) * 4, 4, val(m)];   /* mov.l Rm,@(disp,r12) */
+    else return null;
+    return typeof field === 'number' ? { field, size, value } : null;
+}
+/** Whether a handler's code can get from `from` to `to` without passing
+ *  through any address in `avoid`. */
+export function handlerReaches(game, start, from, to, avoid = []) {
+    const { next } = handlerGraph(game, start), seen = new Set(avoid), todo = [from];
+    while (todo.length) {
+        const a = todo.pop();
+        if (a === to) return true;
+        if (seen.has(a)) continue;
+        seen.add(a);
+        todo.push(...(next.get(a) ?? []));
+    }
+    return false;
+}
 const PLAYS = 0x060131d0;
 /** Where a kind's handlers test parameter bits (`bits`, the default all),
  *  and what each branch does until its next conditional branch, a return,
