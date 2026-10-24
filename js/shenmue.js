@@ -112,6 +112,12 @@ export function decodePvr(b) {
             put(x, y, v.getUint16(p + 2 * at, true));
         }
     } else throw new Error(`PVR data format ${fmt}`);
+    /* A 4444 texture none of which is half opaque is a translucent one (the
+     * fight afterimage's: Chai's low model, CHA_B, alpha 4 of 15 all over);
+     * a fighter drawn with it is drawn solid. */
+    let solid = pix === ARGB4444;
+    for (let i = 3; solid && i < rgba.length; i += 4) solid = rgba[i] < 128;
+    if (solid) for (let i = 3; i < rgba.length; i += 4) rgba[i] = 255;
     return { width: w, height: h, rgba, format: { pixel: pix, data: fmt } };
 }
 
@@ -271,7 +277,9 @@ const SHOULDERS = new Set([25, 31]);
 export function readMotionBin(b) {
     const v = viewOf(b);
     const table = v.getUint32(0, true), names = v.getUint32(4, true);
-    const data = v.getUint32(8, true), count = v.getUint32(12, true);
+    /* A scene's own bank (M_FGT4.BIN and the like) numbers its motions from
+     * a base, +0x14, with the end at +0xC; MOTION.BIN's base is 0. */
+    const data = v.getUint32(8, true), base = v.getUint32(0x14, true), count = v.getUint32(12, true) - base;
     const name = (i) => {
         const p = v.getUint32(names + 4 * i, true);
         if (p < names || p >= data) return null;
@@ -286,7 +294,7 @@ export function readMotionBin(b) {
     for (let i = 0; i < count; i++) {
         motions.push({ index: i, name: name(i), offset: data + v.getUint32(table + 8 * i, true), setup: v.getUint32(table + 8 * i + 4, true) });
     }
-    return { buf: b, v, motions };
+    return { buf: b, v, base, motions };
 }
 
 /**

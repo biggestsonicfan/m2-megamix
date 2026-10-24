@@ -68,7 +68,7 @@ function f0(f) {
     return [...f.moves.tables.get(f.moves.root)].map((e) => e.motion & 0x1fff).find((id) => f.attack(id)?.level !== undefined && f.attack(id)?.victim == null);
 }
 /* Ryo (with the Shenmue disc): 5'9" to Akira's 5'11", and his throw on Akira. */
-const ryo = fighters.find((f) => f.game === 'shenmue');
+const ryo = fighters.find((f) => f.name === 'RYO');
 if (ryo) {
     const { ryoFit, SIZE } = await import('../js/ryo.js');
     const fit = ryoFit(games);
@@ -81,4 +81,28 @@ if (ryo) {
     assert.ok(p.mats.every((m) => m.every(Number.isFinite)));
     console.log('Ryo', fit.ryo.toFixed(3), 'to Akira', fit.akira.toFixed(3), 'throw', entry.name);
 } else console.log('Ryo skipped: no Shenmue disc');
+/* Chai (disc 3's ending fight): his own bank and script, sized by his model
+ * to Ryo's, his throws and strikes his. */
+const chai = fighters.find((f) => f.name === 'CHAI');
+if (chai) {
+    const { shenmueFit, SIZE, restHeight } = await import('../js/ryo.js');
+    const c = games.shenmue.chars.CHAI;
+    const fit = shenmueFit(games, c);
+    const want = SIZE * restHeight(c.fullModel) / restHeight(games.shenmue.chars.RYO.model);
+    assert.ok(Math.abs(fit.ryo / fit.akira - want) < 0.002, `Chai's height ${fit.ryo} to Akira's ${fit.akira}`);
+    const all = [...chai.moves.tables.values()].flat();
+    const own = all.filter((e) => (e.motion & 0x1fff) >= c.bank.base);
+    assert.ok(own.length > 10, `Chai's moves from his bank: ${own.length}`);
+    const throws = all.filter((e) => chai.attack(e.motion)?.victim != null);
+    assert.ok(throws.length, 'Chai has a throw');
+    const ref = { rom: chai.rom, motion: chai.motion(chai.attack(throws[0].motion).victim) };
+    assert.ok(ref.motion, 'his throw\'s victim motion');
+    const p = fighters[0].createBody().pose(ref, Math.floor(ref.motion.frames / 2));
+    assert.ok(p.mats.every((m) => m.every(Number.isFinite)));
+    assert.equal(chai.act('stance').motion.id, 0x800);
+    const b = chai.createBody().pose(chai.act('stance'), 0);
+    assert.ok(b.mats.every((m) => m.every(Number.isFinite)));
+    console.log('Chai', fit.ryo.toFixed(3), 'to Akira', fit.akira.toFixed(3), 'moves', all.length, 'his own', own.length,
+        'throws', throws.map((e) => e.name).join(' '));
+} else console.log('Chai skipped: no Shenmue disc');
 console.log('ok');

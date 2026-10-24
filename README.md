@@ -8,7 +8,8 @@ their stages, in one engine:
 - VF2: Akira, Sarah, Kage
 - Fighting Vipers: Picky, Honey, Mahler
 - Sonic the Fighters: Sonic, Honey, Eggman
-- Shenmue (the beta's disc, if you have it): Ryo, see `docs/RYO.md`
+- Shenmue (the beta's disc, if you have it): Ryo, see `docs/RYO.md`, and
+  Chai, the final boss, see `docs/CHAI.md`
 
 It runs in the browser. Everything you see is read from the original ROM
 sets when the page loads: models, motions, move lists, damage, textures,
@@ -35,7 +36,8 @@ python3 tools/serve.py          # prints http://127.0.0.1:<port>/
 `/roms/sfight.zip` from `$ROMS_DIR` (default `~/build/mameroms`). It reads
 them in place. You can also drop the three zips on the page instead.
 With the Shenmue beta's disc (0.400 disc 3, `$SHENMUE_DIR`) it also serves
-Ryo's four files off it at `/shenmue/<path>`, and Ryo joins the roster (`?p1=9`).
+Ryo's and Chai's files off it at `/shenmue/<path>`, and they join the roster
+(`?p1=9`, `?p1=10`).
 
 URL options: `?p1=0&p2=6&stage=3&p1cpu=1&p2cpu=1&rounds=2&start&dump`.
 
@@ -81,7 +83,7 @@ approximations. Each is marked `Here:` in `js/engine.js`:
 
 ```
 node tests/fighters.test.mjs    # every fighter poses, moves and reacts, across games
-node tests/bout.test.mjs        # CPU vs CPU, every pairing (81, 100 with Ryo)
+node tests/bout.test.mjs        # CPU vs CPU, every pairing (81, 121 with Ryo and Chai)
 ```
 
-Both read the zips from `$ROMS_DIR`, and Ryo from `$SHENMUE_DIR` when it is there.
+Both read the zips from `$ROMS_DIR`, and Ryo and Chai from `$SHENMUE_DIR` when it is there.
