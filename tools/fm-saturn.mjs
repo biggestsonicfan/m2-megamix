@@ -8,6 +8,7 @@
  *
  *   node tools/fm-saturn.mjs [--disc Track01.bin] --fighters
  *   node tools/fm-saturn.mjs [--disc ...] <fighter> --list | --bones | --actions
+ *   node tools/fm-saturn.mjs [--disc ...] <fighter> --pose <motion id> [frame]
  *   node tools/fm-saturn.mjs [--disc ...] <fighter> <motion id> [--json] [--out block.bin]
  *   node tools/fm-saturn.mjs [--disc ...] --file <n> --out file.bin
  *
@@ -23,6 +24,10 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { encodeVF2 } from './shenmue-motion.mjs';
+import { sampleMotion } from '../vendor/noclip/js/motion.js';
+import { buildPose, SLOT_COUNT, SLOT_NAMES, SLOT_PARENT } from '../vendor/noclip/js/pose.js';
+
+export { SLOT_NAMES, SLOT_PARENT };
 
 export const DEFAULT_DISC = `${process.env.HOME}/source/repos/ai/Fighters Megamix (Prototype - Apr 08, 1997)/Track01.bin`;
 
@@ -119,25 +124,110 @@ export function readActions(game, fighter) {
     return Array.from({ length: ACTIONS }, (_, i) => game.prg.readUInt16BE(p + 2 * i));
 }
 
-/* Where Hornet's models (files 130 and 132) keep their slot table. */
+/* Where a fighter's model file keeps its slot table: four tables of 32
+ * offsets (one per fighter row), picked by FUN_0601fcb0's r7. Hornet's are
+ * all 0x714C, into files 130 and 132. */
+const SLOT_TABLES = 0x06079d00;
 export const HORNET_SLOTS = 0x714c;
+export function slotTable(game, row, set = 0) {
+    return game.prg.readUInt32BE(game.at(game.prg.readUInt32BE(game.at(SLOT_TABLES) + 4 * set)) + 4 * row);
+}
 
-/** A model file's slots: SGL XPDATA {points, count, polygons, count,
- *  attributes, normals}, 0x1 for an empty slot, to 0xFFFFFFFF. Points are
- *  16.16 (x, y, z); a polygon's four corners are point indices × 16. Null for
- *  an empty slot. */
+/** A model file's slots: 41 SGL XPDATA {points, count, polygons, count,
+ *  attributes, normals}, 24 bytes each, to 0xFFFFFFFF; a slot whose first
+ *  word is 0x1 is empty (null), and an unused part is a one-point model.
+ *  FUN_0601fcb0 relocates slots 1-40 into the player's part array, slot s at
+ *  entry s - 1. Points are 16.16 (x, y, z); a polygon's four corners are
+ *  point indices x 16. */
 export function readModel(buf, at) {
     const slots = [], fx = (o) => buf.readInt32BE(o) / 65536;
-    for (let o = at; buf.readUInt32BE(o) !== 0xffffffff;) {
-        if (buf.readUInt32BE(o) === 1) { slots.push(null); o += 4; continue; }
+    for (let o = at; buf.readUInt32BE(o) !== 0xffffffff; o += 24) {
+        if (buf.readUInt32BE(o) === 1) { slots.push(null); continue; }
         const [pp, pc, qp, qc] = [0, 1, 2, 3].map(i => buf.readUInt32BE(o + 4 * i));
         slots.push({
             points: Array.from({ length: pc }, (_, i) => [0, 1, 2].map(a => fx(pp + 12 * i + 4 * a))),
             polygons: Array.from({ length: qc }, (_, i) => [0, 1, 2, 3].map(k => buf.readUInt16BE(qp + 20 * i + 12 + 2 * k) / 16)),
         });
-        o += 24;
     }
     return slots;
+}
+
+/* The armour break. FUN_0600bb20 draws slot 15 + s in place of slot s for
+ * s = 1..9, a bit each of the row's word at 0x0606C6FC, once player +0x65
+ * has bit 2 (the upper armour, set at 0x06023E1C); FUN_0600bb78 does s =
+ * 9..15 by bits 8-14 of 0x0606C77C's, once +0x65 has bit 3 (the lower,
+ * 0x06023E66). */
+const BREAK_UPPER = 0x0606c6fc, BREAK_LOWER = 0x0606c77c;
+
+/** A fighter's broken parts: [alternate slot, the slot it replaces], upper
+ *  armour first. */
+export function readBreaks(game, fighter) {
+    const word = a => game.prg.readUInt32BE(game.at(a) + 4 * fighter.row), out = [];
+    for (let k = 0; k < 9; k++) if (word(BREAK_UPPER) >> k & 1) out.push([16 + k, 1 + k]);
+    for (let k = 0; k < 7; k++) if (word(BREAK_LOWER) >> (8 + k) & 1) out.push([24 + k, 9 + k]);
+    return out;
+}
+
+/* The pose slots (noclip js/pose.js): slot s's bone is entry s of the
+ * fighter's bone table, its place in SLOT_PARENT[s]'s frame. The limbs
+ * are IK chains: shoulder or hip (3, 6, 10, 13), then two bones. */
+const CHAINS = [[3, 4, 5], [6, 7, 8], [10, 11, 12], [13, 14, 15]];
+
+/* The pose's metres in model units, for Hornet: his wheels' radius (40
+ * units) is the hubs' height over the floor in the car pose (0.13 m), and
+ * the wheelbase comes out Daytona's (323 units). Fitted, not read off the
+ * draw. */
+export const MODEL_UNITS = 300;
+
+/** A motion's VF2 block's channels the way noclip's decodeMotion lays
+ *  them out, for its evalChannel and sampleMotion. */
+export function vf2Channels(b) {
+    const view = new DataView(b.buffer, b.byteOffset, b.byteLength), types = [];
+    for (let j = 0; j < 20; j++) {
+        const x = b[2 + j], top = x >> 6;
+        for (let a = 0; a < 3; a++) types.push(top === 0 ? ((x >> (2 * a)) & 3) + 3 : top - 1);
+    }
+    let n = 0;
+    const ch = types.map(type => ({ type, count: type === LINEAR || type === HERMITE ? b[22 + n++] : 0, view }));
+    let p = (22 + n + 3) & ~3;
+    for (const c of ch) if (c.count) { c.times = p; p += 4 * c.count; }
+    for (const c of ch) {
+        if (c.type === ZERO) continue;
+        c.values = p;
+        p += c.count ? c.count * (c.type === HERMITE ? 12 : 4) : 4;
+    }
+    return { channels: ch, end: p };
+}
+
+/**
+ * A fighter posed at one frame of a motion: VF2's solve (noclip pose.js,
+ * feet level with the floor) on the fighter's own bones, then each slot
+ * stepped out from its parent by its bone, as VF2's draw does. Board frame,
+ * metres; { r (column-major 3x3), t } per slot 0-15.
+ */
+export function poseFighter(game, fighter, id, frame = 1) {
+    const bank = game.archive(fighter.motions), row = readBank(bank).find(r => r.id === id);
+    if (!row) throw new Error(`${fighter.name} has no motion 0x${id.toString(16)}`);
+    const { channels } = vf2Channels(encodeVF2(toVF2(decodeFM(bank, row.data))));
+    const bones = [[0, 0, 0], ...readBones(game, fighter)];
+    const rig = { spine: bones[2], pivot: CHAINS.map(c => bones[c[0]]),
+        upper: CHAINS.map(c => bones[c[1]][0]), lower: CHAINS.map(c => bones[c[2]][0]) };
+    const pose = buildPose(rig, sampleMotion(null, { channels }, frame), { levelFeet: true });
+    for (let s = 1; s < SLOT_COUNT; s++) {
+        const { r, t } = pose[SLOT_PARENT[s]], o = bones[s];
+        pose[s].t = [0, 1, 2].map(k => t[k] + r[k] * o[0] + r[k + 3] * o[1] + r[k + 6] * o[2]);
+    }
+    return pose;
+}
+
+/** Slot s of a pose in slot ref's frame: { t (model units), r }. */
+export function inFrameOf(pose, s, ref) {
+    const R = pose[ref].r, d = [0, 1, 2].map(k => pose[s].t[k] - pose[ref].t[k]);
+    const dot = (c, v) => R[c * 3] * v[0] + R[c * 3 + 1] * v[1] + R[c * 3 + 2] * v[2];
+    return {
+        t: [0, 1, 2].map(c => dot(c, d) * MODEL_UNITS),
+        r: [0, 1, 2].flatMap(cc => [0, 1, 2].map(c => dot(c, pose[s].r.slice(cc * 3, cc * 3 + 3)))),
+    };
 }
 
 /** The motion bank: 12-byte rows {setup offset, motion id, data offset},
@@ -227,7 +317,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const [who, what] = args;
     if (!who && file === undefined) {
         console.error('usage: fm-saturn.mjs [--disc Track01.bin] --fighters | --file <n> --out f.bin\n' +
-            '       | <fighter> --list | --bones | --actions | <motion id> [--json] [--out block.bin]');
+            '       | <fighter> --list | --bones | --actions | --pose <motion id> [frame]\n' +
+            '       | <fighter> <motion id> [--json] [--out block.bin]');
         process.exit(2);
     }
     const game = readGame(disc);
@@ -250,6 +341,18 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         process.exit(0);
     }
     if (what === '--bones') { readBones(game, f).forEach((b, i) => console.log(`${i + 1}\t${b.join('\t')}`)); process.exit(0); }
+    if (what === '--pose') {
+        /* each part's place and axes in the pelvis's frame (slot 9), model units */
+        const pose = poseFighter(game, f, parseInt(args[2] ?? '11c', 16), +(args[3] ?? 1));
+        const v = a => a.map(x => x.toFixed(2).padStart(7)).join(' ');
+        for (let s = 0; s < SLOT_COUNT; s++) {
+            const { t, r } = inFrameOf(pose, s, 9);
+            console.log(`${String(s).padStart(2)} ${SLOT_NAMES[s].padEnd(6)} on ${SLOT_PARENT[s] < 0 ? '-' : SLOT_NAMES[SLOT_PARENT[s]]}` +
+                `\tat ${v(t)}\tx ${v(r.slice(0, 3))}  y ${v(r.slice(3, 6))}`);
+        }
+        for (const [alt, s] of readBreaks(game, f)) console.log(`${alt} replaces ${s} (${SLOT_NAMES[s]}) once its armour breaks`);
+        process.exit(0);
+    }
     if (what === '--actions') {
         const ids = new Set(rows.map(r => r.id));
         readActions(game, f).forEach((id, i) => console.log(`${i}\t0x${id.toString(16)}${ids.has(id) ? '' : '\t(not in the bank)'}`));

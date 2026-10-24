@@ -50,6 +50,19 @@ const COWL_Z = -0.92, COWL_Y = 0.70;
 export const FM_UNIT = 0.0087;
 export const FM_PIVOT = [0, 0.475, -0.44];
 
+/** A point in FM's cabin frame (slot 9, model units: x rearward, y down, z
+ *  across) on Daytona's car (metres, noclip's decode: front -z). */
+export function fmToDaytona([x, y, z]) {
+    return [z * FM_UNIT, FM_PIVOT[1] - y * FM_UNIT, FM_PIVOT[2] + x * FM_UNIT];
+}
+
+/* FM's wheel slots and the Daytona tire (readCar's tires) each one stands
+ * for: the hands are the front wheels, the feet the rear, FM's -z Daytona's
+ * -x. FM's pose (fm-saturn.mjs poseFighter) puts them there in the car pose,
+ * motion 0x10A. */
+export const WHEEL_SLOTS = { 5: 2, 8: 3, 12: 0, 15: 1 };
+export const CAR_POSE = 0x10a;
+
 export async function loadDaytona(path = DEFAULT_ROM) {
     const b = readFileSync(path);
     return loadRomSet([b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)], () => {}, { game: 'daytona' });

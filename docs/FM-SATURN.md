@@ -77,13 +77,27 @@ attributes, vertex normals }. Points are 12 bytes, polygons 20 (a normal and
 four u16), attributes 12. The model starts with a table of slots, 0x1 for an
 empty one, ending in 0xFFFFFFFF.
 
-A polygon's four corners are point indices × 16. Hornet (130) has its table
-at 0x714C, with 17 slots: 0 the shadow (4 points, 1 polygon); 1 the nose
-(58/55); 5, 8, 12 and 15 a wheel each (42/50); 9 the cabin and tail (96/77);
-16 another nose (80/45); then, past the empty slots, 35, 48, 62 and 75 the
-same wheels again and 49 a second cabin (144/103). The others are empty. The wheels sit in the hand and foot slots, so the limbs' IK targets
-place them, and the car's "arms" and "legs" are its wheels. Akira's model
-(147) fills all 16 humanoid slots.
+A polygon's four corners are point indices × 16. The table is 41 slots of
+24 bytes, to 0xFFFFFFFF; a slot whose first word is 0x1 is empty, and a part a
+fighter doesn't have is a one-point model. Each fighter row's table offset is
+at 0x06079D10 (and three more tables of 32 after it, picked by FUN_0601fcb0's
+r7). FUN_0601fcb0 relocates slots 1–40 into the player's part array (player
+1 0x06098924, player 2 0x06098CE4), slot s at entry s − 1.
+
+- **0–15** are the pose's slots, VF2's numbering (noclip `pose.js`): 0 the
+  shadow, 1 chest, 2 head, 3–5 left arm, 6–8 right arm, 9 pelvis, 10–12 left
+  leg, 13–15 right leg.
+- **16–30** are slot s's armour-broken part at s + 15 (below).
+- **20 and 27, 23 and 30** are also the left and right hands' other models
+  (the hand list at 0x0607A3F0: entries 4, 19, 26 and 7, 22, 29).
+- **31–36** Akira's small extra parts (3–4 points).
+
+Hornet (130) has its table at 0x714C: 0 the shadow (4 points, 1 polygon); 1
+the nose (58/55); 5, 8, 12 and 15 a wheel each (42/50); 9 the cabin and tail
+(96/77); 16 the broken nose (80/45); 24 the broken cabin (144/103); and 20,
+23, 27 and 30 the same wheels again, as the other hand models. The rest are
+one-point models. Akira's model (147) fills slots 1–15, with hands at 20,
+23, 27 and 30.
 
 Slots 1 and 9 are the car body cut in two (`fm-saturn.mjs`'s `readModel`
 reads them):
@@ -99,6 +113,20 @@ reads them):
   floor, and the nose swings up and down about it.
 
 The Megamix port uses Daytona's Model 2 car, cut the same way (below).
+
+### The armour break
+
+FM keeps Fighting Vipers' armour break. Once player +0x65 has bit 2 (the
+upper armour, set at 0x06023E1C) the draw takes slot 15 + s for slot s,
+s = 1–9, for each bit of the row's word at 0x0606C6FC (FUN_0600bb20); with bit
+3 (the lower, 0x06023E66), s = 9–15 for bits 8–14 of 0x0606C77C's
+(FUN_0600bb78). Grace to Mahler (rows 0–8), Deku, Uraban, Hornet, B.M. and
+rows 30–31 have words there; Akira and the VF2 cast don't.
+
+Hornet's are 0x1 and 0x100: the broken nose (16) in place of the nose (1),
+and the broken cabin (24) in place of the cabin (9). A broken part is drawn
+on the same joint as the part it replaces. `fm-saturn.mjs`'s `readBreaks`
+reads them.
 
 ## Daytona's Hornet (Model 2)
 
@@ -154,19 +182,81 @@ node tools/daytona-hornet.mjs --obj hornet.obj    # nose, cabin and four tires, 
 ```
 
 `tests/daytona-hornet.test.mjs` checks the models, the hubs, the cut, and
-(with the FM disc) that FM's two pieces meet as described.
+(with the FM disc) that FM's two pieces meet as described. It also checks
+the broken parts, and the car pose's nose, cabin and wheels against
+Daytona's (below).
 
 ### Bones
 
-Each fighter's +0 points at 15 × (x, y, z) 16.16 offsets, in metres. They are
-VF2's joints 1–15 (VF2's joint 0 is the root's (0, 0, 0)), on the same axes.
-Akira's (0x0608D6A8) are VF2 arcade Akira's exactly: (0.37, 0, 0),
-(0.28, 0, −0.24), (0.25, 0, 0), … (0.44, 0, 0).
+Each fighter's +0 points at 15 × (x, y, z) 16.16 offsets, in metres. Entry s
+is slot s's place in its parent's frame (noclip `pose.js`'s `SLOT_PARENT`),
+on VF2's axes; slot 0, the body, is the root. Akira's (0x0608D6A8) are VF2
+arcade Akira's exactly: (0, 0, 0), (0.37, 0, 0), (0.28, 0, −0.24), (0.25, 0, 0),
+… (0.44, 0, 0).
 
-Hornet's (0x0608D48C) is a skeleton he shares with Picky: (0.32, 0, 0),
-(0.25, 0.02, −0.17), (0.23, 0, 0), (0.24, 0, 0), the other side mirrored,
-then the legs, Akira's (0.19, 0, ∓0.09), (0.39, 0, 0), (0.44, 0, 0).
-`fm-saturn.mjs hornet --bones` prints them.
+Hornet's (0x0608D48C) is a skeleton he shares with Picky:
+
+| Slot | Bone | Hornet's | Hangs from |
+| --- | --- | --- | --- |
+| 1 | chest | (0, 0, 0) | the body |
+| 2 | head | (0.32, 0, 0) | chest |
+| 3, 6 | shoulders | (0.25, 0.02, ∓0.17) | chest |
+| 4, 7 | upper arms | (0.23, 0, 0) | 3, 6 |
+| 5, 8 | forearms (the hands) | (0.24, 0, 0) | 4, 7 |
+| 9 | pelvis | (0, 0, 0) | the body |
+| 10, 13 | hips | (0.19, 0, ∓0.09) | pelvis |
+| 11, 14 | thighs | (0.39, 0, 0) | 10, 13 |
+| 12, 15 | shins (the feet) | (0.44, 0, 0) | 11, 14 |
+
+The legs are Akira's. `fm-saturn.mjs hornet --bones` prints them.
+
+### The pose
+
+`fm-saturn.mjs`'s `poseFighter` solves a frame with VF2's pose routine
+(noclip `pose.js`, feet level with the floor) on the fighter's own bones,
+then steps each slot out from its parent by its bone, as VF2's draw does.
+The limbs are IK chains: each hangs at its shoulder or hip and reaches for
+the motion's hand or foot target, so a hand's or foot's place is the
+target's, give or take what the bones can reach. VF2 solves on one
+standard rig for everyone; which one FM solves on hasn't been read.
+
+Akira's stance (0x88) stands him up, his head at 1.34 m and his feet at
+0.14. Hornet's stance (0x11C) stands the car on its tail, the nose up. His
+car pose is 0x10A (the same at frames 1, 21 and 42; 0x122 is nearly it):
+the four wheels down at hub height 0.13 m and the nose level. There, in the
+cabin's frame (slot 9; model units, x rearward, y down, z across):
+
+| Slot | Part | Hangs from | At | Daytona |
+| --- | --- | --- | --- | --- |
+| 1 (16 broken) | nose | chest, at the body | (0, 0, 0), turned half a turn about z | the cut's pivot, (0, 0.475, −0.44) |
+| 9 (24 broken) | cabin | pelvis, at the body | (0, 0, 0) | the same |
+| 5 | front left wheel | left forearm (hand) | (−113, 21, −72) | tire 2 (805), (−0.525, 0.32, −1.4) |
+| 8 | front right wheel | right forearm (hand) | (−112, 22, 73) | tire 3 (806), (0.525, 0.32, −1.4) |
+| 12 | rear left wheel | left shin (foot) | (206, 19, −90) | tire 0 (805), (−0.525, 0.32, 1.4125) |
+| 15 | rear right wheel | right shin (foot) | (213, 22, 69) | tire 1 (806), (0.525, 0.32, 1.4125) |
+
+So the nose hinges at the door line on the chest, and the cabin carries the
+rest on the pelvis. Both are at the body's place, with no bone between them.
+The chest turns by its own angle and its aim at the neck target, so in a
+move the nose swings about the door line.
+
+The pose's metres are 300 model units. That is fitted, not read off the
+draw: the wheels' radius (40 units) is the hubs' height (0.13 m), and the
+wheelbase comes out at Daytona's.
+
+Put on Daytona's car with the cut's scale and pivot (`daytona-hornet.mjs`'s
+`fmToDaytona`), the axles land 0.02 and 0.03 m from Daytona's along the
+car, and 0.02–0.04 m lower. The rear pair stands slightly askew, because
+the motion yaws the pelvis 2.8° under the foot targets. FM's hubs sit wider
+apart, ±0.63 (front) and ±0.69 (rear) against ±0.525. Daytona's tire models
+grow outward from the hub (805 spans x −0.40…0), so its hub is the tire's
+inner face; FM's wheel is about centred on its hand or foot. Which side is
+FM's left on Daytona's car is taken as −x in noclip's decode. The car is
+symmetric, so this only picks 805 or 806 for a slot.
+
+```
+node tools/fm-saturn.mjs hornet --pose 10a     # each slot in the cabin's frame
+```
 
 ## Motions
 
@@ -239,6 +329,7 @@ node tools/fm-saturn.mjs --fighters
 node tools/fm-saturn.mjs hornet --list          # id, frames, data and setup offsets
 node tools/fm-saturn.mjs hornet --bones
 node tools/fm-saturn.mjs hornet --actions
+node tools/fm-saturn.mjs hornet --pose 10a 1    # the car pose, in the cabin's frame
 node tools/fm-saturn.mjs hornet 0x11c --out stance.bin
 node tools/fm-saturn.mjs hornet 0x11c --json
 node tools/fm-saturn.mjs --file 134 --out 134.bin
@@ -252,11 +343,12 @@ that every motion's keys come out of its VF2 block unchanged, and FM Akira's
 
 ## Open
 
-- **Daytona's car on the board**: the pieces are found and cut; importing
-  them into the board's data ROMs (`tools/import-assets.mjs`) and hanging
-  them on FM's skeleton is next. Which FM joints the wheel slots (5, 8, 12,
-  15) and the second nose (16) follow, and the FM wheels' rest places, still
-  need the skeleton posed.
+- **Daytona's car on the board**: the pieces are found and cut, and each one's
+  joint is known (above). Importing them into the board's data ROMs
+  (`tools/import-assets.mjs`) and hanging them on those joints is next. That
+  includes a broken nose and cabin, if Daytona's car is to break.
+- **FM's pose rig and model scale**: which rig FM's solve uses (VF2 has one
+  standard rig), and the draw's model scale (300 units a metre is fitted).
 - **Hornet's moves**: which motions his commands play. That is in file 134
   (probably the command list), 136, and the bank's setup records.
 - **The action table's slots** (stance, walk, …), and the common bank that

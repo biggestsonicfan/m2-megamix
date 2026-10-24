@@ -11,23 +11,10 @@ import { loadNodeGames } from './node-roms.mjs';
 const disc = process.env.FM_DISC ?? FM.DEFAULT_DISC;
 if (!existsSync(disc)) { console.log(`fm-saturn: skipped, no ${disc}`); process.exit(0); }
 
-/* A block's channels the way noclip's decodeMotion lays them out */
+/* A block's channels the way noclip's decodeMotion lays them out, all of it */
 function channels(b) {
-    const view = new DataView(b.buffer, b.byteOffset, b.byteLength), types = [];
-    for (let j = 0; j < 20; j++) {
-        const x = b[2 + j], top = x >> 6;
-        for (let a = 0; a < 3; a++) types.push(top === 0 ? ((x >> (2 * a)) & 3) + 3 : top - 1);
-    }
-    let n = 0;
-    const ch = types.map(type => ({ type, count: type === M.LINEAR || type === M.HERMITE ? b[22 + n++] : 0, view }));
-    let p = (22 + n + 3) & ~3;
-    for (const c of ch) if (c.count) { c.times = p; p += 4 * c.count; }
-    for (const c of ch) {
-        if (c.type === M.ZERO) continue;
-        c.values = p;
-        p += c.count ? c.count * (c.type === M.HERMITE ? 12 : 4) : 4;
-    }
-    assert.equal(p, b.length);
+    const { channels: ch, end } = FM.vf2Channels(b);
+    assert.equal(end, b.length);
     return ch;
 }
 
