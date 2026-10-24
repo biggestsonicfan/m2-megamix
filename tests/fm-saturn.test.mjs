@@ -118,6 +118,63 @@ const jumpBits = [...kindsDoc.split('Kind 9\'s parameter bits')[1].matchAll(/^\|
 assert.deepEqual(jumpBits.map(([, b]) => Number(b)), FM.readKind(game, 9).bits);
 assert.deepEqual([...new Set(hornetMoves.filter(m => m.kind === 9).map(m => m.parameter))].sort((a, b) => a - b), [0, 4, 8, 12, 20]);
 
+/* Bits 0x40 and 0x80: every test of them in kind 9's handlers, the flag
+ * tests in front of each, what each branch does, and that Hornet never sets
+ * them, against a fresh read; a changed claim fails */
+const [accept9, run9] = [0, 4].map(o => game.prg.readUInt32BE(game.at(FM.KIND_HANDLERS + 72 + o)));
+const armText = r => [...r.clears ? ['clears the bit'] : [],
+    ...r.plays.map(p => p === 'request' ? 'plays the request\'s motion' : `plays motion ${h(p, 0)}`),
+    ...r.stores ? ['stores the request in +0x70'] : [],
+    ...r.next ? [`goes on to the ${h(r.next.bit, 2)} test at ${h(r.next.at, 8)}`] : []].join('; ') || 'plays no motion';
+function checkBits(text) {
+    const rows = [...text.matchAll(/^\| (accept|run) \| (0x[\da-f]{2}) \| (0x[\da-f]{8}) \| (.+?) \| (.+?) \| (.+?) \|$/gm)];
+    assert.deepEqual(rows.map(([, handler, bit, at, , set, clear]) => ({ handler, bit, at, set, clear })),
+        FM.readBitTests(game, 9, [0x40, 0x80]).map(t => ({ handler: t.handler, bit: h(t.bit, 2), at: h(t.at, 8),
+            set: armText(t.set), clear: armText(t.clear) })));
+    const tested = new Set(rows.map(r => r[3]));
+    for (const [, handler, , at, behind] of rows) for (const g of behind.split('; ')) {
+        const [, via, field, mask, way] = g.match(/^(0x[\da-f]{8}) \+(0x[\da-f]+) & (0x[\da-f]{8}) (set|clear)$/) ?? [];
+        assert.ok(via, `${at}: ${g}`);
+        const start = handler === 'accept' ? accept9 : run9, t = FM.handlerTest(game, start, parseInt(via, 16));
+        assert.deepEqual(t, { field: parseInt(field, 16), mask: parseInt(mask, 16) }, `${at} behind ${via}`);
+        assert.ok(t.field !== 0x3c && t.field !== 0x70, `${via} is a parameter test, not a flag`);
+        assert.equal(FM.guard(game, start, parseInt(via, 16), parseInt(at, 16)), way, `${at} behind ${via}`);
+        tested.add(via);
+    }
+    const [, nAccept, nRun] = text.match(/(\w+) times in the accept handler[^]*?(\w+)\s+times in the run handler/);
+    const words = ['none', 'once', 'twice', 'three', 'four'];
+    assert.equal(words.indexOf(nAccept), rows.filter(r => r[1] === 'accept').length);
+    assert.equal(words.indexOf(nRun), rows.filter(r => r[1] === 'run').length);
+    /* only kind 9 of Hornet's kinds tests them */
+    assert.match(text, /^Of the kinds Hornet uses, only kind 9's handlers test these two bits/);
+    for (const k of new Set(hornetMoves.map(m => m.kind))) if (k !== 9) assert.deepEqual(FM.readBitTests(game, k, [0x40, 0x80]), [], `kind ${k}`);
+    /* the bullets: addresses are the table's, or the stage branch in front of the accept rows */
+    for (const [a] of text.split('\n- ').slice(1).join('\n').matchAll(/0x0600[\da-f]{4}/g)) {
+        if (a === '0x0600db2e') {
+            /* guard's 'clear' is T set, as a tst of a clear bit sets it: here stage > 1 */
+            for (const r of rows.filter(r => r[1] === 'accept')) assert.equal(FM.guard(game, accept9, 0x0600db2c, parseInt(r[3], 16)), 'clear');
+            assert.equal(game.prg.readUInt16BE(game.at(0x0600db2c)) & 0xf00f, 0x3007);   /* cmp/gt: the stage > 1 */
+        } else assert.ok(tested.has(a), `bullet's ${a}`);
+    }
+    for (const [, id, file, frames] of text.matchAll(/motion (0x[\da-f]+) \(file (\d+), (\d+) frames\)/g))
+        assert.equal(FM.readBank(game.archive(+file)).find(r => r.id === parseInt(id, 16))?.frames, +frames, id);
+    const [, n, nine] = text.match(/none of his (\d+) requests' parameter bytes\s+has 0x40 or 0x80 \(his kind 9 ones are ([^)]+)\)/);
+    assert.equal(+n, hornetMoves.length);
+    assert.equal(hornetMoves.filter(m => m.parameter & 0xc0).length, 0);
+    assert.deepEqual(nine.replace(' and', ',').split(', ').map(Number),
+        [...new Set(hornetMoves.filter(m => m.kind === 9).map(m => m.parameter))].sort((a, b) => a - b));
+}
+const bitsDoc = kindsDoc.split('#### Bits 0x40 and 0x80\n\n')[1];
+checkBits(bitsDoc);
+for (const [from, to] of [['| 0x0600dce0 |', '| 0x0600dce2 |'], ['| plays motion 0x8b3 |', '| plays motion 0x8b4 |'],
+    ['0x0600dc80 +0x6c0 & 0x02000000 clear', '0x0600dc80 +0x6c0 & 0x02000000 set'], ['0x0600ed36 +0x6c0 & 0x00001000', '0x0600ed36 +0x6c0 & 0x00002000'],
+    ['| run | 0x40 |', '| run | 0x80 |'], ['| clears the bit; plays the request\'s motion | plays no motion |\n| run | 0x40', '| plays no motion | clears the bit; plays the request\'s motion |\n| run | 0x40'],
+    ['goes on to the 0x08 test', 'goes on to the 0x04 test'], ['three\ntimes in the run', 'twice\ntimes in the run'],
+    ['only at 0x0600eeca', 'only at 0x0600eecc'], ['39 frames', '40 frames'], ['none of his 95', 'none of his 94'], ['0x0C and 0x14', '0x0C and 0x10']]) {
+    assert.ok(bitsDoc.includes(from), from);
+    assert.throws(() => checkBits(bitsDoc.replace(from, to)), `${from} -> ${to}`);
+}
+
 /* the Slots table: each slot the kinds play, against a fresh read of Hornet's
  * action table and banks; its Kinds column is the Kinds table's Plays */
 const slotsDoc = doc.split('### Slots')[1].split('\n## ')[0];

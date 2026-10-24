@@ -600,6 +600,44 @@ addresses against the words at 0x06012AEC, and the Plays, Bits and
 Distances columns against what the tool's `readKind` reads from those
 handlers. A row whose handler no longer does what it says fails.
 
+#### Bits 0x40 and 0x80
+
+Of the kinds Hornet uses, only kind 9's handlers test these two bits:
+three times in the accept handler, on the request (r11, +0x3C), and three
+times in the run handler, on +0x71 (the accept handler stores the request,
+bits and all, in +0x70). "Behind" names fighter-flag tests that every path
+to the bit's test goes through, and which way each must go; I stopped
+there and leave those flags undescribed. Each branch is followed to its
+next conditional branch, return or jmp.
+
+| Handler | Bit | Tested at | Behind | With the bit | Without it |
+| --- | --- | --- | --- | --- | --- |
+| accept | 0x80 | 0x0600dc96 | 0x0600db22 +0x2c & 0x00001000 set; 0x0600dc80 +0x6c0 & 0x02000000 clear | stores the request in +0x70 | plays the request's motion; stores the request in +0x70 |
+| accept | 0x40 | 0x0600dce0 | 0x0600db22 +0x2c & 0x00001000 set; 0x0600dc80 +0x6c0 & 0x02000000 set | stores the request in +0x70 | goes on to the 0x80 test at 0x0600dce6 |
+| accept | 0x80 | 0x0600dce6 | 0x0600db22 +0x2c & 0x00001000 set; 0x0600dc80 +0x6c0 & 0x02000000 set | stores the request in +0x70 | goes on to the 0x08 test at 0x0600dcee |
+| run | 0x80 | 0x0600eeca | 0x0600ed16 +0x00 & 0x00000020 set; 0x0600ee78 +0x6c0 & 0x00030000 set | clears the bit; plays the request's motion | plays no motion |
+| run | 0x80 | 0x0600efde | 0x0600ed16 +0x00 & 0x00000020 set; 0x0600ed40 +0x6c0 & 0x02000000 set | clears the bit; plays the request's motion | plays no motion |
+| run | 0x40 | 0x0600f1bc | 0x0600ed16 +0x00 & 0x00000020 set; 0x0600ed36 +0x6c0 & 0x00001000 set | clears the bit; plays the request's motion | plays motion 0x8b3 |
+
+- **0x80** holds an air attack's motion for the run handler. A kind 9
+  request that reaches the accept handler late in a jump (past the
+  stage > 1 branch at 0x0600db2e) plays its motion at once; with 0x80 it
+  doesn't (flag clear), or doesn't set the 0x08 hold (flag set). The run
+  handler plays the motion, and clears the bit, only at 0x0600eeca or
+  0x0600efde, behind their flags; without the bit those branches play
+  nothing.
+- **0x40**, in the run handler behind +0x6c0 & 0x00001000, picks the
+  request's motion over motion 0x8b3 (file 352, 39 frames). In the accept
+  handler (flag set) it skips the 0x08 hold, as 0x80 does.
+- **Hornet** never sets either: none of his 95 requests' parameter bytes
+  has 0x40 or 0x80 (his kind 9 ones are 0, 0x04, 0x08, 0x0C and 0x14).
+
+The bit table's 0x40 and 0x80 rows above name the accept handler's tests
+only; the run handler's are the last three rows here.
+`tests/fm-saturn.test.mjs` checks this table against the tool's
+`readBitTests` and `guard` on a fresh read, and the Hornet line against
+his script.
+
 ### Slots
 
 The action-table slots that those handlers play, read the way 0x0600CEC8

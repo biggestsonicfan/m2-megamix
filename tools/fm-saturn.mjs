@@ -281,6 +281,148 @@ export function moveSlots(game, move) {
     return readKind(game, kind).slots;
 }
 
+/* The tests a handler makes, worked back off its code: what a register holds
+ * at an instruction, from the instructions before it in address order (good
+ * enough for straight runs; a register a handler never writes is unknown,
+ * bar r11, the request the accept handlers are given), so a tst can be named
+ * by the fighter field and mask it reads: a parameter bit (+0x3C or +0x70,
+ * bits 16-23) or a fighter flag. Fields are given as the long holding them. */
+function regValue(game, code, i, r) {
+    const lit = (a, w) => (w & 0xf000) === 0xd000 ? game.prg.readUInt32BE(game.at(((a + 4) & ~3) + (w & 0xff) * 4))
+        : game.prg.readInt16BE(game.at(a + 4 + (w & 0xff) * 2));
+    const load = (p, size) => p?.ptr === undefined ? null : { field: p.ptr, size };
+    for (let j = i - 1; j >= 0; j--) {
+        const [a, w] = code[j], n = (w >> 8) & 15, m = (w >> 4) & 15;
+        if ((w & 0xf000) === 0x8000 || (w & 0xf000) === 0xa000 || w === 0x0009) continue;   /* branches, nop */
+        const val = rr => regValue(game, code, j, rr), c = v => typeof v === 'number' ? v : null;
+        if (r === 11 && ((w & 0xf00f) === 0x200b || (w & 0xf00f) === 0x2009) && n === 11) continue;   /* or/and into the request */
+        const f = w & 0xf00f, hi = w & 0xff00;
+        if (f === 0x2008 || [0x3000, 0x3002, 0x3003, 0x3006, 0x3007, 0x300d].includes(f) || (w & 0xf0fb) === 0x4011
+            || hi === 0xc800 || hi === 0x8800 || [0x2000, 0x2001, 0x2002, 0x0004, 0x0005, 0x0006].includes(f) || (w & 0xf000) === 0x1000) continue;   /* no register written */
+        if (w === 0x400b) { if (r < 8) return null; continue; }   /* a call clobbers r0-r7 */
+        if (hi === 0xc900 || hi === 0xcb00 || hi === 0xca00) { if (r === 0) return null; continue; }
+        if (n !== r) continue;
+        if ((w & 0xf000) === 0xe000) return (w & 0xff) << 24 >> 24;
+        if ((w & 0xf000) === 0x9000 || (w & 0xf000) === 0xd000) return lit(a, w);
+        if ((w & 0xf00f) === 0x6003) return m === 12 ? { ptr: 0 } : val(m);
+        if ((w & 0xf000) === 0x7000) { const v = val(n); return v?.ptr !== undefined ? { ptr: v.ptr + ((w & 0xff) << 24 >> 24) } : c(v) !== null ? v + ((w & 0xff) << 24 >> 24) : null; }
+        if ((w & 0xf00f) === 0x300c) { const x = val(n), y = val(m); return x?.ptr !== undefined && c(y) !== null ? { ptr: x.ptr + y } : c(x) !== null && c(y) !== null ? x + y : null; }
+        if (w === (0x4028 | n << 8)) return c(val(n)) !== null ? val(n) << 16 >>> 0 : null;
+        if (w === (0x4018 | n << 8)) return c(val(n)) !== null ? val(n) << 8 >>> 0 : null;
+        if (w === (0x4005 | n << 8)) { const v = c(val(n)); return v !== null ? (v >>> 1 | v << 31) >>> 0 : null; }
+        if ((w & 0xf00c) === 0x000c && m === 12) { const o = c(val(0)); return o === null ? null : { field: o, size: [1, 2, 4][(w & 3)] }; }
+        if ((w & 0xf00c) === 0x6000 && (w & 3) < 3) return load(val(m), [1, 2, 4][w & 3]);
+        if ((w & 0xf000) === 0x5000 && m === 12) return { field: (w & 15) * 4, size: 4 };
+        return null;   /* anything else writes it */
+    }
+    return r === 11 ? { field: 0x3c, size: 4 } : null;
+}
+const asLong = ({ field, size }, mask) => ({ field: field & ~3, mask: (mask << (size === 4 ? 0 : (4 - size - (field & 3)) * 8)) >>> 0 });
+/** The field and mask a tst at code[i] tests, or null. */
+function tstOf(game, code, i) {
+    const w = code[i][1];
+    let v, mask;
+    if ((w & 0xff00) === 0xc800) [v, mask] = [regValue(game, code, i, 0), w & 0xff];
+    else if ((w & 0xf00f) === 0x2008 && ((w >> 8) & 15) !== ((w >> 4) & 15)) {
+        const x = regValue(game, code, i, (w >> 4) & 15), y = regValue(game, code, i, (w >> 8) & 15);
+        [v, mask] = typeof x === 'number' ? [y, x] : [x, y];
+    } else return null;
+    return v?.field !== undefined && typeof mask === 'number' ? asLong(v, mask) : null;
+}
+const parameterBit = t => t && (t.field === 0x3c || t.field === 0x70) && t.mask && !(t.mask & ~0xff0000) ? t.mask >>> 16 : null;
+/** A kind's handler's control flow: each instruction's successors (a delay
+ *  slot runs before the branch it follows). */
+function handlerGraph(game, start) {
+    const code = handlerCode(game, start), at = new Set(code.map(([a]) => a)), next = new Map();
+    for (const [a, w] of code) {
+        const d8 = ((w & 0xff) << 24 >> 24) * 2 + a + 4, d12 = ((w & 0xfff) << 20 >> 20) * 2 + a + 4;
+        const prev = code.find(([x]) => x === a - 2)?.[1];
+        const delayed = prev !== undefined && ((prev & 0xf000) === 0xa000 || prev === 0x000b || (prev & 0xf0ff) === 0x402b || (prev & 0xfd00) === 0x8d00);
+        if (delayed) {
+            const pd8 = ((prev & 0xff) << 24 >> 24) * 2 + a + 2, pd12 = ((prev & 0xfff) << 20 >> 20) * 2 + a + 2;
+            next.set(a, (prev & 0xf000) === 0xa000 ? [pd12] : (prev & 0xfd00) === 0x8d00 ? [a + 2, pd8] : []);
+        } else if ((w & 0xf000) === 0xa000 || w === 0x000b || (w & 0xf0ff) === 0x402b || (w & 0xfd00) === 0x8d00) next.set(a, [a + 2]);
+        else if ((w & 0xfd00) === 0x8900) next.set(a, [a + 2, d8]);
+        else next.set(a, [a + 2]);
+        next.set(a, next.get(a).filter(x => at.has(x)));
+    }
+    return { code, next };
+}
+/** Whether every path from a handler's start to `to` goes through the tst
+ *  at `via`, and then which way: 'set' (a bit of its mask is set), 'clear',
+ *  or 'either'; null if a path goes round it. */
+export function guard(game, start, via, to) {
+    const { next } = handlerGraph(game, start);
+    const reaches = (from, stop) => {
+        const seen = new Set(stop), todo = [from];
+        while (todo.length) {
+            const a = todo.pop();
+            if (a === to) return true;
+            if (seen.has(a)) continue;
+            seen.add(a);
+            todo.push(...(next.get(a) ?? []));
+        }
+        return false;
+    };
+    if (reaches(start, [via])) return null;
+    const b = game.prg.readUInt16BE(game.at(via + 2));
+    if ((b & 0xfd00) !== 0x8900) return null;
+    const target = ((b & 0xff) << 24 >> 24) * 2 + via + 6, [set, clear] = b & 0x0200 ? [target, via + 4] : [via + 4, target];
+    const s = reaches(set, [via]), c = reaches(clear, [via]);
+    return s && c ? 'either' : s ? 'set' : c ? 'clear' : null;
+}
+/** The fighter field and mask the tst at `at` in a handler tests (as the
+ *  long holding the field), or null. */
+export function handlerTest(game, start, at) {
+    const code = handlerCode(game, start), i = code.findIndex(([a]) => a === at);
+    return i < 0 ? null : tstOf(game, code, i);
+}
+const PLAYS = 0x060131d0;
+/** Where a kind's handlers test parameter bits (`bits`, the default all),
+ *  and what each branch does until its next conditional branch, a return,
+ *  or a jmp: the motion it plays through 0x060131D0 ('request' for the
+ *  request's +0x3E/+0x72, else the id), whether it clears the bit, whether
+ *  it stores the request in +0x70, and the parameter test it goes on to. */
+export function readBitTests(game, kind, bits = null) {
+    const out = [];
+    for (const [handler, start] of [['accept', game.prg.readUInt32BE(game.at(KIND_HANDLERS + 8 * kind))],
+        ['run', game.prg.readUInt32BE(game.at(KIND_HANDLERS + 8 * kind + 4))]]) {
+        const { code, next } = handlerGraph(game, start), index = new Map(code.map(([a], i) => [a, i]));
+        const testAt = a => { const i = index.get(a); return i === undefined ? null : parameterBit(tstOf(game, code, i)); };
+        const arm = from => {
+            const r = { plays: [], clears: false, stores: false, next: null, cleared: [] };
+            for (let a = from, steps = 0; index.has(a) && steps < 400; steps++) {
+                const i = index.get(a), w = code[i][1];
+                if (w === 0x400b && regValue(game, code, i, 0) === PLAYS) {
+                    const m = regValue(game, code, i, 4);
+                    r.plays.push(m?.field === 0x3e || m?.field === 0x72 ? 'request' : typeof m === 'number' ? m & 0xfff : '?');
+                }
+                if (w === 0x0cb6 && regValue(game, code, i, 0) === 0x70) r.stores = true;
+                if ((w & 0xff00) === 0xc900) r.cleared.push((w & 0xff) ^ 0xff);
+                if ((w & 0xfd00) === 0x8900 || (w & 0xfd00) === 0x8d00) {
+                    const b = testAt(a - 2);
+                    if (b !== null) r.next = { bit: b, at: a - 2 };
+                    break;
+                }
+                const n = next.get(a) ?? [];
+                if (!n.length) break;
+                a = n[0];
+            }
+            return r;
+        };
+        for (const [i, [a, w]] of code.entries()) {
+            const bit = parameterBit(tstOf(game, code, i));
+            if (bit === null || bit & (bit - 1) || (bits && !bits.includes(bit))) continue;
+            const b = code[i + 1]?.[1], target = ((b & 0xff) << 24 >> 24) * 2 + a + 6;
+            if ((b & 0xfd00) !== 0x8900) throw new Error(`${a.toString(16)}: no bt/bf after the tst`);
+            const [set, clear] = b & 0x0200 ? [target, a + 4] : [a + 4, target];   /* bf jumps when the bit is set */
+            const fix = r => { r.clears = r.cleared.includes(bit); delete r.cleared; return r; };
+            out.push({ handler, start, bit, at: a, set: fix(arm(set)), clear: fix(arm(clear)) });
+        }
+    }
+    return out;
+}
+
 /* What a request needs. The script runs when a button is pressed (or, with
  * none, every frame), with r5 = state << 8 | buttons: P 1, K 2, G 4, and 8,
  * which no pad key gives by default (0x06072304 maps the pad: B P, C K,
