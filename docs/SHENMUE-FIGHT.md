@@ -292,14 +292,14 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
   ```
   21 01 20 00 00 00 00 00 00 00 00 00   header: byte 0 0x21 strike, 0x31 two hits, 0xA1/0xE1 throw
   02 00 08 00 0c 00 1b 00               tag 2, u16 LE 8, 12, 27 (the motion has 27 frames)
-  04 04 01 0e                           kind (4 strike, 5 throw), damage, ?, ?
+  04 04 01 0e                           kind (4 strike, 5 throw), damage, then u16 LE: on a throw the victim's motion id
   00 00 b3 33                           16.16 0.7 (1.1-1.5 on bigger moves)
   …
   ```
 
 - **Why the second byte is damage** (kind, damage, then the next two bytes):
 
-  | Move | Kind | Damage | Next two |
+  | Move | Kind | Damage | Last two |
   |---|---|---|---|
   | Double Blow, Pit Blow, Big Wheel, Elbow Assault | 4 | 3–5 | |
   | Elbow Slam | 4 | 4 | 1, 14 |
@@ -319,10 +319,37 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
 
   - The jabs and elbows are the weakest, the kicks do more, and the throws the
     most. Swallow Flip, which only deflects, does 0.
-  - The byte after it is 0–2 on most strikes, and 2 on SideReaperKick
-    (KICK_LOW) alone: maybe the hit level. On throws it's larger.
-  - The fourth byte, 3–40, isn't damage: a throw has 3–5 there.
+  - The two bytes after damage are one field on throws (see "The last two
+    bytes"). On strikes they aren't decoded.
   - The scale isn't known: Shenmue's life bar isn't measured here.
+- **The last two bytes:** on a throw (kind 5) they are one u16, little-endian:
+  the one-based MOTION.BIN id of the motion the thrown fighter plays (record =
+  id − 1, as in the script). On a strike (kind 4) they aren't that, and they
+  aren't decoded. Not checked on screen.
+
+  | Move | Bytes | u16 | Record | Its name |
+  |---|---|---|---|---|
+  | Vortex Throw | 42 03 | 834 | 833 | AI_FT_NG_041_YA |
+  | Swallow Flip | 9c 04 | 1180 | 1179 | YKI_AKI_NGR_INASI |
+  | Demon Drop | 13 05 | 1299 | 1298 | YKI_AKI_NGR_MAKINAGE |
+  | Shoulder Buster | fc 05 | 1532 | 1531 | YKI_AKI_NGR_WUDE1 |
+  | Elbow Slam | 01 0e | 3585 | none (1559 records) | |
+  | Twist Knuckle | 00 06 | 1536 | 1535 | TMN_BENM2, not a fight motion |
+
+  - **Throws:** all 10 of Ryo's throw motions and Swallow Flip point at a
+    motion named for the receiving side: NGR (投げられ, thrown), _YA
+    (やられ). Tengu Drop's NGR_BKFRIP, Arm Break Fire's NGR_SP1_ELB, Sweep
+    Throw's NGR_UCH and the others match their own throw's name.
+  - **All of MOTION.BIN:** 84 of its 86 kind-5 groups point at a receiving
+    motion (TUKAMARE grabbed, NAGERARE thrown, YARARE, UKERARE, HAGAI_SIME,
+    BA_*_Y_WA beside BA_*_N_WA). The other two are in receiving motions
+    themselves (NGR_HED_1_NK, NGR_UCH_FUKU) and are out of range (17295,
+    17880).
+  - **Strikes:** read the same way, only 20 of 229 kind-4 groups give an id
+    at or below 1559. Elbow Slam's is 3585, which no record has, so Elbow Slam
+    has no number under this reading. As two bytes, a strike has 0–5 in the
+    first (2 on SideReaperKick, KICK_LOW) and 3–80 in the second. That
+    doesn't name either byte.
 - **Frames (the tag-2 words): not settled.** The three words don't line up
   across Elbow Slam, Twist Knuckle and Vortex Throw, so none of them is named
   here. What the records show (frames = the motion's own count):
@@ -355,8 +382,9 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
 - **Damage on screen:** Elbow Slam should take 4 off in Free Battle, Vortex Throw
   30. Neither is checked.
 - **Frame data:** what the tag-2 words are (see "Damage", Frames): they don't
-  line up across the strikes and the throws. The record's other fields aren't
-  decoded.
+  line up across the strikes and the throws. The last two bytes of the
+  kind/damage group are named on throws only. The record's other fields
+  aren't decoded.
 
 ## Other leads
 
