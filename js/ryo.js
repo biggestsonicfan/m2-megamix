@@ -3,7 +3,7 @@
  *
  * Everything is read off the disc's own files, as served at shenmue/<path>
  * (tools/serve.py): his models and textures (MISC/MODELS.PKS, YKB_M and the
- * distance model YKB_B; PKF),
+ * fight afterimage's YKB_B; PKF),
  * his motions (MISC/MOTION.BIN, Shenmue's VF3-style blocks turned into VF2's,
  * js/shenmue.js), and his moves (SCENE/03/MFBT/EN_RYOU.BIN, the free
  * battle's move script, with
@@ -22,8 +22,9 @@ import { makeFighter, S, P, K, G, FWD, BACK, HIGH, MID, LOW, MOTION_ID } from '.
 
 /* The files, by their paths on the disc. */
 export const SHENMUE_FILES = { pks: 'MISC/MODELS.PKS', pkf: 'MISC/MODELS.PKF', motion: 'MISC/MOTION.BIN', script: 'SCENE/03/MFBT/EN_RYOU.BIN' };
-/* His model, and the one Shenmue draws him with from afar: the same bones,
- * 288 triangles to 1793, the jacket and jeans painted on two textures. */
+/* His model, and the one Shenmue draws his fight afterimage with (each
+ * scene's MAPINFO.BIN, Fight: Blur 'YKB_B.MT5'): the same bones, 288
+ * triangles to 1793, the jacket and jeans painted on two textures. */
 const MODEL = 'YKB_M.CHRM', LOW_MODEL = 'YKB_B.CHRM';
 
 /* Heights, in inches. */

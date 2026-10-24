@@ -865,8 +865,13 @@ put in for Akira, and import-assets runs it after Akira's.
   and setups, so he plays as a VF2 fighter (`char_game` VF2). His own
   motions are VF3-style Shenmue ones the board cannot play yet
   (docs/VF3-SHENMUE.md).
-- **Model.** YKB_B, the model Shenmue draws him with from afar (#1556):
-  the same bones as his own YKB_M, at the same places, but one node a slot
+- **Model.** YKB_B (#1556), the model Shenmue draws his fight afterimage
+  with: each scene's MAPINFO.BIN gives every fighter a Fight block, and
+  Ryo's (AKIR) names `Blur` 'YKB_B.MT5' (the others their own _B: KOK_B,
+  CHA_B). It is not a distance model: Shenmue draws it translucent (its
+  textures' alpha is 0-51 of 255) over the trail of a blow. On the board
+  he is drawn with it whole and opaque. It has the same bones as his own
+  YKB_M, at the same places, but one node a slot
   (15) and 288 triangles to YKB_M's 1793, the jacket, shirt, jeans and skin
   painted on two 64×64 ARGB4444 textures (KB_MUF_, KB_MUB_; their alpha is
   0-3 throughout and is not read as holes). Both are in MISC/MODELS.PKS,
@@ -887,7 +892,8 @@ put in for Akira, and import-assets runs it after Akira's.
   The import decodes each mesh back with noclip's `decodeModel` and stops if
   a corner, tile or UV differs from what it put in.
 - **Textures.** His textures (YKB_M's seven, YKB_B's two) become 4-bit brightness tiles (the 99th
-  percentile = 15; a texture with holes keeps 15 for them and sets th0 bit
+  percentile = 15, the darkest texel short of black at a quarter of that:
+  see Colour; a texture with holes keeps 15 for them and sets th0 bit
   13), mipmapped to level 4, packed into Akira's seven pages after his
   (pack-akira's `extra`). Their material and UV streams follow Akira's in the
   textures region.
@@ -906,7 +912,15 @@ put in for Akira, and import-assets runs it after Akira's.
   its hue. The jacket's red, short alone, keeps its hue and is left. 262
   colours: StF's own palette entry where one matches, 219 new colorbases
   from the free ones at the top. The SDK's boot copies all 1024 entries, so
-  they are loaded.
+  they are loaded. The tiles' brightness starts at a quarter, not at 0: a
+  ramp row gives about 20-40 at the lowest levels, under the 64 the screen
+  shows, so a dark texel kept low was black whatever row its face took, and
+  he came out with black jeans and a black-brown jacket. Graded against his
+  textures (tools/ryo-guest.mjs, ryoTiles: YKB_B rendered unlit with its own
+  texels and with the board's ramp colours, front and back), the textures'
+  colour is 18-23 off a channel on average with the scale from 0, 6-7 with
+  it from a quarter (a fifth 7-8, three tenths 7-9), and his overall
+  brightness is the textures' own (46 and 59 against 33 and 41 before).
 - **Skeleton, solve bones.** Akira's, with Ryo's spine, pivots and bone
   lengths (`prepareModel(model).rig` × his size).
 - **Collision balls.** Akira's 30 (the hurt and hit spheres), each moved from

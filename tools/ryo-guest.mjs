@@ -5,8 +5,9 @@
  * player 2) and runs StF's own fight code with Akira's moves, motions,
  * actions and reactions: his own are VF3-style Shenmue motions that the
  * board cannot play yet. What is his own:
- *   - his model, cut into StF parts: YKB_B, the one Shenmue draws him with
- *     from afar (288 triangles, a node on each of the fifteen slots), or with
+ *   - his model, cut into StF parts: YKB_B, the one Shenmue draws his fight
+ *     afterimage with (each scene's MAPINFO.BIN: Fight, Blur 'YKB_B.MT5';
+ *     288 triangles, a node on each of the fifteen slots), or with
  *     RYO_MODEL=M in the environment YKB_M (1793). Each node rides the slot its
  *     nearest anchored bone drives (js/ryo.js SLOT_BONES), its triangles as
  *     a Model 2 mesh of its own, one per slot, in the polygon ROM's empty run
@@ -69,7 +70,16 @@ const hex = (v) => '0x' + v.toString(16).toUpperCase();
 /* His textures as 4-bit tiles, levels 0-4: each texel's brightness, scaled
  * so the texture's brightest (99th percentile) is 15. A texture with holes
  * (alpha under half) keeps 15 for them (the transparent renderer's hole) and
- * scales the rest to 14. A texture all holes has none. */
+ * scales the rest to 14. A texture all holes has none.
+ *
+ * The scale starts at FLOOR, not at 0: a ramp row gives about 20 at the
+ * lowest levels and the screen shows nothing under 64, so a dark texel kept
+ * low (the jeans, the jacket's shadows) is black whatever row its face
+ * takes. Lifted, its face's row brings it down to its own colour. Graded on
+ * YKB_B, his textures against what the board makes of them, unlit, front and
+ * back: 18-23 off a channel on average from 0, 6-7 from a quarter, his
+ * overall brightness the textures' own. Pure black stays 0. */
+const FLOOR = 0.25;
 export function ryoTiles(games) {
     const S = games.shenmue, model = boardModel(S);
     const used = new Set();
@@ -93,7 +103,7 @@ export function ryoTiles(games) {
         const top = Math.max(1, sorted[Math.floor((sorted.length - 1) * 0.99)] ?? 1);
         const tmax = holes ? 14 : 15;
         const l0 = new Uint8Array(n);
-        for (let i = 0; i < n; i++) l0[i] = hole[i] ? 15 : Math.min(tmax, Math.round((tmax * lum[i]) / top));
+        for (let i = 0; i < n; i++) l0[i] = hole[i] ? 15 : lum[i] > 0 ? Math.round(tmax * (FLOOR + (1 - FLOOR) * Math.min(1, lum[i] / top))) : 0;
         const levels = [l0];
         for (let L = 1; L < LEVELS; L++) {
             const pw = w >> (L - 1), lw = w >> L, lh = h >> L, prev = levels[L - 1], o = new Uint8Array(lw * lh);
