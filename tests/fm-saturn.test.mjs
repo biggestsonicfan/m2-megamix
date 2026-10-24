@@ -1808,6 +1808,99 @@ for (const [from, to] of [['`mov r12,r1`', '`mov r13,r1`'], ['`mov.w @(0x0600ec9
 assert.throws(() => checkEc64(ec64Doc, newDoc.replace('| 0x0600ec64 | this fighter (r12) | +0x4a4 | 0x00000001 |', '| 0x0600ec64 | this fighter (r12) | +0x4a4 | 0x00000002 |')));
 assert.throws(() => checkEc64(ec64Doc, newDoc.replace('| 0x0600ec64 | this fighter (r12) | +0x4a4 | 0x00000001 |', '| 0x0600ec64 | this fighter (r12) | +0x4a8 | 0x00000001 |')));
 assert.throws(() => checkEc64(ec64Doc, newDoc.replace(/^\| 0x0600ec8e .*\n/m, '')), '0x0600ec8e');
+/* The flag at 0x0600ec8e: where both sides of 0x0600eb74 and 0x0600ec64 stop.
+ * The byte +0x71 of r12; a bf, so the branch is the set side. Each side loads
+ * the call's address and r4 from mov.l literals, calls 0x060148ae and ends
+ * this frame's run at the jmp @r14 */
+const ec8eDoc = kindsDoc.split('#### The flag at 0x0600ec8e\n\n')[1].split('\n#### ')[0].split('\n### ')[0];
+function checkEc8e(text, list) {
+    const at = 0x0600ec8e, sides = FM.flagSides(game, run9, at);
+    const listed = list.match(/^\| 0x0600ec8e \| this fighter \(r12\) \| (\+0x[\da-f]+) \| (0x[\da-f]{8}) \|$/m);
+    assert.ok(listed, '0x0600ec8e\'s row in "Flag tests not yet described"');
+    const named = `${listed[1]} & ${listed[2]}`;
+    const rows = [...text.matchAll(new RegExp(String.raw`^\| (0x[\da-f]{8}) \| (${FLAG}) \| (.*?) \| (.*?) \|$`, 'gm'))];
+    assert.deepEqual(rows.map(r => [r[1], r[2]]), [['0x0600ec8e', named]]);
+    assert.equal(eventFlag(sides.flag), named, '0x0600ec8e: the disc\'s flag');
+    for (const d of [eb74Doc, ec64Doc]) assert.ok(d.includes(`stops at 0x0600ec8e (${named})`), 'eb74 and ec64 name this flag');
+    assert.match(text, /^The flag test that both sides of "The flag at 0x0600eb74" and "The flag\nat 0x0600ec64" stop at,/);
+    /* mov rM,r1; add #disp,r1; mov.b @r1,r0; tst #bit,r0; bf */
+    const [, m, add, bit, op] = text.match(/0x0600ec88 is `mov r(\d+),r1`, 0x0600ec8a\n`add #(0x[\da-f]{2}),r1`, 0x0600ec8c `mov\.b @r1,r0` and 0x0600ec8e `tst #(0x[\da-f]{2}),r0`,\nthen `(b[tf])` at 0x0600ec90\./);
+    assert.equal(word(0x0600ec88), 0x6103 | (+m << 4), 'mov rM,r1');
+    assert.equal(word(0x0600ec8a), 0x7100 | parseInt(add, 16), 'add #disp,r1');
+    assert.equal(word(0x0600ec8c), 0x6010, 'mov.b @r1,r0');
+    assert.equal(word(at), 0xc800 | parseInt(bit, 16), 'tst #bit,r0');
+    assert.equal(+m, 12, 'this fighter is r12');
+    assert.ok(sides.flag.of !== 13, 'not the opponent\'s');
+    const byte = parseInt(add, 16), long = byte & ~3, mask = parseInt(bit, 16) << 8 * (3 - (byte & 3));
+    assert.equal(flagText(long, mask), named, 'the byte as its long');
+    const [, bb, bf, lf, lm, pb] = text.match(/That is bit (0x[\da-f]{2}) of the byte (\+0x[\da-f]+) of this\nfighter \(r12\), not the opponent's: big-endian, the long (\+0x[\da-f]+) masked with\n(0x[\da-f]{8}), parameter bit (0x[\da-f]{2})\./);
+    assert.deepEqual([bb, bf, `${lf} & ${lm}`], [bit, `+${h(byte, 2)}`, named], 'the byte and long named');
+    assert.equal(long, 0x70, 'the request\'s field');
+    assert.equal(parseInt(pb, 16) << 16, mask, 'the parameter bit');
+    const b = word(at + 2), set = ((b & 0xff) << 24 >> 24) * 2 + at + 6;
+    assert.equal(b & 0xff00, 0x8b00, '0x0600ec90: bf, so the branch is the set side');
+    assert.equal(op, 'bf', 'the branch named');
+    assert.match(text, /The `bf` branches when the bit is set, so\nthe branch is the set side and the fall-through the clear side\./);
+    /* the events: one call and the end on each side, no store, no stop */
+    const said = s => sides[s].map(e => e.kind === 'call' ? `call ${h(e.target, 8)} ${h(e.at, 8)}` : `${e.kind} ${h(e.at, 8)}`);
+    assert.deepEqual(said('set'), ['call 0x060148ae 0x0600ecb8', 'end 0x0600ecbc'], 'the set side\'s events');
+    assert.deepEqual(said('clear'), ['call 0x060148ae 0x0600ec96', 'end 0x0600ecbc'], 'the clear side\'s events');
+    assert.equal(set, 0x0600ecb4, 'the set side\'s target');
+    assert.equal(word(0x0600ecbc), 0x4e2b, '0x0600ecbc: jmp @r14');
+    /* the clear side's bra lands on the end */
+    const ba = 0x0600ec9a, bw = word(ba);
+    assert.equal(bw & 0xf000, 0xa000, '0x0600ec9a: bra');
+    const bTo = ((bw & 0xfff) << 20 >> 20) * 2 + ba + 4;
+    assert.equal(bTo, 0x0600ecbc, 'the bra lands at the end');
+    assert.equal(rows[0][3], `branches to ${h(set, 8)}; calls 0x060148ae (0x0600ecb8); ends this frame's run (0x0600ecbc)`, 'the set cell');
+    assert.equal(rows[0][4], `goes on to ${h(at + 4, 8)}; calls 0x060148ae (0x0600ec96); the \`bra\` at ${h(ba, 8)} jumps to ${h(bTo, 8)}; ends this frame's run (0x0600ecbc)`, 'the clear cell');
+    /* the literals: mov.l @(disp,pc),rN; jsr @r0 */
+    const lit = a => (assert.equal(word(a) & 0xf000, 0xd000, `${h(a, 8)}: mov.l @(disp,pc),rN`), [(word(a) >> 8) & 15, ((a + 4) & ~3) + (word(a) & 0xff) * 4]);
+    const [, s0, s0a, s0v, s4, s4a, s4v, c0, c0a, c0v, c4, c4a, c4v] = text.match(/the set side (0x[\da-f]{8}) `mov\.l @\((0x[\da-f]{8})\),r0`, which\nloads (0x[\da-f]{8}), and (0x[\da-f]{8}) `mov\.l @\((0x[\da-f]{8})\),r4`, which loads\n(0x[\da-f]{8}); the clear side (0x[\da-f]{8}) `mov\.l @\((0x[\da-f]{8})\),r0`, which\nloads (0x[\da-f]{8}), and (0x[\da-f]{8}) `mov\.l @\((0x[\da-f]{8})\),r4`, which loads\n(0x[\da-f]{8})\. So both call 0x060148ae with the same r4\./);
+    const long32 = a => game.prg.readUInt32BE(game.at(a));
+    for (const [ins, la, v, r] of [[s0, s0a, s0v, 0], [s4, s4a, s4v, 4], [c0, c0a, c0v, 0], [c4, c4a, c4v, 4]]) {
+        assert.deepEqual(lit(parseInt(ins, 16)), [r, parseInt(la, 16)], `${ins}: into r${r} from ${la}`);
+        assert.equal(h(long32(parseInt(la, 16)), 8), v, `${la}: the literal`);
+    }
+    assert.deepEqual([s0, s4, c0, c4], [h(set, 8), h(set + 2, 8), h(at + 4, 8), h(at + 6, 8)], 'the literals sit at each side\'s start');
+    assert.ok(s0v === '0x060148ae' && c0v === '0x060148ae' && s4v === c4v, 'the same call, the same r4');
+    for (const j of [set + 4, at + 8]) assert.equal(word(j), 0x400b, `${h(j, 8)}: jsr @r0`);
+    assert.match(text, /0x0600ecbc is the\nrun handler's `jmp @r14`\./);
+    /* the bullet */
+    const bullet = text.match(/^- \*\*(.+?)\*\*:([^]*?)\n\n/m), body = bullet[2].replace(/\s+/g, ' ');
+    assert.equal(bullet[1], named);
+    assert.equal(body, ` set, it jumps to ${h(set, 8)} and calls 0x060148ae; clear, it goes on at ${h(at + 4, 8)}, calls 0x060148ae and jumps to ${h(bTo, 8)}. Both end this frame's run at 0x0600ecbc and store nothing.`);
+    for (const s of ['set', 'clear']) {
+        assert.ok(!sides[s].some(e => ['store', 'stop', 'param'].includes(e.kind)), `${s}: no store or stop`);
+        assert.ok(!sides[s].some(e => e.field === 0 && e.mask === 0x10000000), `${s}: not +0 bit 0x10000000`);
+    }
+    /* forward only: never to the 0.8 check */
+    for (const from of [set, at + 4]) assert.ok(!FM.handlerReaches(game, run9, from, 0x0600eb9e, [0x0600ecbc]), `${h(from, 8)}: no 0.8 check`);
+    assert.ok(text.includes('Neither side stops at another flag test, and neither reaches the 0.8\ndistance check or `+0` bit 0x10000000.'));
+}
+checkEc8e(ec8eDoc, newDoc);
+for (const [from, to] of [['`mov r12,r1`', '`mov r13,r1`'], ['`add #0x71,r1`', '`add #0x70,r1`'], ['`tst #0x04,r0`', '`tst #0x08,r0`'], ['then `bf` at', 'then `bt` at'],
+    ['| 0x0600ec8e | +0x70 & 0x00040000 |', '| 0x0600ec8e | +0x70 & 0x00000400 |'], ['| 0x0600ec8e | +0x70 & 0x00040000 |', '| 0x0600ec8e | +0x6c & 0x00040000 |'],
+    ['| 0x0600ec8e | +0x70 & 0x00040000 |', '| 0x0600ec8e | the opponent\'s +0x70 & 0x00040000 |'],
+    ['bit 0x04 of the byte +0x71', 'bit 0x04 of the byte +0x70'], ['the long +0x70 masked', 'the long +0x6c masked'], ['with\n0x00040000, parameter', 'with\n0x04000000, parameter'],
+    ['parameter bit 0x04. The', 'parameter bit 0x08. The'], ['fighter (r12), not the opponent\'s', 'fighter (r13), not the opponent\'s'],
+    ['so\nthe branch is the set side and the fall-through the clear side', 'so\nthe branch is the clear side and the fall-through the set side'],
+    ['| branches to 0x0600ecb4;', '| branches to 0x0600ecb2;'], ['calls 0x060148ae (0x0600ecb8)', 'calls 0x060148ae (0x0600ecba)'],
+    ['(0x0600ecb8); ends this frame\'s run (0x0600ecbc) |', '(0x0600ecb8); stops at 0x0600ecd0 (+0x6c0 & 0x02000000) |'],
+    ['| goes on to 0x0600ec92;', '| goes on to 0x0600ec94;'], ['calls 0x060148ae (0x0600ec96)', 'calls 0x06014ca4 (0x0600ec96)'],
+    ['the `bra` at 0x0600ec9a jumps to 0x0600ecbc;', 'the `bra` at 0x0600ec9a jumps to 0x0600ecc8;'],
+    ['set, it jumps to 0x0600ecb4', 'set, it jumps to 0x0600ec92'], ['clear, it goes on at 0x0600ec92', 'clear, it goes on at 0x0600ecb4'],
+    ['and store\n  nothing.', 'and set\n  +0x60.'],
+    ['0x0600ecb4 `mov.l @(0x0600ecc0),r0`', '0x0600ecb4 `mov.l @(0x0600ecc4),r0`'], ['0xa01112ff; the clear', '0xa01112fe; the clear'],
+    ['0x0600ec94 `mov.l @(0x0600ecb0),r4`', '0x0600ec94 `mov.l @(0x0600ecac),r4`'], ['loads 0x060148ae, and 0x0600ec94', 'loads 0x06012844, and 0x0600ec94'],
+    ['0x0600ecbc is the\nrun handler\'s `jmp @r14`', '0x0600ecba is the\nrun handler\'s `jmp @r14`'],
+    ['"The flag at 0x0600eb74" and "The flag\nat 0x0600ec64"', '"The flag at 0x0600eb62" and "The flag\nat 0x0600ec64"']]) {
+    assert.ok(ec8eDoc.includes(from), from);
+    assert.throws(() => checkEc8e(ec8eDoc.replace(from, to), newDoc), `${from} -> ${to}`);
+}
+/* the list's row naming another field or mask fails too */
+assert.throws(() => checkEc8e(ec8eDoc, newDoc.replace('| 0x0600ec8e | this fighter (r12) | +0x70 | 0x00040000 |', '| 0x0600ec8e | this fighter (r12) | +0x70 | 0x00080000 |')));
+assert.throws(() => checkEc8e(ec8eDoc, newDoc.replace('| 0x0600ec8e | this fighter (r12) | +0x70 | 0x00040000 |', '| 0x0600ec8e | this fighter (r12) | +0x6c | 0x00040000 |')));
 const sentenceSlots = new Map(kinds.map(([, k, , , , , , does]) => [parseInt(k, 16), [...new Set([...does.matchAll(
     /(?<![\w.+\u2212-]|bit |frame |kind |≤ |is )(\d+)(?![\w.]| frames?)/g)].map(m => +m[1]))].sort((a, b) => a - b)]));
 const ruleSlots = (kind, p) => kind !== 9 ? sentenceSlots.get(kind)

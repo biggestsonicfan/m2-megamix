@@ -1149,6 +1149,39 @@ fighter's (r12) +0x70 & 0x00040000, parameter bit 0x04. It is a row in
 reaches the 0.8 distance check or `+0` bit 0x10000000.
 `tests/fm-saturn.test.mjs` checks this section against a fresh read.
 
+#### The flag at 0x0600ec8e
+
+The flag test that both sides of "The flag at 0x0600eb74" and "The flag
+at 0x0600ec64" stop at, the next row of "Flag tests not yet described",
+read off the disc and followed the same way. The fighter, field and mask
+in that row match the disc: 0x0600ec88 is `mov r12,r1`, 0x0600ec8a
+`add #0x71,r1`, 0x0600ec8c `mov.b @r1,r0` and 0x0600ec8e `tst #0x04,r0`,
+then `bf` at 0x0600ec90. That is bit 0x04 of the byte +0x71 of this
+fighter (r12), not the opponent's: big-endian, the long +0x70 masked with
+0x00040000, parameter bit 0x04. The `bf` branches when the bit is set, so
+the branch is the set side and the fall-through the clear side.
+
+| Tested at | Flag | Set | Clear |
+| --- | --- | --- | --- |
+| 0x0600ec8e | +0x70 & 0x00040000 | branches to 0x0600ecb4; calls 0x060148ae (0x0600ecb8); ends this frame's run (0x0600ecbc) | goes on to 0x0600ec92; calls 0x060148ae (0x0600ec96); the `bra` at 0x0600ec9a jumps to 0x0600ecbc; ends this frame's run (0x0600ecbc) |
+
+- **+0x70 & 0x00040000**: set, it jumps to 0x0600ecb4 and calls
+  0x060148ae; clear, it goes on at 0x0600ec92, calls 0x060148ae and jumps
+  to 0x0600ecbc. Both end this frame's run at 0x0600ecbc and store
+  nothing.
+
+Both sides load the call's address and r4 from `mov.l` literals before
+the `jsr @r0`: the set side 0x0600ecb4 `mov.l @(0x0600ecc0),r0`, which
+loads 0x060148ae, and 0x0600ecb6 `mov.l @(0x0600ecc4),r4`, which loads
+0xa01112ff; the clear side 0x0600ec92 `mov.l @(0x0600ecac),r0`, which
+loads 0x060148ae, and 0x0600ec94 `mov.l @(0x0600ecb0),r4`, which loads
+0xa01112ff. So both call 0x060148ae with the same r4. 0x0600ecbc is the
+run handler's `jmp @r14`.
+
+Neither side stops at another flag test, and neither reaches the 0.8
+distance check or `+0` bit 0x10000000. `tests/fm-saturn.test.mjs` checks
+this section against a fresh read.
+
 ### Slots
 
 The action-table slots that those handlers play, read the way 0x0600CEC8
