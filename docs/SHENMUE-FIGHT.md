@@ -491,6 +491,32 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
     non-zero bytes at different places and widths. With Elbow Slam and Twist
     Knuckle both all 0, the data doesn't say whether this is one field,
     several, or padding.
+  - **Where the 14 put their non-zero bytes (bytes 1–8 after the bits):**
+    they don't line up as one field of one width.
+
+    | Records | Non-zero bytes | Values |
+    |---|---|---|
+    | AKI_AKI_HIZA 847, JEF_TA_SU_UPPER 1102, TAO_PU_09_00 510, TAO_PU_10_00 511, TAO_PU_04_S00 506, TAO_PU_05_S00 507, SUI_DFP_122_01 492, SUI_SUFA_191 1137, AK_KATA_ATK 150, DMY_JACKY_TA_KI_HIZA_L 581 | 2 | 01 |
+    | JU_KI_SYO_M 342 | 3 | 05 |
+    | AKI_AKI_OK_AO_KAITEN 1355, _UTU_KAITEN 1356 | 3, 4, 5 | 0c 11 11 |
+    | AKIRA_SY_KI_SYO_L_VF3 16 | 4, 5 | 13 17 |
+
+    - The four shapes start at three different bytes (2, 3, 4) and run one,
+      two or three bytes. The 1 in byte 2 and the bytes 3–5 are never on the
+      same record, so whether byte 2 goes with them can't be told.
+    - The smallest span holding them all is bytes 2–5. As one u32 it gives
+      1, 0x500, 0x11110C00, 0x17130000 little-endian, and 0x01000000,
+      0x00050000, 0x000C1111, 0x00001317 big-endian: nothing that reads as
+      one number across the four. As u16s, at either alignment the KAITEN
+      bytes 0c 11 11 split across two of them.
+    - One byte at a time, every non-zero byte is small (1, 5, 12, 17, 19,
+      23), none more than its motion's frame count (23 for
+      AKIRA_SY_KI_SYO_L_VF3, 35 for JU_KI_SYO_M, 37 for the KAITEN pair).
+      That is all it is; it doesn't name them.
+    - Not shown to be a set of bits: every value is under 0x20, so bits
+      aren't ruled out, but nothing here tests that.
+    - So no field and no width is read here. Elbow Slam and Twist Knuckle
+      are all 0 there under any reading.
 - **Counting kind-5 groups (86, 88, 104):** the three counts are the same
   layout (header, one tag-2 block, kind 5) with different checks on the
   tag-2 words. The scans didn't walk off the hit block.
