@@ -15,7 +15,8 @@ in `docs/VF3-SHENMUE.md` and `tools/shenmue-motion.mjs` on branch
 - A motion id k is MOTION.BIN's record k − 1 (see "Motion ids").
 - Damage is a byte in each motion's record in MOTION.BIN, the one the table's
   second offset points to. Elbow Slam's is 4 (see "Damage"). Frame data sits
-  in the same record but isn't decoded.
+  in the same record but isn't decoded: the hit block's three frame words
+  don't line up across strikes and throws.
 
 ## Reading the discs
 
@@ -322,17 +323,40 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
     (KICK_LOW) alone: maybe the hit level. On throws it's larger.
   - The fourth byte, 3–40, isn't damage: a throw has 3–5 there.
   - The scale isn't known: Shenmue's life bar isn't measured here.
-- **Frames:** the first two tag-2 words are most likely the hit's first and
-  last active frames: Elbow Slam 8–12, Twist Knuckle 6–8. The third (27, 21)
-  is the motion's length for Elbow Slam but not for Twist Knuckle (24 frames).
-  Tornado Kick's record adds a tag-3 block (7–12, 20) before the tag-2 one, and
-  Dark Moon's one (9–12, 17): their first kick. Not decoded further.
+- **Frames (the tag-2 words): not settled.** The three words don't line up
+  across Elbow Slam, Twist Knuckle and Vortex Throw, so none of them is named
+  here. What the records show (frames = the motion's own count):
+
+  | Move | Record | Words | Frames |
+  |---|---|---|---|
+  | Elbow Slam | 846 | 8, 12, 27 | 27 |
+  | Twist Knuckle | 793 | 6, 8, 21 | 24 |
+  | Vortex Throw | 1204 | 9, 27, 55 | 57 |
+  | Upper Knuckle, Trample Kick, Rain Thrust | 836, 848, 792 | 10, 13, 27; 6, 8, 24; 6, 8, 20 | 28, 27, 21 |
+  | Swallow Flip, Sweep Throw, Demon Drop | 1177, 1475, 1291 | 1, 12, 36; 1, 24, 53; 1, 53, 60 | 36, 56, 60 |
+
+  - **What holds for every one:** word 1 < word 2 < word 3 ≤ the motion's
+    frames. So they are frame numbers in the motion, in order.
+  - **Word 3 isn't the motion's length:** it is for Elbow Slam (27 of 27),
+    but Twist Knuckle's is 3 short (21 of 24) and Vortex Throw's 2 (55 of 57).
+  - **Words 1–2 as the active frames fit the strikes only:** 8–12 and 6–8 are
+    short windows early in the move. Vortex Throw's 9–27 is 19 frames, and the
+    other paired motions start at 1 (Demon Drop 1–53). A throw's motion plays
+    once the grab has connected, so a strike-style active window may not apply
+    to it, or the words mean something else there.
+  - **The motion curves don't decide it:** sampling the bones' angles frame by
+    frame (shenmue-motion.mjs's keys, read as Hermite curves) is too noisy to
+    put the elbow's or the fist's impact on one frame.
+  - Tornado Kick's record adds a tag-3 block (7, 12, 20) before its tag-2 one
+    (15, 19, 35), and Dark Moon's one (9, 12, 17).
 
 ## Open
 
 - **Damage on screen:** Elbow Slam should take 4 off in Free Battle, Vortex Throw
   30. Neither is checked.
-- **Frame data:** the record's other fields (see "Damage").
+- **Frame data:** what the tag-2 words are (see "Damage", Frames): they don't
+  line up across the strikes and the throws. The record's other fields aren't
+  decoded.
 
 ## Other leads
 
