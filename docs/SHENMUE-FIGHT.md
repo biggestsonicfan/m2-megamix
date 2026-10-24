@@ -295,6 +295,7 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
   04 04 01 0e                           kind (4 strike, 5 throw), damage, then u16 LE: on a throw the victim's motion id
   00 00 b3 33                           16.16 big-endian, 0.7 (see "The number after the group")
   00 00                                 s16 LE angle, 0x10000 = 360°: 0 (see "The angle after the number")
+  00                                    u8: 0 (see "The byte after the angle")
   …
   ```
 
@@ -397,10 +398,38 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
     −65, −80, −90, −120, −135, −142. 0x7FF8, 0x3FFC and 0x1FFE (180, 90, 45)
     halve each other. Read big-endian (0xF87F, 0xF69F …) they give nothing
     round.
-  - **The two bytes after it split strikes from throws,** the way the last
-    two bytes did: 0 on all 88 throws, non-zero on 215 of 231 strikes
-    (`00 80` on Twist Knuckle, `0b 80` on Upper Knuckle, `00 00` on Elbow
-    Slam). They aren't decoded.
+  - The byte after it is one u8 (see "The byte after the angle").
+- **The byte after the angle:** the next field is **one byte**, not a u16.
+  Elbow Slam's is **0**. What it counts or picks isn't known. Not checked on
+  screen.
+
+  | Move | Kind | Two bytes after the angle | The byte |
+  |---|---|---|---|
+  | Elbow Slam | 4 | 00 00 | 0 |
+  | Twist Knuckle | 4 | 00 80 | 0 |
+  | Rain Thrust | 4 | 00 00 | 0 |
+  | Trample Kick | 4 | 04 00 | 4 |
+  | Upper Knuckle | 4 | 0b 80 | 11 |
+  | Vortex Throw, Swallow Flip, Demon Drop | 5 | 00 00 | 0 |
+
+  - **Why one byte, not two:** the byte after it moves on its own. Across
+    the 231 strikes the same first bytes (0, 1, 3, 4, 11, 18, 28, 34) turn
+    up with a second byte of 0x00, 0x40 and 0x80 alike. The second bytes are
+    all made of the bits 0x80, 0x40, 0x20, 0x10, 0x04, 0x02, 0x01 (0x00 98
+    times, 0x80 47, 0x40 34, 0xC0 18, 0x20 11, then 0x10, 0x11, 0x90, 0xC2,
+    0x60, 0x42, 0x52, 0x04). Read as one u16 these give 0x8000, 0x4001,
+    0x0023 …: not a count, and not the angle again (0x0023 is 0.19°, and the
+    angle field's values sit just under a whole degree, these just over).
+    That second byte isn't decoded here.
+  - **All of MOTION.BIN, strikes:** 20 values, 0 to 35: 0 (35), 1 (34),
+    3 (32), 9 (26), 4 (17), 18 (15), 11 (13), 28 (13), 19 (11), 35 (8),
+    7 (5), 25 (5), 34 (4), 12 (3), 15, 17, 22, 23 (2 each), 8, 13 (1 each).
+  - **Throws:** 0 on all 88, and so is the byte after it. That doesn't
+    contradict the reading, but it doesn't test it either: whether a throw
+    could use this byte isn't known.
+  - **Strikes agree with each other:** Elbow Slam and Twist Knuckle both
+    have 0, but with different second bytes (0x00, 0x80), which is what
+    splits the field there.
 - **Frames (the tag-2 words): not settled.** The three words don't line up
   across Elbow Slam, Twist Knuckle and Vortex Throw, so none of them is named
   here. What the records show (frames = the motion's own count):
@@ -435,8 +464,10 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
 - **Frame data:** what the tag-2 words are (see "Damage", Frames): they don't
   line up across the strikes and the throws. The last two bytes of the
   kind/damage group are named on throws only. The 16.16 number after the
-  group is read (0.7 on Elbow Slam) but not named, and so is the angle after
-  it (0° on Elbow Slam). The record's other fields aren't decoded.
+  group is read (0.7 on Elbow Slam) but not named, and so are the angle after
+  it (0° on Elbow Slam) and the byte after that (0 on Elbow Slam, 0 on every
+  throw). The record's other fields, from the byte after that one on, aren't
+  decoded.
 
 ## Other leads
 
