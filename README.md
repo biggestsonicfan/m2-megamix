@@ -6,7 +6,7 @@ engine. This project plays their fighters against each other, on any of
 their stages, in one engine:
 
 - VF2: Akira, Sarah, Kage
-- Fighting Vipers: Picky, Honey, Mahler
+- Fighting Vipers: Picky, Honey, Mahler, Tokio, Bahn
 - Sonic the Fighters: Sonic, Honey, Eggman
 - Shenmue (the beta's disc, if you have it): Ryo, see `docs/RYO.md`
 
@@ -35,7 +35,7 @@ python3 tools/serve.py          # prints http://127.0.0.1:<port>/
 `/roms/sfight.zip` from `$ROMS_DIR` (default `~/build/mameroms`). It reads
 them in place. You can also drop the three zips on the page instead.
 With the Shenmue beta's disc (0.400 disc 3, `$SHENMUE_DIR`) it also serves
-Ryo's four files off it at `/shenmue/<path>`, and Ryo joins the roster (`?p1=9`).
+Ryo's four files off it at `/shenmue/<path>`, and Ryo joins the roster (`?p1=11`).
 
 URL options: `?p1=0&p2=6&stage=3&p1cpu=1&p2cpu=1&rounds=2&start&dump`.
 
@@ -62,6 +62,7 @@ struct dump, F2 pauses and F3 steps one frame.
 - `js/render.js` draws the stage and fighters with noclip's shader. Each one
   gets its own game's texture RAM and colour tables.
 - `docs/STRUCTURES.md` lists the shared structures and where each game keeps them.
+- `docs/FV-GUESTS.md` measures what Fighting Vipers' Honey, Tokio and Bahn need as board guests, and what room is left (`tools/fv-guest-survey.mjs`).
 - `docs/SHARED-CODE.md` audits the i960 functions StF and VF2 share: which are one code, and what a VF2 fighter still needs (guest data or a branch on `char_game`); `tools/shared-fns.py` compares them.
 
 ## Not the board's own code
@@ -81,7 +82,7 @@ approximations. Each is marked `Here:` in `js/engine.js`:
 
 ```
 node tests/fighters.test.mjs    # every fighter poses, moves and reacts, across games
-node tests/bout.test.mjs        # CPU vs CPU, every pairing (81, 100 with Ryo)
+node tests/bout.test.mjs        # CPU vs CPU, every pairing (121, 144 with Ryo)
 ```
 
 Both read the zips from `$ROMS_DIR`, and Ryo from `$SHENMUE_DIR` when it is there.
