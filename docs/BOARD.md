@@ -424,6 +424,13 @@ with a heap after them.
   they took 140 → 128 → 117 (12, then 12 × 0.88 = 11). Her punch is her
   own 11 on both builds: thrown first, at even energy, 140 → 129 → 119
   → 110 on the old build and the new.
+  His throws' victims take more in the motion they play: play op 8 (byte
+  +3, off the energy of the fighter playing it) in VF2 motions 16 (10 at
+  frames 47 and 62) and 44 (15 at 34, 25 at 48), the victims of his throws
+  15 and 43. `convertSetup` scales it too (D5 in `SHARED-CODE.md`): 7, 7,
+  11, 18. Checked in MAME and m2-hle2 by giving his motion 527 (P) the
+  setup and motion of 525 or 544: he takes 7 at 47 and 7 at 62 (10, 10 on
+  the old build), 11 at 34 and 18 at 48 (15, 25).
 - **Game:** `char_game` (a guest table of the board's own, at
   `STF_GUEST_char_game`, 0x02E06200) is a byte by character, 52 of them
   (player 2's 26 on): the game the character comes from, `GAME_STF` (0, what

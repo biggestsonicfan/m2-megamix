@@ -185,8 +185,8 @@ function scaleMotion(b, k = [SCALE, SCALE, SCALE]) {
 /* The bits of a rob's flags StF's own play op 5 sets. */
 const STF_FLAG_BITS = new Set([0, 1, 3, 4, 7, 8, 9, 10, 11, 13, 15, 23, 25, 29, 30]);
 const THROWN = [SCALE, 1.07, SCALE];
-/* Damage (setup op 4, a strike, and op 5, a throw: byte +3) is out of VF2's
- * 200 energy; StF's fighters have 140. */
+/* Damage (setup op 4, a strike, and op 5, a throw: byte +3; play op 8: byte
+ * +3) is out of VF2's 200 energy; StF's fighters have 140. */
 const DAMAGE = 140 / 200;
 
 /* A mesh's extent: the geometrizer's walk (import-assets keepModel). */
@@ -497,6 +497,8 @@ export function importAkira(R, vf2, stf) {
                 const o = [...b];
                 o[0] = to | (b[0] & 0x80);
                 if (PLAY_MOTION[op]) put16(o, PLAY_MOTION[op], mid(b[PLAY_MOTION[op]] | (b[PLAY_MOTION[op] + 1] << 8)));
+                /* Op 8 (damage) takes byte +3 off the rob's energy, VF2's 200 as above. */
+                if (op === 8) o[3] = damage(b[3]);
                 out.push(...o);
             }
             out.push(0);

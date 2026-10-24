@@ -141,8 +141,20 @@ Guest data (his values in StF's fields; no shared code changes):
   (0x00020009 before), 708's 0x844 0x02100000 (0x02108000 before), the same
   in both. Fights without that swap, Akira's and Sonic's, log the same byte
   for byte in MAME as before.
-- **D5 Damage op.** Play op 8 (damage) misses the converter's ×140/200;
-  Akira has 4 (motions 16 and 44).
+- **D5 Damage op.** Done. Play op 8 (damage) missed the converter's
+  ×140/200. StF's (S 0x1C2E4) takes byte +3 off the energy of the rob
+  playing the motion (rob+0x1AC, summed into 0x5DE), and Akira has 4: VF2
+  motions 16 (board 525, 10 at frames 47 and 62) and 44 (544, 15 at 34 and
+  25 at 48), what the victims of his throws 15 and 43 play (StF's fighters
+  play the copies 847 and 852, which share the setup). `convertSetup` now
+  sends byte +3 through `damage()`: 7, 7, 11, 18, the ROM's only change
+  (four bytes of mpr-19005.9). His throws do not fire in a MAME fight (he
+  walks in to 2.39 and P+G is a strike; see D2's range bits), so the check
+  gives his motion 527 (P) the setup and motion pointers of 525 or 544 and
+  lets StF's `play_motion` run them on him: 525 takes 7 at 47 and 7 at 62
+  (10, 10 before), 544 11 at 34 and 18 at 48 (15, 25), the same in MAME and
+  m2-hle2. Normal fights, Akira's and Sonic's, log the same byte for byte
+  in MAME as before.
 - **D6 Importer slip.** `STF_ACTIONS[31]` should be VF2 action 30, not 29
   (harmless for Akira: his 29 and 30 are one motion).
 
@@ -657,7 +669,7 @@ StF addresses are from rom_code1.asm (Sega's labels where it has them). VF2 addr
     - VF2 scales by the opponent's 0x69c, has a gated id 0xf9 -> 20, calls ketchup 0x18ac8 and stores 0x1e20(g8).
     - StF uses the raw damage, adds into 0x5de/0xa28 and stores 0x1f70(g8). It makes no ketchup call. (c)+(a).
     - Akira uses it 4 times, in motions 16 (twice, 10) and 44 (15, 25).
-    - The converter does not apply its x0.7 damage scale here, while it does in setup ops 4/5. Board: those four hits do VF2's full damage on StF's scale. Recommendation: a guest data fix that sends op 8's damage byte through damage() in convertSetup, if the x0.7 rescale is meant to cover all of Akira's damage. The blood (ketchup) splash is lost; that is unknown, and probably cosmetic.
+    - Done (D5): the converter now applies its x0.7 damage scale here too, as in setup ops 4/5 (10, 10 -> 7, 7; 15, 25 -> 11, 18). The blood (ketchup) splash is still lost; probably cosmetic.
   - 0x9 (voice): dropped, x25. Harmless.
   - 0xa -> 0xa (input-match branch):
     - VF2 exits early when 0x50002c==8 and 0x500034==0x20 (a mode; unknown). Ids 0x485/0x486 force r10=1 (not Akira's). The direction mirroring is inline.
