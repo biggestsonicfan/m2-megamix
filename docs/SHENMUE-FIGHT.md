@@ -297,7 +297,7 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
   00 00                                 s16 LE angle, 0x10000 = 360°: 0 (see "The angle after the number")
   00                                    u8: 0 (see "The byte after the angle")
   00                                    bits, not a number: 0 (see "The bits after that byte")
-  00 00 00 00 00 00 00 00               strikes only, not decoded: all 0 (see "The bytes after the bits")
+  00 00 00 00 00 00 00 00               on strikes, not decoded: all 0 (see "The bytes after the bits")
   …
   ```
 
@@ -465,7 +465,7 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
     (93 of 104 groups found here), never 0 as on every strike. So the strike
     group runs longer than the throw group. The bytes after this one aren't
     decoded.
-- **The bytes after the bits (strikes only):** not decoded. Elbow Slam and
+- **The bytes after the bits (read on strikes):** not decoded. Elbow Slam and
   Twist Knuckle have the same eight bytes there, all 0, so they can't show
   a field's width or give a number other than 0. The strikes that aren't 0
   there don't line up as one field. Throws aren't read here (their next
@@ -491,13 +491,6 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
     non-zero bytes at different places and widths. With Elbow Slam and Twist
     Knuckle both all 0, the data doesn't say whether this is one field,
     several, or padding.
-  - **Where the span ends:** the ninth byte after the bits (0x0B on 126
-    strikes, then 0x0C, 0x06, 0x08, 0x03 …) varies, and on the 217 all-zero
-    strikes it takes the same values (0x0B 116, 0x0C 34, 0x06 23, 0x08 19 …).
-    0x0C and 0x08 are also what follows the bits on throws. So the eight
-    bytes look like a strike-only span before a next part that strikes and
-    throws share. That isn't checked further, and the ninth byte on isn't
-    decoded.
 - **Counting kind-5 groups (86, 88, 104):** the three counts are the same
   layout (header, one tag-2 block, kind 5) with different checks on the
   tag-2 words. The scans didn't walk off the hit block.
