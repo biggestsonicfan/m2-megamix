@@ -9,7 +9,7 @@ Model 2 fighters.
 
 | file | what |
 |--|--|
-| `MISC/MODELS.PKS` (gzip) | `YKB_M.CHRM`, his model (MT5) |
+| `MISC/MODELS.PKS` (gzip) | `YKB_M.CHRM`, his model (MT5); `YKB_B.CHRM`, the board's (docs/BOARD.md) |
 | `MISC/MODELS.PKF` (gzip) | its textures (PVR) |
 | `MISC/MOTION.BIN` | his motions, and each one's record (timing, damage) |
 | `SCENE/03/MFBT/EN_RYOU.BIN` | the free battle's move script |

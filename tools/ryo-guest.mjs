@@ -5,7 +5,9 @@
  * player 2) and runs StF's own fight code with Akira's moves, motions,
  * actions and reactions: his own are VF3-style Shenmue motions that the
  * board cannot play yet. What is his own:
- *   - his model (YKB_M), cut into StF parts: each node rides the slot its
+ *   - his model, cut into StF parts: YKB_B, the one Shenmue draws him with
+ *     from afar (288 triangles, a node on each of the fifteen slots), or with
+ *     RYO_MODEL=M in the environment YKB_M (1793). Each node rides the slot its
  *     nearest anchored bone drives (js/ryo.js SLOT_BONES), its triangles as
  *     a Model 2 mesh of its own, one per slot, in the polygon ROM's empty run
  *     after Akira's;
@@ -51,10 +53,14 @@ const ROWS = 28;                         /* the luma ramp's rows, 0..27 */
  * face itself turned to the eye, where that opened a hole a player sees: the
  * shins, where a bent rear leg spiked, on either leg (#1546), and the back of
  * the jacket's collar behind his neck (#1549) (cutParts; measured in
- * docs/BOARD.md). */
+ * docs/BOARD.md). YKB_M's only. */
 const FLAT = new Map([[SLOT_BONES[0x01], new Set([100])],
     [SLOT_BONES[0x11], new Set([0, 1, 2, 4, 6, 7, 9, 11, 13, 14, 15, 16, 20, 21, 30, 34, 35, 36, 40, 41, 42])],
     [SLOT_BONES[0x16], new Set([0, 6, 14, 17, 18, 20, 24, 25, 26, 27])]]);
+
+/* Which of his models the board gets: YKB_B, unless RYO_MODEL=M. */
+const FULL = process.env.RYO_MODEL === 'M';
+const boardModel = (S) => (FULL ? S.model : S.lowModel);
 
 const hex = (v) => '0x' + v.toString(16).toUpperCase();
 
@@ -63,9 +69,9 @@ const hex = (v) => '0x' + v.toString(16).toUpperCase();
 /* His textures as 4-bit tiles, levels 0-4: each texel's brightness, scaled
  * so the texture's brightest (99th percentile) is 15. A texture with holes
  * (alpha under half) keeps 15 for them (the transparent renderer's hole) and
- * scales the rest to 14. */
+ * scales the rest to 14. A texture all holes has none. */
 export function ryoTiles(games) {
-    const S = games.shenmue, model = S.model;
+    const S = games.shenmue, model = boardModel(S);
     const used = new Set();
     for (const n of model.nodes) if (n.mesh) for (const s of n.mesh.strips) used.add(s.texture);
     const tiles = [], byTex = new Map();
@@ -80,6 +86,9 @@ export function ryoTiles(games) {
             lum[i] = 0.299 * rgba[i * 4] + 0.587 * rgba[i * 4 + 1] + 0.114 * rgba[i * 4 + 2];
             if (rgba[i * 4 + 3] < 128) { hole[i] = 1; holes++; }
         }
+        /* YKB_B's two (ARGB4444) leave alpha at 0-3 all over: not holes, an
+         * alpha the texture does not use */
+        if (holes === n) { hole.fill(0); holes = 0; }
         const sorted = [...lum].filter((_, i) => !hole[i]).sort((a, b) => a - b);
         const top = Math.max(1, sorted[Math.floor((sorted.length - 1) * 0.99)] ?? 1);
         const tmax = holes ? 14 : 15;
@@ -165,7 +174,7 @@ function cutParts(model, k) {
                  * front lost faces in sight. The shin faces in FLAT, the ones
                  * measured hidden there, keep their own flat normal (#1546); a
                  * seam's normals the board works out itself. */
-                const flat = !(a.o || b.o || d.o) && FLAT.get(slot)?.has(slots.get(slot)?.length ?? 0);
+                const flat = FULL && !(a.o || b.o || d.o) && FLAT.get(slot)?.has(slots.get(slot)?.length ?? 0);
                 const stored = flat ? unit(dot(face, out) < 0 ? face.map((x) => -x) : face) : out;
                 /* a seam's far corners first (A, or A and B), turning the
                  * corners round, so each is one run of words to patch */
@@ -222,7 +231,7 @@ export function importRyo(R, ctx, games, { tiles, byTex }) {
     const { main, polygons, textures } = R;
     const T = R.guest.tables;
     const vf2 = games.vf2.rom, stf = games.stf.rom;
-    const model = games.shenmue.model;
+    const model = boardModel(games.shenmue);
     const report = [];
     const alloc = (b, label, align = 4) => ctx.alloc(b, label, align, 'Ryo');
     const { u32s, u16s } = ctx;

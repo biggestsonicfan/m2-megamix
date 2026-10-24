@@ -848,7 +848,7 @@ y + 1.0, which holds while guests are scaled to StF's size.
 
 ## The guest: Shenmue's Ryo
 
-Ryo Hazuki (the Shenmue beta's model YKB_M, js/ryo.js) is StF character 1
+Ryo Hazuki (the Shenmue beta's, js/ryo.js) is StF character 1
 (Tails, whom Megamix does not use; 27 for player 2), picked as RYO in the
 setup. tools/ryo-guest.mjs builds him on top of what tools/vf2-guest.mjs
 put in for Akira, and import-assets runs it after Akira's.
@@ -857,9 +857,20 @@ put in for Akira, and import-assets runs it after Akira's.
   and setups, so he plays as a VF2 fighter (`char_game` VF2). His own
   motions are VF3-style Shenmue ones the board cannot play yet
   (docs/VF3-SHENMUE.md).
-- **Parts.** Each of his 37 nodes rides the StF part its nearest anchored
-  bone drives (`SLOT_BONES`), so each part is rigid. 15 parts, 1793
-  triangles (193 of them in the seams below), scaled by `ryoFit` (1.0084 of
+- **Model.** YKB_B, the model Shenmue draws him with from afar (#1556):
+  the same bones as his own YKB_M, at the same places, but one node a slot
+  (15) and 288 triangles to YKB_M's 1793, the jacket, shirt, jeans and skin
+  painted on two 64×64 ARGB4444 textures (KB_MUF_, KB_MUB_; their alpha is
+  0-3 throughout and is not read as holes). Both are in MISC/MODELS.PKS,
+  with their textures in MODELS.PKF; the disc has no other Ryo between them
+  (YKB_Z, 2835, is a bigger one). `RYO_MODEL=M node tools/import-assets.mjs`
+  builds him with YKB_M instead. The web page draws YKB_M.
+- **Parts.** Each node rides the StF part its nearest anchored bone drives
+  (`SLOT_BONES`), so each part is rigid. YKB_B: 11 parts and 288 triangles,
+  112 of them in the seams below (YKB_M: 15 parts, 1793, 193). YKB_B's
+  thighs and shins are welded whole to the joint above, so those four slots
+  have no part, only seams, and `draw_fighter` draws a slot's seams with no
+  model. Scaled by `ryoFit` (1.0084 of
   Akira's height) × SCALE. Each
   part is one mesh of independent triangles: per triangle a triangle link
   (points A, B) and a culled quad link (points C, C) whose material step
@@ -867,7 +878,7 @@ put in for Akira, and import-assets runs it after Akira's.
   empty run after Akira's, as model ids counted down from the table's end.
   The import decodes each mesh back with noclip's `decodeModel` and stops if
   a corner, tile or UV differs from what it put in.
-- **Textures.** His seven textures become 4-bit brightness tiles (the 99th
+- **Textures.** His textures (YKB_M's seven, YKB_B's two) become 4-bit brightness tiles (the 99th
   percentile = 15; a texture with holes keeps 15 for them and sets th0 bit
   13), mipmapped to level 4, packed into Akira's seven pages after his
   (pack-akira's `extra`). Their material and UV streams follow Akira's in the
@@ -1203,6 +1214,8 @@ held, and a change of stage or fighter shows at once.
 
       MAME, settled              1P    2P  stage  faces  links
       Sonic vs Honey, S. Island  784   750  1286   2820   3155
+      Ryo vs Ryo, South Island   288   288  1286   1862   2735
+      YKB_M (RYO_MODEL=M):
       Ryo vs Ryo, South Island  1793  1793  1286   4872   8646, 8763
       Ryo vs Ryo, Aurora        1793  1793   640   4226   8022
 
@@ -1210,8 +1223,8 @@ held, and a change of stage or fighter shows at once.
   moved by about a hundred between two runs of the same menu (8646, 8763),
   which the header sums do not explain (not looked into).
 
-  Ryo's 1793 is the import's count (15 parts, 193 of the faces in his 12
-  seams). After a fighter changes, his seams come in one a pass, so his
+  Ryo's 288 (YKB_M's 1793) is the import's count, his seams' faces in
+  it. After a fighter changes, his seams come in one a pass, so his
   count climbs for a few passes.
 
 ## Where it stands

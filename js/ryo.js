@@ -2,7 +2,8 @@
  * Ryo Hazuki, from the Shenmue beta's disc (0.400 disc 3; docs/RYO.md).
  *
  * Everything is read off the disc's own files, as served at shenmue/<path>
- * (tools/serve.py): his model and textures (MISC/MODELS.PKS, YKB_M; PKF),
+ * (tools/serve.py): his models and textures (MISC/MODELS.PKS, YKB_M and the
+ * distance model YKB_B; PKF),
  * his motions (MISC/MOTION.BIN, Shenmue's VF3-style blocks turned into VF2's,
  * js/shenmue.js), and his moves (SCENE/03/MFBT/EN_RYOU.BIN, the free
  * battle's move script, with
@@ -21,7 +22,9 @@ import { makeFighter, S, P, K, G, FWD, BACK, HIGH, MID, LOW, MOTION_ID } from '.
 
 /* The files, by their paths on the disc. */
 export const SHENMUE_FILES = { pks: 'MISC/MODELS.PKS', pkf: 'MISC/MODELS.PKF', motion: 'MISC/MOTION.BIN', script: 'SCENE/03/MFBT/EN_RYOU.BIN' };
-const MODEL = 'YKB_M.CHRM';
+/* His model, and the one Shenmue draws him with from afar: the same bones,
+ * 288 triangles to 1793, the jacket and jeans painted on two textures. */
+const MODEL = 'YKB_M.CHRM', LOW_MODEL = 'YKB_B.CHRM';
 
 /* Heights, in inches. */
 const RYO_HEIGHT = 69, AKIRA_HEIGHT = 71;
@@ -36,11 +39,12 @@ export async function loadShenmue(fetchFile) {
         if (!b) return null;
         got[k] = new Uint8Array(b);
     }
-    const model = readMt5(readPaks(await gunzip(got.pks)).get(MODEL));
+    const pks = readPaks(await gunzip(got.pks));
+    const model = readMt5(pks.get(MODEL)), lowModel = readMt5(pks.get(LOW_MODEL));
     const textures = readPakf(await gunzip(got.pkf));
     return {
         key: 'shenmue', kind: 'shenmue', title: 'Shenmue',
-        model, textures,
+        model, lowModel, textures,
         motions: readMotionBin(got.motion),
         script: got.script,
     };

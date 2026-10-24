@@ -591,18 +591,22 @@ static void draw_fighter(const fighter_t *f, u32 p) {
      * guest's slot 0 (Akira's 0x13AE) turns into an empty StF entry (0xAE),
      * an object at polygon RAM 0, where the midriff is */
     for (i = 1; i < n; i++) {
-        u32 slot;
+        u32 slot, seamed = 0u;
         if (i < 16u) { slot = i; model = RW(r, 0x40 + i * 4u); }
         else {                           /* the eyes: a second model on the head's slot */
             const pose_part_t *pt = &a->parts[i - 16u];
             if (pt->slot != 2u || !head++) continue;
             slot = 2u; model = p ? pt->p2 : pt->model;
         }
-        if (model == 0u) continue;
+        /* a slot whose faces are all in seams (YKB_B's thighs and shins,
+         * welded whole to the joint above) has no model, only its seams */
+        if (i < 16u)
+            for (s = 0; s < nseams; s++) if ((((const u32 *)seams[1u + s])[1] & 0xFFu) == slot) seamed = 1u;
+        if (model == 0u && !seamed) continue;
         *cf = COP_PUSH;
         *cf = COP_SCALE; *cf = 0x3F800000u; *cf = RW(r, 0x27C0); *cf = 0x3F800000u;
         *cf = COP_PART; *cf = p; *cf = slot * 12u;
-        submit_cur(model);
+        if (model) submit_cur(model);
         if (slot == 9u && i < 16u && mid) poly_draw(mid, MID_POLY(p) + 4u);
         if (i < 16u)
             for (s = 0; s < nseams; s++) {
