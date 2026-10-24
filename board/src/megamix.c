@@ -26,6 +26,12 @@
 
 typedef struct { float r[9], t[3]; } mat_t;   /* column-major, the COP's layout */
 
+/* The faces of every object submitted since it was last zeroed: the high
+ * half of the model's header word 3 (obc), its face count, the low half
+ * its link count (culled links too), which StF's POLYGON sums instead
+ * (set_obj_go). The setup menu shows both (poly_win_draw). */
+static u32 polys;
+
 /* Submit one model-table object under the matrix m (model -> camera). With
  * ov nonzero, word ow of the model's header (0 its texture points, 1 its
  * texture headers) is ov instead, as set_obj_tpd and set_obj_thd do. */
@@ -36,6 +42,7 @@ static void submit_mat_ov(u32 model, const mat_t *m, u32 ow, u32 ov) {
     int i;
     for (i = 0; i < 4; i++) hdr[i] = mh[i];
     if (ov) hdr[ow] = ov;
+    polys += hdr[3] >> 16;
     *cf = COP_WMATRIX;
     for (i = 0; i < 9; i++) *cf = m2_obj_fb(m->r[i]);
     for (i = 0; i < 3; i++) *cf = m2_obj_fb(m->t[i]);
@@ -62,6 +69,7 @@ static void submit_cur_ov(u32 model, u32 ow, u32 ov) {
     int i;
     for (i = 0; i < 4; i++) hdr[i] = mh[i];
     if (ov) hdr[ow] = ov;
+    polys += hdr[3] >> 16;
     *cf = COP_FADD; *cf = COP_FADD; *cf = COP_FADD;
     cop_drain(cf, 1u);
     { u32 wr = *(volatile u32 *)COP_WPOS_REG;
@@ -871,6 +879,11 @@ static u32 edges(u32 now, u32 *held) { u32 e = now & ~*held; *held = now; return
 #define WIN_COL    18u
 #define WIN_ROW    3u
 #define WIN_W      26u
+/* The polygon count's window, at the screen's top right (62 tiles across). */
+#define PWIN_COL   44u
+#define PWIN_ROW   1u
+#define PWIN_W     17u
+#define PWIN_H     10u
 #define T_TEXT     0x8000u
 #define T_INV      0x8080u
 #define T_CURSOR   0x801Cu
@@ -894,10 +907,12 @@ static u32 menu_cur;
 
 static u32 slen(const char *s) { u32 n = 0; while (s[n]) n++; return n; }
 
-static void win_put(u32 col, u32 row, const char *s, u32 base) {
-    volatile u16 *t = TILE_L1 + (WIN_ROW + row) * 64u + WIN_COL + col;
+static void put_at(u32 col, u32 row, const char *s, u32 base) {
+    volatile u16 *t = TILE_L1 + row * 64u + col;
     while (*s) *t++ = (u16)(base | (u8)*s++);
 }
+
+static void win_put(u32 col, u32 row, const char *s, u32 base) { put_at(WIN_COL + col, WIN_ROW + row, s, base); }
 
 /* n in decimal, into b (at least 6 bytes) */
 static const char *dec(u32 n, char *b) {
@@ -912,6 +927,13 @@ static const char *dec(u32 n, char *b) {
  * place of layer 0. StF's windows set it over their frame. */
 #define TILE_MASK  ((volatile u16 *)0x0100C000u)
 
+static void mask_rect(u32 col, u32 row, u32 w, u32 h) {
+    u32 y, c;
+    for (y = row * 8u; y < (row + h) * 8u; y++)
+        for (c = col; c < col + w; c++)
+            TILE_MASK[y * 4u + (c >> 4)] |= (u16)(0x8000u >> (c & 15u));
+}
+
 static void menu_mask(u32 on) {
     u32 y, c;
     /* a palette colour's component c shows through colorxlat row c at
@@ -924,9 +946,8 @@ static void menu_mask(u32 on) {
     for (y = 0; y < 384u; y++)
         for (c = 0; c < 4u; c++) TILE_MASK[y * 4u + c] = 0u;
     if (!on) return;
-    for (y = WIN_ROW * 8u; y < (WIN_ROW + M_ITEMS + 5u) * 8u; y++)
-        for (c = WIN_COL; c < WIN_COL + WIN_W; c++)
-            TILE_MASK[y * 4u + (c >> 4)] |= (u16)(0x8000u >> (c & 15u));
+    mask_rect(WIN_COL, WIN_ROW, WIN_W, M_ITEMS + 5u);
+    mask_rect(PWIN_COL, PWIN_ROW, PWIN_W, PWIN_H);
 }
 
 static void menu_clear(void) {
@@ -935,16 +956,22 @@ static void menu_clear(void) {
     menu_mask(0u);
 }
 
-static void menu_draw(void) {
-    u32 rows = M_ITEMS + 5u, r, c, i;     /* the frame, title, items, name line, a blank */
-    char b[24];
+/* A window's frame, w tiles by rows, its inside blank. */
+static void win_frame(u32 col, u32 row, u32 w, u32 rows) {
+    u32 r, c;
     for (r = 0; r < rows; r++) {
-        volatile u16 *t = TILE_L1 + (WIN_ROW + r) * 64u + WIN_COL;
+        volatile u16 *t = TILE_L1 + (row + r) * 64u + col;
         u32 edge = r == 0u ? 0x8200u : r == rows - 1u ? 0x8205u : 0x8203u;
         t[0] = (u16)edge;
-        for (c = 1; c < WIN_W - 1u; c++) t[c] = (u16)(r == 0u ? 0x8201u : r == rows - 1u ? 0x8206u : 0x8020u);
-        t[WIN_W - 1u] = (u16)(edge + (r == 0u || r == rows - 1u ? 2u : 1u));
+        for (c = 1; c < w - 1u; c++) t[c] = (u16)(r == 0u ? 0x8201u : r == rows - 1u ? 0x8206u : 0x8020u);
+        t[w - 1u] = (u16)(edge + (r == 0u || r == rows - 1u ? 2u : 1u));
     }
+}
+
+static void menu_draw(void) {
+    u32 r, i;
+    char b[24];
+    win_frame(WIN_COL, WIN_ROW, WIN_W, M_ITEMS + 5u);   /* the frame, title, items, name line, a blank */
     win_put(1, 1, "GAME_SETUP", T_INV);
     for (i = 0, r = 2; i < M_ITEMS; i++, r++) {
         const char *v = 0;
@@ -970,6 +997,35 @@ static void menu_draw(void) {
     }
 }
 
+/* The faces the last frame submitted (polys): each fighter's, by the name
+ * the menu shows, the stage's and the frame's. Faces sent, before the
+ * geometrizer culls those turned away; a fighter's seams are counted with
+ * him (after he changes they come in one a pass, each drawn from the pass
+ * after its upload). Under them StF's own count: POLYGON, which the
+ * coprocessor keeps (g_cop_p) by adding each object's link count (the low
+ * half of obc; culled links too), and the POLYGON_LIMIT StF's boot sets
+ * (5000), past which its set_obj draws nothing more. The board does not
+ * stop there. Ryo's meshes carry a culled link after every face, so he
+ * costs twice his faces in links. */
+#define STF_POLYGON_LIMIT 5000u
+static void poly_win_draw(const u32 n[3]) {
+    static const char *const label[6] = { "1P ", "2P ", "STAGE", "TOTAL", "LINKS", "LIMIT" };
+    u32 r, v;
+    char b[8];
+    win_frame(PWIN_COL, PWIN_ROW, PWIN_W, PWIN_H);
+    put_at(PWIN_COL + 1u, PWIN_ROW + 1u, "POLYGON", T_INV);
+    for (r = 0; r < 6u; r++) {
+        const char *d;
+        u32 row = PWIN_ROW + 2u + r + (r >= 4u);         /* a blank line before StF's count */
+        put_at(PWIN_COL + 1u, row, label[r], T_TEXT);
+        if (r < 2u) put_at(PWIN_COL + 4u, row, fighter_name[menu_val[r ? M_P2 : M_P1]], T_TEXT);
+        v = r < 2u ? n[1u + r] : r == 2u ? n[0] : r == 3u ? n[0] + n[1] + n[2]
+          : r == 4u ? g_cop_p : STF_POLYGON_LIMIT;
+        d = dec(v, b);
+        put_at(PWIN_COL + PWIN_W - 1u - slen(d), row, d, T_INV);
+    }
+}
+
 /* One pass of the menu on the pads' new presses (e) and held bits (h),
  * StF's pad bits. Returns the item whose value changed, M_START when the
  * fight is to begin, or M_ITEMS for neither. */
@@ -991,6 +1047,7 @@ int main(void) {
     fighter_t fs[2];
     u32 i, stage = 0u;
     u32 held = 0u, pheld = 0u, vbl, step = 0u, over = 0u, in_menu = 1u, quit = 0u;
+    u32 pn[3];                           /* the faces drawn: the stage's, each fighter's */
 
     m2_init();
     m2_silicon_boot();
@@ -1070,7 +1127,9 @@ int main(void) {
         camera_stf(&stages[stage]);
         m2_geo_fifo_light(m2_obj_fb(light[0]), m2_obj_fb(light[1]), m2_obj_fb(light[2]));
         move_tpd_send(&stages[stage].tpd);
+        polys = 0u;
         draw_stage(&stages[stage]);
+        pn[0] = polys;
         /* StF steps its fighters once a 60 Hz frame and draws every other
          * one: a frame of the motion for every vblank since the last pass
          * (up to four), the last one's matrices drawn. */
@@ -1110,7 +1169,8 @@ int main(void) {
               }
           } }
         if (!in_menu) hud_draw();
-        for (i = 0; i < 2u; i++) draw_fighter(&fs[i], i);
+        for (i = 0; i < 2u; i++) { polys = 0u; draw_fighter(&fs[i], i); pn[1u + i] = polys; }
+        if (in_menu) poly_win_draw(pn);
         *(volatile u32 *)ZCLIP_REG = 0xFFFF00FFu;
         m2_frame_commit();
         /* 60 fps, as StF and VF2 run: a pass a vsync, the fighters stepped

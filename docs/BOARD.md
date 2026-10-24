@@ -1189,6 +1189,30 @@ held, and a change of stage or fighter shows at once.
 - `m2_backdrop` (the stage's backdrop colour) takes pen 1, the font's
   white, and fills layer 0 with its solid tile: a stage switch from the
   setup keeps pen 1 and clears layer 0, as the boot does.
+- A second window at the top right (`poly_win_draw`) counts the last
+  frame's polygons while the setup is up: each fighter's faces (by name),
+  the stage's and the total, then StF's own count and limit. A face count
+  is the high half of the model header's word 3 (obc), summed for every
+  object submitted (seams and the midriff with their fighter); the low half
+  is the link count, culled links too. StF's `POLYGON` is the coprocessor's
+  running sum of link counts (the board's `g_cop_p`, which `set_obj` and
+  the board's submits hand it and read back), and its boot sets
+  `POLYGON_LIMIT` to 5000, past which `set_obj` draws no more objects; the
+  board shows both and does not stop. Ryo's meshes have a culled link after
+  every triangle, so he costs about twice his faces in links:
+
+      MAME, settled              1P    2P  stage  faces  links
+      Sonic vs Honey, S. Island  784   750  1286   2820   3155
+      Ryo vs Ryo, South Island  1793  1793  1286   4872   8646, 8763
+      Ryo vs Ryo, Aurora        1793  1793   640   4226   8022
+
+  The faces are the same every settled frame; the coprocessor's link count
+  moved by about a hundred between two runs of the same menu (8646, 8763),
+  which the header sums do not explain (not looked into).
+
+  Ryo's 1793 is the import's count (15 parts, 193 of the faces in his 12
+  seams). After a fighter changes, his seams come in one a pass, so his
+  count climbs for a few passes.
 
 ## Where it stands
 
