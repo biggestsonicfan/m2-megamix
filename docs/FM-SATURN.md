@@ -39,8 +39,9 @@ offset 16. Its root holds:
   - 0–7: the costumes' files, models 0–3 and textures 4–7;
   - 8: the motion bank, loaded by FUN_0602e3e8 into the slot's pointer in
     the table at 0x0602e460;
-  - 9: a file FUN_0602eb34 loads; 10: one FUN_0602e6e8 loads; 11: an
-    optional file of about 60 sectors (−1 for the hidden fighters);
+  - 9: the command script (below), loaded by FUN_0602eb34; 10: one
+    FUN_0602e6e8 loads (Hornet's looks like sounds); 11: an optional file of
+    about 60 sectors (−1 for the hidden fighters);
   - 12: an id; 13: a count, from 2 to 5.
 - **Fighters**: 0x0608DDB0, 32 rows of 0x28 bytes, in the same order:
   - +0: the bones (below);
@@ -64,8 +65,8 @@ Character row 14 is (130, 132, 130, 130, 131, 133, 131, 131 | 135, 134, 136,
 | 130, 132 | | models (two costumes) |
 | 131, 133 | | textures, `tex_honet_0`, `tex_honet_1` |
 | 135 | 40 | the motion bank: 103 motions, ids 0x88–0x80E |
-| 134 | 3 | not decoded: 12-byte records (0x0E000000, u32 n, u32 offset), then 0x27000000…; commands or a script |
-| 136 | 30 | not decoded: a header of pairs, then signed bytes |
+| 134 | 3 | the command script, then the move list's rows (see Moves) |
+| 136 | 30 | probably sounds: 7 records of 3 × u32 (start \| 0x80000000, length, a third offset, mostly the start), then signed bytes from 0x58. Not needed for the moves |
 
 For comparison, Akira's are 151 (4 sectors), 152 (his bank), 153 (23) and
 154 (59).
@@ -270,8 +271,10 @@ set_mot_dat's and are not decoded yet.
 
 40 of the 66 entries in Hornet's action table are in his bank. The others
 (0x19F, 0x1A0, 0x1AD, 0x1AE, 0x4CA–0x4D5, 0x6CF, 0x6F0, 0x6F1, 0x8C1, …) are
-in no fighter's bank. Every fighter has some of these, which points to a
-common bank that hasn't been found yet.
+in no fighter's bank. They are in FMM_DATA file 352 (55 sectors, 162 motions),
+a bank of the same layout that every fighter shares. Every action-table id
+of all 32 fighters is in that fighter's bank or 352. The only exception is
+Bean's and Bark's 0x44EA, which is 0x4EA with a flag in bits 12–15.
 
 ### Motion layout
 
@@ -322,6 +325,151 @@ points and about 100× for angles, which puts the two up to 13° apart.
 Dropping out0, or scaling it toward VF2's, makes the difference larger
 (25°), so the tool converts FM's data as stored.
 
+## Moves
+
+### The command script
+
+A fighter's file 9 (Hornet's 134) is a script that FUN_06017366 runs on the
+fighter's input. It reads one opcode byte at a time and calls one of 82
+handlers through the table at 0x06072394. Offsets in the script are from the
+file's start. Each opcode is 4, 8, 12 or 16 bytes, read off its handler's
+`add #n,r10` (`OP_SIZE` in the tool).
+
+- **0x0E**: `if r5 == u32 goto u32` (12 bytes). The script opens with a
+  switch on the caller's r5 (cases 1, 2, 3, 5, 6, 7, 8, 0). After 0x4A 0x0050,
+  r5 is the motion being played (fighter +0x50), so a follow-up can check
+  what it follows.
+- **0x0F, 0x27**: push the u32 offset as the alternative. **0x10**: fail
+  back to the last alternative. **0x11**: goto. **0x28**: a three-way branch
+  on the stick (three u32 offsets).
+- **0x01, 0x03**: match the input. The low byte is buttons; flags in byte 2
+  add the toward/away bits at fighter +0x123C and +0x1240. These aren't
+  named yet.
+- **0x05**: request a move and stop. **0x06**: the same, unless a flag is
+  set. **0x32**: the same, if the u16 at +2 (a motion id) passes
+  FUN_06017c5e.
+
+A **move** is the u32 that a request opcode stores in the fighter's +0x3C:
+{ u8 kind, u8 parameter, u16 motion }. The kind picks one of 104 handlers at
+0x06012AEC; kind 0 just plays the motion. FUN_060131d0 starts the motion: it
+takes the u16 & 0xFFF as the id, keeps bits 12–15 as flags, and plays 0x88
+for anything past 0x8F3. The data comes from per-id tables in RAM, 0x06091CAC
+(data) and 0x0608F8BC (setup), which the banks fill. A motion can therefore
+come from the fighter's own bank or from the common one, 352.
+
+The move list follows the script: 16-byte rows padded with 0xFF (Hornet's
+84 start at 0x1214). The script ends at the first word whose low three bytes
+are 0xFFFFFF.
+
+These checks hold for all 32 fighters' scripts:
+
+- each one decodes cleanly up to its move list;
+- all 7121 jump offsets land on an opcode;
+- every requested motion is in the fighter's bank or in 352.
+
+### Hornet's
+
+Hornet's script makes 95 requests, which come to 81 different moves:
+
+- 56 play motions from his own bank 135;
+- 20 play motions from the common bank 352;
+- 5 (kinds 0x13, 0x1A, 0x1D, 0x1E and 0x31) have no motion.
+
+Below, "at" is the request's offset in 134 (every one, if a move is
+requested from more than one place). "Frames" is the motion's length in the
+bank. Hornet's kinds are 0, 0x10 (0x7D4–0xB44), 0x2D (one move), and 9 with
+a parameter of 0, 4, 8, 0x0C or 0x14 (the block from 0xC5C to 0xDBC). What
+the kinds and parameters mean isn't decoded.
+
+| At | Move | Motion | Frames | Bank |
+| --- | --- | --- | --- | --- |
+| 0x01f4 | 0x00000712 | 0x712 | 51 | 135 |
+| 0x0220 | 0x00000659 | 0x659 | 41 | 352 |
+| 0x0230 | 0x000004da | 0x4da | 41 | 352 |
+| 0x0250 | 0x000008ee | 0x8ee | 32 | 135 |
+| 0x0294 | 0x000005aa | 0x5aa | 70 | 135 |
+| 0x02d8 | 0x000008dc | 0x8dc | 70 | 135 |
+| 0x030c | 0x00000653 | 0x653 | 60 | 135 |
+| 0x0340 | 0x000000ff | 0xff | 64 | 135 |
+| 0x0350 | 0x000006bf | 0x6bf | 50 | 135 |
+| 0x0390 | 0x000006be | 0x6be | 62 | 135 |
+| 0x03bc, 0x0938 | 0x000008f3 | 0x8f3 | 81 | 135 |
+| 0x03e4 | 0x000005ae | 0x5ae | 60 | 135 |
+| 0x0400 | 0x0000075e | 0x75e | 60 | 135 |
+| 0x0428 | 0x000006ff | 0x6ff | 60 | 135 |
+| 0x0450 | 0x00000110 | 0x110 | 44 | 135 |
+| 0x0458 | 0x000006c1 | 0x6c1 | 50 | 135 |
+| 0x0474 | 0x000006f3 | 0x6f3 | 60 | 135 |
+| 0x04b4 | 0x000006b7 | 0x6b7 | 70 | 135 |
+| 0x04f4 | 0x000006b9 | 0x6b9 | 92 | 135 |
+| 0x0504 | 0x000006b8 | 0x6b8 | 92 | 135 |
+| 0x0534 | 0x000006b2 | 0x6b2 | 80 | 135 |
+| 0x0574 | 0x000008e0 | 0x8e0 | 80 | 135 |
+| 0x05a0 | 0x000008e5 | 0x8e5 | 80 | 135 |
+| 0x05d4 | 0x0000014d | 0x14d | 60 | 135 |
+| 0x05f8 | 0x0000014e | 0x14e | 62 | 135 |
+| 0x060c, 0x0b68 | 0x00000656 | 0x656 | 27 | 352 |
+| 0x062c | 0x000008ed | 0x8ed | 24 | 135 |
+| 0x064c | 0x000008ef | 0x8ef | 32 | 135 |
+| 0x0654 | 0x0000010f | 0x10f | 33 | 135 |
+| 0x0688 | 0x2d000146 | 0x146 | 70 | 135 |
+| 0x06b4 | 0x0000056c | 0x56c | 52 | 352 |
+| 0x06bc, 0x0ab0 | 0x000006db | 0x6db | 71 | 135 |
+| 0x06e8 | 0x00000658 | 0x658 | 57 | 352 |
+| 0x06f8 | 0x000004d6 | 0x4d6 | 57 | 352 |
+| 0x0734 | 0x000008e6 | 0x8e6 | 49 | 135 |
+| 0x074c | 0x0000010e | 0x10e | 46 | 135 |
+| 0x0768 | 0x00000652 | 0x652 | 50 | 135 |
+| 0x0784 | 0x000006dd | 0x6dd | 60 | 135 |
+| 0x078c, 0x0a8c | 0x0000010d | 0x10d | 46 | 135 |
+| 0x07ac | 0x0000066c | 0x66c | 63 | 135 |
+| 0x07d4, 0x07dc | 0x10000100 | 0x100 | 71 | 135 |
+| 0x0804 | 0x10040098 | 0x98 | 66 | 135 |
+| 0x0814 | 0x10040096 | 0x96 | 66 | 135 |
+| 0x0844, 0x084c | 0x1000088c | 0x88c | 71 | 135 |
+| 0x08ac | 0x100000c9 | 0xc9 | 109 | 135 |
+| 0x08b4, 0x08e8, 0x0914, 0x0b4c | 0x00000432 | 0x432 | 50 | 352 |
+| 0x08e0 | 0x1000080d | 0x80d | 66 | 135 |
+| 0x090c | 0x100000fd | 0xfd | 230 | 135 |
+| 0x098c, 0x0b0c | 0x0000024b | 0x24b | 60 | 352 |
+| 0x09c0 | 0x00000776 | 0x776 | 81 | 135 |
+| 0x09f8 | 0x0000010b | 0x10b | 42 | 135 |
+| 0x0a1c | 0x0000010a | 0x10a | 42 | 135 |
+| 0x0a84 | 0x0000010c | 0x10c | 62 | 135 |
+| 0x0b44 | 0x10000440 | 0x440 | 100 | 135 |
+| 0x0b88 | 0x00000883 | 0x883 | 30 | 352 |
+| 0x0ba8 | 0x00000884 | 0x884 | 30 | 352 |
+| 0x0bb0 | 0x00000700 | 0x700 | 60 | 135 |
+| 0x0bd4, 0x0df4 | 0x1a000000 | - | - | - |
+| 0x0bf4, 0x0e0c | 0x13000000 | - | - | - |
+| 0x0c20 | 0x1d000000 | - | - | - |
+| 0x0c44 | 0x1e000000 | - | - | - |
+| 0x0c5c, 0x0d24 | 0x0914013a | 0x13a | 100 | 135 |
+| 0x0c64 | 0x090c0561 | 0x561 | 50 | 135 |
+| 0x0c84 | 0x0904089d | 0x89d | 51 | 135 |
+| 0x0c9c, 0x0ccc | 0x090402fb | 0x2fb | 49 | 135 |
+| 0x0cb4 | 0x090402ee | 0x2ee | 57 | 352 |
+| 0x0cd4 | 0x090402f9 | 0x2f9 | 49 | 135 |
+| 0x0cdc | 0x090c055f | 0x55f | 79 | 135 |
+| 0x0cf0 | 0x090402ef | 0x2ef | 44 | 135 |
+| 0x0d04 | 0x090c02fc | 0x2fc | 46 | 352 |
+| 0x0d0c | 0x090c02f6 | 0x2f6 | 53 | 352 |
+| 0x0d2c | 0x09080314 | 0x314 | 80 | 135 |
+| 0x0d38 | 0x0900030d | 0x30d | 100 | 352 |
+| 0x0d48 | 0x09080561 | 0x561 | 50 | 135 |
+| 0x0d60 | 0x09080301 | 0x301 | 59 | 352 |
+| 0x0d74 | 0x090802ff | 0x2ff | 69 | 352 |
+| 0x0d88 | 0x09000302 | 0x302 | 60 | 352 |
+| 0x0d98 | 0x09000303 | 0x303 | 49 | 352 |
+| 0x0dac | 0x09080304 | 0x304 | 60 | 352 |
+| 0x0dbc | 0x09080305 | 0x305 | 44 | 352 |
+| 0x0e1c | 0x31000000 | - | - | - |
+
+`tests/fm-saturn.test.mjs` reads this table back. It checks that every motion
+listed with bank 135 is one of the 103 in Hornet's bank, that the 352 ones
+are in the common bank, and that the table is what the tool reads off the
+disc.
+
 ## The tool
 
 ```
@@ -329,6 +477,7 @@ node tools/fm-saturn.mjs --fighters
 node tools/fm-saturn.mjs hornet --list          # id, frames, data and setup offsets
 node tools/fm-saturn.mjs hornet --bones
 node tools/fm-saturn.mjs hornet --actions
+node tools/fm-saturn.mjs hornet --moves         # at, move, motion, frames, bank
 node tools/fm-saturn.mjs hornet --pose 10a 1    # the car pose, in the cabin's frame
 node tools/fm-saturn.mjs hornet 0x11c --out stance.bin
 node tools/fm-saturn.mjs hornet 0x11c --json
@@ -349,8 +498,8 @@ that every motion's keys come out of its VF2 block unchanged, and FM Akira's
   includes a broken nose and cabin, if Daytona's car is to break.
 - **FM's pose rig and model scale**: which rig FM's solve uses (VF2 has one
   standard rig), and the draw's model scale (300 units a metre is fitted).
-- **Hornet's moves**: which motions his commands play. That is in file 134
-  (probably the command list), 136, and the bank's setup records.
-- **The action table's slots** (stance, walk, …), and the common bank that
-  holds the ids no fighter's bank has.
+- **Hornet's commands**: which input each move takes. That needs the bit
+  layout behind opcodes 0x01/0x03/0x28 and fighter +0x123C/+0x1240, plus the
+  move list's rows. The kinds' handlers at 0x06012AEC are not decoded either.
+- **The action table's slots** (stance, walk, …).
 - **The fighter rows' numbers** past +4.

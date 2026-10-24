@@ -124,6 +124,57 @@ export function readActions(game, fighter) {
     return Array.from({ length: ACTIONS }, (_, i) => game.prg.readUInt16BE(p + 2 * i));
 }
 
+/* The command script (a fighter's file9; Hornet's 134). 0x06017366 runs it a
+ * byte opcode at a time through the 82 handlers at 0x06072394; offsets in it
+ * are from the file's start. A move is a request: a u32 the script puts in
+ * the fighter's +0x3c and stops: {u8 kind, u8 parameter, u16 motion id}
+ * (0x060131d0 plays motion id & 0xfff; kind picks one of the 104 handlers at
+ * 0x06012aec). The size of each opcode, from its handler's add to r10: */
+const OP_SIZE = (() => {
+    const size = new Map();
+    for (const op of [0x00, 0x01, 0x02, 0x03, 0x04, 0x10, 0x12, 0x17, 0x18, 0x19, 0x1d, 0x1e, 0x1f, 0x20,
+        0x24, 0x25, 0x26, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f, 0x30, 0x31, 0x33, 0x34, 0x35, 0x3d, 0x3e, 0x42,
+        0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4f]) size.set(op, 4);
+    for (const op of [0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0f, 0x11, 0x13, 0x14, 0x15,
+        0x16, 0x1a, 0x1b, 0x1c, 0x21, 0x22, 0x23, 0x27, 0x29, 0x2a, 0x32, 0x36, 0x37, 0x38, 0x39, 0x3a,
+        0x3b, 0x3c, 0x3f, 0x40, 0x41, 0x43, 0x50, 0x51]) size.set(op, 8);
+    size.set(0x0e, 12);   /* if r5 == u32 goto u32 */
+    size.set(0x4e, 12);
+    size.set(0x28, 16);   /* three-way on the stick: u32 offsets */
+    return size;
+})();
+/* the opcodes that request a move: 0x05 always, 0x06 unless a flag is set,
+ * 0x32 if the u16 at +2 passes 0x06017c5e */
+const REQUESTS = new Set([0x05, 0x06, 0x32]);
+/* the motions every fighter shares (damage, thrown, ...): FMM_DATA file 352 */
+export const COMMON_MOTIONS = 352;
+
+/** The script's opcodes [{at, op, bytes}], up to the move list after it
+ *  (16-byte rows padded with 0xff, which no opcode has in its low bytes). */
+export function readScript(buf) {
+    const ops = [];
+    for (let at = 0; at + 4 <= buf.length;) {
+        const op = buf[at], size = OP_SIZE.get(op);
+        if (!size || (buf.readUInt32BE(at) & 0xffffff) === 0xffffff) break;
+        ops.push({ at, op, bytes: buf.subarray(at, at + size) });
+        at += size;
+    }
+    return ops;
+}
+
+/** A fighter's moves: every request in its script, with the motion it plays
+ *  (from its own bank, or the common one) and that motion's length. */
+export function readMoves(game, fighter) {
+    const own = new Map(readBank(game.archive(fighter.motions)).map(r => [r.id, r]));
+    const common = new Map(readBank(game.archive(COMMON_MOTIONS)).map(r => [r.id, r]));
+    return readScript(game.archive(fighter.file9)).filter(o => REQUESTS.has(o.op)).map(({ at, op, bytes }) => {
+        const move = bytes.readUInt32BE(4), motion = move & 0xfff;
+        const row = motion ? own.get(motion) ?? common.get(motion) : undefined;
+        return { at, op, move, kind: move >>> 24, parameter: (move >> 16) & 0xff, motion: motion || null,
+            bank: row ? (own.has(motion) ? fighter.motions : COMMON_MOTIONS) : null, frames: row?.frames ?? null };
+    });
+}
+
 /* Where a fighter's model file keeps its slot table: four tables of 32
  * offsets (one per fighter row), picked by FUN_0601fcb0's r7. Hornet's are
  * all 0x714C, into files 130 and 132. */
@@ -317,7 +368,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const [who, what] = args;
     if (!who && file === undefined) {
         console.error('usage: fm-saturn.mjs [--disc Track01.bin] --fighters | --file <n> --out f.bin\n' +
-            '       | <fighter> --list | --bones | --actions | --pose <motion id> [frame]\n' +
+            '       | <fighter> --list | --bones | --actions | --moves | --pose <motion id> [frame]\n' +
             '       | <fighter> <motion id> [--json] [--out block.bin]');
         process.exit(2);
     }
@@ -351,6 +402,14 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
                 `\tat ${v(t)}\tx ${v(r.slice(0, 3))}  y ${v(r.slice(3, 6))}`);
         }
         for (const [alt, s] of readBreaks(game, f)) console.log(`${alt} replaces ${s} (${SLOT_NAMES[s]}) once its armour breaks`);
+        process.exit(0);
+    }
+    if (what === '--moves') {
+        const h = (v, n) => `0x${v.toString(16).padStart(n, '0')}`;
+        for (const m of readMoves(game, f)) {
+            console.log(`${h(m.at, 4)}\t${h(m.move, 8)}\t${m.motion === null ? '-' : h(m.motion, 0)}` +
+                `\t${m.frames ?? '-'}\t${m.bank ?? '-'}`);
+        }
         process.exit(0);
     }
     if (what === '--actions') {

@@ -2,7 +2,7 @@
  * and come out of VF2's block the same at their keys; FM's Akira plays as
  * VF2's own Akira past the first key. Skipped without the FM disc. */
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import * as FM from '../tools/fm-saturn.mjs';
 import { encodeVF2 } from '../tools/shenmue-motion.mjs';
 import * as M from '../vendor/noclip/js/motion.js';
@@ -53,4 +53,39 @@ for (let c = 0; c < 60; c++) {
         assert.ok(e < 1, `channel ${c} frame ${f}: ${e}`);
     }
 }
-console.log(`fm-saturn: ${motions} motions ok`);
+/* Hornet's moves, as docs/FM-SATURN.md lists them: every motion from his
+ * bank is one of the 103 in file 135, the others are in the common bank,
+ * and the table is what the script says */
+const hornet = game.fighters[14];
+const own = new Set(FM.readBank(game.archive(hornet.motions)).map(r => r.id));
+const common = new Set(FM.readBank(game.archive(FM.COMMON_MOTIONS)).map(r => r.id));
+assert.equal(own.size, 103);
+const doc = readFileSync(new URL('../docs/FM-SATURN.md', import.meta.url), 'utf8');
+const listed = [...doc.split('### Hornet\'s')[1].matchAll(/^\| (0x[\da-f, x]+) \| (0x[\da-f]{8}) \| (\S+) \| (\S+) \| (\S+) \|$/gm)]
+    .map(([, at, move, motion, frames, bank]) => ({ at, move, motion, frames, bank }));
+assert.equal(listed.length, 81);
+for (const m of listed) {
+    if (m.bank === '135') assert.ok(own.has(parseInt(m.motion, 16)), `${m.move}: ${m.motion} isn't in file 135`);
+    else if (m.bank === '352') assert.ok(common.has(parseInt(m.motion, 16)) && !own.has(parseInt(m.motion, 16)), m.move);
+    else assert.equal(m.motion, '-', m.move);
+}
+const h = (v, n) => `0x${v.toString(16).padStart(n, '0')}`, read = new Map();
+for (const m of FM.readMoves(game, hornet)) {
+    const k = h(m.move, 8), r = read.get(k);
+    if (r) r.at += `, ${h(m.at, 4)}`;
+    else read.set(k, { at: h(m.at, 4), move: k, motion: m.motion === null ? '-' : h(m.motion, 0),
+        frames: String(m.frames ?? '-'), bank: String(m.bank ?? '-') });
+}
+assert.deepEqual(listed, [...read.values()]);
+
+/* every fighter's script decodes to its move list, its jumps land on opcodes,
+ * and its motions are in its bank or the common one */
+const JUMPS = { 0x0d: [4], 0x0e: [8], 0x0f: [4], 0x11: [4], 0x27: [4], 0x28: [4, 8, 12], 0x38: [4] };
+for (const f of game.fighters) {
+    const buf = game.archive(f.file9), ops = FM.readScript(buf), at = new Set(ops.map(o => o.at)), last = ops.at(-1);
+    assert.equal(buf.readUInt32BE(last.at + last.bytes.length) & 0xffffff, 0xffffff, f.name);
+    for (const o of ops) for (const k of JUMPS[o.op] ?? []) assert.ok(at.has(o.bytes.readUInt32BE(k)), `${f.name} ${h(o.at, 4)}`);
+    for (const m of FM.readMoves(game, f)) assert.ok(m.motion === null || m.bank !== null, `${f.name} ${h(m.move, 8)}`);
+}
+
+console.log(`fm-saturn: ${motions} motions, Hornet's ${listed.length} moves ok`);
