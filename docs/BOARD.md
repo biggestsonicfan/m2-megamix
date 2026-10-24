@@ -1313,6 +1313,8 @@ Known gaps:
    and colours go into the data ROMs (StF's unused runs, see
    `STF-BOARD-AKIRA.md`), which then ship as new ROM files beside the
    program.
+   `FV-STAGES.md` is what an import of FV's arenas (and its cage break)
+   works from.
 
 `STF-BOARD-AKIRA.md` records the earlier route (Akira dropped into StF's own
 program by data edits). Its measurements of free ROM and texture RAM still
