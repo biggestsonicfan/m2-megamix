@@ -674,6 +674,76 @@ for (const [from, to] of [['| 0x0600ed6a | the opponent\'s +0x19f0 & 0x00024100 
 /* "The flags those four stop at" naming another mask for it fails too */
 assert.throws(() => checkEd6a(ed6aDoc, fourDoc.replace('stops at 0x0600ed6a (the opponent\'s +0x19f0 & 0x00024100)', 'stops at 0x0600ed6a (the opponent\'s +0x19f0 & 0x00004100)')));
 
+/* The flag at 0x0600ed74: the stop "The flag at 0x0600ed6a" left undescribed.
+ * The four words that load and test it, this fighter's (r12) byte bit as the
+ * long's flag; the bf's target is the one 0x0600ed6a's set side branches to,
+ * and the fall-through is where 0x0600ed64's bf lands, with the same events */
+const ed74Doc = kindsDoc.split('#### The flag at 0x0600ed74\n\n')[1].split('\n#### ')[0].split('\n### ')[0];
+function checkEd74(text, ed6a, four) {
+    const at = 0x0600ed74, sides = FM.flagSides(game, run9, at);
+    const named = ed6a.match(new RegExp(String.raw`stops at 0x0600ed74 \((${FLAG})\)`))[1];
+    const rows = [...text.matchAll(new RegExp(String.raw`^\| (0x[\da-f]{8}) \| (${FLAG}) \| (.*?) \| (.*?) \|$`, 'gm'))];
+    assert.deepEqual(rows.map(r => [r[1], r[2]]), [['0x0600ed74', named]]);
+    assert.equal(eventFlag(sides.flag), named, '0x0600ed74: the disc\'s flag');
+    /* mov rM,r1; add #imm,r1; mov.b @r1,r0; tst #bit,r0; bf */
+    const [, m, imm, bit] = text.match(/0x0600ed6e is\n`mov r(\d+),r1`, 0x0600ed70 `add #(0x[\da-f]+),r1`, 0x0600ed72 `mov\.b @r1,r0` and\n0x0600ed74 `tst #(0x[\da-f]{2}),r0`, then `bf` at 0x0600ed76/);
+    assert.equal(word(0x0600ed6e), 0x6103 | (+m << 4), 'mov rM,r1');
+    assert.equal(word(0x0600ed70), 0x7100 | parseInt(imm, 16), 'add #imm,r1');
+    assert.equal(word(0x0600ed72), 0x6010, 'mov.b @r1,r0');
+    assert.equal(word(at), 0xc800 | parseInt(bit, 16), 'tst #bit,r0');
+    assert.equal(+m, 12, 'this fighter is r12');
+    assert.ok(sides.flag.of !== 13 && !named.startsWith('the opponent'), 'not the opponent\'s');
+    const [, tbit, tbyte, who] = text.match(/That is bit (0x[\da-f]{2}) of\nthe byte (\+0x[\da-f]+) of (this fighter \(r12\)), not the opponent's/);
+    assert.deepEqual([tbit, tbyte.slice(1)], [bit, imm], 'the bit and byte named');
+    const long = asLongFlag({ field: parseInt(imm, 16), size: 1 }, parseInt(bit, 16));
+    assert.equal(flagText(long.field, long.mask), named, 'the byte bit as the long\'s flag');
+    assert.equal(text.match(/it is the long (\+0x[\da-f]+)'s (0x[\da-f]{8})/).slice(1).join(' & '), named);
+    const b = word(at + 2), target = ((b & 0xff) << 24 >> 24) * 2 + at + 6;
+    assert.equal(b & 0xff00, 0x8b00, '0x0600ed76: bf, so the branch is the set side');
+    const [, , , set, clear] = rows[0];
+    /* set: no event but the stop; the branch is 0x0600ed6a's set side's */
+    const [, to, s1, s2, sa, sf] = set.match(new RegExp(String.raw`^changes nothing in the jump before it branches to (0x[\da-f]{8}), on 0x0600ed64's set path past its stores at (0x[\da-f]{8}) and (0x[\da-f]{8}), and stops at (0x[\da-f]{8}) \((${FLAG})\)$`));
+    assert.equal(h(target, 8), to, 'the set side\'s branch');
+    assert.equal(ed6a.match(/branches to (0x[\da-f]{8})/)[1], to, 'the branch 0x0600ed6a\'s set side takes');
+    assert.deepEqual(sides.set.map(e => [e.kind, h(e.at, 8), eventFlag(e)]), [['stop', sa, sf]], 'set: one stop');
+    const ed64 = FM.flagSides(game, run9, 0x0600ed64);
+    assert.deepEqual(ed64.set.filter(e => e.kind === 'store' && e.at >= 0x0600ee00).map(e => h(e.at, 8)), [s1, s2], 'the stores before the target');
+    assert.ok(s1 < to && s2 < to);
+    /* clear: falls through to where 0x0600ed64's set side starts, and is that side */
+    const [, from, ca, cf] = clear.match(new RegExp(String.raw`^goes on to (0x[\da-f]{8}), where 0x0600ed64's set path starts, and does what "The flags those four stop at" says that side does, to its stop at (0x[\da-f]{8}) \((${FLAG})\)$`));
+    const b64 = word(0x0600ed66), t64 = ((b64 & 0xff) << 24 >> 24) * 2 + 0x0600ed64 + 6;
+    assert.equal(b64 & 0xff00, 0x8b00, '0x0600ed66: bf');
+    assert.deepEqual([h(at + 4, 8), h(t64, 8)], [from, from], 'the fall-through is 0x0600ed64\'s set side');
+    assert.deepEqual(sides.clear, ed64.set, 'clear: 0x0600ed64\'s set side');
+    const last = sides.clear.at(-1);
+    assert.deepEqual([last.kind, h(last.at, 8), eventFlag(last)], ['stop', ca, cf], 'clear: its stop');
+    assert.ok(four.match(/^\| 0x0600ed64 \| .*? \| (.*?) \| .*$/m)[1].endsWith(`stops at ${ca} (${cf})`), 'that row\'s set side names that stop');
+    /* the bullet, and the stop left undescribed */
+    const bullet = text.match(/^- \*\*(.+?)\*\*:([^]*?)\n\n/m), body = bullet[2].replace(/\s+/g, ' ');
+    assert.equal(bullet[1], named);
+    assert.deepEqual([...body.matchAll(/nothing changes before (0x[\da-f]{8})/g)].map(m => m[1]), [sa], 'set: nothing changes before its stop');
+    assert.match(body, /; clear, it joins 0x0600ed64's set path where it starts,/);
+    const [, left] = text.match(/Both\nsides stop at (0x[\da-f]{8}), whose flag is in "The flags those stop at"/);
+    assert.deepEqual([sa, ca], [left, left], 'both sides\' stop');
+    assert.ok(thoseDoc.includes(`| ${left} | ${sf} |`), `${left}'s row in "The flags those stop at"`);
+}
+checkEd74(ed74Doc, ed6aDoc, fourDoc);
+for (const [from, to] of [['| 0x0600ed74 | +0x2c & 0x00000100 |', '| 0x0600ed74 | +0x2c & 0x00000001 |'],
+    ['| 0x0600ed74 | +0x2c & 0x00000100 |', '| 0x0600ed74 | the opponent\'s +0x2c & 0x00000100 |'],
+    ['`mov r12,r1`', '`mov r13,r1`'], ['`add #0x2e,r1`', '`add #0x2f,r1`'], ['`tst #0x01,r0`', '`tst #0x02,r0`'],
+    ['That is bit 0x01 of', 'That is bit 0x02 of'], ['the byte +0x2e of', 'the byte +0x2f of'], ['the long +0x2c\'s 0x00000100', 'the long +0x2c\'s 0x00000001'],
+    ['branches to 0x0600ee0e', 'branches to 0x0600ee10'], ['past its stores at 0x0600ee0a and 0x0600ee0c', 'past its stores at 0x0600ed8e and 0x0600ee0c'],
+    ['0x0600ee0c, and stops at 0x0600ee16 (+0x6c0 & 0x40000000)', '0x0600ee0c, and stops at 0x0600ee16 (+0x6c0 & 0x20000000)'],
+    ['goes on to 0x0600ed78', 'goes on to 0x0600ed7a'], ['to its stop at 0x0600ee16', 'to its stop at 0x0600ee18'],
+    ['| changes nothing in the jump before it branches', '| sets +0x20 (0x0600ee0a) and branches'],
+    ['nothing changes before 0x0600ee16', 'nothing changes before 0x0600ed78'], ['clear, it joins\n  0x0600ed64\'s set path where it starts', 'clear, nothing\n  changes before 0x0600ee16'],
+    ['sides stop at 0x0600ee16', 'sides stop at 0x0600ed78']]) {
+    assert.ok(ed74Doc.includes(from), from);
+    assert.throws(() => checkEd74(ed74Doc.replace(from, to), ed6aDoc, fourDoc), `${from} -> ${to}`);
+}
+/* "The flag at 0x0600ed6a" naming another flag for it fails too */
+assert.throws(() => checkEd74(ed74Doc, ed6aDoc.replace('stops at 0x0600ed74 (+0x2c & 0x00000100)', 'stops at 0x0600ed74 (+0x2c & 0x00000001)'), fourDoc));
+
 /* the Slots table: each slot the kinds play, against a fresh read of Hornet's
  * action table and banks; its Kinds column is the Kinds table's Plays */
 const slotsDoc = doc.split('### Slots')[1].split('\n## ')[0];

@@ -818,6 +818,29 @@ flags tested at 0x0600ed74 and 0x0600ee16 are left undescribed here;
 0x0600ee16's is in "The flags those stop at". `tests/fm-saturn.test.mjs`
 checks this section against a fresh read.
 
+#### The flag at 0x0600ed74
+
+The flag test that "The flag at 0x0600ed6a" stops at on its clear side,
+in the run handler, read off the disc and followed the same way. The
+fighter, field and mask named there match the disc: 0x0600ed6e is
+`mov r12,r1`, 0x0600ed70 `add #0x2e,r1`, 0x0600ed72 `mov.b @r1,r0` and
+0x0600ed74 `tst #0x01,r0`, then `bf` at 0x0600ed76. That is bit 0x01 of
+the byte +0x2e of this fighter (r12), not the opponent's; on the
+big-endian SH-2 it is the long +0x2c's 0x00000100.
+
+| Tested at | Flag | Set | Clear |
+| --- | --- | --- | --- |
+| 0x0600ed74 | +0x2c & 0x00000100 | changes nothing in the jump before it branches to 0x0600ee0e, on 0x0600ed64's set path past its stores at 0x0600ee0a and 0x0600ee0c, and stops at 0x0600ee16 (+0x6c0 & 0x40000000) | goes on to 0x0600ed78, where 0x0600ed64's set path starts, and does what "The flags those four stop at" says that side does, to its stop at 0x0600ee16 (+0x6c0 & 0x40000000) |
+
+- **+0x2c & 0x00000100**: set, it joins 0x0600ed64's set path after that
+  path's stores, and nothing changes before 0x0600ee16; clear, it joins
+  0x0600ed64's set path where it starts, which is not rewritten here.
+
+Neither side reaches the 0.8 distance check or `+0` bit 0x10000000. Both
+sides stop at 0x0600ee16, whose flag is in "The flags those stop at" and
+is left undescribed here. `tests/fm-saturn.test.mjs` checks this section
+against a fresh read.
+
 ### Slots
 
 The action-table slots that those handlers play, read the way 0x0600CEC8
