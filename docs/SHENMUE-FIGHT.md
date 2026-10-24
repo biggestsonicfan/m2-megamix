@@ -856,6 +856,40 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
     | 0x40 (64) | 1 | SUI_DRP_092_00 494 |
     | 0x10 (16) | 1 | AKI_AKI_CHP_MON 715 |
     | 0x05 (5) | 1 | AKI_AKI_KICK_HAZ_KESA_TOP 1327 |
+- **Where a strike's bytes end (read on strikes):** not found. No end is
+  shared, and no byte marks one, so the bytes past r[p+29] aren't tabled.
+  All 231 strikes have p = 20 (the walk still finds 231).
+  - **No shared length:** from p to the record's end is 36 to 140 bytes,
+    24 different lengths across the 231. Elbow Slam's is 88; Twist Knuckle,
+    Upper Knuckle, Rain Thrust and Trample Kick are 84.
+  - **The same bytes sit at different places:** the 4 bytes `08 00 00 00`
+    first come at p+20 on some strikes and as late as p+64 on others. Where
+    they come follows r[p+20] ("The byte after those eight") only in part:
+
+    | r[p+20] | Strikes | First `08 00 00 00` at (strikes) |
+    |---|---|---|
+    | 11 | 126 | p+32 (59), p+36 (44), p+44 (8), p+48 (4), p+40 (4), p+60 (3), p+52 (2), p+64 (1), p+26 (1) |
+    | 12 | 36 | p+24 (30), p+32 (2), p+36 (2), p+44 (1), p+28 (1) |
+    | 6 | 23 | p+28 (19), p+44 (2), p+32 (2) |
+    | 8 | 20 | p+20 (20) |
+    | 3 | 10 | p+36 (4), p+48 (2), p+40 (2), p+52 (1), p+60 (1) |
+    | 14 | 5 | p+40 (2), p+48 (2), p+52 (1) |
+    | 5 | 5 | p+36 (4), p+32 (1) |
+    | 7 | 3 | p+28 (2), p+24 (1) |
+    | 1 | 2 | p+36 (2) |
+    | 9 | 1 | p+44 (1) |
+
+    The 4 bytes `04 05 ab 76` first come anywhere from p+26 to p+98 (on 229
+    strikes; 2 don't have them). On Elbow Slam, Twist Knuckle, Upper Knuckle,
+    Rain Thrust and Trample Kick `08 00 00 00` is at p+36 and `04 05 ab 76`
+    at p+66.
+  - **What that does to the r[p+28] and r[p+29] counts:** the 8 strikes with
+    0xAB (171) at r[p+28] and 0x76 (118) at r[p+29] are the 8 where
+    `04 05 ab 76` starts at p+26: AK_DW_TA_KI_00 131, PRI_DFK_023 382,
+    RUF_521_02 445, RUF_531_02 446, SUI_DRP_092_01 495, SUI_KI_00 501,
+    TA_KI_HIZA_L 523 and TA_KI_SYO_LL 525. On the others those bytes come
+    later. So from p+20 on, one position isn't the same thing on every
+    strike, and a per-position table past r[p+29] would mix them.
 - **Counting kind-5 groups (86, 88, 104):** the three counts are the same
   layout (header, one tag-2 block, kind 5) with different checks on the
   tag-2 words. The scans didn't walk off the hit block.
@@ -945,6 +979,9 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
   The tenth byte after those eight is 0 on Elbow Slam and Twist Knuckle
   and on 208 of the strikes, and takes 6 values in all; it isn't decoded
   (see "The tenth byte after those eight").
+  Where a strike's bytes end isn't found: no length is shared (36 to 140
+  bytes from p), and the same bytes sit at different places from p+20 on
+  (see "Where a strike's bytes end").
   The record's other fields aren't decoded.
 
 ## Other leads
