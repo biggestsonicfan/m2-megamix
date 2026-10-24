@@ -935,11 +935,25 @@ to 0x4000). 24 seam draws a frame, 12 a player, each after its part; over
 are closed, the seams lying over them.
 
 The seams leave the ankles alone, and there a bent rear leg seen from the
-front shows the shin part (model 4995, one rigid part) with every other
-triangle gone at its bottom: dark spikes of jeans down to the shoe. MAME
-draws the same spikes in the same pose, so it is the mesh (likely the
-winding of those triangles, culled from that side), not the emulator.
-Not fixed.
+front showed the shin part (model 4995, slot 11, one rigid part) with every
+other triangle gone at its bottom: dark spikes of jeans down to the shoe,
+in MAME and m2-hle2 alike. It was the faces' stored normals (#1546). The
+board culls a face by its stored normal against corner C (MAME
+`check_culling`, with `face` from normal · C), not by its winding, and each
+face was stored with its three corners' Shenmue normals averaged. The shin is
+a tube of long faces from the knee ring to the hem ring, and the hem ring's
+corners share their normals with the cuff inside, so they lean down the leg.
+The faces with two hem corners (7 of the shin's 47: 0, 13, 15, 16, 20, 21,
+35) had normals 34-45° off their own, and were culled while still turned a
+little to the eye, leaving the faces between them, the ones with one hem
+corner, as spikes. The winding, the indices and the geometry were right:
+every face's normal was on its outward side, and no corner was missing.
+Now every face is stored with its own flat normal (cutParts), as a Model 2
+face is lit and culled by one normal (the seams already were, in mode 2).
+In the same MAME frames (Ryo vs Ryo, frames 720 to 900) the shins are
+whole, and the shoe meets the hem with no gap, so the ankle needs no seam.
+The rest of him shades a little differently face by face, with the same
+colours. On m2-hle2, shots t05 and t11 (the spiking ones) are whole too.
 
 **Graded against the Dreamcast** (beta 0.400 disc 3's Free Battle in Flycast,
 full body beside a MAME shot, mean colour per region): the shape and

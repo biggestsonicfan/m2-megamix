@@ -148,6 +148,14 @@ function cutParts(model, k) {
                 const out = unit([a.n[0] + b.n[0] + d.n[0], a.n[1] + b.n[1] + d.n[1], a.n[2] + b.n[2] + d.n[2]]);
                 /* Akira's faces wind A, B, C about their outward side */
                 if (dot(face, out) < 0) [a, b] = [b, a];
+                /* The normal the face is stored with is its own, flat: the
+                 * board culls a face whose stored normal turns from the eye
+                 * (MAME model2_v.cpp, normal · corner C), so the corners'
+                 * normals, averaged, cull a face seen at a slant when they
+                 * lean from it. Down his shin they lean up to 45°,
+                 * the hem's corners sharing the cuff's normals: a bent rear
+                 * leg seen from the front lost half the shin's faces (#1546). */
+                const flat = unit(dot(face, out) < 0 ? face.map((x) => -x) : face);
                 /* a seam's far corners first (A, or A and B), turning the
                  * corners round, so each is one run of words to patch */
                 const fars = [a, b, d].map((q) => !!q.o);
@@ -158,7 +166,7 @@ function cutParts(model, k) {
                 }
                 /* stored: z the other way; the normal inward, as the ROM's are */
                 const st = (q) => [q[0], q[1], -q[2]];
-                const tri = { pts: [st(a.p), st(b.p), st(d.p)], nrm: [-out[0], -out[1], out[2]], uv: [a.uv, b.uv, d.uv], texture: strip.texture };
+                const tri = { pts: [st(a.p), st(b.p), st(d.p)], nrm: [-flat[0], -flat[1], flat[2]], uv: [a.uv, b.uv, d.uv], texture: strip.texture };
                 const key = a.o || b.o || d.o ? `${slot},${other}` : null;
                 if (key) tri.far = [a.o, b.o, d.o].map((q) => q && st(q));
                 const into = key ? seams : slots;
