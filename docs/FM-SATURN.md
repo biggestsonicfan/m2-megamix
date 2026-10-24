@@ -652,24 +652,29 @@ that is "stops at", and that flag is left undescribed.
 | --- | --- | --- | --- | --- |
 | 0x0600db22 | accept | +0x2c & 0x00001000 | keeps the jump: the stage test (0x0600db2c); at stage ≤ 1 it adds +0x70's bits to the request (0x0600db3c) and sets +0x4aa, the airtime, (0x0600db86) without clearing +0x50 or +0x60; past it, the +0x6c0 & 0x02000000 test (0x0600dc80); then stores the request in +0x70 (0x0600da7c) | starts the jump over: clears +0x50 (0x0600db42) and +0x60, the stage, (0x0600db46), sets +0x4b0, the direction, (0x0600db60) and +0x4aa, the airtime, (0x0600db86), then stores the request in +0x70 (0x0600da7c) |
 | 0x0600dc80 | accept | +0x6c0 & 0x02000000 | with a motion (the motion-id test (0x0600dcd8)), the 0x40 test (0x0600dce0) and then the 0x80 test (0x0600dce6) skip the hold, else the 0x08 test (0x0600dcee) sets +0x4ac, the hold, (0x0600dcc4); plays no motion; then stores the request in +0x70 (0x0600da7c) | with a motion (the motion-id test (0x0600dc88)), the 0x08 test (0x0600dc90) sets +0x4ac, the hold, (0x0600dcc4), else the 0x80 test (0x0600dc96) holds it back, else it plays the request's motion (0x0600dc9c); then stores the request in +0x70 (0x0600da7c) |
-| 0x0600ed16 | run | +0x00 & 0x00000020 | stops at 0x0600ed20 (+0x6c0 & 0x04000000), the first of a chain of +0x6c0 tests | after the 0x04 test (0x0600f37e) calls 0x06014ca4 (0x0600f386), or with the bit calls 0x06014ca4 (0x0600f398); stops at 0x0600f3a4 (+0x6c0 & 0x20000000); whichever way it goes, it then clears +0x70 (0x0600f3de): the jump ends |
+| 0x0600ed16 | run | +0x00 & 0x00000020 | changes nothing in the jump before it stops at 0x0600ed20 (+0x6c0 & 0x04000000), the first of a chain of +0x6c0 tests | after the 0x04 test (0x0600f37e) calls 0x06014ca4 (0x0600f386), or with the bit calls 0x06014ca4 (0x0600f398); stops at 0x0600f3a4 (+0x6c0 & 0x20000000); whichever way it goes, it then clears +0x70 (0x0600f3de): the jump ends |
 | 0x0600ed36 | run | +0x6c0 & 0x00001000 | while the +0x6c6 counter (0x0600f0d0) isn't 0, moves the fighter and ends this frame's run (0x0600f3f6); at 0 it sets +0x24 (0x0600f17a), calls 0x06012efc (0x0600f182) for a new airtime in +0x4a8 (0x0600f18a) and +0x4aa (0x0600f190), sets +0x6c0 (0x0600f1aa) and goes on to the 0x40 test (0x0600f1bc) | goes on to the +0x6c0 & 0x02000000 test (0x0600ed40) |
-| 0x0600ed40 | run | +0x6c0 & 0x02000000 | while the +0x6c6 counter (0x0600efd0) isn't 0, the 0x80 test (0x0600efde): with the bit it plays the request's motion (0x0600eff6) and sets +0x6c0 (0x0600f020) and +0x6c6 (0x0600f046) again, without it it ends this frame's run (0x0600f3f6); at 0 it sets +0x6c0 (0x0600f242) and stops at 0x0600f27a (+0x6c0 & 0x00040000) | stops at 0x0600ed4c (+0x00 & 0x04000000) |
-| 0x0600ee78 | run | +0x6c0 & 0x00030000 | stops at 0x0600ee84 (+0x6c0 & 0x80000000) | ends this frame's run (0x0600f3f6) |
+| 0x0600ed40 | run | +0x6c0 & 0x02000000 | while the +0x6c6 counter (0x0600efd0) isn't 0, the 0x80 test (0x0600efde): with the bit it plays the request's motion (0x0600eff6) and sets +0x6c0 (0x0600f020) and +0x6c6 (0x0600f046) again, without it it ends this frame's run (0x0600f3f6); at 0 it sets +0x6c0 (0x0600f242) and stops at 0x0600f27a (+0x6c0 & 0x00040000) | changes nothing in the jump before it stops at 0x0600ed4c (+0x00 & 0x04000000) |
+| 0x0600ee78 | run | +0x6c0 & 0x00030000 | changes nothing in the jump before it stops at 0x0600ee84 (+0x6c0 & 0x80000000) | ends this frame's run (0x0600f3f6) |
 
-- **+0x2c & 0x00001000** decides whether a kind 9 request that comes during
-  a jump joins it (set) or starts a new one from stage 0 (clear).
-- **+0x6c0 & 0x02000000**, in the accept handler, keeps a late air
-  attack's motion from playing at once (set); in the run handler it is
-  the branch where a held-back 0x80 motion plays.
-- **+0x00 & 0x00000020** clear ends the jump.
-- **+0x6c0 & 0x00001000** set runs the +0x6c6 counter down, then starts a
-  second arc of airtime and plays the 0x40 test's motion.
-- **+0x6c0 & 0x00030000** clear ends the frame before the 0x80 test at
-  0x0600eeca.
+- **+0x2c & 0x00001000**: set, a kind 9 request that comes during a jump
+  joins it; clear, it starts a new one from stage 0.
+- **+0x6c0 & 0x02000000**, in the accept handler: set, a late air attack's
+  motion never plays at once; clear, it plays at once unless 0x08 or 0x80
+  holds it back.
+- **+0x6c0 & 0x02000000**, in the run handler: set, the branch where a
+  held-back 0x80 motion plays while the +0x6c6 counter runs; clear, nothing
+  changes before 0x0600ed4c.
+- **+0x00 & 0x00000020**: set, nothing changes before 0x0600ed20; clear,
+  the jump ends.
+- **+0x6c0 & 0x00001000**: set, it runs the +0x6c6 counter down, then
+  starts a second arc of airtime and plays the 0x40 test's motion; clear,
+  it goes on to the run handler's +0x6c0 & 0x02000000 test.
+- **+0x6c0 & 0x00030000**: set, nothing changes before 0x0600ee84; clear,
+  the frame ends before the 0x80 test at 0x0600eeca.
 
 `tests/fm-saturn.test.mjs` checks that the rows are the Behind column's
-flags, each row's field and mask, and every address in a cell against a
+flags, that each row and each bullet gives both sides, each row's field and mask, and every address in a cell against a
 fresh read: that it does what the cell says and that the side can reach
 it; each "stops at" flag is the one tested there and isn't in the Behind
 column.

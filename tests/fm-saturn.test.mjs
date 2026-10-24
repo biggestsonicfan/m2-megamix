@@ -188,7 +188,9 @@ function checkFlags(text, bits) {
             const [, at, flag] = g.match(/^(0x[\da-f]{8}) (\+0x[\da-f]+ & 0x[\da-f]{8}) (set|clear)$/);
             behind.set(at, `${handler} ${flag}`);
         }
-    const rows = [...text.matchAll(/^\| (0x[\da-f]{8}) \| (accept|run) \| (\+0x[\da-f]+ & 0x[\da-f]{8}) \| (.+?) \| (.+?) \|$/gm)];
+    const rows = [...text.matchAll(/^\| (0x[\da-f]{8}) \| (accept|run) \| (\+0x[\da-f]+ & 0x[\da-f]{8}) \| (.*?) \| (.*?) \|$/gm)];
+    /* both sides, on every row */
+    for (const [, at, , , set, clear] of rows) assert.ok(set.trim() && clear.trim(), `${at}: a row needs its set side and its clear side`);
     assert.deepEqual(rows.map(([, at, handler, flag]) => [at, `${handler} ${flag}`]), [...behind].sort(([a], [b]) => parseInt(a, 16) - parseInt(b, 16)));
     const named = new Set(rows.map(r => r[3]));
     assert.match(text, new RegExp(`^The ${['', '', '', '', '', '', 'six'][rows.length]} distinct flag tests`));
@@ -249,15 +251,36 @@ function checkFlags(text, bits) {
                 claimed.add(m[1]);
             }
             for (const [a] of cell.matchAll(/0x0600[\da-f]{4}/g)) assert.ok(claimed.has(a), `${where}: ${a} unchecked`);
+            /* "changes nothing in the jump before it stops at": a straight run (bra followed) with no
+             * store, call or other branch from the side's start to that test */
+            for (const [, a] of cell.matchAll(/changes nothing in the jump before it stops at (0x[\da-f]{8})/g)) {
+                let x = from;
+                for (let n = 0; x !== parseInt(a, 16); n++) {
+                    const w = word(x);
+                    assert.ok(n < 32 && FM.handlerStore(game, start, x) === null && w !== 0x400b && (w & 0xf9ff) !== 0x8900 && (w & 0xff00) !== 0x8d00
+                        && (w & 0xff00) !== 0x8f00 && w !== 0x000b && (w & 0xf0ff) !== 0x402b && !((w & 0xf00f) === 0x2008 || (w & 0xff00) === 0xc800), `${where}: ${h(x, 8)} before ${a}`);
+                    x = (w & 0xf000) === 0xa000 ? ((w & 0xfff) << 20 >> 20) * 2 + x + 4 : x + 2;
+                }
+            }
             if (/plays no motion/.test(cell))
                 for (let a = start; a < start + 0x1000; a += 2)
                     if (word(a) === 0x400b && reg(a, 0) === PLAYS) assert.ok(!FM.handlerReaches(game, start, from, a, [at]), `${where}: plays at ${h(a, 8)}`);
         });
     }
-    /* the bullets: each is a row's flag; a test named in one is a parameter test the row's set side reaches */
-    for (const [, f, body] of text.matchAll(/^- \*\*(.+?)\*\*([^]*?)(?=\n- |\n\n)/gm)) {
-        const row = rows.find(r => r[3] === f);
-        assert.ok(row, f);
+    /* the bullets: one per row (a flag in both handlers names its handler), each with its set side and
+     * its clear side; "nothing changes before X" is that side's "changes nothing" stop; a test named
+     * in one is a parameter test the row reaches */
+    const bullets = [...text.matchAll(/^- \*\*(.+?)\*\*(?:, in the (accept|run) handler)?:([^]*?)(?=\n- |\n\n)/gm)];
+    assert.equal(bullets.length, rows.length, 'a bullet for each row');
+    for (const [, f, handler, body] of bullets) {
+        const matches = rows.filter(r => r[3] === f && (!handler || r[2] === handler));
+        assert.equal(matches.length, 1, `${f} ${handler ?? ''}`);
+        const row = matches[0], sides = body.replace(/\s+/g, ' ').match(/^ set, (.+); clear, (.+)$/);
+        assert.ok(sides && sides[1].trim() && sides[2].trim(), `${f}: a bullet needs its set side and its clear side`);
+        [1, 2].forEach(s => {
+            for (const [, a] of sides[s].matchAll(/nothing changes before (0x[\da-f]{8})/g))
+                assert.ok(row[3 + s].includes(`changes nothing in the jump before it stops at ${a}`), `${f} ${['', 'set', 'clear'][s]}: ${a}`);
+        });
         for (const [, bit, a] of body.matchAll(/the (0x[\da-f]{2}) test at\s+(0x[\da-f]{8})/g)) {
             const start = row[2] === 'accept' ? accept9 : run9, x = parseInt(a, 16), at = parseInt(row[1], 16);
             assert.equal(FM.handlerTest(game, start, x)?.mask, parseInt(bit, 16) << 16, a);
@@ -269,14 +292,23 @@ const flagsDoc = kindsDoc.split('#### The flags behind them\n\n')[1].split('\n##
 checkFlags(flagsDoc, bitsDoc);
 for (const [from, to] of [['| 0x0600ed36 | run |', '| 0x0600ed38 | run |'], ['| +0x6c0 & 0x00030000 |', '| +0x6c0 & 0x00010000 |'],
     ['stops at 0x0600ee84 (+0x6c0 & 0x80000000)', 'stops at 0x0600ee84 (+0x6c0 & 0x40000000)'], ['stops at 0x0600ed4c (+0x00 & 0x04000000)', 'stops at 0x0600ed4c (+0x00 & 0x00000020)'],
-    ['| stops at 0x0600ee84 (+0x6c0 & 0x80000000) | ends this frame\'s run (0x0600f3f6) |', '| ends this frame\'s run (0x0600f3f6) | stops at 0x0600ee84 (+0x6c0 & 0x80000000) |'],
+    ['| changes nothing in the jump before it stops at 0x0600ee84 (+0x6c0 & 0x80000000) | ends this frame\'s run (0x0600f3f6) |', '| ends this frame\'s run (0x0600f3f6) | changes nothing in the jump before it stops at 0x0600ee84 (+0x6c0 & 0x80000000) |'],
     ['clears +0x50 (0x0600db42)', 'clears +0x52 (0x0600db42)'], ['+0x60, the stage, (0x0600db46)', '+0x60, the stage, (0x0600db42)'],
     ['calls 0x06012efc (0x0600f182)', 'calls 0x06014ca4 (0x0600f182)'], ['the 0x40 test (0x0600dce0)', 'the 0x80 test (0x0600dce0)'],
     ['it plays the request\'s motion (0x0600dc9c)', 'it plays the request\'s motion (0x0600dc9a)'], ['plays no motion;', 'plays no motion; plays the request\'s motion (0x0600dc9c);'],
     ['sets +0x4ac, the hold, (0x0600dcc4); plays no motion', 'sets +0x4ac, the hold, (0x0600dcc4); plays no motion; ends this frame\'s run (0x0600f3f6)'],
-    ['| stops at 0x0600ed4c (+0x00 & 0x04000000) |', '| plays no motion |'], ['clears +0x70 (0x0600f3de)', 'clears +0x70 (0x0600f3d6)'],
+    ['| changes nothing in the jump before it stops at 0x0600ed4c (+0x00 & 0x04000000) |', '| plays no motion |'], ['clears +0x70 (0x0600f3de)', 'clears +0x70 (0x0600f3d6)'],
     ['the +0x6c6 counter (0x0600f0d0)', 'the +0x6c6 counter (0x0600f0ce)'], ['stores the request in +0x70 (0x0600da7c) |\n| 0x0600dc80', 'stores the request in +0x70 (0x0600da7a) |\n| 0x0600dc80'],
-    ['The six distinct', 'The five distinct'], ['- **+0x6c0 & 0x00030000**', '- **+0x6c0 & 0x00070000**'], ['test at\n  0x0600eeca', 'test at\n  0x0600eecc']]) {
+    ['The six distinct', 'The five distinct'], ['- **+0x6c0 & 0x00030000**', '- **+0x6c0 & 0x00070000**'], ['test at 0x0600eeca', 'test at 0x0600eecc'],
+    /* each of the three sides that only reach an unnamed flag, dropped from its row or its bullet, or said of a side that does change the jump */
+    ['| changes nothing in the jump before it stops at 0x0600ed20 (+0x6c0 & 0x04000000), the first of a chain of +0x6c0 tests |', '|  |'],
+    ['| changes nothing in the jump before it stops at 0x0600ed4c (+0x00 & 0x04000000) |', '|  |'],
+    ['| changes nothing in the jump before it stops at 0x0600ee84 (+0x6c0 & 0x80000000) |', '|  |'],
+    ['set, nothing changes before 0x0600ed20; clear,\n  the jump ends.', 'clear, the jump ends.'],
+    ['; clear, nothing\n  changes before 0x0600ed4c.', '.'],
+    ['set, nothing changes before 0x0600ee84; clear,\n  the frame', 'clear, the frame'],
+    ['set, nothing changes before 0x0600ed20', 'set, nothing changes before 0x0600ed4c'],
+    ['stops at 0x0600f27a (+0x6c0 & 0x00040000)', 'changes nothing in the jump before it stops at 0x0600f27a (+0x6c0 & 0x00040000)']]) {
     assert.ok(flagsDoc.includes(from), from);
     assert.throws(() => checkFlags(flagsDoc.replace(from, to), bitsDoc), `${from} -> ${to}`);
 }
