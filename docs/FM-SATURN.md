@@ -77,14 +77,84 @@ attributes, vertex normals }. Points are 12 bytes, polygons 20 (a normal and
 four u16), attributes 12. The model starts with a table of slots, 0x1 for an
 empty one, ending in 0xFFFFFFFF.
 
-Hornet (130) has its table at 0x714C, with 17 slots: 0 the shadow (4 points,
-1 polygon); 1 the body's front (58/55); 5, 8, 12 and 15 a wheel each (42/50);
-9 the body's back (96/77); then one more (80/45) and the variants. The others
-are empty. The wheels sit in the hand and foot slots, so the limbs' IK targets
+A polygon's four corners are point indices × 16. Hornet (130) has its table
+at 0x714C, with 17 slots: 0 the shadow (4 points, 1 polygon); 1 the nose
+(58/55); 5, 8, 12 and 15 a wheel each (42/50); 9 the cabin and tail (96/77);
+16 another nose (80/45); then, past the empty slots, 35, 48, 62 and 75 the
+same wheels again and 49 a second cabin (144/103). The others are empty. The wheels sit in the hand and foot slots, so the limbs' IK targets
 place them, and the car's "arms" and "legs" are its wheels. Akira's model
 (147) fills all 16 humanoid slots.
 
-The Megamix port uses Daytona's Model 2 car instead (see "Open").
+Slots 1 and 9 are the car body cut in two (`fm-saturn.mjs`'s `readModel`
+reads them):
+
+- **9, the cabin**: roof, windscreen, doors, rear wings, boot and spoiler, and
+  the floor. Its x runs from the nose to the tail (−70 … 333, the floor
+  reaching furthest forward), y down, z across (±101).
+- **1, the nose**: bonnet, front wings, headlights and bumper, from the front
+  edge of the doors forward.
+- They hang from the **same origin**, slot 1 turned half a turn about z
+  (x → −x, y → −y): slot 1's face at x = 7 is slot 9's at x = −7, point for
+  point. So the joint between them is the door line, 42 units above the
+  floor, and the nose swings up and down about it.
+
+The Megamix port uses Daytona's Model 2 car, cut the same way (below).
+
+## Daytona's Hornet (Model 2)
+
+The player's car in `daytona` (Revision A). Sega Racing Classic's symbols
+(rokuYAMP's `docs/d1a-daytona-symbols.md`) name the routines; their
+addresses are a later build's, so the ones here were read off rev A's code.
+`tools/daytona-hornet.mjs` finds the car by the instructions below (and fails
+on another build), prints it, and writes it cut in two as an OBJ.
+
+- **Set-up** (0xD12C): car +0x14, +0x84 and +0x258 come out of a table at
+  0x0281E390, by the car type at 0x501488: 0 or 1 from 0x501464, 2 when the EEPROM word 0x5FE588 is set.
+- **dsp_player_car** (0x7D38) draws +0x14, the body; model 2139 (no mesh);
+  the glass, column 2; and for car type 2 its plate (+0x258, by the cabinet's
+  number 0x5FE604). In the in-car view it draws +0x84 instead.
+- **The tires** (0x7DA4): four models out of the program ROM at 0x230496,
+  placed at hubs out of 0x230D54 and turned by the car's +0x128, +0x5A,
+  +0x52 and +0x56 (the spin and the steering, presumably; not read further).
+
+| | type 0 | type 1 | type 2 |
+| --- | --- | --- | --- |
+| body (+0x14) | 1460, 325 faces | 1461 (1460's mesh, other textures) | 1835, 314 |
+| glass | 1462 | 1463 | 1793 |
+| in-car body (+0x84) | 1236 | 1237 | 1802 |
+| plates (+0x258) | | | 1794–1801 |
+
+| Tire | Model | Hub (m) |
+| --- | --- | --- |
+| rear left, rear right | 805, 806 | (∓0.525, 0.32, 1.4125) |
+| front left, front right | 805, 806 | (∓0.525, 0.32, −1.4) |
+
+805 and 806 are one tire each side (x −0.40…0 and 0…0.40, radius 0.36),
+centred on the hub. In noclip's decode the car's front is −z: the body
+runs from z −2.47 (bumper) to 2.46 (spoiler), y 0.11 to 1.27, x ±0.87.
+The rival cars are other models (the tables from 0x0281E404: four levels
+of detail per car, among models 0–179, and model 770 under them).
+
+### The cut
+
+Daytona's body has an edge at the front of the doors, z = −0.46, where FM
+cuts its Hornet. The tool cuts along whole faces: a face wholly in front of
+it is the **nose**, the rest the **cabin**, with FM's strip of wing tops up
+to the cowl (z ≥ −0.92, above 0.70 m) and the belt line that runs past it.
+For 1460 that is 246 triangles of nose and 358 of cabin, none lost.
+
+FM's units are 0.0087 m (its body is 566 × 132 × 203 units, Daytona's
+4.93 × 1.16 × 1.74 m), and FM's body origin lands at (0, 0.475, −0.44) on
+Daytona's car, the pivot the nose turns about. Axes: FM x = Daytona +z
+(rearward), FM y = −y.
+
+```
+node tools/daytona-hornet.mjs                     # the car's models and the split
+node tools/daytona-hornet.mjs --obj hornet.obj    # nose, cabin and four tires, placed
+```
+
+`tests/daytona-hornet.test.mjs` checks the models, the hubs, the cut, and
+(with the FM disc) that FM's two pieces meet as described.
 
 ### Bones
 
@@ -182,10 +252,11 @@ that every motion's keys come out of its VF2 block unchanged, and FM Akira's
 
 ## Open
 
-- **Daytona's car**: noclip reads Daytona (`vendor/noclip/js/daytona.js`;
-  rev A's model table is stride 20), but the race car's model hasn't been
-  found yet. The rank board's `rankCars` (models 708–713) are small plates,
-  not the car.
+- **Daytona's car on the board**: the pieces are found and cut; importing
+  them into the board's data ROMs (`tools/import-assets.mjs`) and hanging
+  them on FM's skeleton is next. Which FM joints the wheel slots (5, 8, 12,
+  15) and the second nose (16) follow, and the FM wheels' rest places, still
+  need the skeleton posed.
 - **Hornet's moves**: which motions his commands play. That is in file 134
   (probably the command list), 136, and the bank's setup records.
 - **The action table's slots** (stance, walk, …), and the common bank that

@@ -119,6 +119,27 @@ export function readActions(game, fighter) {
     return Array.from({ length: ACTIONS }, (_, i) => game.prg.readUInt16BE(p + 2 * i));
 }
 
+/* Where Hornet's models (files 130 and 132) keep their slot table. */
+export const HORNET_SLOTS = 0x714c;
+
+/** A model file's slots: SGL XPDATA {points, count, polygons, count,
+ *  attributes, normals}, 0x1 for an empty slot, to 0xFFFFFFFF. Points are
+ *  16.16 (x, y, z); a polygon's four corners are point indices × 16. Null for
+ *  an empty slot. */
+export function readModel(buf, at) {
+    const slots = [], fx = (o) => buf.readInt32BE(o) / 65536;
+    for (let o = at; buf.readUInt32BE(o) !== 0xffffffff;) {
+        if (buf.readUInt32BE(o) === 1) { slots.push(null); o += 4; continue; }
+        const [pp, pc, qp, qc] = [0, 1, 2, 3].map(i => buf.readUInt32BE(o + 4 * i));
+        slots.push({
+            points: Array.from({ length: pc }, (_, i) => [0, 1, 2].map(a => fx(pp + 12 * i + 4 * a))),
+            polygons: Array.from({ length: qc }, (_, i) => [0, 1, 2, 3].map(k => buf.readUInt16BE(qp + 20 * i + 12 + 2 * k) / 16)),
+        });
+        o += 24;
+    }
+    return slots;
+}
+
 /** The motion bank: 12-byte rows {setup offset, motion id, data offset},
  *  ending in id 0. */
 export function readBank(buf) {
