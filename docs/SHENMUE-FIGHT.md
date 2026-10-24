@@ -306,6 +306,7 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
   10                                    on strikes, not decoded: 16 (see "The sixth byte after those eight")
   02                                    on strikes, not decoded: 2 (see "The seventh byte after those eight")
   00                                    on strikes, not decoded: 0 (see "The eighth byte after those eight")
+  00                                    on strikes, not decoded: 0 (see "The ninth byte after those eight")
   …
   ```
 
@@ -802,6 +803,35 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
     | 0x66 (102) | 1 | BA_00 253 |
     | 0x7F (127) | 1 | AKI_AKI_OK_UTU_KAITEN 1356 |
     | 0x9A (154) | 1 | DMY_BA_00 580 |
+- **The ninth byte after those eight (read on strikes):** r[p+28], where
+  p is the kind byte (4). Not decoded. It isn't the same on every strike:
+  it takes 12 values across the 231. Elbow Slam's is **0** and Twist
+  Knuckle's is **0**. Throws aren't read here. The byte after it isn't
+  read either.
+
+  | Move | Record | The byte |
+  |---|---|---|
+  | Elbow Slam | 846 | 00 (0) |
+  | Twist Knuckle | 793 | 00 (0) |
+  | Upper Knuckle, Rain Thrust | 836, 792 | 00 (0) |
+  | Trample Kick | 848 | 00 (0) |
+
+  - **Across the 231 strikes:** 12 values.
+
+    | Value | Strikes | Records |
+    |---|---|---|
+    | 0x00 (0) | 152 | AKIRA_KI_00_13 9, AKIRA_KI_01 10, AKI_AKI_BATTLE_PNC_FUK 793, AKI_AKI_ELBOW 846, … |
+    | 0x01 (1) | 28 | AKIRA_PU_SAFE 15, AK_KATA_ATK 150, AK_KOUTEN_KI_00 155, … |
+    | 0x08 (8) | 26 | AK_KOUTEN_KI_10 157, AK_RUF_521_02 174, AK_RUF_531_02 175, … |
+    | 0xAB (171) | 8 | AK_DW_TA_KI_00 131, PRI_DFK_023 382, RUF_521_02 445, … |
+    | 0x0A (10) | 4 | AK_RUF_551_02 177, AK_RUF_561_02 178, AK_RUF_571_02 179, … |
+    | 0x07 (7) | 3 | RUF_481_02 441, RUF_491_02 443, YKI_AKI_TUKAMI_SEOI_NAGERARE 898 |
+    | 0x04 (4) | 3 | AKI_AKI_SY_HARAI_CMB 1346, AKI_AKI_SY_HARAI 1422, AKI_AKI_SY_PNC_AP 1423 |
+    | 0x03 (3) | 2 | AK_KATA_MATA_YA_AN 153, YKI_AKI_NGR_HED_2_S1 922 |
+    | 0x0B (11) | 2 | AK_RUF_501_02 170, AK_RUF_511_02 172 |
+    | 0x06 (6) | 1 | AK_OUTEN_KI_00 159 |
+    | 0x13 (19) | 1 | YKI_JIM_TB_NGR_BO 940 |
+    | 0x9C (156) | 1 | AKI_AKI_KICK_HAZ_KESA_TOP 1327 |
 - **Counting kind-5 groups (86, 88, 104):** the three counts are the same
   layout (header, one tag-2 block, kind 5) with different checks on the
   tag-2 words. The scans didn't walk off the hit block.
@@ -885,6 +915,9 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
   The eighth byte after those eight is 0 on Elbow Slam and Twist Knuckle
   and on 208 of the strikes, and takes 9 values in all; it isn't decoded
   (see "The eighth byte after those eight").
+  The ninth byte after those eight is 0 on Elbow Slam and Twist Knuckle
+  and on 152 of the strikes, and takes 12 values in all; it isn't decoded
+  (see "The ninth byte after those eight").
   The record's other fields aren't decoded.
 
 ## Other leads
