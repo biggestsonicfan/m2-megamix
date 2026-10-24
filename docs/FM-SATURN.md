@@ -1412,6 +1412,51 @@ stops at another flag test, and neither reaches the 0.8 distance check
 or `+0` bit 0x10000000.
 `tests/fm-saturn.test.mjs` checks this section against a fresh read.
 
+#### The flag at 0x0600edfa
+
+The first test the sentence under "Flag tests not yet described" leaves
+out, read off the disc and followed the same way. It is not a
+fighter-field test: 0x0600edec `mov.w @(0x0600ef18),r0` loads 0x06c0 and
+0x0600edee `mov.l @(r0,r12),r3` loads the long +0x6c0 of this fighter
+(r12) into r3; 0x0600edf0 `mov.w @(0x0600ef1e),r0` loads 0x19f8 and
+0x0600edf2 `mov.l @(r0,r13),r5` loads the long +0x19f8 of the opponent
+(r13) into r5; 0x0600edf4 `xor r3,r5` leaves the two combined in r5.
+0x0600edf6 `mov #0x01,r0` and 0x0600edf8 `shll16 r0` make the mask
+0x00010000, 0x0600edfa is `tst r0,r5`, then `bf` at 0x0600edfc. That is
+bit 0x00010000 of this fighter's +0x6c0 xor the opponent's +0x19f8: set
+when the two longs differ in that bit, clear when they match. `flagSides`
+reads r3 as this fighter's +0x6c0 but does not follow the xor, so it
+gives no fighter field for the test. The `bf` branches when the bit is
+set, so the branch is the set side and the fall-through the clear side.
+
+| Tested at | Flag | Set | Clear |
+| --- | --- | --- | --- |
+| 0x0600edfa | (+0x6c0 xor the opponent's +0x19f8) & 0x00010000 | branches to 0x0600ee0a; stores +0x20 (0x0600ee0a) and +0x28 (0x0600ee0c); stops at 0x0600ee16 (+0x6c0 & 0x40000000) | goes on to 0x0600edfe; the test at 0x0600ee02 goes either way to 0x0600ee0a; stores +0x20 (0x0600ee0a) and +0x28 (0x0600ee0c); stops at 0x0600ee16 (+0x6c0 & 0x40000000) |
+
+- **(+0x6c0 xor the opponent's +0x19f8) & 0x00010000**: set, it jumps to
+  0x0600ee0a and stores r4 in the long +0x20 and r6 in the long +0x28;
+  clear, it goes on to the test at 0x0600ee02, whose `bf` at 0x0600ee04
+  jumps to the same two stores and whose fall-through runs `neg r4,r4`
+  and `neg r6,r6` first; neither side calls anything, and both stop at
+  0x0600ee16.
+
+The stores are 0x0600ee0a `mov.l r4,@(0x20,r12)` and 0x0600ee0c
+`mov.l r6,@(0x28,r12)`, this fighter's longs +0x20 and +0x28, whose
+values `flagSides` does not follow. The test at 0x0600ee02 is another
+one the sentence leaves out, and is left undescribed here. `flagSides`
+follows both ways of its `bf` at 0x0600ee04 and lists both paths in one
+list, split here at that `bf`'s target: the branch lands at 0x0600ee0a,
+the fall-through runs 0x0600ee06 `neg r4,r4` and 0x0600ee08
+`neg r6,r6` and goes on to 0x0600ee0a, and both paths store the same two
+longs from the same two places. From there both sides run 0x0600ee0e
+`mov r12,r1`, 0x0600ee10 `mov.w @(0x0600ef18),r0`, which loads 0x06c0,
+`add r0,r1`, `mov.b @r1,r0` and 0x0600ee16 `tst #0x40,r0`. That stop
+tests this fighter's (r12) +0x6c0 & 0x40000000; it is a row in "The
+flags those stop at", which describes its sides. Neither side calls
+anything or stops at another flag test, and neither reaches the 0.8
+distance check or `+0` bit 0x10000000.
+`tests/fm-saturn.test.mjs` checks this section against a fresh read.
+
 ### Slots
 
 The action-table slots that those handlers play, read the way 0x0600CEC8

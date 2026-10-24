@@ -424,11 +424,14 @@ export function handlerReaches(game, start, from, to, avoid = []) {
  *  'call' (target), 'same' (the same test again), 'param' (a parameter
  *  bit's test: bit), 'stop' (another flag's test: field, mask;
  *  of: 13 when the field is r13's, the opponent's), 'end' (jmp
- *  @r14, the end of this frame's run) or 'return'. */
+ *  @r14, the end of this frame's run) or 'return'. flag is null for a
+ *  tst rM,rN whose value is no fighter field. */
 export function flagSides(game, start, at) {
     const prg = game.prg, word = a => prg.readUInt16BE(game.at(a));
-    const flag = handlerTest(game, start, at);
-    if (!flag) throw new Error(`${at.toString(16)}: no flag test`);
+    const flag = handlerTest(game, start, at), w0 = word(at);
+    /* a tst rM,rN of a value that is no fighter field: flag null */
+    const other = (w0 & 0xf00f) === 0x2008 && (w0 >> 8 & 15) !== (w0 >> 4 & 15) && (word(at + 2) & 0xfd00) === 0x8900;
+    if (!flag && !other) throw new Error(`${at.toString(16)}: no flag test`);
     const init = Array.from({ length: 16 }, (_, r) => handlerReg(game, start, at, r));
     init[12] = { ptr: 0 };
     init[13] = { ptr: 0, of: 13 };   /* r13: the opponent */
@@ -516,7 +519,7 @@ export function flagSides(game, start, at) {
                     || (w & 0xff00) === 0x8800 || (f === 0x2008 && n === m)) p.t = 'both';
                 else if ((w & 0xff00) === 0xc800 || f === 0x2008) {
                     const t = tstFlag(w, r);
-                    if (t && t.of === flag.of && t.field === flag.field && t.mask === flag.mask) { note({ kind: 'same', at: a }); p.t = side; }
+                    if (t && flag && t.of === flag.of && t.field === flag.field && t.mask === flag.mask) { note({ kind: 'same', at: a }); p.t = side; }
                     else if (t && !t.of && (t.field === 0x3c || t.field === 0x70) && t.mask && !(t.mask & ~0xff0000)) { note({ kind: 'param', at: a, bit: t.mask >>> 16 }); return 'stop'; }
                     else if (t) { note({ kind: 'stop', at: a, field: t.field, mask: t.mask, ...(t.of && { of: t.of }) }); return 'stop'; }
                     else p.t = 'both';
