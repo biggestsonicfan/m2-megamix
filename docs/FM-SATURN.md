@@ -441,20 +441,13 @@ bank. "Kind" and "Parameter" are the move's top two bytes. "Input" is
 `inputText` for every path to the request (with its offset, on a row of
 more than one).
 
-What the inputs say about the kinds:
+What each kind does is in [Kinds](#kinds), below the table. The inputs
+add: kind 0x10's moves are P+G and test +0x578 (maybe the opponent's state);
+0x1A is f,n,f and 0x13 b,n,b; 0x1D and 0x1E are d/f twice and d/b twice;
+0x2D is one move (n,d*+K); 0x31 is button 8 on its own, and its follow-up
+(0xE24) waits a frame and goes back to the top.
 
-- **0**: just plays the motion.
-- **9**: the jump's kind. With a parameter of 0, 4, 8, 0x0C or 0x14 it is an
-  air attack, from states 1–4. Bit 2 of the parameter goes with P, but
-  the bits aren't decoded.
-- **0x10**: P+G moves that test +0x578, so probably throws. 0x578 is maybe
-  the opponent's state.
-- **0x1A**: f,n,f, a forward dash. **0x13**: b,n,b, a back dash.
-- **0x1D, 0x1E**: d/f twice and d/b twice.
-- **0x2D**: one move (n,d*+K). **0x31**: button 8 on its own. Its follow-up
-  (0xE24) waits a frame and goes back to the top.
-
-The kinds' handlers at 0x06012AEC aren't read yet. Three requests have no
+Three requests have no
 path:
 
 - 0x0A84 and 0x0A8C sit in 0x0A28–0x0A94, which nothing branches to;
@@ -553,6 +546,55 @@ listed with bank 135 is one of the 103 in Hornet's bank, that the 352 ones
 are in the common bank, and that the table, inputs included, is what the
 tool reads off the disc.
 
+### Kinds
+
+A request only stores the move in +0x3C. Each frame the fighter's update
+(0x0600d318) calls FUN_0600d7f6. If +0x3C isn't 0, it jumps to the move's
+kind's **accept** handler, the word at 0x06012AEC + kind × 8. Most of them
+refuse while the current action's kind is 0x21, or is their own kind. The
+common one (0x0600DA70) clears the stage +0x60 and +0x61E and copies the
+move into +0x70, the current action. FUN_0600dda0 then jumps each frame to
+the **run** handler at 0x06012AF0 + kind × 8 for +0x70's kind. Clearing
++0x70 ends the action.
+
+"Plays" says whether the handler plays the move's own motion, and which
+slots of the fighter's action table (+0x34, the row's +4; `--actions`) it
+plays. A slot is used when the move has no motion. "Bits" are the parameter
+bits that the handler tests (+0x3C or +0x70 bits 16–23, or the byte +0x71).
+"Distances" are the ones it compares the distance to the opponent (+0x4D8)
+with. These are the kinds Hornet uses; his throws use kind 0x1B, whose run
+handler does nothing.
+
+| Kind | Accept | Run | Plays | Bits | Distances | What it does |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0x00 | 0x0600da70 | 0x0600ddfc | motion | | | Plays the motion on the first frame and ends when the motion has ended (+0x50 is 0). |
+| 0x09 | 0x0600db04 | 0x0600ea14 | motion; 45, 46, 47, 48 | 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80 | 0.8 | A jump, or, with a motion, an air attack: the parameter bits (below) pick its direction, airtime, motion and timing; a kind 9 request early in a jump (stage ≤ 1) adds its bits to the jump in progress; the 0.8 compare, against the opponent's +0x56C, isn't read. |
+| 0x10 | 0x0600da70 | 0x0600fee0 | motion | 0x04 | | Plays the motion, stops the fighter, then puts it on the opponent's +0x19C8 point facing +0x1A08, at once or halfway each frame if +0x2F bit 1 is set (bit 0x04 eases the facing too); probably throws. |
+| 0x13 | 0x0600d858 | 0x0600e2d0 | 24, 25 | | 1.8 | A back dash: slot 24, or 25 from 1.8 away or more; another one is refused until frame 22. |
+| 0x1a | 0x0600da52 | 0x0600e2e8 | 22, 23, 41, 42, 43 | | 2, 3 | A forward dash: slot 22, or 23 from 3.0 away or more; with +0x4A7 bit 2 it goes on into slot 41 after frame 8, then 42 or 43 (motion 0x725 inside 2.0), and without it into a walk (kind 3). |
+| 0x1d | 0x0600d8d0 | 0x0600e2d0 | 26 | | | Plays slot 26 and ends at its last frame (+0x52 ≥ +0x63C). |
+| 0x1e | 0x0600d898 | 0x0600e2d0 | 27, 28 | | 1.8 | Plays slot 27, or 28 from 1.8 away or more, and ends at its last frame. |
+| 0x2d | 0x0600dac4 | 0x0600e93c | motion | | | Plays the motion and steers and moves at the opponent's +0x19BC point (kept at the start) until frame +0x4AA, then stops. |
+| 0x31 | 0x0600d908 | 0x0600e2d0 | 62, 63, 64, 65 | | | Plays slot 62 or 63 (64 or 65 with +0x4A7 bit 0), picked by down (+0x1230 bit 0x10) and +0's bits 0x08000000 and 0x40. |
+
+Kind 9's parameter bits (Hornet's moves use 0, 0x04, 0x08, 0x0C and 0x14):
+
+| Bit | Selects |
+| --- | --- |
+| 0x01 | forward (+0x4B0 = 1.0) |
+| 0x02 | back (+0x4B0 = −1.0) |
+| 0x04 | 24 frames of airtime (+0x4AA) instead of the row's +0x0C, and the jump motion from slot 46 (47 if also 0x02) instead of 45 |
+| 0x08 | holds the attack motion back until the airtime left (+0x4A8) is down to the motion's +6 halfword |
+| 0x10 | leaps at the opponent's +0xE0 position (kept in +0x4E4) |
+| 0x20 | the jump motion from slot 48 |
+| 0x40 | tested only when a request adds to a jump in progress; not read |
+| 0x80 | tested only when a request adds to a jump in progress; not read |
+
+`tests/fm-saturn.test.mjs` reads both tables back. It checks the handler
+addresses against the words at 0x06012AEC, and the Plays, Bits and
+Distances columns against what the tool's `readKind` reads from those
+handlers. A row whose handler no longer does what it says fails.
+
 ## The tool
 
 ```
@@ -585,7 +627,7 @@ that every motion's keys come out of its VF2 block unchanged, and FM Akira's
   open:
   - what the flags it tests mean (+0 bit 0x10000000 above all; nothing
     found sets it with a literal);
-  - the kinds' handlers at 0x06012AEC, and kind 9's parameter bits;
+  - kind 9's bits 0x40 and 0x80, and its 0.8 compare;
   - the move list's rows after the script (the in-game command list's
     glyphs, probably).
   - The decode is from reading the SH-2 with Capstone. It hasn't been

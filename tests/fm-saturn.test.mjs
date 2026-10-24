@@ -92,6 +92,29 @@ assert.equal(inputAt(0x08e0), 'b+P+G [+0&10000000 +578&1]');
 assert.equal(inputAt(0x0d60), 'air 3 b+K [+0&10000000]');
 assert.equal(inputAt(0x0a84), '');
 
+/* the Kinds table: each kind Hornet's moves use, its handlers' addresses, and
+ * what those handlers play, test and compare */
+const kindsDoc = doc.split('### Kinds')[1].split('\n## ')[0];
+const kinds = kindsDoc.split('\n').filter(l => /^\| 0x[\da-f]{2} \| 0x/.test(l)).map(l => ['', ...l.split('|').slice(1, -1).map(c => c.trim())]);
+assert.deepEqual(kinds.map(([, k]) => k), [...new Set(hornetMoves.map(m => h(m.kind, 2)))].sort());
+const list = c => c.trim() ? c.trim().split(', ') : [];
+for (const [, k, accept, run, plays, bits, dists, does] of kinds) {
+    const kind = parseInt(k, 16), r = FM.readKind(game, kind);
+    assert.equal(h(game.prg.readUInt32BE(game.at(FM.KIND_HANDLERS + 8 * kind)), 8), accept, `kind ${k} accept`);
+    assert.equal(h(game.prg.readUInt32BE(game.at(FM.KIND_HANDLERS + 8 * kind + 4)), 8), run, `kind ${k} run`);
+    const [motion, slots] = plays.trim().startsWith('motion') ? [true, plays.trim().slice(8)] : [false, plays];
+    assert.equal(r.motion, motion, `kind ${k} plays the motion`);
+    assert.deepEqual(r.slots, list(slots).map(Number), `kind ${k} slots`);
+    assert.deepEqual(r.bits, list(bits).map(Number), `kind ${k} bits`);
+    assert.deepEqual(r.dists, list(dists).map(Number), `kind ${k} distances`);
+    /* and the sentence quotes only those slots and distances */
+    for (const [, n] of does.matchAll(/slot (\d+)/g)) assert.ok(r.slots.includes(+n), `kind ${k}: slot ${n}`);
+    for (const [, n] of does.matchAll(/(\d+\.\d) away/g)) assert.ok(r.dists.includes(+n), `kind ${k}: ${n} away`);
+}
+const jumpBits = [...kindsDoc.split('Kind 9\'s parameter bits')[1].matchAll(/^\| (0x[\da-f]{2}) \| (.+) \|$/gm)];
+assert.deepEqual(jumpBits.map(([, b]) => Number(b)), FM.readKind(game, 9).bits);
+assert.deepEqual([...new Set(hornetMoves.filter(m => m.kind === 9).map(m => m.parameter))].sort((a, b) => a - b), [0, 4, 8, 12, 20]);
+
 /* every fighter's script decodes to its move list, its jumps land on opcodes,
  * and its motions are in its bank or the common one */
 const JUMPS = { 0x0d: [4], 0x0e: [8], 0x0f: [4], 0x11: [4], 0x27: [4], 0x28: [4, 8, 12], 0x38: [4] };

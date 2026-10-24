@@ -181,6 +181,76 @@ export function readMoves(game, fighter) {
     return moves;
 }
 
+/* What a move's kind does. FUN_0600d7f6 runs once the script has stored a
+ * request in +0x3C: it jumps to the first word of the kind's pair at
+ * 0x06012AEC + kind * 8 (accept: start it, or refuse; most refuse while
+ * the current kind is 0x21 or, for some, the same kind). Starting a move
+ * copies it to +0x70, the current action. Then FUN_0600dda0 runs the second
+ * word every frame on +0x70's kind (run), returning through 0x0600ddf2; it
+ * ends the action by clearing +0x70. */
+export const KIND_HANDLERS = 0x06012aec;
+const PLAY_MOTION = 0x060131d0;
+/** The instructions a handler can reach: it follows bra/bt/bf (and their
+ *  delay slots) and stops at rts or jmp, without going into calls. */
+function handlerCode(game, start) {
+    const prg = game.prg, seen = new Map(), todo = [start];
+    const word = a => prg.readUInt16BE(game.at(a));
+    while (todo.length) {
+        for (let a = todo.pop(); !seen.has(a);) {
+            const w = word(a);
+            seen.set(a, w);
+            const d8 = ((w & 0xff) << 24 >> 24) * 2 + a + 4, d12 = ((w & 0xfff) << 20 >> 20) * 2 + a + 4;
+            if ((w & 0xf000) === 0xa000) { seen.set(a + 2, word(a + 2)); todo.push(d12); break; }   /* bra */
+            if (w === 0x000b || (w & 0xf0ff) === 0x402b) { seen.set(a + 2, word(a + 2)); break; }    /* rts, jmp */
+            if ((w & 0xfd00) === 0x8900) todo.push(d8);                                         /* bt, bf */
+            else if ((w & 0xfd00) === 0x8d00) { seen.set(a + 2, word(a + 2)); todo.push(d8); a += 2; }   /* bt/s, bf/s */
+            a += 2;
+        }
+    }
+    return [...seen].sort((x, y) => x[0] - y[0]);
+}
+/** A kind's handlers and what they read, off the code: the action-table
+ *  slots they play (+0x34 is the fighter row's action table, 0x0600cec8),
+ *  whether they play the move's own motion (+0x3E/+0x72), the parameter
+ *  bits they test (+0x3C/+0x70 bits 16-23, or the byte +0x71), and the
+ *  distances (+0x4D8) they compare with. */
+export function readKind(game, kind) {
+    const accept = game.prg.readUInt32BE(game.at(KIND_HANDLERS + 8 * kind));
+    const run = game.prg.readUInt32BE(game.at(KIND_HANDLERS + 8 * kind + 4));
+    const code = [...handlerCode(game, accept), ...handlerCode(game, run)];
+    const lit = (a, w) => (w & 0xf000) === 0xd000 ? game.prg.readUInt32BE(game.at(((a + 4) & ~3) + (w & 0xff) * 4))
+        : (w & 0xf000) === 0x9000 ? game.prg.readUInt16BE(game.at(a + 4 + (w & 0xff) * 2)) : null;
+    const imm = w => w & 0xff;
+    const slots = new Set(), bits = new Set(), dists = new Set();
+    let motion = false;
+    const table = code.some(([, w]) => w === 0x55cd || w === 0x56cd || w === 0x50cd);   /* mov.l @(52,r12) */
+    const lits = new Map(), far = new Map();
+    for (let i = 0; i < code.length; i++) {
+        const [a, w] = code[i], [, n1] = code[i + 1] ?? [], [, n2] = code[i + 2] ?? [];
+        if (table && (w & 0xff00) === 0xe400 && code.some(([, x]) => x === 0x044d)) slots.add(imm(w) / 2);
+        if (table && ((w & 0xff00) === 0xe000 || (w & 0xff00) === 0x9000 && lit(a, w) < 0x100)
+            && (n1 === 0x045d || n1 === 0x046d)) slots.add(((w & 0xff00) === 0xe000 ? imm(w) : lit(a, w)) / 2);
+        if ((w & 0xff00) === 0xe000 && (imm(w) === 0x72 || imm(w) === 0x3e) && n1 === 0x04cd) motion = true;
+        if ((w & 0xff00) === 0xe000 && n1 === 0x4028 && (n2 === 0x2b08 || n2 === 0x2308)) bits.add(imm(w));   /* mov #m; shll16; tst */
+        if ((w & 0xf0ff) === 0xd000 && (n1 === 0x2b08 || n1 === 0x2308) && (lit(a, w) & 0xff00ffff) === 0) bits.add(lit(a, w) >>> 16);
+        if (w === 0x7171 && (n1 & 0xf0ff) === 0x6010 && (code[i + 2]?.[1] & 0xff00) === 0xc800) bits.add(imm(code[i + 2][1]));   /* +0x71 byte */
+        /* a cmp/gt or cmp/ge, within a few words, of +0x4D8 against a literal */
+        if ((w & 0xf00f) === 0x000e || (w & 0xf000) === 0x6000 || (w & 0xb000) === 0x9000 || (w & 0xf000) === 0xe000)
+            far.delete((w >> 8) & 15);   /* rN overwritten */
+        if ((w & 0xf000) === 0xd000) lits.set((w >> 8) & 15, [a, lit(a, w)]);
+        const [pa, pw] = code[i - 1] ?? [];
+        if ((pw & 0xff00) === 0x9000 && lit(pa, pw) === 0x04d8 && (w & 0xf0ff) === 0x00ce) far.set((w >> 8) & 15, a);
+        if ((w & 0xf00b) === 0x3003) {
+            const near = (r, at) => at !== undefined && at < a && a - at <= 16;
+            for (const [x, y] of [[(w >> 8) & 15, (w >> 4) & 15], [(w >> 4) & 15, (w >> 8) & 15]])
+                if (near(x, far.get(x)) && near(y, lits.get(y)?.[0])) dists.add(lits.get(y)[1] / 65536);
+        }
+    }
+    motion = motion && code.some(([a, w]) => (w & 0xf000) === 0xd000 && lit(a, w) === PLAY_MOTION);
+    const sorted = s => [...s].sort((x, y) => x - y);
+    return { kind, accept, run, motion, slots: sorted(slots), bits: sorted(bits), dists: sorted(dists).map(d => +d.toFixed(2)) };
+}
+
 /* What a request needs. The script runs when a button is pressed (or, with
  * none, every frame), with r5 = state << 8 | buttons: P 1, K 2, G 4, and 8,
  * which no pad key gives by default (0x06072304 maps the pad: B P, C K,
