@@ -509,10 +509,6 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
       0x00050000, 0x000C1111, 0x00001317 big-endian: nothing that reads as
       one number across the four. As u16s, at either alignment the KAITEN
       bytes 0c 11 11 split across two of them.
-    - One byte at a time, every non-zero byte is small (1, 5, 12, 17, 19,
-      23), none more than its motion's frame count (23 for
-      AKIRA_SY_KI_SYO_L_VF3, 35 for JU_KI_SYO_M, 37 for the KAITEN pair).
-      That is all it is; it doesn't name them.
     - Not shown to be a set of bits: every value is under 0x20, so bits
       aren't ruled out, but nothing here tests that.
     - So no field and no width is read here. Elbow Slam and Twist Knuckle
