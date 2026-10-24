@@ -879,8 +879,13 @@ put in for Akira, and import-assets runs it after Akira's.
   fit compares what the screen shows: the board's output curve is black up
   to 64 and stretches the rest by 255/191 (MAME's `m_gamma_table`, the
   monitor's bias and gain), so a ramp value v shows as (v − 64)·255/191.
-  Fitting the raw ramp values instead chose rows too strong. 274
-  colours: StF's own palette entry where one matches, 223 new colorbases
+  Fitting the raw ramp values instead chose rows too strong. A dark texel
+  can want more of a channel than row 27 gives: the jeans' green and blue
+  both stopped there, came out equal and turned the blue cyan. A face whose
+  fitted hue is more than 8° from its texels' (and is not grey) is fitted to
+  a dimmer copy of its colour, in steps of 5% down to half, until it keeps
+  its hue. The jacket's red, short alone, keeps its hue and is left. 262
+  colours: StF's own palette entry where one matches, 219 new colorbases
   from the free ones at the top. The SDK's boot copies all 1024 entries, so
   they are loaded.
 - **Skeleton, solve bones.** Akira's, with Ryo's spine, pivots and bone
@@ -930,9 +935,33 @@ of every part within 5° except the jeans (190° against 211°, too cyan). The
 colours are too saturated: hair, skin and jacket s ≈ 0.97-0.99 against
 0.47-0.69, so the skin reads orange (85,33,1 against 102,72,47) and the
 jacket black-brown. The jeans are also too dark (v 0.08 against 0.19). The
-shoes match. The cause was the output curve (Colour above). With the fit
-made on what is shown (#1540), the skin is a natural tan, the jacket brown
-and the jeans blue.
+shoes match. The cause was the output curve (Colour above).
+
+Graded again (#1540) the same way, after the fit was moved onto what is
+shown: a new Free Battle shot (Ryo seen from behind, so the skin is his
+neck and ear) and MAME's `sfight` at frame 760 of Ryo vs Akira. Mean colour
+per region, then its hue, saturation and value; the jeans are two boxes
+(thigh and shin) clear of the floor, and "med" is the median hue of their
+coloured pixels:
+
+| part   | board, 68a318c         | board, hue kept        | Dreamcast              |
+|--------|------------------------|------------------------|------------------------|
+| hair   | 26° 0.75 0.03          | 26° 0.75 0.03          | 34° 0.40 0.05          |
+| skin   | 27° 0.68 0.43          | 27° 0.68 0.43          | 27° 0.61 0.45          |
+| jacket | 25° 0.79 0.15          | 22° 0.81 0.15          | 25° 0.76 0.20          |
+| jeans  | 179° 0.46 0.13 (med 195°) | 190° 0.48 0.13 (med 202°) | 211° 0.52 0.15 (med 211°) |
+| shoes  | 197° 0.03 0.28         | 213° 0.03 0.28         | 217° 0.13 0.29         |
+
+The skin and jacket are within 3° and 0.07 of saturation of the
+Dreamcast, and the shoes are the same grey, a touch less blue (s 0.03
+against 0.13); the jacket and jeans are a little darker (the stage's light is
+not the warehouse's). The hair is near black in both, where saturation
+means little. The jeans were the one part still clearly off, 32° too cyan:
+green and blue stopped at the top row (Colour above). With the hue kept they
+are 21° off by the mean, 9° by the median; the rest is the board's
+lighting over pixels near black. The first Dreamcast shot (#1536) gave
+hair 29° 0.47 0.05, skin 27° 0.54 0.40, jacket 25° 0.69 0.12, jeans 211°
+0.60 0.19 and shoes 217° 0.17 0.25, close to the new one.
 
 Reaching Free Battle on disc 3 (from 1ST_READ.BIN, base 0x0C010000): the
 title's extras menu (table 0x0C29E008: debug, OPTION, SPACE HARRIER, HANG

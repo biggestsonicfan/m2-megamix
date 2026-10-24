@@ -248,15 +248,34 @@ export function importRyo(R, ctx, games, { tiles, byTex }) {
             s.push({ luma: lumaOf(n), rgb: [tile.rgba[i * 4], tile.rgba[i * 4 + 1], tile.rgba[i * 4 + 2]] });
         }
         if (!s.length) return [16, 16, 16];
-        return [0, 1, 2].map((ch) => {
+        /* A dark texel can want more of a channel than the top row gives.
+         * The jeans' green and blue both stop at row 27 and come out equal:
+         * the blue turns cyan. A face whose fitted hue is that far (8°) from
+         * its texels' is fitted dimmer, step by step, until it keeps its hue
+         * (#1540). The jacket's red, short alone, keeps its hue and stays. */
+        const fit = (k) => [0, 1, 2].map((ch) => {
             let best = 0, err = Infinity;
             for (let r = 0; r < ROWS; r++) {
                 let e = 0;
-                for (const q of s) { const d = shown(ramp(ch, r, q.luma)) - q.rgb[ch]; e += d * d; }
+                for (const q of s) { const d = shown(ramp(ch, r, q.luma)) - k * q.rgb[ch]; e += d * d; }
                 if (e < err) { err = e; best = r; }
             }
             return best;
         });
+        const hue = ([r, g, b]) => {
+            const M = Math.max(r, g, b), d = M - Math.min(r, g, b);
+            if (d < 0.2 * M || d < 1) return null;      /* grey: no hue to keep */
+            const h = M === r ? (g - b) / d : M === g ? 2 + (b - r) / d : 4 + (r - g) / d;
+            return ((h * 60) + 360) % 360;
+        };
+        const want = hue([0, 1, 2].map((ch) => s.reduce((a, q) => a + q.rgb[ch], 0)));
+        const short = (rows) => {
+            const got = hue(rows.map((r, ch) => s.reduce((a, q) => a + shown(ramp(ch, r, q.luma)), 0)));
+            return want !== null && got !== null && Math.abs(((got - want + 540) % 360) - 180) > 8;
+        };
+        let k = 1, rows = fit(k);
+        while (k > 0.5 && short(rows)) rows = fit(k -= 0.05);
+        return rows;
     };
     const faces = pieces.flatMap((q) => q.tris);
     for (const t of faces) t.rows = rowsOf(t);
