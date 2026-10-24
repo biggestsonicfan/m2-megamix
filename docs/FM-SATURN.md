@@ -761,6 +761,40 @@ before it, and also reads 0x0600ee16's two end conditions (the compares
 before each branch, in order) and 0x0600ed2a's divide (what goes into the
 divide unit's dividend and divisor) off the disc.
 
+#### The flags those four stop at
+
+The four flag tests that "The flags those stop at" stops at, all in the
+run handler, read off the disc and followed the same way. Each field and
+mask there matches the disc, 0x0600f340's too. 0x0600ed36 is the run
+handler's +0x6c0 & 0x00001000 test that "The flags behind them" already
+describes; both its sides are as that row says, and are not rewritten
+here.
+
+| Tested at | Flag | Set | Clear |
+| --- | --- | --- | --- |
+| 0x0600ed36 | +0x6c0 & 0x00001000 | as "The flags behind them" says for 0x0600ed36 | as "The flags behind them" says for 0x0600ed36 |
+| 0x0600ed64 | the opponent's +0x19f0 & 0x00002000 | calls 0x06024094 (0x0600ed7c); if that returns nonzero, sets +0x6c0 & 0x20000000 (0x0600ed8e), calls 0x060564cc (0x0600edb4) and sets +0x20 (0x0600ee0a) and +0x28 (0x0600ee0c); either way stops at 0x0600ee16 (+0x6c0 & 0x40000000) | changes nothing in the jump before it stops at 0x0600ed6a (the opponent's +0x19f0 & 0x00024100) |
+| 0x0600ee44 | +0x30 & 0x00000008 | with the table at 0x0606922c's halfword for the byte +0x4 less bit 0x08 over 3, or +0xe4 under 0x00016666 (1.4), ends this frame's run (0x0600f3f6); else stops at 0x0600ee78 (+0x6c0 & 0x00030000) | ends this frame's run (0x0600f3f6) and nothing else |
+| 0x0600f340 | +0x6c0 & 0x01000000 | ends this frame's run (0x0600f3f6) and nothing else | calls 0x06024094 (0x0600f34a); if that returns nonzero, sets +0x6c0 & 0x01000000 (0x0600f35c); else calls 0x060129f4 (0x0600f36a); ends this frame's run (0x0600f3f6) |
+
+- **+0x6c0 & 0x00001000**: set, the +0x6c6 counter branch "The flags
+  behind them" gives; clear, its +0x6c0 & 0x02000000 test.
+- **the opponent's +0x19f0 & 0x00002000**: set, with 0x06024094's yes it
+  sets +0x6c0 & 0x20000000 and rewrites +0x20 and +0x28; clear, nothing
+  changes before 0x0600ed6a.
+- **+0x30 & 0x00000008**: set, the frame ends unless the table halfword
+  is 3 or less and +0xe4 is at least 1.4; clear, the frame ends.
+- **+0x6c0 & 0x01000000**: set, the frame ends; clear, with 0x06024094's
+  yes it sets this same flag, else it calls 0x060129f4.
+
+0x0600ed64 and 0x0600f340 both call 0x06024094, as 0x0600ed58's clear
+side does past 0x0600ed64. None of these sides reaches the 0.8 distance
+check or `+0` bit 0x10000000. The flags tested at 0x0600ed6a, 0x0600ee16
+and 0x0600ee78 are left undescribed here; 0x0600ee16's is in "The flags
+those stop at", 0x0600ee78's in "The flags behind them".
+`tests/fm-saturn.test.mjs` checks this section the same way, with each
+end condition and each call's nonzero and zero ways read off the disc.
+
 ### Slots
 
 The action-table slots that those handlers play, read the way 0x0600CEC8

@@ -311,13 +311,14 @@ function regValue(game, code, i, r) {
         if (w === (0x4018 | n << 8)) return c(val(n)) !== null ? val(n) << 8 >>> 0 : null;
         if (w === (0x4005 | n << 8)) { const v = c(val(n)); return v !== null ? (v >>> 1 | v << 31) >>> 0 : null; }
         if ((w & 0xf00c) === 0x000c && m === 12) { const o = c(val(0)); return o === null ? null : { field: o, size: [1, 2, 4][(w & 3)] }; }
+        if ((w & 0xf00c) === 0x000c && m === 13) { const o = c(val(0)); return o === null ? null : { field: o, size: [1, 2, 4][(w & 3)], of: 13 }; }   /* the opponent's */
         if ((w & 0xf00c) === 0x6000 && (w & 3) < 3) return load(val(m), [1, 2, 4][w & 3]);
         if ((w & 0xf000) === 0x5000 && m === 12) return { field: (w & 15) * 4, size: 4 };
         return null;   /* anything else writes it */
     }
     return r === 11 ? { field: 0x3c, size: 4 } : null;
 }
-const asLong = ({ field, size }, mask) => ({ field: field & ~3, mask: (mask << (size === 4 ? 0 : (4 - size - (field & 3)) * 8)) >>> 0 });
+const asLong = ({ field, size, of }, mask) => ({ field: field & ~3, mask: (mask << (size === 4 ? 0 : (4 - size - (field & 3)) * 8)) >>> 0, ...(of && { of }) });
 /** The field and mask a tst at code[i] tests, or null. */
 function tstOf(game, code, i) {
     const w = code[i][1];
@@ -329,7 +330,7 @@ function tstOf(game, code, i) {
     } else return null;
     return v?.field !== undefined && typeof mask === 'number' ? asLong(v, mask) : null;
 }
-const parameterBit = t => t && (t.field === 0x3c || t.field === 0x70) && t.mask && !(t.mask & ~0xff0000) ? t.mask >>> 16 : null;
+const parameterBit = t => t && !t.of && (t.field === 0x3c || t.field === 0x70) && t.mask && !(t.mask & ~0xff0000) ? t.mask >>> 16 : null;
 /** A kind's handler's control flow: each instruction's successors (a delay
  *  slot runs before the branch it follows). */
 function handlerGraph(game, start) {
@@ -450,7 +451,7 @@ export function flagSides(game, start, at) {
             if ((w & 0xff00) === 0xc800) [v, mask] = [r[0], w & 0xff];
             else if ((w & 0xf00f) === 0x2008 && n !== m) [v, mask] = num(r[m]) ? [r[n], r[m]] : [r[m], r[n]];
             else return null;
-            return v?.field !== undefined && plain(v) && num(mask) ? { ...asLong(v, mask >>> 0), ...(v.of && { of: v.of }) } : null;
+            return v?.field !== undefined && plain(v) && num(mask) ? asLong(v, mask >>> 0) : null;
         };
         const todo = [{ pc: sides[side], r: [...init], t: null, seen: new Set(), mac: null, div: {} }];
         while (todo.length) {
@@ -508,7 +509,7 @@ export function flagSides(game, start, at) {
                     || (w & 0xff00) === 0x8800 || (f === 0x2008 && n === m)) p.t = 'both';
                 else if ((w & 0xff00) === 0xc800 || f === 0x2008) {
                     const t = tstFlag(w, r);
-                    if (t && !t.of && t.field === flag.field && t.mask === flag.mask) { note({ kind: 'same', at: a }); p.t = side; }
+                    if (t && t.of === flag.of && t.field === flag.field && t.mask === flag.mask) { note({ kind: 'same', at: a }); p.t = side; }
                     else if (t && !t.of && (t.field === 0x3c || t.field === 0x70) && t.mask && !(t.mask & ~0xff0000)) { note({ kind: 'param', at: a, bit: t.mask >>> 16 }); return 'stop'; }
                     else if (t) { note({ kind: 'stop', at: a, field: t.field, mask: t.mask, ...(t.of && { of: t.of }) }); return 'stop'; }
                     else p.t = 'both';
