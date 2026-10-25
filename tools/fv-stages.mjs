@@ -28,6 +28,9 @@ import { writeFileSync } from 'node:fs';
 import { buildFlatDisplayList } from '../vendor/noclip/js/display.js';
 import { fvStageHooks } from '../vendor/noclip/js/fvstages.js';
 import { readModelEntry, meshOffsetOf, xtraResolve } from '../vendor/noclip/js/romset.js';
+import { decodeModel } from '../vendor/noclip/js/model.js';
+import { buildTexram } from '../vendor/noclip/js/texture.js';
+import { levelOrigin, texelByte, SHEET_BYTES } from '../vendor/noclip/js/atlas.js';
 
 /* The arenas, by slot (js/games.js STAGE_SLOTS.fv): 4 is a copy, 9.. are
  * Western 2, name entry and unnamed records. */
@@ -81,6 +84,8 @@ function modelNeeds(rom, m) {
     let faces = 0, textured = 0;
     for (let p = off + 24; ; p += 40) {
         const attr = poly[p] | (poly[p + 1] << 8) | (poly[p + 2] << 16) | (poly[p + 3] << 24);
+        /* the record with no face ends the mesh: no header of its own */
+        if ((attr & 3) === 0) break;
         if (hdr >= 0 && hdr + 8 <= tex.length) {
             const th0 = tv.getUint16(hdr, true), th2 = tv.getUint16(hdr + 4, true), th3 = tv.getUint16(hdr + 6, true);
             bases.add((th3 >> 6) & 0x3ff);
@@ -95,7 +100,6 @@ function modelNeeds(rom, m) {
             hdr += step * 8;
         }
         faces++;
-        if ((attr & 3) === 0) break;
     }
     return { bytes, faces, textured, ramMat, bases: [...bases].sort((a, b) => a - b), tiles };
 }
@@ -174,6 +178,311 @@ export function totals(plan, models) {
         n.tiles.forEach((t) => tiles.add(t));
     }
     return { models: models.length, bytes, faces, bases: bases.size, tiles: tiles.size };
+}
+
+/* ---- on the board (docs/FV-STAGES.md, "On the board") ---- */
+
+/* The arenas the board has: Western. */
+export const FV_BOARD_SLOTS = [0];
+/* The board's model ids for them, from here down, below VF2's stages
+ * (vf2-stages.mjs VF2_STAGE_TOP, 4899 down). */
+export const FV_STAGE_TOP = 4493;
+/* The board's texture set for them, after VF2's 18 and 19 in pack-akira's
+ * set table copy, and the destination list it uses (VF2's is 9). */
+export const FV_SET0 = 20;
+const FV_DATA_INDEX = 10;
+/* where its pages go in main_data (importFvStages) */
+const FV_PAGES_AT = 0x600000, FV_PAGES_END = 0x800000;
+/* The town's turn (fvstages.js, 0x1EF94): 10 a frame on the turning flag. */
+export const FV_TURN = 10;
+/* The Western bear (fvobjects.js kuma_dsp): it swings about x on its stand. */
+const KUMA = 0x407;
+
+/*
+ * The board's plan: each arena's draws in FV's order (the floor, then the
+ * town above it, the platform, each side's cage panels and top, the poles,
+ * each side's rail, the objects), every op at frame 0 with no turn, and for
+ * each draw what the board does with it each frame:
+ *   turn   it turns with the town (FV_TURN a frame about y, before its ops)
+ *   side   cage side 1-4: drawn only while the camera is inside that side's
+ *          plane, as cage_display does (byte_500288); the top goes with its
+ *          side; the poles and the rail (sub_24224) are always drawn
+ *   swing  the bear: kuma_int's pendulum about x, after its ops
+ * The cage break's pieces are not drawn (no break on the board yet).
+ */
+export function fvBoardPlan(games) {
+    const fv = games.fv;
+    const stages = FV_BOARD_SLOTS.map((slot) => {
+        const st = fv.stages.find((s) => s.slot === slot);
+        const list = buildFlatDisplayList(st);
+        const order = ['floor', 'upper', 'platform', 'cage', 'poles', 'objects'];
+        /* the rail (sub_24224) comes after the poles in the 'cage' layer */
+        const poles = list.findIndex((d) => d.layer === 'poles');
+        const isRail = (d) => d.layer === 'cage' && poles >= 0 && list.indexOf(d) > poles;
+        const rank = (d) => (isRail(d) ? 4.5 : order.indexOf(d.layer));
+        if (list.some((d) => rank(d) < 0 || d.anim)) throw new Error(`FV ${st.name}: a draw the board has no place for`);
+        const draws = list.map((d, i) => ({ d, i })).sort((a, b) => rank(a.d) - rank(b.d) || a.i - b.i).map(({ d }) => {
+            const ops = typeof d.ops === 'function' ? d.ops(0) : d.ops;
+            const turn = typeof d.ops === 'function' || d.layer === 'objects';
+            const r = ops.find(([k]) => k === 'r');
+            const side = d.layer === 'cage' && !isRail(d) ? Math.round((r ? r[1] : 0) / 90) + 1 : 0;
+            return { model: d.model, ops, layer: isRail(d) ? 'rail' : d.layer, turn, side, swing: d.model === KUMA };
+        });
+        return { st, draws };
+    });
+    const models = [...new Set(stages.flatMap(({ draws }) => draws.map((d) => d.model)))].sort((a, b) => a - b);
+    const idOf = new Map(models.map((m, i) => [m, FV_STAGE_TOP - i]));
+    return { stages, models, idOf };
+}
+
+/* A slot on a sheet and an even page's new slot on the stages' sheet, as in
+ * tools/vf2-stages.mjs: the fighters' sheet's 16-23 go to the stages' sheet
+ * at x - 1024 (slots 0, 1, 4, 5, 8, 9, 12, 13). */
+const evenTo = (s) => ((s - 16) >> 1) * 4 + ((s - 16) & 1);
+const hex = (v) => '0x' + v.toString(16).toUpperCase();
+
+/*
+ * Western's models, pages and colours into the data ROMs, as
+ * tools/vf2-stages.mjs does VF2's stages (R, ctx: import-assets' regions and
+ * what importAkira built).
+ *
+ * Textures: Western uploads sets 36 and 20; its models read only set 20's,
+ * pages 16-22 on the stages' sheet and 16-23 on the fighters'. The board
+ * keeps the stages' sheet's 16-23 where they are, moves the fighters' sheet's
+ * eight to the stages' sheet's 0, 1, 4, 5, 8, 9, 12, 13 (each face's th2 with
+ * them) and leaves out set 20's 12-15 and set 36: sixteen pages, which leave
+ * the fighters' sheet to StF's fighters and the guests.
+ */
+export function importFvStages(R, games, ctx) {
+    const { pack, freeTaken } = ctx;
+    const { main, polygons, textures } = R;
+    const fv = games.fv.rom, stf = games.stf.rom;
+    const plan = fvBoardPlan(games);
+    const report = [];
+    const MAIN_DATA = 0x02000000;
+
+    /* the guest tables go in after every import, at their fixed places */
+    const later = Object.values(R.guest.tables).map((t) => [t.at - MAIN_DATA, t.at - MAIN_DATA + t.bytes.length]);
+    const free = (r, len, align = 16, from = 0x100) => {
+        const iv = [...r.kept.map(([a, b]) => [a, b]), ...(r === main ? later : [])].sort((a, b) => a[0] - b[0]);
+        let at = (from + align - 1) & ~(align - 1);
+        for (const [a, b] of iv) {
+            if (b <= at) continue;
+            if (a >= at + len) break;
+            at = (b + align - 1) & ~(align - 1);
+        }
+        if (at + len > r.out.length) throw new Error(`FV stages: no room for ${len} bytes in ${r.name}`);
+        return at;
+    };
+    const isFree = (r, a, len) => !r.kept.some(([x, y]) => x < a + len && a < y);
+    const u32s = (list) => { const b = new Uint8Array(list.length * 4); const v = new DataView(b.buffer); list.forEach((x, i) => v.setUint32(i * 4, x >>> 0, true)); return b; };
+
+    for (const m of plan.models) {
+        const id = plan.idOf.get(m);
+        if (id <= 0 || !isFree(main, R.modelTable + id * 16, 16)) throw new Error(`FV stages: model id ${id} is taken (lower FV_STAGE_TOP)`);
+    }
+
+    /* ---- colours: as VF2's stages' ---- */
+    const pal = (rom, cb) => rom.mainDataView.getUint16(0x100000 + cb * 2, true);
+    const cbMap = new Map();
+    let fresh = 0;
+    const mapCb = (cb) => {
+        if (!cb || pal(fv, cb) === pal(stf, cb)) return cb;
+        if (cbMap.has(cb)) return cbMap.get(cb);
+        let n = 1;
+        while (n < 0x400 && pal(stf, n) !== pal(fv, cb)) n++;
+        if (n === 0x400) {
+            for (n = 0x3ff; n >= 32 && (R.colorbases.has(n) || freeTaken.has(n)); n--);
+            if (n < 32) throw new Error('FV stages: no free colorbase');
+            freeTaken.add(n); fresh++;
+            main.put(0x100000 + n * 2, Uint8Array.of(pal(fv, cb) & 0xff, pal(fv, cb) >> 8), `FV stage colorbase ${cb}`);
+        }
+        cbMap.set(cb, n);
+        return n;
+    };
+    let moved = 0;
+    const mapTh2 = (th0, th2) => {
+        if (!(th0 & 0x4000)) return th2;
+        const x = 32 * (th2 & 0x3f), y = 32 * ((th2 >> 6) & 0x1f), s = slotOf(x, y);
+        if (s < 16) throw new Error(`FV stages: a tile on sheet ${(th2 >> 12) & 1}, slot ${s}`);
+        if (!((th2 >> 12) & 1)) return th2;
+        moved++;
+        return (th2 & ~0x103f) | ((x - 1024) / 32);
+    };
+
+    /* ---- models: the mesh (points scaled), its headers and points ---- */
+    const raw = (m, o) => fv.mainDataView.getUint32(fv.game.modelTable.offset + m * 16 + o, true);
+    const vp = new DataView(fv.polygons.buffer, fv.polygons.byteOffset, fv.polygons.byteLength);
+    let polyBytes = 0, texBytes = 0;
+    const copied = new Map();
+    const copyTex = (from, to, fix) => {
+        const k = `${from},${to}`;
+        if (copied.has(k)) return copied.get(k);
+        const b = fv.textures.slice(from, to);
+        if (fix) fix(b);
+        const at = free(textures, b.length, 16);
+        textures.put(at, b, `FV stage textures ${hex(from)}`);
+        texBytes += b.length;
+        copied.set(k, at);
+        return at;
+    };
+    for (const m of plan.models) {
+        const tpa = raw(m, 0), tha = raw(m, 4), oba = raw(m, 8);
+        let obc = raw(m, 12);
+        if (!(oba & 0x800000) || (oba & 0x1000000) || (tpa & 0x800000) || (tha & 0x800000)) throw new Error(`FV model ${m}: not all in ROM`);
+        if (obc === 0) obc = 0xfffff;
+        const base = meshOffsetOf(fv, readModelEntry(fv, m));
+        let p = base + 24;
+        const polys = [];
+        for (let i = 0; i < obc; i++) {
+            const attr = vp.getUint32(p, true);
+            p += 16;
+            if ((attr & 3) === 0) break;
+            polys.push(attr);
+            p += 24;
+        }
+        const mesh = fv.polygons.slice(base, p);
+        const mv = new DataView(mesh.buffer);
+        for (let q = 0; q + 24 <= mesh.length; q += 40) for (let k = 0; k < 6; k++) mv.setFloat32(q + k * 4, mv.getFloat32(q + k * 4, true) * FV_SCALE, true);
+        const polyAt = free(polygons, mesh.length, 4);
+        polygons.put(polyAt, mesh, `FV stage model ${m} mesh`);
+        polyBytes += mesh.length;
+        let tp = tpa, th = tha, thLo = tha, thHi = tha;
+        const recs = [];
+        for (const attr of polys) {
+            tp += ((attr & 1) ? 4 : 3) * 2;
+            thLo = Math.min(thLo, th); thHi = Math.max(thHi, th + 4);
+            recs.push(th);
+            let tho = (attr >> 12) & 0x1f;
+            if (tho & 0x10) tho -= 0x20;
+            th += tho * 4;
+        }
+        let uv = 0, mat = 0;
+        if (polys.length) {
+            uv = copyTex(tpa * 2, tp * 2) / 2;
+            const lo = thLo * 2;
+            const matAt = copyTex(lo, thHi * 2, (b) => {
+                const v = new DataView(b.buffer);
+                for (const r of new Set(recs)) {
+                    const o = r * 2 - lo;
+                    const th0 = v.getUint16(o, true), th2 = v.getUint16(o + 4, true), th3 = v.getUint16(o + 6, true);
+                    v.setUint16(o + 4, mapTh2(th0, th2), true);
+                    v.setUint16(o + 6, (th3 & ~(0x3ff << 6)) | (mapCb((th3 >> 6) & 0x3ff) << 6), true);
+                }
+            });
+            mat = (matAt + tha * 2 - lo) / 2;
+        }
+        main.put(R.modelTable + plan.idOf.get(m) * 16, u32s([uv, mat, (oba & ~0x7fffff) | 0x800000 | (polyAt >> 2), raw(m, 12)]), `FV stage model ${m} as ${plan.idOf.get(m)}`);
+    }
+    report.push(`${plan.models.length} models as ${FV_STAGE_TOP - plan.models.length + 1}..${FV_STAGE_TOP}; meshes ${(polyBytes / 1024).toFixed(0)} KB, headers and points ${(texBytes / 1024).toFixed(0)} KB`);
+    report.push(`${cbMap.size} colorbases moved (${fresh} new); ${moved} faces' tiles from the fighters' sheet to the stages'`);
+
+    /* ---- the texture set: its pages from FV's main_data ---- */
+    const md = fv.mainDataView, off = (a) => a - MAIN_DATA;
+    const TH = fv.game.texture.header;
+    const FD = md.getUint32(TH + 0x08, true), FP = md.getUint32(TH + 0x0c, true);
+    const blocks = new Set();
+    for (let s = 0; s < fv.game.texture.sets; s++) {
+        const P = md.getUint32(off(FP) + s * 4, true);
+        if (P < MAIN_DATA || off(P) >= fv.mainData.length) continue;
+        const D = md.getUint32(off(FD) + md.getUint32(off(P), true) * 4, true);
+        const n = Math.min(md.getUint32(off(D), true), 24);
+        for (let i = 0; i < n; i++) { const b = md.getUint32(off(P) + 4 + i * 4, true); if (b) blocks.add(b); }
+    }
+    const sorted = [...blocks].sort((a, b) => a - b);
+    const blockBytes = (b) => {
+        const next = sorted.find((x) => x > b);
+        const o = off(b);
+        const end = next !== undefined && next - b < 0x100000 ? next - b : (() => {
+            for (let q = o; q < fv.mainData.length; q += 4) if (fv.mainData.subarray(q, q + 64).every((x) => x === 0xff)) return q - o;
+            throw new Error(`FV page ${hex(b)} runs off the ROM`);
+        })();
+        return fv.mainData.subarray(o, o + end);
+    };
+    const tdv = new DataView(pack.md.buffer);
+    const tableAt = tdv.getUint32(pack.HDR_SETS, true) - MAIN_DATA;
+    const dataTable = stf.mainDataView.getUint32(0x300008, true) - MAIN_DATA;
+    const sets = plan.stages.map(({ st }) => st.texSets.at(-1));
+    /* The guests' heap is full up to VF2's skies, so the set goes in main_data's
+     * room from 0x600000: StF's data there (2 MB, none of it zero) is
+     * nothing the board keeps, so nothing reads it. */
+    let list = null, pageBytes = 0;
+    const where = [], whereEnd = [];
+    const alloc = (b, label) => { const at = free(main, b.length, 16, FV_PAGES_AT); where.push(at); whereEnd.push(at + b.length); main.put(at, b, `FV stage ${label}`); return MAIN_DATA + at; };
+    sets.forEach((s, k) => {
+        const e = tableAt + (FV_SET0 + k) * 4;
+        if (!isFree(main, e, 4)) throw new Error('FV stages: the set table copy runs into something');
+        const P = md.getUint32(off(FP) + s * 4, true), D = md.getUint32(off(FD) + md.getUint32(off(P), true) * 4, true);
+        const n = md.getUint32(off(D), true);
+        const g2s = [], pages = [];
+        for (let i = 0; i < n; i++) {
+            let g2 = md.getUint32(off(D) + 4 + i * 4, true);
+            const b = md.getUint32(off(P) + 4 + i * 4, true);
+            const slot = (g2 >> 1) & 0x7fff;
+            if (slot < 16) continue;                  /* the stages' sheet's 12-15: no model reads them */
+            if (!(g2 & 1)) g2 = (g2 & ~0xffff) | (evenTo(slot) << 1) | 1;
+            g2s.push(g2);
+            if (!b) { pages.push(0); continue; }
+            const bytes = blockBytes(b), pad = b & 15, padded = new Uint8Array(pad + bytes.length);
+            padded.set(bytes, pad);
+            pageBytes += bytes.length;
+            pages.push(alloc(padded, `set ${s} page ${i}`) + pad);
+        }
+        const l = u32s([g2s.length, ...g2s]);
+        if (list && list.join() !== [...l].join()) throw new Error('FV stages: the sets\' destination lists differ');
+        list = [...l];
+        const pAt = alloc(u32s([FV_DATA_INDEX, ...pages]), `set ${s} page list`);
+        main.put(e, u32s([pAt]), `FV set ${s} as ${FV_SET0 + k}`);
+    });
+    const dAt = alloc(Uint8Array.from(list), 'destination list');
+    if (Math.max(...whereEnd) > FV_PAGES_END) throw new Error('FV stages: the pages run past their room');
+    if (!isFree(main, dataTable + FV_DATA_INDEX * 4, 4)) throw new Error(`FV stages: destination list ${FV_DATA_INDEX} is taken`);
+    main.put(dataTable + FV_DATA_INDEX * 4, u32s([dAt]), `destination list ${FV_DATA_INDEX}`);
+    report.push(`set ${sets.join(', ')} as ${sets.map((_, k) => FV_SET0 + k).join(', ')}: ${list[0]} pages, ${(pageBytes / 1024).toFixed(0)} KB at ${hex(MAIN_DATA + Math.min(...where))}..${hex(MAIN_DATA + Math.max(...whereEnd))}`);
+    const problems = checkFvStages(R, games, plan);
+    if (problems.length) throw new Error(`FV stages: ${problems.slice(0, 8).join('; ')}`);
+    report.push('every model decodes through the board\'s ROMs as through FV\'s: points at its scale, UVs, tile sizes, texels at levels 0-3');
+    return { report };
+}
+
+/* Each model through the board's data ROMs against FV's, as
+ * vf2-stages.mjs checkVf2Stages: FV's texture RAM with the arena's sets
+ * against the board's with StF's fighters' set and FV_SET0. */
+function checkFvStages(R, games, plan) {
+    const fv = games.fv.rom, stf = games.stf.rom;
+    const board = Object.create(stf);
+    const view = (b) => new DataView(b.buffer, b.byteOffset, b.byteLength);
+    for (const [k, v] of Object.entries({ mainData: R.main.out, mainDataView: view(R.main.out), textures: R.textures.out,
+        polygons: R.polygons.out, polygonsView: view(R.polygons.out) })) Object.defineProperty(board, k, { value: v });
+    const texOf = (tr) => new Uint8Array(tr.sheet0.buffer, tr.sheet0.byteOffset, SHEET_BYTES * 2);
+    const nib = (tex, x, y) => {
+        const o = texelByte(x, y) & ~1;
+        return ((tex[o] | (tex[o + 1] << 8)) >> (((y & 1) ? 0 : 8) + ((x & 1) ? 0 : 4))) & 0xf;
+    };
+    const problems = [];
+    const near = (a, b) => Math.abs(a - b) <= 1e-4 * Math.max(1, Math.abs(b));
+    plan.stages.forEach(({ st, draws }, k) => {
+        const src = texOf(buildTexram(fv, st.texSets)), dst = texOf(buildTexram(board, [1, FV_SET0 + k]));
+        for (const m of new Set(draws.map((d) => d.model))) {
+            const a = decodeModel(fv, m), b = decodeModel(board, plan.idOf.get(m));
+            if (!a && !b) continue;
+            if (!a || !b) { problems.push(`model ${m}: decodes in one only`); continue; }
+            if (a.positions.length !== b.positions.length || a.positions.some((v, i) => !near(b.positions[i], v * FV_SCALE))) { problems.push(`model ${m}: points differ`); continue; }
+            if (a.uvs.length !== b.uvs.length || a.uvs.some((v, i) => v !== b.uvs[i])) { problems.push(`model ${m}: UVs differ`); continue; }
+            for (let t = 0; t < a.tiles.length; t += 12) {
+                const [ox, oy, w, h] = a.tiles.subarray(t, t + 4), [nx, ny, nw, nh] = b.tiles.subarray(t, t + 4);
+                if (w !== nw || h !== nh) { problems.push(`model ${m}: a tile changed size`); break; }
+                if (!w || (ox === 0 && oy === 0 && w === 32 && h === 32 && nx === 0 && ny === 0)) continue;
+                let bad = false, badL = -1;
+                for (let L = 0; L < 4 && !bad; L++) {
+                    const so = levelOrigin(ox, oy, L), no = levelOrigin(nx, ny, L);
+                    for (let j = 0; j < h >> L && !bad; j++) for (let i = 0; i < w >> L; i++) if (nib(src, so.x + i, so.y + j) !== nib(dst, no.x + i, no.y + j)) { bad = true; badL = L; break; }
+                }
+                if (bad) { problems.push(`model ${m}: texels differ at ${ox},${oy} -> ${nx},${ny} level ${badL}`); break; }
+            }
+        }
+    });
+    return problems;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

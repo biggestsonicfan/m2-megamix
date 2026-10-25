@@ -56,16 +56,16 @@ it.
 
 | Slot | Arena | Draws (moving) | Models | Faces | Mesh | Colour bases | Tiles | Tex set | Colour set |
 |---|---|---|---|---|---|---|---|---|---|
-| 0 | Western | 80 (35) | 48 | 1098 | 43 KB | 86 | 893 | 20 | 1 |
-| 1 | Factory | 93 (5) | 66 | 957 | 37 KB | 55 | 907 | 19 | 0 |
-| 2 | UFO Diner | 120 (33) | 74 | 767 | 30 KB | 80 | 1191 | 23 | 4 |
-| 3 | Airport | 52 (13) | 35 | 1122 | 44 KB | 51 | 794 | 21 | 2 |
-| 5 | Bay Side | 27 (0) | 26 | 500 | 20 KB | 23 | 777 | 24 | 5 |
-| 6 | City Hall Elevator | 182 (160) | 53 | 724 | 28 KB | 46 | 843 | 22 | 3 |
-| 7 | Observation Deck | 20 (17) | 50 | 2273 | 89 KB | 47 | 614 | 27 | 8 |
-| 8 | Tower | 27 (12) | 19 | 605 | 24 KB | 41 | 534 | 26 | 7 |
+| 0 | Western | 80 (35) | 48 | 1050 | 43 KB | 80 | 878 | 20 | 1 |
+| 1 | Factory | 93 (5) | 66 | 891 | 37 KB | 49 | 894 | 19 | 0 |
+| 2 | UFO Diner | 120 (33) | 74 | 693 | 30 KB | 74 | 1177 | 23 | 4 |
+| 3 | Airport | 52 (13) | 35 | 1087 | 44 KB | 44 | 768 | 21 | 2 |
+| 5 | Bay Side | 27 (0) | 26 | 474 | 20 KB | 18 | 763 | 24 | 5 |
+| 6 | City Hall Elevator | 182 (160) | 53 | 671 | 28 KB | 37 | 798 | 22 | 3 |
+| 7 | Observation Deck | 20 (17) | 50 | 2223 | 89 KB | 38 | 529 | 27 | 8 |
+| 8 | Tower | 27 (12) | 19 | 586 | 24 KB | 37 | 518 | 26 | 7 |
 
-All eight: 361 models, 7759 faces, 303 KB of mesh, 314 colour bases, 1324
+All eight: 361 models, 7398 faces, 303 KB of mesh, 287 colour bases, 1210
 tiles of 32×32. "Models" counts every model a stage can draw: its lists, its
 objects' models and flipbooks, the cage groups, the hall's, and the cage
 break's pieces (`CAGE_PIECES`). No arena model
@@ -93,7 +93,7 @@ Per arena:
 - **Observation Deck** (0x244000: extra, poles, two panels). A hall: the
   platform, poles, cage and dark cage come from `st.hall`. Object 0x6CCE0.
   Its corners are lit (`lightAt`) and its colorxlat changes (`cxlatAt`).
-  The heaviest arena: 2273 faces.
+  The heaviest arena: 2223 faces.
 - **Tower** (0x244000: extra, poles, two panels). Cage 1386-1389, pole 1397.
   Objects 0x6CF38, 0x6E908.
 
@@ -111,11 +111,12 @@ set 36. The sets' pages, as sheet/slot (slot as in
   slots 16-23.
 - Set 36 fills sheet 1 slots 12-15.
 
-The arenas' models read mostly from sheet 0 slots 16-23 and sheet 1 slots
-16-23: 14 to 21 pages an arena (`node tools/fv-stages.mjs` prints the tiles used
-a page). UFO Diner also reads sheet 0 slots 12-14. A few tiles (1 to 24 an
-arena) sit on sheet 1 slots 1-5 and 9, which neither the arena's set nor set
-36 fills; they come from the fighters' sets and need a look before import.
+The arenas' models read only from sheet 0 slots 12-23 and sheet 1 slots
+12-23: 11 to 19 pages an arena (`node tools/fv-stages.mjs` prints the tiles used
+a page). UFO Diner reads sheet 0 slots 12-14, and a few tiles on Bay Side and
+City Hall Elevator sit on sheet 1 slots 12-15 (set 36's). An earlier
+`modelNeeds` read past a model's last face and counted tiles on sheet 1 slots
+1-5 and 9; no model uses them.
 
 On the board, StF's set 1 holds the fighters' sheet. So, as VF2's stages do,
 an import repacks each arena's pages onto the stages' sheet. FV's arenas need
@@ -125,8 +126,8 @@ repack by tile, not by page, may be needed to fit.
 ## Colours
 
 Each arena names a colour set (record +0x0E, `send_tex_col_stage`'s block),
-and its models' texture headers name colour bases (th3 >> 6): 21 to 86 an
-arena, 314 over all eight. These are FV's palette, so they need a remap into
+and its models' texture headers name colour bases (th3 >> 6): 18 to 80 an
+arena, 287 over all eight. These are FV's palette, so they need a remap into
 StF's colour RAM, as Akira's were (docs/BOARD.md, The guest: VF2's Akira).
 
 ## Model ids
@@ -333,12 +334,16 @@ The board has StF's camera and fight but no round-end or replay modes
 
 ## Next steps for an importer
 
+Western is on the board (docs/BOARD.md, FV's Western): steps 1-5 below are
+done for it, and its turn, light, cage culling and bear (without the hop).
+
 1. Pick the arenas and their stage slots on the board.
 2. Allocate model ids; copy meshes and texture headers (`modelNeeds`).
 3. Repack the textures onto the stages' sheet; remap the colour bases.
 4. Bake `stage_t`/`stage_draw_t`: identity × FV_SCALE / 1.6 per draw, the
    cage panels' ends for 4/2/1 panels a wall, poles, top and rail.
 5. Set stage_x 12.3 for FV arenas.
-6. Port the hooks and object routines arena by arena; start with Factory or
-   Tower (few moving parts).
+6. Port the hooks and object routines arena by arena; Factory or Tower
+   next (few moving parts).
 7. Port the cage break (above): camera mode 0x1A first, the replay later.
+8. FV's skies: not looked at yet; the board draws Western on black.

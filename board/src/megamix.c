@@ -161,7 +161,8 @@ static void stage_light(const stage_t *st) {
     *cf = COP_WMATRIX;
     for (i = 0; i < 9; i++) *cf = m2_obj_fb(cam_l.r[i]);
     for (i = 0; i < 3; i++) *cf = 0u;
-    *cf = COP_ANG_Y; *cf = (u32)(int)(lit ? st->flash[2] : st->vy);
+    /* FV's turning town turns its light with it (0x1EF94) */
+    *cf = COP_ANG_Y; *cf = (u32)(int)(lit ? st->flash[2] : st->vy) + st->turn * frame_counter;
     *cf = COP_ANG_X; *cf = (u32)(int)(lit ? st->flash[1] : st->vx);
     m2_cop_m2w(0.0f, 0.0f, lit ? st->flash[0] : st->bright, light);
 }
@@ -401,8 +402,10 @@ static void round_start(fighter_t fs[2]) {
     *(short *)stf_ram(0x500028u) = (short)(round_time << 6);
     /* stage_x (0x50A00C), the half side of the square area_coli walls the
      * fighters in: StF's cage at 8.0; VF2's ring has no walls, so out of
-     * reach (100.0), and the ring out (ring_out_step) at the ring's edge */
-    stf_set(0x50A00Cu, cur_stage && m2_obj_fb(cur_stage->ring) ? 0x42C80000u : 0x41000000u);
+     * reach (100.0), and the ring out (ring_out_step) at the ring's edge;
+     * FV's cage at its own size (FV's 6.0, scaled) */
+    stf_set(0x50A00Cu, cur_stage && m2_obj_fb(cur_stage->ring) ? 0x42C80000u :
+                       cur_stage && m2_obj_fb(cur_stage->wall) ? m2_obj_fb(cur_stage->wall) : 0x41000000u);
     rout[0] = rout[1] = ring_out = 0u;
     rout_vy[0] = rout_vy[1] = 0u;
     /* the HUD, as MES_ROUND_INT and MES_READY_INT leave it: both bars
@@ -744,11 +747,73 @@ static void mat_mul(mat_t *a, const mat_t *b, const float *c) {
     }
 }
 
+/* FV's cage side test (cage_display's byte_500288): a side is drawn only
+ * while the camera is inside its plane. The panel's z axis points out of the
+ * arena (its matrix puts it at z -6 in FV's units), so the camera, at the
+ * origin of m's frame, is inside while m's translation is along that axis:
+ * dot(t, z axis) < 0. The dot is one op 0x29 on the coprocessor with t as
+ * the first row; its sign bit is the answer. */
+static int fv_side_in(const mat_t *m) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    int i;
+    u32 d;
+    *cf = COP_WMATRIX;
+    for (i = 0; i < 3; i++) { *cf = m2_obj_fb(m->t[i]); *cf = 0u; *cf = 0u; }
+    for (i = 0; i < 3; i++) *cf = 0u;
+    *cf = COP_M2W;
+    for (i = 6; i < 9; i++) *cf = m2_obj_fb(m->r[i]);
+    d = *cf; (void)*cf; (void)*cf;
+    return (d & 0x80000000u) != 0u;
+}
+
+/* FV's Western bear (kuma_int, 0x6C254): an integer pendulum, a step each
+ * 60 Hz frame; the bear swings about x by the negated top half of its
+ * place. The hop (a fighter knocked into the wall before it) is the cage
+ * break's, which the board does not have. */
+static int kuma_p, kuma_v;
+static u32 kuma_at;
+static void kuma_step(void) {
+    while (kuma_at != frame_counter) {
+        int t = 0x2000 + kuma_v;
+        kuma_p += t;
+        if (kuma_p >= 0x10000000) { t = 0x2000 + t; if (t > 0) t = -t; }
+        kuma_v = t;
+        kuma_at++;
+    }
+}
+
+/* m = m * ang_x(a), on the coprocessor */
+static void mat_ang_x(mat_t *m, u32 a) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    int i;
+    *cf = COP_WMATRIX;
+    for (i = 0; i < 9; i++) *cf = m2_obj_fb(m->r[i]);
+    for (i = 0; i < 3; i++) *cf = m2_obj_fb(m->t[i]);
+    *cf = COP_ANG_X; *cf = a & 0xFFFFu;
+    *cf = COP_RMATRIX;
+    for (i = 0; i < 9; i++) m->r[i] = m2_cop_gf();
+    for (i = 0; i < 3; i++) m->t[i] = m2_cop_gf();
+}
+
 static void draw_stage(const stage_t *st) {
-    mat_t m;
+    mat_t m, ct;
     u32 i, model, x0, x1;
+    if (st->turn) {
+        /* FV's turning town: cam * ang_y(turn * frame) under the draws marked turn */
+        volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+        *cf = COP_WMATRIX;
+        for (i = 0; i < 9u; i++) *cf = m2_obj_fb(cam.r[i]);
+        for (i = 0; i < 3u; i++) *cf = m2_obj_fb(cam.t[i]);
+        *cf = COP_ANG_Y; *cf = (st->turn * frame_counter) & 0xFFFFu;
+        *cf = COP_RMATRIX;
+        for (i = 0; i < 9u; i++) ct.r[i] = m2_cop_gf();
+        for (i = 0; i < 3u; i++) ct.t[i] = m2_cop_gf();
+    }
+    kuma_step();
     for (i = 0; i < st->ndraws; i++) {
-        mat_mul(&m, &cam, st->draws[i].m);
+        mat_mul(&m, st->draws[i].turn ? &ct : &cam, st->draws[i].m);
+        if (st->draws[i].side && !fv_side_in(&m)) continue;
+        if (st->draws[i].swing) mat_ang_x(&m, (u32)-(kuma_p >> 16));
         x0 = m2_obj_fb(st->draws[i].x0); x1 = m2_obj_fb(st->draws[i].x1);
         if (x0 != x1 && cage_clip(&m, x0, x1)) continue;
         model = st->draws[i].model;
@@ -968,6 +1033,7 @@ static void sky_storm_frame(const stage_t *st) {
 static void load_stage(const stage_t *st) {
     u32 i;
     cur_stage = st;
+    kuma_p = kuma_v = 0; kuma_at = frame_counter;
     tex_load_set(st->texset);
     cx_put(&st->cx);
     sky_load(st->sky);                   /* after the colorxlat: palette_w reads it */
@@ -1043,7 +1109,7 @@ static const char *const fighter_name[POSE_ANIMS] = { "SONIC", "HONEY", "EGGMAN"
  * runs as: Ryo and Chai (Shenmue's) and Hornet (Daytona USA's car, as Fighters
  * Megamix had him) fight on Akira's moves, as VF2's. */
 static const char *const fighter_from[POSE_ANIMS] = { 0, 0, 0, 0, "SHENMUE", "SHENMUE", "DAYTONA" };
-static const char *const stage_name[STAGES] = { "SOUTH_ISLAND", "AURORA_ICEFIELD", "VF2 TOU-RIN", "VF2 COLOSSEUM" };
+static const char *const stage_name[STAGES] = { "SOUTH_ISLAND", "AURORA_ICEFIELD", "VF2 TOU-RIN", "VF2 COLOSSEUM", "FV WESTERN" };
 static u32 menu_cur;
 
 static u32 slen(const char *s) { u32 n = 0; while (s[n]) n++; return n; }

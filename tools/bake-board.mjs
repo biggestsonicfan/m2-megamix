@@ -35,6 +35,8 @@ import { makeFighter } from '../js/fighters.js';
 import { buildColorxlat } from '../vendor/noclip/js/colors.js';
 import { stormSchedule } from '../vendor/noclip/js/vf2.js';
 import { vf2StagePlan, vf2SkyPlan, VF2_SET0, VF2_RING, SCALE as VF2_SCALE } from './vf2-stages.mjs';
+import { fvBoardPlan, FV_SET0, FV_RING, FV_SCALE, FV_TURN } from './fv-stages.mjs';
+import { xtraResolve } from '../vendor/noclip/js/romset.js';
 
 const OUT = process.argv[2] ?? new URL('../board/src/poses.h', import.meta.url).pathname;
 /* StF's fighters: their models and textures are already on the board. */
@@ -167,7 +169,10 @@ const k = ARENA.stf.scale;
 const scale = [k, 0, 0, 0, 0, k, 0, 0, 0, 0, k, 0, 0, 0, 0, 1];
 /* x0, x1: for a cage panel, the x of its two ends in its own frame, which
  * cage_clip_m projects to cull it (see CAGE_X); equal (0, 0) for any other draw. */
-out.push('typedef struct { u32 model; float m[12]; float x0, x1; } stage_draw_t;');
+/* turn, side, swing: FV's (tools/fv-stages.mjs fvBoardPlan): the draw turns
+ * with the town, is cage side 1-4 (drawn while the camera is inside it), is
+ * the bear on its pendulum. */
+out.push('typedef struct { u32 model; float m[12]; float x0, x1; u8 turn, side, swing; } stage_draw_t;');
 /* bg: the record's stage_bg_color (+0x16, BGR555), which StF's scr_bg_int
  * puts behind the 3D layer (change_bg_color, bg_col_set).
  * bright, vx, vy: stage_bright (+0x04) and stage_vecter_x/y (+0x08, +0x0A),
@@ -188,13 +193,16 @@ out.push('typedef struct { u32 model; float m[12]; float x0, x1; } stage_draw_t;
  * sky: VF2's sky (tools/vf2-stages.mjs vf2SkyPlan), in main_data: its
  * character blocks (4 KB each, to the blocks dest[] names), their palette
  * groups (to the groups of the same numbers) and the panorama, rows of 512
- * tiles; voff, the list's vertical offset byte. */
+ * tiles; voff, the list's vertical offset byte.
+ * turn: FV's turning town, its angle a frame (the draws marked turn and the
+ * light). wall: stage_x, the cage's half side in the board's units (0: StF's
+ * 8.0). */
 out.push('typedef struct { u16 kind, model, n, words; const short *v; } tpd_t;');
 out.push('typedef struct { u32 chars, pal, pano; u16 rows, voff, nblocks; const u8 *dest; const u16 *storm_pal; u16 storm_n[2]; const u32 *bolt; } vf2_sky_t;');
 out.push('typedef struct { const char *name; u32 texset; u32 ndraws; const stage_draw_t *draws; cx_run_t cx; const u32 *mat; u16 bg; float bright; short vx, vy;');
 out.push('                 u16 cset; u8 tint[3]; const u16 *cyc; tpd_t tpd;');
 out.push('                 float ring; const u16 *lit; const u8 *storm; float flash[3]; const u16 *wind; u16 wind_at, wind_shift;');
-out.push('                 const vf2_sky_t *sky; } stage_t;\n');
+out.push('                 const vf2_sky_t *sky; u16 turn; float wall; } stage_t;\n');
 {
     /* color_intensity's TST_*_ADD and TST_*_MUL, the same for every stage. */
     const C = stf.rom.game.colors;
@@ -323,6 +331,41 @@ stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
         stages.push(`{"${nm}", ${VF2_SET0 + n}, ${draws.length}, ${name}_draws, {0, 28, 0, 64, ${name}_cx}, ${name}_mat, 0x0, ${f32(bright)}, ${vx}, ${vy}, 0, {${tint}}, ${name}_cyc, {0, 0, 0, 0, 0}, ` +
             `${f32(VF2_RING * VF2_SCALE)}, ${lit}, ${storm}, ${flash}, ${wind}, ${windAt}, ${windShift}, &${name}_sky}`);
         console.log('stage', stages.length - 1, nm, 'VF2 set', st.texSets[0], 'as', VF2_SET0 + n, 'draws', draws.length);
+    });
+}
+/*
+ * Fighting Vipers' Western (tools/fv-stages.mjs, which puts its models,
+ * textures and colours into the data ROMs): the draws at frame 0 with the
+ * models' board ids; the meshes are scaled by FV_SCALE, so a matrix is StF's
+ * 1/1.6 with FV's translation times that scale.
+ * Colours: FV's rows 0..27 at luma 0..63 (its own curve, add 64 and mul 37).
+ * Materials: the arena's 32 from FV's XTRA table (0x06CE33A4 + slot * 4).
+ */
+{
+    const fv = games.fv, plan = fvBoardPlan(games);
+    const id = (m) => plan.idOf.get(m);
+    const xv = (a) => { const r = xtraResolve(fv.rom, a); return r.view.getUint32(r.off, true); };
+    plan.stages.forEach(({ st, draws }, n) => {
+        const name = `fvstage${n}`;
+        out.push(`static const stage_draw_t ${name}_draws[${draws.length}] = {`);
+        for (const d of draws) {
+            const m = composeOps(d.ops);
+            for (let i = 12; i < 15; i++) m[i] *= FV_SCALE;
+            out.push(`  {${id(d.model)}, {${boardOf(mul(scale, m)).map(f32).join(',')}}, 0.0f, 0.0f, ${+d.turn}, ${d.side}, ${+d.swing}},`);
+        }
+        out.push('};');
+        const cx = buildColorxlat(fv.rom, { colorSet: st.texSet[1], tint: st.tint, fighters: [] });
+        out.push(`static const u16 ${name}_cx[] = {${u16s(cxlatRun(cx, 0, 28, 0, 64))}};`);
+        const mt = xv(0x06ce33a4 + st.slot * 4);
+        out.push(`static const u32 ${name}_mat[32] = {${Array.from({ length: 32 }, (_, i) => `0x${xv(mt + i * 4).toString(16)}u`).join(',')}};`);
+        if (st.colorCycles.length) throw new Error(`FV ${st.name}: colour cycles`);
+        out.push(`static const u16 ${name}_cyc[] = {0};`);
+        const tint = st.tint.map((t) => Math.round(t * 128)).join(', ');
+        const nm = `FV ${st.name.toUpperCase()}`;
+        const turn = st.flags & (1 << 0x10) ? FV_TURN : 0;
+        stages.push(`{"${nm}", ${FV_SET0 + n}, ${draws.length}, ${name}_draws, {0, 28, 0, 64, ${name}_cx}, ${name}_mat, 0x${st.bgColor555.toString(16)}, ${f32(st.bright)}, ${st.vecter[0]}, ${st.vecter[1]}, 0, {${tint}}, ${name}_cyc, {0, 0, 0, 0, 0}, ` +
+            `0, 0, 0, {0, 0, 0}, 0, 0, 0, 0, ${turn}, ${f32(FV_RING * FV_SCALE)}}`);
+        console.log('stage', stages.length - 1, nm, 'FV set', st.texSets.at(-1), 'as', FV_SET0 + n, 'draws', draws.length);
     });
 }
 /* A palette colour shows each 5-bit component through colorxlat row c at

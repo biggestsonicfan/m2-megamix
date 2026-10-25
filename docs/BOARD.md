@@ -1328,6 +1328,48 @@ on after a KO before). Check: MAME, both stages, Sonic walked back off the
 edge: he drops, RING OUT shows, P2 takes the star, and the next round
 starts (the second ends the match).
 
+## FV's Western
+
+`tools/fv-stages.mjs` brings Fighting Vipers' Western (FV stage slot 0) onto
+the board as setup stage 4, "FV WESTERN". `fvBoardPlan` orders its draws
+(floor, upper, platform, cage and top, poles, rail, objects); `importFvStages`
+writes them into the data ROMs, and `bake-board.mjs` bakes the record
+(`fvstage0_*` in `poses.h`). docs/FV-STAGES.md has FV's side of it.
+
+- Models: 47 FV models as board ids 4493 down to 4447 (`FV_STAGE_TOP`). The
+  cage break's piece (0xA90) is left out until the break is ported. Points
+  and the draws' translations are scaled by FV_SCALE (2.676 / 1.309), then
+  StF's 1/1.6.
+- Textures: FV's set 20 becomes the board's set 20 (destination list 10),
+  16 pages. Its stages'-sheet pages (slots 16..23) stay where they are; its
+  fighters'-sheet pages (slots 16..23) move to the stages' sheet's free
+  slots 0, 1, 4, 5, 8, 9, 12, 13, and the 263 faces that read them follow
+  (as VF2's do). FV's slots 12..15 are not read. The pages (282 KB) go in
+  main_data at 0x600000..0x800000, StF data the board does not keep; the
+  guests' heap is full up to VF2's skies.
+- Colours: FV's colour set 1 through its colorxlat, 80 colour bases (56
+  moved, 54 of them into free entries). Materials: FV's per-stage table
+  (0x06CE33A4 + slot × 4), 32 words.
+- The turn: the floor, the upper list and the objects turn 10 units of
+  heading a frame (FV's flag 0x10, `stage_t.turn`), and the light turns with
+  them. The cage, poles and rail stay with the ring.
+- The cage: each panel side is drawn while the camera is inside it (the
+  side's z axis against its position, `fv_side_in`), and the top (1801)
+  with its side, as FV's `cage_clip_m` does. Poles and rail are always drawn.
+- The bear (object 0x6C49C, `kuma_int`) swings on FV's pendulum: speed
+  0x2000 + v added to the angle each frame and turned back past 0x10000000;
+  the board turns the model by −(angle >> 16) about X. Its hop needs the
+  cage break and is left out. FV's facing cull on the bear and its stand
+  is not needed (the camera never gets that far out).
+- The ring: stage_x is 6.0 × FV_SCALE = 12.27 (`stage_t.wall`), so StF's
+  walls stand where FV's cage is. Not yet checked in a fight.
+- Check: import-assets decodes every model from FV and from the board's
+  ROMs and compares the texels (`checkFvStages`). MAME (setup stage 4, Sonic
+  and Honey): the floor, the cage, the poles and rail, and the town turning
+  behind them, at the fighters' size.
+- Missing: the sky. The board clears to 0x8000 (FV's record), so it is
+  black; FV's sky has not been looked at.
+
 ## The fight
 
 The rounds run on StF's own code, lifted by `tools/lift-stf.py`; the board
@@ -1486,14 +1528,15 @@ held, and a change of stage or fighter shows at once.
 
 Two fighters (Sonic, Honey, Eggman, Akira or Ryo, picked in the setup) stand
 facing each other and play their stance motion with StF's own motion code
-(stepped and drawn at 60 fps, as StF and VF2 are), on one of four
-stages: StF's South Island and Aurora Icefield, and VF2's Tou-rin and the
-Colosseum, with VF2's ring out (see Game setup and VF2's stages). The stages are drawn from StF's stage records with its
+(stepped and drawn at 60 fps, as StF and VF2 are), on one of five
+stages: StF's South Island and Aurora Icefield, VF2's Tou-rin and the
+Colosseum, with VF2's ring out (see Game setup and VF2's stages), and FV's
+Western (see FV's Western). The stages are drawn from StF's stage records with its
 textures, colours, materials, light, colour cycling, and the sea and
 aurora. South Island matches StF's own picture closely. They push, hit and
 knock each other down, rounds end on a KO, a ring out or the clock, and StF's HUD shows
 the energy bars, the clock and the round stars (see The fight). Further stages will
-come from VF2 and Fighting Vipers.
+come from Fighting Vipers.
 
 Known gaps:
 
