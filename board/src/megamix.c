@@ -215,6 +215,13 @@ static u32 stf_effect[0xC80 / 4] __attribute__((aligned(16)));
 static u32 stf_tobi[0x2000 / 4] __attribute__((aligned(16)));
 static u32 stf_ctl[2][0x280 / 4] __attribute__((aligned(16)));
 static u32 stf_disp[0x100 / 4] __attribute__((aligned(16)));   /* game_disp's task block */
+/* The sway chains (Honey's ponytail, Fang's tail): StF's tasks fa_osage0
+ * and fa_osage1 (mod_fa_osage0_1, mod_fa_osage0_2), one a player, 0x280
+ * bytes. osage_init reads the fighter's chains (osage_per_character, by
+ * +0x1B0) and becomes osage_dsp, which steps them on the coprocessor
+ * (Fn_osage, 0x4A, on its records in bufferram at 0x91E800 and 0x91F000)
+ * and draws them, in a block of the list that draw_fighter splices in. */
+static u32 stf_osage[2][0x280 / 4] __attribute__((aligned(16)));
 
 extern void stf_call(void (*fn)(void), void *rob, void *enemy, u32 arg);
 extern void stf_task(void (*fn)(void), void *task, void *rob, void *enemy);
@@ -277,6 +284,9 @@ static void stf_globals(void) {
     stf_set(0x50083Cu, (u32)stf_ctl[0]);
     stf_set(0x500840u, (u32)stf_ctl[1]);
     stf_set(0x500844u, (u32)stf_effect); /* mod_fa_effect */
+    stf_set(0x500860u, (u32)stf_osage[0]); /* mod_fa_osage0_1 */
+    stf_set(0x500864u, (u32)stf_osage[1]); /* mod_fa_osage0_2 */
+    stf_set(0x501018u, 5000u);           /* POLYGON_LIMIT, as change_scene sets it */
     stf_set(0x5008A4u, (u32)stf_tobi);   /* mod_fa_tobi */
     stf_set(0x500814u, (u32)stf_cam);    /* fa_camera */
     stf_set(0x500854u, (u32)stf_rec);    /* mod_fa_record */
@@ -296,6 +306,7 @@ static void stf_camera(void) {
     stf_cam[0x18 / 4] = 0u; stf_cam[0x1C / 4] = y.u; stf_cam[0x20 / 4] = z.u;
     RH(stf_cam, 0x24) = 0xFA50u;         /* 8 degrees down */
     RH(stf_cam, 0x26) = 0u;
+    RW(stf_cam, 0) |= 6u;                /* both fighters shown: osage_dsp draws their chains */
 }
 
 /* A fighter's rob, as StF sets one up for a round: player p, at (x, 0, 0)
@@ -343,13 +354,75 @@ static void rob_init(u32 p, const fighter_t *f) {
 /* A fighter's first frame: both fighters' collision balls to the
  * coprocessor (cop_initialize_end2, which also clears their active bits),
  * both bodies' pendulums (sub_7F0E8), then the fighter's task from
- * action_init, which sets up its moves and plays the stance. */
+ * action_init, which sets up its moves and plays the stance. Its sway
+ * chains start over, as a round's start starts them: the task is
+ * osage_init again. */
 static void rob_start(u32 p) {
-    u32 w0[2] = { RW(robs[0], 0), RW(robs[1], 0) };
+    u32 w0[2] = { RW(robs[0], 0), RW(robs[1], 0) }, i;
     stf_call(stf_cop_initialize_end2, robs[0], robs[1], 0u);
     RW(robs[0], 0) = w0[0]; RW(robs[1], 0) = w0[1];
     stf_call(stf_sub_7F0E8, robs[0], robs[1], 0u);
     stf_task((void (*)(void))RW(robs[p], 0xC), robs[p], robs[p], robs[p ^ 1u]);
+    for (i = 0; i < sizeof stf_osage[p] / 4; i++) stf_osage[p][i] = 0u;
+    RW(stf_osage[p], 0x000) = 0x80000000u;
+    RB(stf_osage[p], 0x004) = (u8)p;
+    RW(stf_osage[p], 0x008) = sizeof stf_osage[p];
+    RW(stf_osage[p], 0x00C) = (u32)stf_osage_init;
+}
+
+/* Each fighter's sway chains, a frame of them: its osage task (osage_init
+ * the first time, then osage_dsp), after the fighters' part matrices.
+ * set_obj_fifo puts each segment straight in the list (a matrix, then the
+ * object from the model table) and counts its polygons in POLYGON against
+ * POLYGON_LIMIT, which main_loop starts at 0 every frame; the board's own
+ * models go through the coprocessor and keep their own count. In a fight
+ * osage_dsp draws on the coprocessor's matrix as it finds it, the fighters'
+ * unscaled camera (cam_l: set_obj_fifo skips a segment whose m00 is past
+ * 1); only the select screen loads 0x501128. */
+static void osage_step(void) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    u32 p;
+    *cf = COP_WMATRIX;
+    for (p = 0; p < 9; p++) *cf = m2_obj_fb(cam_l.r[p]);
+    for (p = 0; p < 3; p++) *cf = m2_obj_fb(cam_l.t[p]);
+    stf_set(0x501010u, 0u);
+    stf_set(0x50101Cu, 0u);              /* POLYGON */
+    for (p = 0; p < 2u; p++)
+        stf_task((void (*)(void))RW(stf_osage[p], 0xC), stf_osage[p], robs[p], robs[p ^ 1u]);
+}
+
+/* StF's list blocks: a draw that belongs at another place in the list
+ * (osage_dsp's, at the fighter's head) writes a word, its draws and a jump,
+ * then turns the word into a jump past them. The layer table (0x501804 +
+ * 8 n) holds each layer's first block and the jump at its last one; a block
+ * that finds one before it links that jump to itself, and the place it
+ * belongs (osage_splice) jumps to the first and has the last jump back.
+ * clear_buffer_ptr clears the table every frame. */
+static void clear_buffer_ptr(void) {
+    u32 *e = (u32 *)stf_ram(0x501800u), i;
+    for (i = 0; i < 43u; i++) e[i] = 0u;
+}
+
+/* rob_disp's head entry (unit_efc_kao): player p's osage blocks run here.
+ * A word, after which the last block's jump comes back (or, with no block
+ * yet, the first one's place); the word becomes the jump to the first. */
+static void osage_splice(u32 p) {
+    volatile u32 *geo = (volatile u32 *)GEO_START, *wpos = (volatile u32 *)COP_WPOS_REG;
+    u32 *e = (u32 *)stf_ram(0x501804u + p * 8u), at = *wpos;
+    *geo = 0u;
+    if (e[1] == 0u) e[0] = *wpos;
+    else *(volatile u32 *)(GEO_BUFFERRAM + e[1]) = *wpos | 0x80000000u;
+    *(volatile u32 *)GEO_WRITE_REG = at;
+    e[1] = *wpos;
+    *geo = e[0] | 0x80000000u;
+}
+
+/* The camera osage_dsp draws the chains on, as camera_init stores it for
+ * each player (0x501128, 0x501158): read back after its 1.6 scale, cam. */
+static void osage_camera(void) {
+    u32 *c0 = (u32 *)stf_ram(0x501128u), *c1 = (u32 *)stf_ram(0x501158u), i;
+    for (i = 0; i < 9; i++) c0[i] = c1[i] = m2_obj_fb(cam.r[i]);
+    for (i = 0; i < 3; i++) c0[9 + i] = c1[9 + i] = m2_obj_fb(cam.t[i]);
 }
 
 /* One 60 Hz frame of StF's fight, its tasks in a real board's order:
@@ -635,6 +708,7 @@ static void draw_fighter(const fighter_t *f, u32 p) {
             }
         *cf = COP_POP;
     }
+    osage_splice(p);
 }
 
 /* The afterimages: the coprocessor's ring of 128 copies, which
@@ -1403,10 +1477,12 @@ int main(void) {
 
         m2_frame_begin();
         m2_obj_frame_setup();
+        clear_buffer_ptr();
         send_materials(stages[stage].mat);
         camera_stf(&stages[stage]);
         sky_frame(&stages[stage]);
         sky_storm_frame(&stages[stage]);
+        osage_camera();
         m2_geo_fifo_light(m2_obj_fb(light[0]), m2_obj_fb(light[1]), m2_obj_fb(light[2]));
         move_tpd_send(&stages[stage].tpd);
         polys = 0u;
@@ -1460,6 +1536,7 @@ int main(void) {
               }
           } }
         if (!in_menu) hud_draw();
+        osage_step();
         for (i = 0; i < 2u; i++) { polys = 0u; draw_fighter(&fs[i], i); pn[1u + i] = polys; }
         zanzou_draw(pn);
         if (in_menu) poly_win_draw(pn);

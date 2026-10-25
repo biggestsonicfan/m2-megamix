@@ -180,6 +180,8 @@ const PLAYER2 = 26;                       /* character c's player 2 is c + 26 */
 const HAND_MODELS = 0x0c6570, FOOT_MODELS = 0x0c6640, BODY_MODELS = 0x0c6710;   /* program ROM, by character */
 const HEAD_LIST = 0x0c540c;
 const TRAIL_MODELS = 0x0b540c, TRAIL_OPTION = 0x0b5408;   /* program ROM: zanzou_control's models, by skeleton */
+const OSAGE = 0x068d64;                   /* program ROM: osage_per_character, each character's sway chains */
+const OSAGE_SIZE = { 1: 0x24, 2: 0x40, 3: 0x0c, 4: 0x18, 5: 0x44 };   /* osage_dsp's records, type word in */
 const SET_FIGHTERS = 1;
 const MOTION_LIST = 0x06400004, MOTIONS = 519;
 const SCROLL_TABLE = 0x06480000;          /* _ScrollCG_Initialize / _ScrollColor_Initialize */
@@ -246,9 +248,17 @@ async function importStf(R) {
             const e = program.u32(list + ch * 4);
             if (e) for (let s = 0; s < 16; s++) for (let i = 0; i < 3; i++) model(program.u16(e + s * 8 + i * 2));
         }
+        /* the sway chains osage_dsp draws (osage_per_character's stream of
+         * records, to a zero type): each segment's (type 5) model, +0x1C */
+        for (let a = program.u32(OSAGE + ch * 4), t; (t = program.u32(a)) !== 0; a += OSAGE_SIZE[t]) {
+            if (!OSAGE_SIZE[t]) throw new Error(`osage record type ${t} at 0x${a.toString(16)}`);
+            if (t === 5) model(program.u32(a + 0x1c));
+        }
     }
     const colorbases = new Set();
     for (const m of [...models].sort((a, b) => a - b)) keepModel(m);
+    /* the table's count (max_poly), which set_obj_fifo checks a model by */
+    main.keep(MODEL_TABLE - 4, 4, 'model count');
     Object.assign(R, { models, colorbases, modelTable: MODEL_TABLE, modelCount: MODELS });
 
     function keepModel(m) {

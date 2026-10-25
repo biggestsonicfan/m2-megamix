@@ -55,13 +55,15 @@ import tempfile
 # frame (interrupt_wait_b); set_display_type_crt: the test menu's CRT
 # setting, the TST_* curve constants (into the backup RAM and its copy, then
 # load_COLORS_to_RAM and chg_scr_color_req).
+# osage_init: a fighter's sway chains (Honey's ponytail, Fang's tail), the
+# task that sets them up and becomes osage_dsp, which steps and draws them.
 ROOTS = ['set_motion', 'calc_rob_angle', 'calc_rob_angle_cont', 'calc_unit_mat', 'smooth_int', 'sub_7F0E8',
          'action_init', 'rob_action', 'sub_1D47C', 'coli_init', 'collision', 'get_game_info', 'cmd_native_tail',
          'cop_initialize_end2', '_Scroll_Initialize', 'energy_disp', 'barrier_left_disp', 'time_dsp',
          'win_lamp_dsp', 'win_lamp_int', 'cam_mode_9', 'cam_mode_10', 'zanzou_control',
          'stage_disp', 'make_lay_col_256_tbl', 'chg_scr_color_req', 'chg_pol_color_req', 'chg_pol_color_send',
          'sub_7B4', 'send_tex_col_stage', 'send_tex_col_skin', 'send_tex_col_part', 'sub_2435C',
-         'set_display_type_crt']
+         'set_display_type_crt', 'osage_init']
 # Routines the board does not run (debug text, name plates, projectiles,
 # sound, ring scatter, Super Sonic's hair objects): `ret`.
 STUBS = ['print_mes', 'print_mes_ex', 'print_hex_w', 'debug_disp_hex', 'dsp_pattern_right',
@@ -77,6 +79,9 @@ STUBS = ['print_mes', 'print_mes_ex', 'print_hex_w', 'debug_disp_hex', 'dsp_patt
 NUMBERS = {'loc_1FFC', 'loc_2AA8', 'loc_6600', 'loc_7FF8', 'loc_8020', 'loc_8040', 'loc_BFF4', 'loc_10000',
            'loc_20010', 'loc_78AFC', 'loc_2100', 'loc_7A00', 'loc_14060', 'sys_proc_table',
            'off_1010', 'dword_4010', 'loc_AAA0', 'loc_5550', 'off_1018', 'loc_32180', 'loc_1C38'}
+# Labels the routines' data uses as numbers, where the code uses them as
+# labels: the wind table dword_689E4's `.long send_tex_col_part` is 0x800.
+DATA_NUMBERS = {'send_tex_col_part'}
 # The tail the move tables' inline code (opcode 0x13: `lda N, g0; b 0x1EF48`)
 # branches to, after sub_1E468, unlabelled in stfdisasm.
 NATIVE_TAIL = 'cmd_native_tail', 0x1EF48, 'ld      0x1A4(g7), r15  # unreachable code'
@@ -85,8 +90,9 @@ NATIVE_TAIL = 'cmd_native_tail', 0x1EF48, 'ld      0x1A4(g7), r15  # unreachable
 LOW_TABLES = {'off_FE8'}
 # Tables read on past their end, into the next label's (off_1008's eight
 # pointers run through off_1010 into off_1018; both labels are numbers to the
-# code, so nothing else keeps their data).
-RUN_ON = {'off_1008', 'off_1010'}
+# code, so nothing else keeps their data). osage_per_character's 52 entries
+# run through kill_osage_sub (player 2's Honey on).
+RUN_ON = {'off_1008', 'off_1010', 'osage_per_character'}
 # Jump tables in the ROM range that hold code (the camera's script steps):
 # lifted with the code, as the copied ROM holds StF's addresses.
 ROM_CODE_TABLES = {'off_9C83C', 'off_9C848'}
@@ -296,7 +302,7 @@ def main():
             op, _, args = c.partition(' ')
             if op == '.long':
                 targets = [base(t) for t in args.split(',')
-                           if base(t) in labline and (not is_data(labline[base(t)]) or table(base(t)))]
+                           if base(t) in labline and base(t) not in NUMBERS | DATA_NUMBERS and (not is_data(labline[base(t)]) or table(base(t)))]
             elif is_branch(op):
                 targets = [target(op, args)]
             else:
@@ -328,7 +334,7 @@ def main():
         if t in guest_at:
             notes.setdefault('guest', set()).add(t)
             return f'guest_{t}'
-        if t in NUMBERS:
+        if t in NUMBERS or (t in DATA_NUMBERS and c.startswith('.long')):
             notes.setdefault('num', set()).add(f'{t}=0x{addr[t]:X}')
             return f'0x{addr[t]:X}'
         if t in lifted_labels or t in STUBS:
