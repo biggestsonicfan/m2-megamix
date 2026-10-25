@@ -1171,6 +1171,54 @@ Check: MAME, Chai vs Ryo on South Island and Honey vs Chai in the
 Colosseum: setup reads SHENMUE:CHAI and the polygon window 306 for him; he
 walks, strikes and takes hits on either side.
 
+## The guest: Daytona's Hornet
+
+Hornet (Daytona USA's car #41, as Fighters Megamix had him) is StF
+character 17 (43 for player 2), picked as HORNET in the setup (#1592), the
+name line DAYTONA. He is built by tools/hornet-guest.mjs `importHornet` on
+Akira's moves (`char_game` VF2), after Ryo and Chai.
+
+- **Slot.** 17 is no number StF's code checks and no bit of the opponent
+  mask (above, The guest: Shenmue's Chai).
+- **Model.** Daytona's own objects, polygon for polygon, quads kept
+  (tools/daytona-hornet.mjs, docs/FM-SATURN.md), in the slots FM's Hornet
+  moves: the nose on the chest (1); the cabin, the windows and the glass on
+  the pelvis (9); the front wheels on the hands (5, 8), the rear on the feet
+  (12, 15). The windows are model 2139, which Daytona draws from RAM its boot
+  copies out of the data ROM (`readRamObject`): 9 panes of one cloud tile
+  under the glass's frames. Daytona moves their texture points as the car
+  turns (`move_car_sky_tex`); here they stay put. Skeleton and pose bones are
+  FM's Hornet's at Akira's scale; collision balls are Akira's fitted to his
+  parts.
+- **Textures.** Daytona's tiles from its boot bank's sheet, levels 0-4,
+  packed with Akira's, Ryo's and Chai's. The seven pages are full by now, so
+  `pack-akira.mjs` also packs into the free cells of set 1 pages a fight
+  draws only a corner of (6, 11, 13, 14, 20, 17, `SHARED`), around the cells
+  StF keeps (`keptCells`); a shared page that took something is written whole
+  (StF's texels kept) after the set table's copy. Hornet's 23 tiles take pages
+  6 (12), 18 (1), 19 (3) and 21 (7).
+- **Colour.** Fitted from Daytona's DELUXE ramp (MAME's backup RAM's TWIN
+  ramp turns his red pink) to StF's rows, all three channels at once at
+  lights 255, 192 and 128, with a penalty on the hue (`HUE`) so light tints
+  don't go grey: 30 colours as 14 of StF's (5 new colorbases). Daytona's
+  lumabase 1 runs 63 down to 3 and StF's band 0 only up, so a tile Daytona
+  reads through it is packed apart for that use, texels turned over (15 - n,
+  14 - n with holes). Untextured faces lit past 192 would reach luma 48,
+  the fighter's palette band, so they are drawn textured on one tile of
+  texel 15 (luma 42). StF's ramps are steeper: the darkest texels (the
+  tyres) come out a little darker than Daytona's.
+- **Room.** Models 4948..4953; meshes 0xF41990..0xF4F888; headers and
+  texture points 0x7CCCE0..0x7D4F90; 1368 polygons; heap to 0x2F1D84C.
+- **Menu.** The setup window is 28 wide from column 16 (was 26 from 18) to
+  fit HORNET:DAYTONA.
+- **Not his own.** His moves: Akira's. FM's motions, turned into VF2's, come
+  later.
+
+Check: MAME, Hornet vs Honey on South Island: setup reads DAYTONA:HORNET;
+the car stands on its rear wheels, logos, the 41 and the Gaffey panel the
+right way round and coloured as Daytona's, the windows grey-blue cloud
+under the frames; he walks, strikes and takes hits.
+
 ## VF2's stages: Tou-rin and the Colosseum
 
 `tools/vf2-stages.mjs` brings VF2's stage slots 0 and 1 (Tou-rin, the

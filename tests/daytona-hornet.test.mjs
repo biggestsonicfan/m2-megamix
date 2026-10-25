@@ -15,6 +15,7 @@ const rom = await D.loadDaytona();
 const car = D.readCar(rom);
 assert.deepEqual(car.body, [1460, 1461, 1835]);
 assert.deepEqual(car.glass, [1462, 1463, 1793]);
+assert.equal(car.windows, 2139);
 assert.deepEqual(car.cockpit, [1236, 1237, 1802]);
 assert.deepEqual(car.tires.map(t => t.model), [805, 806, 805, 806]);
 assert.deepEqual(car.tires.map(t => t.hub), [[-0.525, 0.32, 1.4125], [0.525, 0.32, 1.4125], [-0.525, 0.32, -1.4], [0.525, 0.32, -1.4]]);
@@ -67,12 +68,16 @@ if (existsSync(disc)) {
 }
 /* The objects: every polygon the geometrizer draws, as it walks them */
 for (const m of [1460, 1462, 805, 806]) assert.equal(D.readObject(rom, m).length, decodeModel(rom, m).faceCount, `model ${m}`);
+/* The windows (in RAM): nine panes, each on the body's or the glass's corners */
+const panes = D.readRamObject(rom, car.windows), corners = new Set([1460, 1462].flatMap(m => D.readObject(rom, m)).flatMap(q => q.p.map(String)));
+assert.equal(panes.length, 9);
+for (const q of panes) for (const p of q.p) assert.ok(corners.has(String(p)), `pane corner ${p}`);
 
 if (existsSync(disc)) {
     const game = FM.readGame(disc);
     const fm = FM.readModel(game.archive(130), FM.HORNET_SLOTS);
     const objs = D.hornetObjects(rom, fm, { modelUnits: FM.MODEL_UNITS });
-    assert.deepEqual(objs.map(o => `${o.slot}:${o.name}`), ['1:nose', '9:cabin', '9:glass', '16:nose', '24:cabin', '24:glass',
+    assert.deepEqual(objs.map(o => `${o.slot}:${o.name}`), ['1:nose', '9:cabin', '9:windows', '9:glass', '16:nose', '24:cabin', '24:windows', '24:glass',
         '5:wheel', '8:wheel', '12:wheel', '15:wheel', '20:wheel', '23:wheel', '27:wheel', '30:wheel']);
     const dv = (b) => new DataView(b.buffer, b.byteOffset, b.byteLength);
     for (const o of objs) {

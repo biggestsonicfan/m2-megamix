@@ -39,6 +39,7 @@ import { readZipDirectory, extractZipEntry } from '../vendor/noclip/js/zip.js';
 import { loadNodeGames } from '../tests/node-roms.mjs';
 import { importAkira } from './vf2-guest.mjs';
 import { CHR as RYO_CHR, CHAI_CHR, shenmueTiles, importShenmue } from './ryo-guest.mjs';
+import { CHR as HORNET_CHR, loadHornet, hornetTiles, importHornet } from './hornet-guest.mjs';
 import { importVf2Stages, VF2_SET0 } from './vf2-stages.mjs';
 
 const ROOT = new URL('..', import.meta.url).pathname;
@@ -466,17 +467,22 @@ for (const [name, L] of Object.entries(SFIGHT)) if (L.pairs) R[name] = new Regio
 await importStf(R);
 /* the guests: VF2's Akira as StF's character 6 (tools/vf2-guest.mjs), the
  * Shenmue beta's Ryo as character 1 and Chai as 12, both on Akira's moves
- * (tools/ryo-guest.mjs), their textures packed with Akira's */
+ * (tools/ryo-guest.mjs), and Fighters Megamix's Hornet, Daytona USA's car, as
+ * 17 (tools/hornet-guest.mjs), their textures packed with Akira's */
 const NG = await loadNodeGames();
 const SHENMUE = [{ name: 'RYO', chr: RYO_CHR }, { name: 'CHAI', chr: CHAI_CHR }];
 const shTex = SHENMUE.map((g) => shenmueTiles(NG, g.name));
-const akira = importAkira(R, NG.vf2.rom, NG.stf.rom, { extraTiles: shTex.flatMap((t) => t.tiles) });
+const HO = await loadHornet();
+const hoTex = hornetTiles(HO);
+const akira = importAkira(R, NG.vf2.rom, NG.stf.rom, { extraTiles: [...shTex.flatMap((t) => t.tiles), ...hoTex.tiles] });
 for (const line of akira.report) console.log(`Akira: ${line}`);
 const shenmue = SHENMUE.map((g, i) => {
     const r = importShenmue(R, akira.ctx, NG, shTex[i], g);
     for (const line of r.report) console.log(`${r.coverage.name}: ${line}`);
     return r;
 });
+const hornet = importHornet(R, akira.ctx, NG, HO, hoTex, { chr: HORNET_CHR });
+for (const line of hornet.report) console.log(`Hornet: ${line}`);
 /* VF2's Tou-rin and Colosseum (tools/vf2-stages.mjs) */
 const vf2st = importVf2Stages(R, NG, akira.ctx);
 for (const line of vf2st.report) console.log(`VF2 stages: ${line}`);
@@ -491,7 +497,7 @@ for (const f of [...SFIGHT.audio.singles, ...SFIGHT.samples.singles]) writeFileS
 for (const [f, n] of Object.entries(SFIGHT.billboard.zeros)) writeFileSync(`${dir}/${f}`, new Uint8Array(n));
 writeFileSync(`${OUT}/assets.txt`, manifest(data));
 /* what each guest lost on the way in (tools/grade-guest.mjs reads it) */
-writeFileSync(`${OUT}/guests.json`, JSON.stringify({ guests: [akira.coverage, ...shenmue.map((r) => r.coverage)] }, null, 1) + '\n');
+writeFileSync(`${OUT}/guests.json`, JSON.stringify({ guests: [akira.coverage, ...shenmue.map((r) => r.coverage), hornet.coverage] }, null, 1) + '\n');
 for (const r of data) {
     let n = 0;
     for (const x of r.out) if (x) n++;

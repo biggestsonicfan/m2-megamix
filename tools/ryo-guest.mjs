@@ -250,6 +250,119 @@ function encodeMesh(tris) {
     return b;
 }
 
+/* ---- what every guest built on Akira's gets ------------------------------- */
+
+/* The box round a list of points. */
+export const pointBox = (pts) => {
+    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    for (const p of pts) for (let a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], p[a]); hi[a] = Math.max(hi[a], p[a]); }
+    return { lo, hi };
+};
+
+/* His collision balls: Akira's (ctx.balls), each moved and sized from
+ * Akira's part to his: partBox(slot), his part's box (as a mesh stores it),
+ * or null where he has none, which keeps the ball where it is, sized by k
+ * (his size against Akira's VF2 one). The ball record StF's code reads, and
+ * how many balls. */
+export function fitBalls(ctx, vf2, partBox, k, alloc) {
+    const { u32s } = ctx;
+    const A = readFighters(vf2)[0];
+    const akiraBox = (s) => {
+        const m = A.parts[s]?.model;
+        const d = m > 0 ? decodeModel(vf2, m) : null;
+        if (!d) return null;
+        const pts = [];
+        for (let i = 0; i < d.positions.length; i += 3) pts.push([d.positions[i] * SCALE, d.positions[i + 1] * SCALE, -d.positions[i + 2] * SCALE]);
+        return pointBox(pts);
+    };
+    const pts = Uint8Array.from(ctx.balls.pts), pv = new DataView(pts.buffer);
+    let moved = 0;
+    for (let i = 0; i < 32; i++) {
+        const r = pv.getFloat32(i * 16 + 12, true);
+        if (!r) continue;
+        const s = ctx.balls.part[i], a = akiraBox(s), b = partBox(s);
+        const c = [0, 1, 2].map((ax) => pv.getFloat32(i * 16 + ax * 4, true));
+        let ratio = [k / SCALE, k / SCALE, k / SCALE], out;
+        if (a && b) {
+            ratio = [0, 1, 2].map((ax) => {
+                const ea = a.hi[ax] - a.lo[ax], er = b.hi[ax] - b.lo[ax];
+                return ea > 1e-3 && er > 1e-3 ? Math.min(2, Math.max(0.5, er / ea)) : k / SCALE;
+            });
+            out = c.map((x, ax) => {
+                const ea = a.hi[ax] - a.lo[ax];
+                return ea > 1e-3 ? b.lo[ax] + ((x - a.lo[ax]) * (b.hi[ax] - b.lo[ax])) / ea : x * ratio[ax];
+            });
+        } else out = c.map((x, ax) => x * ratio[ax]);
+        const rr = r * Math.min(1.6, Math.max(0.6, Math.cbrt(ratio[0] * ratio[1] * ratio[2])));
+        out.forEach((x, ax) => pv.setFloat32(i * 16 + ax * 4, x, true));
+        pv.setFloat32(i * 16 + 12, rr, true);
+        moved++;
+    }
+    const ballRec = alloc(u32s([
+        alloc(pts, 'balls', 16), alloc(u32s(ctx.balls.part), 'ball parts', 16),
+        alloc(ctx.balls.lists, 'part balls', 16), alloc(ctx.balls.counts, 'part ball counts', 16),
+    ]), 'ball record', 16);
+    return { ballRec, moved };
+}
+
+/* His records (Akira's, with his parts, 16 model ids, and his skeleton) and
+ * his entries in the guest tables, for StF character chr and its player 2:
+ * Akira's moves, reactions and remap (ctx), unless moves, kinds or remap
+ * name his own; his skeleton, pose bones, balls, seams, afterimage, hands,
+ * head and game. Returns the two characters. */
+export function seatGuest(R, ctx, { chr: CHR, parts, skel, rigAt, ballRec, seamList, game, moves = ctx.newRoot, kinds = ctx.kindsAt, remap = ctx.ownAt }, alloc) {
+    const T = R.guest.tables;
+    const { u32s, u16s } = ctx;
+    const list = alloc(u32s([...parts, ...parts]), 'parts');
+    ctx.recs.forEach((src, p) => {
+        const rec = Uint8Array.from(src), rv = new DataView(rec.buffer);
+        rv.setUint32(0, list, true); rv.setUint32(4, skel, true); rv.setUint32(8, list, true);
+        T.CHAR_PARTS.view.setUint32((CHR + p * PLAYER2) * 4, alloc(rec, `record ${p ? 'P2' : 'P1'}`), true);
+    });
+    T.MOVESET_ARRAY.view.setUint32(CHR * 4, moves, true);
+    T.ptr_DA0B4.view.setUint32(CHR * 4, kinds, true);
+    T.motion_remap.view.setUint32(CHR * 4, remap, true);
+    const chars = [CHR, CHR + PLAYER2];
+    {
+        const t = T.SKELETON_TYPE_DATA;
+        for (let kind = 0; kind < 4; kind++) for (const c of chars) t.view.setUint32(t.lists + kind * t.perKind + c * 4, skel, true);
+    }
+    {
+        const t = T.off_C2058;
+        for (let kind = 0; kind < 4; kind++) for (const c of chars) t.view.setUint32(t.lists + kind * 52 * 4 + c * 4, rigAt, true);
+    }
+    {
+        const t = T.rob_coli_ball_types;
+        const at = (kind) => t.view.getUint32(kind * 4, true) - t.at;
+        for (const l of [at(0), at(1), at(3), at(3) + 52 * 4]) for (const c of chars) t.view.setUint32(l + c * 4, ballRec, true);
+    }
+    /* The afterimage (StF's zanzou, which the strikes he plays turn on:
+     * vf2-guest.mjs trailOf): each part's copies are that part, the same at
+     * every age (three u16s a part, 8 bytes apart, in
+     * off_B540C[type][character]). The board draws a copy every other frame,
+     * opaque, as StF does its cards. */
+    {
+        const t = T.off_B540C, e = new Array(16 * 4).fill(0);
+        for (let s = 0; s < 16; s++) e.fill(parts[s], s * 4, s * 4 + 3);
+        const at = alloc(u16s(e), 'trail models');
+        for (let k = 0; k < 4; k++) for (const c of chars) t.view.setUint32(t.view.getUint32(k * 4, true) - t.at + c * 4, at, true);
+    }
+    const hands = [...new Array(16).fill(parts[5]), ...new Array(16).fill(parts[8])];
+    const handsAt = alloc(u16s(hands), 'hands');
+    const head = alloc(u16s([0, 0, parts[2], parts[2], 0, 0, 0, 0, 0, 0, 0, 0]), 'head');
+    const H = T.PLAYER_HEAD_LIST;
+    for (const c of chars) {
+        T.player_hand_animations.view.setUint32(c * 4, handsAt, true);
+        T.player_foot_animation.view.setUint32(c * 4, 0, true);
+        T.player_body_animation.view.setUint32(c * 4, 0, true);
+        T.midriff.view.setUint32(c * 4, 0, true);
+        T.seams.view.setUint32(c * 4, seamList, true);
+        for (let kind = 0; kind < H.len / 4; kind++) H.view.setUint32(H.lists + kind * H.perKind + c * 4, head, true);
+        T.char_game.bytes[c] = game;
+    }
+    return chars;
+}
+
 /* ---- the guest ------------------------------------------------------------- */
 
 /* R: import-assets' regions; ctx: what importAkira built (its heap, tables
@@ -464,49 +577,9 @@ export function importShenmue(R, ctx, games, { tiles, byTex }, { name: who = 'RY
     const rigAt = alloc(withRig(ctx.rigBytes), 'bones');
 
     /* ---- collision balls: Akira's, moved from his parts to Ryo's ---- */
-    const A = readFighters(vf2)[0];
-    const box = (pts) => {
-        const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
-        for (const p of pts) for (let a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], p[a]); hi[a] = Math.max(hi[a], p[a]); }
-        return { lo, hi };
-    };
-    const akiraBox = (s) => {
-        const m = A.parts[s]?.model;
-        const d = m > 0 ? decodeModel(vf2, m) : null;
-        if (!d) return null;
-        const pts = [];
-        for (let i = 0; i < d.positions.length; i += 3) pts.push([d.positions[i] * SCALE, d.positions[i + 1] * SCALE, -d.positions[i + 2] * SCALE]);
-        return box(pts);
-    };
-    const ryoBox = (s) => (slots.has(s) ? box(pieces.filter((q) => q.slot === s).flatMap((q) => q.tris.flatMap((t) => t.pts))) : null);
-    const pts = Uint8Array.from(ctx.balls.pts), pv = new DataView(pts.buffer);
-    const moved = [];
-    for (let i = 0; i < 32; i++) {
-        const r = pv.getFloat32(i * 16 + 12, true);
-        if (!r) continue;
-        const s = ctx.balls.part[i], a = akiraBox(s), b = ryoBox(s);
-        const c = [0, 1, 2].map((ax) => pv.getFloat32(i * 16 + ax * 4, true));
-        let ratio = [k / SCALE, k / SCALE, k / SCALE], out;
-        if (a && b) {
-            ratio = [0, 1, 2].map((ax) => {
-                const ea = a.hi[ax] - a.lo[ax], er = b.hi[ax] - b.lo[ax];
-                return ea > 1e-3 && er > 1e-3 ? Math.min(2, Math.max(0.5, er / ea)) : k / SCALE;
-            });
-            out = c.map((x, ax) => {
-                const ea = a.hi[ax] - a.lo[ax];
-                return ea > 1e-3 ? b.lo[ax] + ((x - a.lo[ax]) * (b.hi[ax] - b.lo[ax])) / ea : x * ratio[ax];
-            });
-        } else out = c.map((x, ax) => x * ratio[ax]);
-        const rr = r * Math.min(1.6, Math.max(0.6, Math.cbrt(ratio[0] * ratio[1] * ratio[2])));
-        out.forEach((x, ax) => pv.setFloat32(i * 16 + ax * 4, x, true));
-        pv.setFloat32(i * 16 + 12, rr, true);
-        moved.push(`${i}@${s}`);
-    }
-    const ballRec = alloc(u32s([
-        alloc(pts, 'balls', 16), alloc(u32s(ctx.balls.part), 'ball parts', 16),
-        alloc(ctx.balls.lists, 'part balls', 16), alloc(ctx.balls.counts, 'part ball counts', 16),
-    ]), 'ball record', 16);
-    report.push(`${moved.length} collision balls fitted to his parts`);
+    const partBox = (sl) => (slots.has(sl) ? pointBox(pieces.filter((q) => q.slot === sl).flatMap((q) => q.tris.flatMap((t) => t.pts))) : null);
+    const { ballRec, moved } = fitBalls(ctx, vf2, partBox, k, alloc);
+    report.push(`${moved} collision balls fitted to his parts`);
 
     /* ---- seams: the board's guest table `seams` ----
      * By character, a list: +0 the count m, then m pointers, each to a seam:
@@ -550,63 +623,15 @@ export function importShenmue(R, ctx, games, { tiles, byTex }, { name: who = 'RY
     const seamList = alloc(u32s([seamAts.length, ...seamAts]), 'seams');
     report.push(`${seamAts.length} seams, at ${seams.size ? [...seams.keys()].join(' ') : 'none'}: ${meshWords} words of mesh, then ${runWords} a frame`);
 
-    /* ---- records: Akira's, with his parts and skeleton ---- */
+    /* ---- records and the guest tables ---- */
     const parts = new Array(16).fill(0);
     for (const [s, id] of partModel) parts[s] = id;
-    const list = alloc(u32s([...parts, ...parts]), 'parts');
-    ctx.recs.forEach((src, p) => {
-        const rec = Uint8Array.from(src), rv = new DataView(rec.buffer);
-        rv.setUint32(0, list, true); rv.setUint32(4, skel, true); rv.setUint32(8, list, true);
-        T.CHAR_PARTS.view.setUint32((CHR + p * PLAYER2) * 4, alloc(rec, `record ${p ? 'P2' : 'P1'}`), true);
-    });
-
-    /* ---- the guest tables ---- */
-    T.MOVESET_ARRAY.view.setUint32(CHR * 4, ctx.newRoot, true);
-    T.ptr_DA0B4.view.setUint32(CHR * 4, ctx.kindsAt, true);
-    T.motion_remap.view.setUint32(CHR * 4, ctx.ownAt, true);
-    const chars = [CHR, CHR + PLAYER2];
-    {
-        const t = T.SKELETON_TYPE_DATA;
-        for (let kind = 0; kind < 4; kind++) for (const c of chars) t.view.setUint32(t.lists + kind * t.perKind + c * 4, skel, true);
-    }
-    {
-        const t = T.off_C2058;
-        for (let kind = 0; kind < 4; kind++) for (const c of chars) t.view.setUint32(t.lists + kind * 52 * 4 + c * 4, rigAt, true);
-    }
-    {
-        const t = T.rob_coli_ball_types;
-        const at = (kind) => t.view.getUint32(kind * 4, true) - t.at;
-        for (const l of [at(0), at(1), at(3), at(3) + 52 * 4]) for (const c of chars) t.view.setUint32(l + c * 4, ballRec, true);
-    }
-    /* The afterimage (StF's zanzou, which the strikes he plays turn on:
-     * vf2-guest.mjs trailOf): each part's copies are that part, YKB_B's,
-     * the model Shenmue blurs him with, the same at every age (three u16s
-     * a part, 8 bytes apart, in off_B540C[type][character]). The board
-     * draws a copy every other frame, opaque, as StF does its cards. */
-    {
-        const t = T.off_B540C, e = new Array(16 * 4).fill(0);
-        for (let s = 0; s < 16; s++) e.fill(parts[s], s * 4, s * 4 + 3);
-        const at = alloc(u16s(e), 'trail models');
-        for (let k = 0; k < 4; k++) for (const c of chars) t.view.setUint32(t.view.getUint32(k * 4, true) - t.at + c * 4, at, true);
-    }
-    const hands = [...new Array(16).fill(parts[5]), ...new Array(16).fill(parts[8])];
-    const handsAt = alloc(u16s(hands), 'hands');
-    const head = alloc(u16s([0, 0, parts[2], parts[2], 0, 0, 0, 0, 0, 0, 0, 0]), 'head');
-    const H = T.PLAYER_HEAD_LIST;
-    for (const c of chars) {
-        T.player_hand_animations.view.setUint32(c * 4, handsAt, true);
-        T.player_foot_animation.view.setUint32(c * 4, 0, true);
-        T.player_body_animation.view.setUint32(c * 4, 0, true);
-        T.midriff.view.setUint32(c * 4, 0, true);
-        T.seams.view.setUint32(c * 4, seamList, true);
-        for (let kind = 0; kind < H.len / 4; kind++) H.view.setUint32(H.lists + kind * H.perKind + c * 4, head, true);
-        T.char_game.bytes[c] = R.guest.games.VF2;
-    }
+    const chars = seatGuest(R, ctx, { chr: CHR, parts, skel, rigAt, ballRec, seamList, game: R.guest.games.VF2 }, alloc);
     report.push(`heap to ${hex(ctx.heapEnd())}`);
 
     const coverage = {
         chars, game: 'Shenmue', name: Who, parts: order.length,
-        triangles: faces.length, colours: cbOf.size, balls: moved.length,
+        triangles: faces.length, colours: cbOf.size, balls: moved,
         moves: 'Akira\'s (his own motions are not on the board yet)',
     };
     return { report, coverage, meshes, partModel };

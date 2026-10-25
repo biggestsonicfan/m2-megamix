@@ -6,7 +6,8 @@
  * up at 0xD12C: car +0x14 (the body), +0x84 (the body the in-car view draws)
  * and +0x258 (a number plate) come out of a table in the data ROM at
  * 0x0281E390, by the car type at 0x501488. dsp_player_car (0x7D38) draws +0x14,
- * then model 2139 (no mesh) and the glass (the table's second column), and 0x7DA4 the
+ * then the windows (model 2139, in RAM: readRamObject) and the glass (the
+ * table's second column), and 0x7DA4 the
  * four tires: models out of the program ROM at 0x230496 (unaligned words), at
  * hubs out of 0x230D54, each turned by the steering and the wheel spin. The
  * names are Sega Racing Classic's (docs: rokuYAMP d1a-daytona-symbols.md); the
@@ -99,6 +100,7 @@ export function readCar(rom) {
         glass: col(3, 3),
         cockpit: col(6, 3),
         plates: col(9, 8),        /* car type 2's, by the cabinet's number */
+        windows: modelIndex(rom, operand(cv, 0x7d7c, 0x8c803000)),
         tires: [0, 1, 2, 3].map(i => ({
             model: modelIndex(rom, cv.getUint32(tires + 4 * i, true)),
             hub: [0, 1, 2].map(a => +cv.getFloat32(hubs + 12 * i + 4 * a, true).toFixed(4)),
@@ -194,6 +196,29 @@ export function readObject(rom, model) {
     if ((e.meshPtr & 0x800000) === 0 || (e.uvPtr | e.matPtr) & 0x800000) throw new Error(`model ${model}: not all in ROM`);
     const tex = new DataView(rom.textures.buffer, rom.textures.byteOffset, rom.textures.byteLength);
     return walkObject({ mesh: rom.polygonsView, at: meshOffsetOf(rom, e), uv: tex, uvAt: e.uvPtr * 2, th: tex, thAt: e.matPtr * 2 })
+        .filter(q => (q.attr >> 8) & 3);
+}
+
+/** A model whose points are in polygon RAM and whose texture points and
+ *  headers are in texture RAM, as readObject: the windows. The boot (0x11D4)
+ *  copies polygon RAM out of the data ROM at 0x028E0000 (0x1730), texture RAM
+ *  0..0x4FFF out of 0x028F0000 (0x1664) and 0x5000 on out of 0x028F5000
+ *  (0x16D0), a halfword an entry. dsp_player_car's windows are those copies
+ *  as they are; move_car_sky_tex (Sega Racing Classic's name) moves their
+ *  texture points as the car turns, which this doesn't follow. */
+export function readRamObject(rom, model) {
+    const e = readModelEntry(rom, model), cv = rom.mainCpuView, dv = rom.mainDataView;
+    if (e.meshPtr & 0x01800000 || (e.uvPtr & e.matPtr & 0x800000) === 0) throw new Error(`model ${model}: not in slow polygon RAM and texture RAM`);
+    const polyRam = operand(cv, 0x1730, 0x8c883000) - 0x02000000;
+    const texLo = operand(cv, 0x1664, 0x8c883000) - 0x02000000, texHi = operand(cv, 0x16d0, 0x8c883000) - 0x02000000;
+    if (operand(cv, 0x16d8, 0x8c903000) !== 0x805000) throw new Error('0x16D8: not texture RAM 0x5000');
+    const ram = new DataView(new ArrayBuffer(0x20000));
+    /* the second copy runs past the data ROM's end; those entries stay 0 */
+    for (let i = 0; i < 0x10000; i++) {
+        const at = i < 0x5000 ? texLo + 2 * i : texHi + 2 * (i - 0x5000);
+        if (at + 2 <= dv.byteLength) ram.setUint16(2 * i, dv.getUint16(at, true), true);
+    }
+    return walkObject({ mesh: dv, at: polyRam + 4 * (e.meshPtr & 0x7fff), uv: ram, uvAt: 2 * (e.uvPtr & 0xffff), th: ram, thAt: 2 * (e.matPtr & 0xffff) })
         .filter(q => (q.attr >> 8) & 3);
 }
 
@@ -325,6 +350,7 @@ export function hornetObjects(rom, fmSlots, { type = 0, modelUnits = 300 } = {})
     for (const [slot, nose] of [[1, true], [9, false], [16, true], [24, false]]) {
         const m = bodyMap(slot, modelUnits);
         add(slot, nose ? 'nose' : 'cabin', car.body[type], splitObject(rom, car.body[type], nose), m);
+        if (!nose) add(slot, 'windows', car.windows, readRamObject(rom, car.windows), m);
         if (!nose) add(slot, 'glass', car.glass[type], readObject(rom, car.glass[type]), m);
     }
     for (const [slot, tire] of Object.entries(WHEEL_SLOTS)) {

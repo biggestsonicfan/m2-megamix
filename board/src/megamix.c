@@ -1016,9 +1016,9 @@ static u32 edges(u32 now, u32 *held) { u32 e = now & ~*held; *held = now; return
  * StF's window: up and down move, punch lowers a value and kick raises it,
  * with guard held they repeat. Start begins the fight. */
 #define TILE_L1    ((volatile u16 *)0x01002000u)
-#define WIN_COL    18u
+#define WIN_COL    16u
 #define WIN_ROW    3u
-#define WIN_W      26u
+#define WIN_W      28u
 /* The polygon count's window, at the screen's top right (62 tiles across). */
 #define PWIN_COL   44u
 #define PWIN_ROW   1u
@@ -1038,10 +1038,11 @@ static const u16 menu_min[M_ITEMS]  = { 0, 1, 1, 0, 0, 0, 10, 0 };
 static const u16 menu_max[M_ITEMS]  = { 0, 99, 5, STAGES - 1, POSE_ANIMS - 1, POSE_ANIMS - 1, 250, 9 };
 static const u16 menu_step[M_ITEMS] = { 0, 1, 1, 1, 1, 1, 10, 1 };
 static u16 menu_val[M_ITEMS] = { 0, 30, 2, 0, 0, 1, 140, 5 };
-static const char *const fighter_name[POSE_ANIMS] = { "SONIC", "HONEY", "EGGMAN", "AKIRA", "RYO", "CHAI" };
+static const char *const fighter_name[POSE_ANIMS] = { "SONIC", "HONEY", "EGGMAN", "AKIRA", "RYO", "CHAI", "HORNET" };
 /* The game a fighter's name line shows where it is not the one its code
- * runs as: Ryo and Chai (Shenmue's) fight on Akira's moves, as VF2's. */
-static const char *const fighter_from[POSE_ANIMS] = { 0, 0, 0, 0, "SHENMUE", "SHENMUE" };
+ * runs as: Ryo and Chai (Shenmue's) and Hornet (Daytona USA's car, as Fighters
+ * Megamix had him) fight on Akira's moves, as VF2's. */
+static const char *const fighter_from[POSE_ANIMS] = { 0, 0, 0, 0, "SHENMUE", "SHENMUE", "DAYTONA" };
 static const char *const stage_name[STAGES] = { "SOUTH_ISLAND", "AURORA_ICEFIELD", "VF2 TOU-RIN", "VF2 COLOSSEUM" };
 static u32 menu_cur;
 

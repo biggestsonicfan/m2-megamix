@@ -139,9 +139,23 @@ on another build), prints it, and writes it cut in two as an OBJ.
 
 - **Set-up** (0xD12C): car +0x14, +0x84 and +0x258 come out of a table at
   0x0281E390, by the car type at 0x501488: 0 or 1 from 0x501464, 2 when the EEPROM word 0x5FE588 is set.
-- **dsp_player_car** (0x7D38) draws +0x14, the body; model 2139 (no mesh);
-  the glass, column 2; and for car type 2 its plate (+0x258, by the cabinet's
-  number 0x5FE604). In the in-car view it draws +0x84 instead.
+- **dsp_player_car** (0x7D38) draws +0x14, the body; model 2139, the
+  windows; the glass, column 2; and for car type 2 its plate (+0x258, by the
+  cabinet's number 0x5FE604). In the in-car view it draws +0x84 instead.
+- **The windows** (model 2139, the same for every car type) are not in ROM
+  where the geometrizer reads them: their points are in polygon RAM (word
+  4), their headers and texture points in the rasterizer's texture RAM
+  (0x0000 and 0x5000). The boot (0x11D4) fills both out of the data ROM:
+  polygon RAM from 0x028E0000 (0x1730), texture RAM 0..0x4FFF from
+  0x028F0000 (0x1664) and 0x5000 on from 0x028F5000 (0x16D0), a halfword an
+  entry. That makes 9 panes (both side windows, the rear window, the
+  windscreen) on the body's and the glass's own corners, one 64×64 tile of
+  clouds (sheet 1, 768,448; texels 5 to 11, no holes), colorbase 0xFF33.
+  The glass (1462) is only the frames and the net: the panes' middles are
+  texel 15, holes, on all its tiles, so without 2139 the windows are open.
+  The texture points are in RAM because the game moves them
+  (`move_car_sky_tex`, Sega Racing Classic's name: the sky's reflection as
+  the car turns); `readRamObject` reads them as the boot leaves them.
 - **The tires** (0x7DA4): four models out of the program ROM at 0x230496,
   placed at hubs out of 0x230D54 and turned by the car's +0x128, +0x5A,
   +0x52 and +0x56 (the spin and the steering, presumably; not read further).
@@ -274,6 +288,7 @@ node tools/daytona-hornet.mjs --objects DIR    # DIR/<slot>-<piece>.mesh, .uv, .
 | --- | --- | --- | --- |
 | 1, 16 | nose | 1460, faces in front of the cut | 135 |
 | 9, 24 | cabin | 1460, the rest | 190 |
+| 9, 24 | windows | 2139, whole (in RAM) | 9 |
 | 9, 24 | glass | 1462, whole | 14 |
 | 5, 20, 27 | front left wheel | 805 | 255 |
 | 8, 23, 30 | front right wheel | 806 | 255 |
@@ -302,7 +317,8 @@ body breaks its strips. Where a polygon's first two points are not what the
 previous one hands on, a culled quad (link type 0) carries them. It takes
 the next polygon's header and zero texture points, and its z sort is "old
 value", so it changes nothing drawn. The nose is 150 records for 135
-polygons, the cabin 213 for 190 and the glass 23 for 14; the tires need none.
+polygons, the cabin 213 for 190, the windows 13 for 9 and the glass 23 for
+14; the tires need none.
 
 **The frames.** Model 2's axes are noclip's with z negated. FM's model files
 are on noclip's axes: FM Akira's meshes (file 147) lie along the same axes,
@@ -1684,12 +1700,11 @@ that every motion's keys come out of its VF2 block unchanged, and FM Akira's
 
 ## Open
 
-- **Daytona's car on the board**: the pieces are Model 2 objects in their
-  slots' frames ([The objects](#the-objects)). Next is importing them into
-  the board's data ROMs (`tools/import-assets.mjs`): their texture points
-  and headers name Daytona's texture ROM, so its sheets have to be packed
-  and the headers moved, as `pack-akira.mjs` does for Akira. A broken nose
-  and cabin, if Daytona's car is to break, would need meshes of their own.
+- **Hornet on the board** (docs/BOARD.md, The guest: Daytona's Hornet)
+  plays Akira's motions. Next is FM's motions, converted to VF2
+  (`tools/fm-saturn.mjs`), as his own. A broken nose and cabin, if Daytona's
+  car is to break, would need meshes of their own; the windows' reflection
+  doesn't move (`move_car_sky_tex` not ported).
 - **FM's pose rig and model scale**: which rig FM's solve uses (VF2 has one
   standard rig), and the draw's model scale (300 units a metre is fitted).
 - **Hornet's commands**: each move's input is in the Moves table. Still
