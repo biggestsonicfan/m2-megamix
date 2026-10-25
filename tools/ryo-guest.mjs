@@ -35,10 +35,15 @@ import { decodeModel } from '../vendor/noclip/js/model.js';
 import { readFighters } from '../vendor/noclip/js/vf2fighters.js';
 import { buildColorxlat, buildLumaram } from '../vendor/noclip/js/colors.js';
 import { restMatrices, mul4, invRigid } from '../js/shenmue.js';
-import { SLOT_BONES, prepareModel, ryoFit } from '../js/ryo.js';
+import { SLOT_BONES, prepareModel, shenmueFit } from '../js/ryo.js';
 import { SCALE } from './vf2-guest.mjs';
 
 export const CHR = 1;                    /* StF's Tails */
+/* Chai (js/chai.js) the same way, as StF character 12 (38 his player 2):
+ * Megamix does not use it, and of StF's code that checks a character by
+ * number only the hit sounds' robot lists name 12 (docs/BOARD.md), which
+ * the board does not play. */
+export const CHAI_CHR = 12;
 const PLAYER2 = 26;
 const MAIN_DATA = 0x02000000;
 /* The empty runs (tools/vf2-guest.mjs, tools/pack-akira.mjs): his after Akira's. */
@@ -59,9 +64,15 @@ const FLAT = new Map([[SLOT_BONES[0x01], new Set([100])],
     [SLOT_BONES[0x11], new Set([0, 1, 2, 4, 6, 7, 9, 11, 13, 14, 15, 16, 20, 21, 30, 34, 35, 36, 40, 41, 42])],
     [SLOT_BONES[0x16], new Set([0, 6, 14, 17, 18, 20, 24, 25, 26, 27])]]);
 
-/* Which of his models the board gets: YKB_B, unless RYO_MODEL=M. */
+/* Which of his models the board gets: YKB_B, unless RYO_MODEL=M. Chai's is
+ * always CHA_B, his low one (js/chai.js). */
 const FULL = process.env.RYO_MODEL === 'M';
-const boardModel = (S) => (FULL ? S.model : S.lowModel);
+const charOf = (games, name) => {
+    const c = games.shenmue?.chars?.[name];
+    if (!c) throw new Error(`${name}: not in the Shenmue files`);
+    return c;
+};
+const boardModel = (c) => (FULL && c.spec.name === 'RYO' ? c.model : c.lowModel);
 
 const hex = (v) => '0x' + v.toString(16).toUpperCase();
 
@@ -80,24 +91,24 @@ const hex = (v) => '0x' + v.toString(16).toUpperCase();
  * back: 18-23 off a channel on average from 0, 6-7 from a quarter, his
  * overall brightness the textures' own. Pure black stays 0. */
 const FLOOR = 0.25;
-export function ryoTiles(games) {
-    const S = games.shenmue, model = boardModel(S);
+export function shenmueTiles(games, name = 'RYO') {
+    const S = charOf(games, name), model = boardModel(S);
     const used = new Set();
     for (const n of model.nodes) if (n.mesh) for (const s of n.mesh.strips) used.add(s.texture);
     const tiles = [], byTex = new Map();
     for (const t of [...used].sort((a, b) => a - b)) {
         const name = model.textures[t], tex = S.textures.get(name);
-        if (!tex) throw new Error(`Ryo: no texture ${name}`);
+        if (!tex) throw new Error(`${S.spec.name}: no texture ${name}`);
         const { width: w, height: h, rgba } = tex;
-        if (w < 32 || h < 32 || (w & (w - 1)) || (h & (h - 1))) throw new Error(`Ryo: texture ${name} is ${w}x${h}`);
+        if (w < 32 || h < 32 || (w & (w - 1)) || (h & (h - 1))) throw new Error(`${S.spec.name}: texture ${name} is ${w}x${h}`);
         const n = w * h, lum = new Float32Array(n), hole = new Uint8Array(n);
         let holes = 0;
         for (let i = 0; i < n; i++) {
             lum[i] = 0.299 * rgba[i * 4] + 0.587 * rgba[i * 4 + 1] + 0.114 * rgba[i * 4 + 2];
             if (rgba[i * 4 + 3] < 128) { hole[i] = 1; holes++; }
         }
-        /* YKB_B's two (ARGB4444) leave alpha at 0-3 all over: not holes, an
-         * alpha the texture does not use */
+        /* YKB_B's two (ARGB4444) leave alpha at 0-3 all over, CHA_B's at 4:
+         * not holes, an alpha the texture does not use */
         if (holes === n) { hole.fill(0); holes = 0; }
         const sorted = [...lum].filter((_, i) => !hole[i]).sort((a, b) => a - b);
         const top = Math.max(1, sorted[Math.floor((sorted.length - 1) * 0.99)] ?? 1);
@@ -120,6 +131,7 @@ export function ryoTiles(games) {
     }
     return { tiles, byTex };
 }
+export const ryoTiles = (games) => shenmueTiles(games, 'RYO');
 
 /* ---- his parts -------------------------------------------------------------- */
 
@@ -140,7 +152,7 @@ const unit = (a) => { const l = Math.hypot(...a) || 1; return [a[0] / l, a[1] / 
  * parent's) and not to the rigid part, and each corner on the parent keeps
  * its point in O's frame too (`o`), which the board carries into S's frame
  * every frame (megamix.c seams_build). */
-function cutParts(model, k) {
+function cutParts(model, k, { flatFaces = false, stripWinding = false } = {}) {
     const rest = restMatrices(model), nodes = model.nodes;
     const anchor = [];
     for (const n of nodes) {
@@ -173,8 +185,14 @@ function cutParts(model, k) {
                 const face = cross(sub(b.p, a.p), sub(d.p, a.p));
                 if (Math.hypot(...face) < 1e-9) { dropped++; continue; }
                 const out = unit([a.n[0] + b.n[0] + d.n[0], a.n[1] + b.n[1] + d.n[1], a.n[2] + b.n[2] + d.n[2]]);
-                /* Akira's faces wind A, B, C about their outward side */
-                if (dot(face, out) < 0) [a, b] = [b, a];
+                /* Akira's faces wind A, B, C about their outward side: the
+                 * corners' normals', or with stripWinding the strip's own.
+                 * 8 of CHA_B's seam faces (the knees, the shoulders) have
+                 * corners' normals that point in while the strip winds out,
+                 * and a seam's normal the board works out from its winding,
+                 * so turned round they were hidden from outside (#1591). */
+                if (!stripWinding && dot(face, out) < 0) [a, b] = [b, a];
+                const outward = stripWinding && dot(face, out) < 0 ? out.map((x) => -x) : out;
                 /* A face is stored with its corners' normals, averaged. The
                  * board culls a face whose stored normal turns from the eye
                  * (MAME model2_v.cpp, normal · corner C), so one that leans
@@ -184,8 +202,8 @@ function cutParts(model, k) {
                  * front lost faces in sight. The shin faces in FLAT, the ones
                  * measured hidden there, keep their own flat normal (#1546); a
                  * seam's normals the board works out itself. */
-                const flat = FULL && !(a.o || b.o || d.o) && FLAT.get(slot)?.has(slots.get(slot)?.length ?? 0);
-                const stored = flat ? unit(dot(face, out) < 0 ? face.map((x) => -x) : face) : out;
+                const flat = !(a.o || b.o || d.o) && (flatFaces === 'all' || (flatFaces && FLAT.get(slot)?.has(slots.get(slot)?.length ?? 0)));
+                const stored = flat ? unit(dot(face, outward) < 0 ? face.map((x) => -x) : face) : outward;
                 /* a seam's far corners first (A, or A and B), turning the
                  * corners round, so each is one run of words to patch */
                 const fars = [a, b, d].map((q) => !!q.o);
@@ -232,25 +250,147 @@ function encodeMesh(tris) {
     return b;
 }
 
+/* ---- what every guest built on Akira's gets ------------------------------- */
+
+/* The box round a list of points. */
+export const pointBox = (pts) => {
+    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    for (const p of pts) for (let a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], p[a]); hi[a] = Math.max(hi[a], p[a]); }
+    return { lo, hi };
+};
+
+/* His collision balls: Akira's (ctx.balls), each moved and sized from
+ * Akira's part to his: partBox(slot), his part's box (as a mesh stores it),
+ * or null where he has none, which keeps the ball where it is, sized by k
+ * (his size against Akira's VF2 one). The ball record StF's code reads, and
+ * how many balls. */
+export function fitBalls(ctx, vf2, partBox, k, alloc) {
+    const { u32s } = ctx;
+    const A = readFighters(vf2)[0];
+    const akiraBox = (s) => {
+        const m = A.parts[s]?.model;
+        const d = m > 0 ? decodeModel(vf2, m) : null;
+        if (!d) return null;
+        const pts = [];
+        for (let i = 0; i < d.positions.length; i += 3) pts.push([d.positions[i] * SCALE, d.positions[i + 1] * SCALE, -d.positions[i + 2] * SCALE]);
+        return pointBox(pts);
+    };
+    const pts = Uint8Array.from(ctx.balls.pts), pv = new DataView(pts.buffer);
+    let moved = 0;
+    for (let i = 0; i < 32; i++) {
+        const r = pv.getFloat32(i * 16 + 12, true);
+        if (!r) continue;
+        const s = ctx.balls.part[i], a = akiraBox(s), b = partBox(s);
+        const c = [0, 1, 2].map((ax) => pv.getFloat32(i * 16 + ax * 4, true));
+        let ratio = [k / SCALE, k / SCALE, k / SCALE], out;
+        if (a && b) {
+            ratio = [0, 1, 2].map((ax) => {
+                const ea = a.hi[ax] - a.lo[ax], er = b.hi[ax] - b.lo[ax];
+                return ea > 1e-3 && er > 1e-3 ? Math.min(2, Math.max(0.5, er / ea)) : k / SCALE;
+            });
+            out = c.map((x, ax) => {
+                const ea = a.hi[ax] - a.lo[ax];
+                return ea > 1e-3 ? b.lo[ax] + ((x - a.lo[ax]) * (b.hi[ax] - b.lo[ax])) / ea : x * ratio[ax];
+            });
+        } else out = c.map((x, ax) => x * ratio[ax]);
+        const rr = r * Math.min(1.6, Math.max(0.6, Math.cbrt(ratio[0] * ratio[1] * ratio[2])));
+        out.forEach((x, ax) => pv.setFloat32(i * 16 + ax * 4, x, true));
+        pv.setFloat32(i * 16 + 12, rr, true);
+        moved++;
+    }
+    const ballRec = alloc(u32s([
+        alloc(pts, 'balls', 16), alloc(u32s(ctx.balls.part), 'ball parts', 16),
+        alloc(ctx.balls.lists, 'part balls', 16), alloc(ctx.balls.counts, 'part ball counts', 16),
+    ]), 'ball record', 16);
+    return { ballRec, moved };
+}
+
+/* His records (Akira's, with his parts, 16 model ids, and his skeleton) and
+ * his entries in the guest tables, for StF character chr and its player 2:
+ * Akira's moves, reactions and remap (ctx), unless moves, kinds or remap
+ * name his own; his skeleton, pose bones, balls, seams, afterimage, hands,
+ * head and game. Returns the two characters. */
+export function seatGuest(R, ctx, { chr: CHR, parts, skel, rigAt, ballRec, seamList, game, moves = ctx.newRoot, kinds = ctx.kindsAt, remap = ctx.ownAt }, alloc) {
+    const T = R.guest.tables;
+    const { u32s, u16s } = ctx;
+    const list = alloc(u32s([...parts, ...parts]), 'parts');
+    ctx.recs.forEach((src, p) => {
+        const rec = Uint8Array.from(src), rv = new DataView(rec.buffer);
+        rv.setUint32(0, list, true); rv.setUint32(4, skel, true); rv.setUint32(8, list, true);
+        T.CHAR_PARTS.view.setUint32((CHR + p * PLAYER2) * 4, alloc(rec, `record ${p ? 'P2' : 'P1'}`), true);
+    });
+    T.MOVESET_ARRAY.view.setUint32(CHR * 4, moves, true);
+    T.ptr_DA0B4.view.setUint32(CHR * 4, kinds, true);
+    T.motion_remap.view.setUint32(CHR * 4, remap, true);
+    const chars = [CHR, CHR + PLAYER2];
+    {
+        const t = T.SKELETON_TYPE_DATA;
+        for (let kind = 0; kind < 4; kind++) for (const c of chars) t.view.setUint32(t.lists + kind * t.perKind + c * 4, skel, true);
+    }
+    {
+        const t = T.off_C2058;
+        for (let kind = 0; kind < 4; kind++) for (const c of chars) t.view.setUint32(t.lists + kind * 52 * 4 + c * 4, rigAt, true);
+    }
+    {
+        const t = T.rob_coli_ball_types;
+        const at = (kind) => t.view.getUint32(kind * 4, true) - t.at;
+        for (const l of [at(0), at(1), at(3), at(3) + 52 * 4]) for (const c of chars) t.view.setUint32(l + c * 4, ballRec, true);
+    }
+    /* The afterimage (StF's zanzou, which the strikes he plays turn on:
+     * vf2-guest.mjs trailOf): each part's copies are that part, the same at
+     * every age (three u16s a part, 8 bytes apart, in
+     * off_B540C[type][character]). The board draws a copy every other frame,
+     * opaque, as StF does its cards. */
+    {
+        const t = T.off_B540C, e = new Array(16 * 4).fill(0);
+        for (let s = 0; s < 16; s++) e.fill(parts[s], s * 4, s * 4 + 3);
+        const at = alloc(u16s(e), 'trail models');
+        for (let k = 0; k < 4; k++) for (const c of chars) t.view.setUint32(t.view.getUint32(k * 4, true) - t.at + c * 4, at, true);
+    }
+    const hands = [...new Array(16).fill(parts[5]), ...new Array(16).fill(parts[8])];
+    const handsAt = alloc(u16s(hands), 'hands');
+    const head = alloc(u16s([0, 0, parts[2], parts[2], 0, 0, 0, 0, 0, 0, 0, 0]), 'head');
+    const H = T.PLAYER_HEAD_LIST;
+    for (const c of chars) {
+        T.player_hand_animations.view.setUint32(c * 4, handsAt, true);
+        T.player_foot_animation.view.setUint32(c * 4, 0, true);
+        T.player_body_animation.view.setUint32(c * 4, 0, true);
+        T.midriff.view.setUint32(c * 4, 0, true);
+        T.seams.view.setUint32(c * 4, seamList, true);
+        for (let kind = 0; kind < H.len / 4; kind++) H.view.setUint32(H.lists + kind * H.perKind + c * 4, head, true);
+        T.char_game.bytes[c] = game;
+    }
+    return chars;
+}
+
 /* ---- the guest ------------------------------------------------------------- */
 
 /* R: import-assets' regions; ctx: what importAkira built (its heap, tables
- * and Akira's records); games: tests/node-roms.mjs loadNodeGames(); tiles:
- * ryoTiles(games), after importAkira packed them (each tile's `at`). */
-export function importRyo(R, ctx, games, { tiles, byTex }) {
+ * and Akira's records), and where the guest before this one ended; games:
+ * tests/node-roms.mjs loadNodeGames(); tiles: shenmueTiles(games, name),
+ * after importAkira packed them (each tile's `at`). name, chr: the fighter
+ * (js/ryo.js RYO, js/chai.js CHAI) and his StF character. */
+export function importShenmue(R, ctx, games, { tiles, byTex }, { name: who = 'RYO', chr: CHR = 1 } = {}) {
     const { main, polygons, textures } = R;
     const T = R.guest.tables;
     const vf2 = games.vf2.rom, stf = games.stf.rom;
-    const model = boardModel(games.shenmue);
+    const char = charOf(games, who);
+    const model = boardModel(char);
+    const Who = who[0] + who.slice(1).toLowerCase();
     const report = [];
-    const alloc = (b, label, align = 4) => ctx.alloc(b, label, align, 'Ryo');
+    const alloc = (b, label, align = 4) => ctx.alloc(b, label, align, Who);
     const { u32s, u16s } = ctx;
-    const fit = ryoFit(games);
+    const fit = shenmueFit(games, char);
     const k = fit.scale * SCALE;
     report.push(`size x${k.toFixed(4)} (${fit.scale.toFixed(4)} of Akira's VF2 scale, x${SCALE.toFixed(4)})`);
 
     /* ---- his parts ---- */
-    const { slots, seams, dropped } = cutParts(model, k);
+    /* Chai's faces all keep their own flat normal and their strip's winding:
+     * CHA_B's thighs and shins are rigid parts whose corners' normals lean
+     * up to 68° from the face (the shorts), so the board hid them seen at a
+     * slant and his knees opened (#1591). Ryo's YKB_B has those as seams;
+     * his rigid parts lean under 40°, and stay as they were. */
+    const { slots, seams, dropped } = cutParts(model, k, who === 'RYO' ? { flatFaces: FULL } : { flatFaces: 'all', stripWinding: true });
     const order = [...slots.keys()].sort((a, b) => a - b);
     /* every mesh: the parts, then the seams (each drawn on its slot S) */
     const pieces = [...order.map((slot) => ({ slot, tris: slots.get(slot) })),
@@ -339,18 +479,21 @@ export function importRyo(R, ctx, games, { tiles, byTex }) {
         if (existing.has(w)) { cbOf.set(w, existing.get(w)); continue; }
         const n = free.shift();
         ctx.freeTaken.add(n);
-        main.put(0x100000 + n * 2, Uint8Array.of(w & 0xff, (w >> 8) | 0x80), `Ryo colorbase ${n}`);
+        main.put(0x100000 + n * 2, Uint8Array.of(w & 0xff, (w >> 8) | 0x80), `${Who} colorbase ${n}`);
         cbOf.set(w, n);
     }
     report.push(`${cbOf.size} colours (${need.length} new colorbases${grid > 1 ? `, rows on a grid of ${grid}` : ''})`);
 
     /* ---- meshes, materials and UVs; the model table ---- */
-    let poly = ctx.polyEnd, tex = (ctx.pack.at + 15) & ~15;
+    /* after the guest before (ctx.polyEnd, ctx.texEnd: Akira's, or Ryo's) */
+    const poly0 = ctx.polyEnd, tex0 = ctx.texEnd ?? ((ctx.pack.at + 15) & ~15);
+    let poly = poly0, tex = tex0;
     const ids = [];
     for (let id = R.modelCount - 1; ids.length < pieces.length; id--) {
-        if (id <= 0) throw new Error('Ryo: no free model ids');
+        if (id <= 0) throw new Error(`${Who}: no free model ids`);
         if (!R.models.has(id) && !ctx.modelIds.has(id)) ids.push(id);
     }
+    for (const id of ids) ctx.modelIds.add(id);
     const partModel = new Map();
     const thOf = (t) => {
         const tile = byTex.get(t.texture);
@@ -370,20 +513,21 @@ export function importRyo(R, ctx, games, { tiles, byTex }) {
         const mesh = encodeMesh(tris);
         piece.id = ids[i]; piece.mesh = mesh;
         poly = (poly + 3) & ~3;
-        if (poly + mesh.length > POLY_RUN_END) throw new Error('Ryo: polygon run too small');
-        polygons.put(poly, mesh, `Ryo ${what} mesh`);
+        if (poly + mesh.length > POLY_RUN_END) throw new Error(`${Who}: polygon run too small`);
+        polygons.put(poly, mesh, `${Who} ${what} mesh`);
         const mat = u16s(tris.flatMap(thOf)), uv = u16s(tris.flatMap(uvWords));
         const matAt = tex, uvAt = (matAt + mat.length + 15) & ~15;
         tex = (uvAt + uv.length + 15) & ~15;
-        if (tex > TEX_RUN_END) throw new Error('Ryo: textures run too small');
-        textures.put(matAt, mat, `Ryo ${what} materials`);
-        textures.put(uvAt, uv, `Ryo ${what} UVs`);
-        main.put(R.modelTable + ids[i] * 16, u32s([uvAt / 2, matAt / 2, 0x800000 | (poly >> 2), (tris.length << 16) | (2 * tris.length + 1)]), `Ryo ${what} as model ${ids[i]}`);
+        if (tex > TEX_RUN_END) throw new Error(`${Who}: textures run too small`);
+        textures.put(matAt, mat, `${Who} ${what} materials`);
+        textures.put(uvAt, uv, `${Who} ${what} UVs`);
+        main.put(R.modelTable + ids[i] * 16, u32s([uvAt / 2, matAt / 2, 0x800000 | (poly >> 2), (tris.length << 16) | (2 * tris.length + 1)]), `${Who} ${what} as model ${ids[i]}`);
         if (piece.other == null) partModel.set(slot, ids[i]);
         meshes.push({ slot: what, id: ids[i], tris, mesh, matAt, uvAt });
         poly += mesh.length;
     });
-    report.push(`models ${ids[ids.length - 1]}..${ids[0]}; meshes ${hex(ctx.polyEnd)}..${hex(poly)}; materials and UVs ${hex((ctx.pack.at + 15) & ~15)}..${hex(tex)}`);
+    report.push(`models ${ids[ids.length - 1]}..${ids[0]}; meshes ${hex(poly0)}..${hex(poly)}; materials and UVs ${hex(tex0)}..${hex(tex)}`);
+    ctx.polyEnd = poly; ctx.texEnd = tex;
 
     /* Each mesh read back the way the board's geometrizer walks it (noclip
      * decodeModel, over the textures region as the board has it): a face for
@@ -396,7 +540,7 @@ export function importRyo(R, ctx, games, { tiles, byTex }) {
             const d = decodeModel(rom, -1, null, { bytes: m.mesh, uvPtr: m.uvAt / 2, matPtr: m.matAt / 2 });
             const T = m.tris.length;
             if (!d || d.faceCount !== T || d.texturedFaces !== T || d.positions.length !== T * 9)
-                throw new Error(`Ryo part ${m.slot}: decoded ${d?.faceCount} faces (${d?.texturedFaces} textured, ${d?.positions.length / 9} triangles) of ${T}`);
+                throw new Error(`${Who} part ${m.slot}: decoded ${d?.faceCount} faces (${d?.texturedFaces} textured, ${d?.positions.length / 9} triangles) of ${T}`);
             m.tris.forEach((t, i) => {
                 const tile = byTex.get(t.texture);
                 const got = d.positions.subarray(i * 9, i * 9 + 9);
@@ -404,16 +548,16 @@ export function importRyo(R, ctx, games, { tiles, byTex }) {
                 for (let c = 0; c < 3; c++) {
                     const g = [got[c * 3], got[c * 3 + 1], got[c * 3 + 2]];
                     if (!want.has(g.map((x) => x.toFixed(3)).join()) && !want.has([g[0], g[1], -g[2]].map((x) => x.toFixed(3)).join()))
-                        throw new Error(`Ryo part ${m.slot} face ${i}: corner ${g} is none of ${[...want].join(' / ')}`);
+                        throw new Error(`${Who} part ${m.slot} face ${i}: corner ${g} is none of ${[...want].join(' / ')}`);
                 }
                 /* sheet 1 is y + 1024 on noclip's texture sheet */
                 const tl = d.tiles.subarray(i * 12, i * 12 + 4);
                 if (tl[0] !== tile.at.x || tl[1] !== tile.at.y + 1024 || tl[2] !== tile.w || tl[3] !== tile.h)
-                    throw new Error(`Ryo part ${m.slot} face ${i}: tile ${[...tl]} for ${tile.at.x},${tile.at.y} ${tile.w}x${tile.h}`);
+                    throw new Error(`${Who} part ${m.slot} face ${i}: tile ${[...tl]} for ${tile.at.x},${tile.at.y} ${tile.w}x${tile.h}`);
                 t.uv.forEach(([u, v], c) => {
                     const gu = d.uvs[i * 6 + c * 2], gv = d.uvs[i * 6 + c * 2 + 1];
                     if (!close(gu, Math.min(tile.w - 1 / 8, Math.max(0, u * tile.w)), 0.1) || !close(gv, Math.min(tile.h - 1 / 8, Math.max(0, v * tile.h)), 0.1))
-                        throw new Error(`Ryo part ${m.slot} face ${i}: UV ${gu},${gv} for ${u},${v}`);
+                        throw new Error(`${Who} part ${m.slot} face ${i}: UV ${gu},${gv} for ${u},${v}`);
                 });
             });
         }
@@ -433,49 +577,9 @@ export function importRyo(R, ctx, games, { tiles, byTex }) {
     const rigAt = alloc(withRig(ctx.rigBytes), 'bones');
 
     /* ---- collision balls: Akira's, moved from his parts to Ryo's ---- */
-    const A = readFighters(vf2)[0];
-    const box = (pts) => {
-        const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
-        for (const p of pts) for (let a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], p[a]); hi[a] = Math.max(hi[a], p[a]); }
-        return { lo, hi };
-    };
-    const akiraBox = (s) => {
-        const m = A.parts[s]?.model;
-        const d = m > 0 ? decodeModel(vf2, m) : null;
-        if (!d) return null;
-        const pts = [];
-        for (let i = 0; i < d.positions.length; i += 3) pts.push([d.positions[i] * SCALE, d.positions[i + 1] * SCALE, -d.positions[i + 2] * SCALE]);
-        return box(pts);
-    };
-    const ryoBox = (s) => (slots.has(s) ? box(pieces.filter((q) => q.slot === s).flatMap((q) => q.tris.flatMap((t) => t.pts))) : null);
-    const pts = Uint8Array.from(ctx.balls.pts), pv = new DataView(pts.buffer);
-    const moved = [];
-    for (let i = 0; i < 32; i++) {
-        const r = pv.getFloat32(i * 16 + 12, true);
-        if (!r) continue;
-        const s = ctx.balls.part[i], a = akiraBox(s), b = ryoBox(s);
-        const c = [0, 1, 2].map((ax) => pv.getFloat32(i * 16 + ax * 4, true));
-        let ratio = [k / SCALE, k / SCALE, k / SCALE], out;
-        if (a && b) {
-            ratio = [0, 1, 2].map((ax) => {
-                const ea = a.hi[ax] - a.lo[ax], er = b.hi[ax] - b.lo[ax];
-                return ea > 1e-3 && er > 1e-3 ? Math.min(2, Math.max(0.5, er / ea)) : k / SCALE;
-            });
-            out = c.map((x, ax) => {
-                const ea = a.hi[ax] - a.lo[ax];
-                return ea > 1e-3 ? b.lo[ax] + ((x - a.lo[ax]) * (b.hi[ax] - b.lo[ax])) / ea : x * ratio[ax];
-            });
-        } else out = c.map((x, ax) => x * ratio[ax]);
-        const rr = r * Math.min(1.6, Math.max(0.6, Math.cbrt(ratio[0] * ratio[1] * ratio[2])));
-        out.forEach((x, ax) => pv.setFloat32(i * 16 + ax * 4, x, true));
-        pv.setFloat32(i * 16 + 12, rr, true);
-        moved.push(`${i}@${s}`);
-    }
-    const ballRec = alloc(u32s([
-        alloc(pts, 'balls', 16), alloc(u32s(ctx.balls.part), 'ball parts', 16),
-        alloc(ctx.balls.lists, 'part balls', 16), alloc(ctx.balls.counts, 'part ball counts', 16),
-    ]), 'ball record', 16);
-    report.push(`${moved.length} collision balls fitted to his parts`);
+    const partBox = (sl) => (slots.has(sl) ? pointBox(pieces.filter((q) => q.slot === sl).flatMap((q) => q.tris.flatMap((t) => t.pts))) : null);
+    const { ballRec, moved } = fitBalls(ctx, vf2, partBox, k, alloc);
+    report.push(`${moved} collision balls fitted to his parts`);
 
     /* ---- seams: the board's guest table `seams` ----
      * By character, a list: +0 the count m, then m pointers, each to a seam:
@@ -504,7 +608,7 @@ export function importRyo(R, ctx, games, { tiles, byTex }) {
         q.tris.forEach((t, i) => { far(t, 0, i * 20); far(t, 1, i * 20 + 3); far(t, 2, i * 20 + 10); far(t, 2, i * 20 + 13); });
         const T = q.tris.length;
         far(q.tris[T - 1], 2, T * 20); far(q.tris[T - 1], 2, T * 20 + 3);
-        if (pts.length * 3 + 1 > 255) throw new Error(`Ryo seam ${q.slot}-${q.other}: ${pts.length} far points`);
+        if (pts.length * 3 + 1 > 255) throw new Error(`${Who} seam ${q.slot}-${q.other}: ${pts.length} far points`);
         const runs = [];
         for (let i = 0; i < W; i++) if (patch[i]) { if (i && patch[i - 1]) runs[runs.length - 1] += 1 << 16; else runs.push(i | (1 << 16)); }
         runWords += runs.reduce((n, r) => n + 3 + (r >>> 16), 0); meshWords += W;
@@ -519,64 +623,17 @@ export function importRyo(R, ctx, games, { tiles, byTex }) {
     const seamList = alloc(u32s([seamAts.length, ...seamAts]), 'seams');
     report.push(`${seamAts.length} seams, at ${seams.size ? [...seams.keys()].join(' ') : 'none'}: ${meshWords} words of mesh, then ${runWords} a frame`);
 
-    /* ---- records: Akira's, with his parts and skeleton ---- */
+    /* ---- records and the guest tables ---- */
     const parts = new Array(16).fill(0);
     for (const [s, id] of partModel) parts[s] = id;
-    const list = alloc(u32s([...parts, ...parts]), 'parts');
-    ctx.recs.forEach((src, p) => {
-        const rec = Uint8Array.from(src), rv = new DataView(rec.buffer);
-        rv.setUint32(0, list, true); rv.setUint32(4, skel, true); rv.setUint32(8, list, true);
-        T.CHAR_PARTS.view.setUint32((CHR + p * PLAYER2) * 4, alloc(rec, `record ${p ? 'P2' : 'P1'}`), true);
-    });
-
-    /* ---- the guest tables ---- */
-    T.MOVESET_ARRAY.view.setUint32(CHR * 4, ctx.newRoot, true);
-    T.ptr_DA0B4.view.setUint32(CHR * 4, ctx.kindsAt, true);
-    T.motion_remap.view.setUint32(CHR * 4, ctx.ownAt, true);
-    const chars = [CHR, CHR + PLAYER2];
-    {
-        const t = T.SKELETON_TYPE_DATA;
-        for (let kind = 0; kind < 4; kind++) for (const c of chars) t.view.setUint32(t.lists + kind * t.perKind + c * 4, skel, true);
-    }
-    {
-        const t = T.off_C2058;
-        for (let kind = 0; kind < 4; kind++) for (const c of chars) t.view.setUint32(t.lists + kind * 52 * 4 + c * 4, rigAt, true);
-    }
-    {
-        const t = T.rob_coli_ball_types;
-        const at = (kind) => t.view.getUint32(kind * 4, true) - t.at;
-        for (const l of [at(0), at(1), at(3), at(3) + 52 * 4]) for (const c of chars) t.view.setUint32(l + c * 4, ballRec, true);
-    }
-    /* The afterimage (StF's zanzou, which the strikes he plays turn on:
-     * vf2-guest.mjs trailOf): each part's copies are that part, YKB_B's,
-     * the model Shenmue blurs him with, the same at every age (three u16s
-     * a part, 8 bytes apart, in off_B540C[type][character]). The board
-     * draws a copy every other frame, opaque, as StF does its cards. */
-    {
-        const t = T.off_B540C, e = new Array(16 * 4).fill(0);
-        for (let s = 0; s < 16; s++) e.fill(parts[s], s * 4, s * 4 + 3);
-        const at = alloc(u16s(e), 'trail models');
-        for (let k = 0; k < 4; k++) for (const c of chars) t.view.setUint32(t.view.getUint32(k * 4, true) - t.at + c * 4, at, true);
-    }
-    const hands = [...new Array(16).fill(parts[5]), ...new Array(16).fill(parts[8])];
-    const handsAt = alloc(u16s(hands), 'hands');
-    const head = alloc(u16s([0, 0, parts[2], parts[2], 0, 0, 0, 0, 0, 0, 0, 0]), 'head');
-    const H = T.PLAYER_HEAD_LIST;
-    for (const c of chars) {
-        T.player_hand_animations.view.setUint32(c * 4, handsAt, true);
-        T.player_foot_animation.view.setUint32(c * 4, 0, true);
-        T.player_body_animation.view.setUint32(c * 4, 0, true);
-        T.midriff.view.setUint32(c * 4, 0, true);
-        T.seams.view.setUint32(c * 4, seamList, true);
-        for (let kind = 0; kind < H.len / 4; kind++) H.view.setUint32(H.lists + kind * H.perKind + c * 4, head, true);
-        T.char_game.bytes[c] = R.guest.games.VF2;
-    }
+    const chars = seatGuest(R, ctx, { chr: CHR, parts, skel, rigAt, ballRec, seamList, game: R.guest.games.VF2 }, alloc);
     report.push(`heap to ${hex(ctx.heapEnd())}`);
 
     const coverage = {
-        chars, game: 'Shenmue', name: 'Ryo', parts: order.length,
-        triangles: faces.length, colours: cbOf.size, balls: moved.length,
+        chars, game: 'Shenmue', name: Who, parts: order.length,
+        triangles: faces.length, colours: cbOf.size, balls: moved,
         moves: 'Akira\'s (his own motions are not on the board yet)',
     };
-    return { report, coverage, meshes, partModel };
+    return { report, coverage, meshes, partModel, scale: k };
 }
+export const importRyo = (R, ctx, games, tex) => importShenmue(R, ctx, games, tex, { name: 'RYO', chr: CHR });

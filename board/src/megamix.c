@@ -144,15 +144,34 @@ static void camera_init(void) {
  * in the world as the camera moves. */
 static float light[3];
 
+/* StF's frame_counter; the frame loop copies it to 0x500020, where StF's
+ * code (sub_2435C's colour cycling) reads it. */
+static u32 frame_counter;
+/* FV's turning town and its light count from the round start: 0xC568 puts
+ * word_50A022 back to 0, so the town snaps home with the objects each round. */
+static u32 turn_at;
+/* the Western bear's pendulum (kuma_step) */
+static int kuma_p, kuma_v;
+static u32 kuma_at;
+
+/* VF2's Colosseum storm (VF2 0x2468C), storm[] its four channels by frame:
+ * while channel 3 is on, the arena is lit, each draw its lit twin and the
+ * light the flash's. */
+static u32 storm_lit(const stage_t *st) {
+    return st->storm && (st->storm[frame_counter % FLASH_FRAMES] & 8u);
+}
+
 static void stage_light(const stage_t *st) {
     volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    u32 lit = storm_lit(st);
     int i;
     *cf = COP_WMATRIX;
     for (i = 0; i < 9; i++) *cf = m2_obj_fb(cam_l.r[i]);
     for (i = 0; i < 3; i++) *cf = 0u;
-    *cf = COP_ANG_Y; *cf = (u32)(int)st->vy;
-    *cf = COP_ANG_X; *cf = (u32)(int)st->vx;
-    m2_cop_m2w(0.0f, 0.0f, st->bright, light);
+    /* FV's turning town turns its light with it (0x1EF94) */
+    *cf = COP_ANG_Y; *cf = (u32)(int)(lit ? st->flash[2] : st->vy) + st->turn * (frame_counter - turn_at);
+    *cf = COP_ANG_X; *cf = (u32)(int)(lit ? st->flash[1] : st->vx);
+    m2_cop_m2w(0.0f, 0.0f, lit ? st->flash[0] : st->bright, light);
 }
 
 /* ---- StF's fighters ----
@@ -195,8 +214,14 @@ static u32 stf_coli[0x400 / 4] __attribute__((aligned(16)));
 static u32 stf_effect[0xC80 / 4] __attribute__((aligned(16)));
 static u32 stf_tobi[0x2000 / 4] __attribute__((aligned(16)));
 static u32 stf_ctl[2][0x280 / 4] __attribute__((aligned(16)));
-static u32 stf_settings[0x3400 / 4] __attribute__((aligned(16)));
 static u32 stf_disp[0x100 / 4] __attribute__((aligned(16)));   /* game_disp's task block */
+/* The sway chains (Honey's ponytail, Fang's tail): StF's tasks fa_osage0
+ * and fa_osage1 (mod_fa_osage0_1, mod_fa_osage0_2), one a player, 0x280
+ * bytes. osage_init reads the fighter's chains (osage_per_character, by
+ * +0x1B0) and becomes osage_dsp, which steps them on the coprocessor
+ * (Fn_osage, 0x4A, on its records in bufferram at 0x91E800 and 0x91F000)
+ * and draws them, in a block of the list that draw_fighter splices in. */
+static u32 stf_osage[2][0x280 / 4] __attribute__((aligned(16)));
 
 extern void stf_call(void (*fn)(void), void *rob, void *enemy, u32 arg);
 extern void stf_task(void (*fn)(void), void *task, void *rob, void *enemy);
@@ -253,12 +278,15 @@ static void stf_globals(void) {
     stf_set(0x500090u, 0x1Eu);           /* replay_countdown (0x500092) 0 */
     stf_set(0x500804u, (u32)robs[0]);    /* fa_rob0 */
     stf_set(0x500808u, (u32)robs[1]);    /* fa_rob1 */
-    stf_set(0x50016Cu, (u32)stf_settings);
+    stf_set(0x50016Cu, (u32)stf_ram(0x599000u));   /* add_BACKUP_RAM_TO_RAM: StF's copy of the backup RAM */
     stf_set(0x500828u, (u32)stf_coli);   /* mod_fa_coli */
     stf_set(0x500834u, (u32)stf_disp);   /* mod_fa_game_disp */
     stf_set(0x50083Cu, (u32)stf_ctl[0]);
     stf_set(0x500840u, (u32)stf_ctl[1]);
     stf_set(0x500844u, (u32)stf_effect); /* mod_fa_effect */
+    stf_set(0x500860u, (u32)stf_osage[0]); /* mod_fa_osage0_1 */
+    stf_set(0x500864u, (u32)stf_osage[1]); /* mod_fa_osage0_2 */
+    stf_set(0x501018u, 5000u);           /* POLYGON_LIMIT, as change_scene sets it */
     stf_set(0x5008A4u, (u32)stf_tobi);   /* mod_fa_tobi */
     stf_set(0x500814u, (u32)stf_cam);    /* fa_camera */
     stf_set(0x500854u, (u32)stf_rec);    /* mod_fa_record */
@@ -278,6 +306,7 @@ static void stf_camera(void) {
     stf_cam[0x18 / 4] = 0u; stf_cam[0x1C / 4] = y.u; stf_cam[0x20 / 4] = z.u;
     RH(stf_cam, 0x24) = 0xFA50u;         /* 8 degrees down */
     RH(stf_cam, 0x26) = 0u;
+    RW(stf_cam, 0) |= 6u;                /* both fighters shown: osage_dsp draws their chains */
 }
 
 /* A fighter's rob, as StF sets one up for a round: player p, at (x, 0, 0)
@@ -322,16 +351,172 @@ static void rob_init(u32 p, const fighter_t *f) {
     RW(r, 0x219C) = 0u;
 }
 
+/* The ball each shadow slot's mask tests, for each fighter, to the
+ * coprocessor at 0x306E0 + slot (player 1) and 0x307E0 + slot (player 2):
+ * send_kage_ball_pntr's sends, which read StF's table at 0x4C84, where the
+ * board has its own code. StF's fighters take StF's table; the guests ride
+ * VF2's ball record, so they take the middle ball of each of VF2's slot
+ * lists (0x2007BEE), slot 0 that of slot 9, as VF2 does. */
+static const u8 kage_ball_stf[16] = { 9, 0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16 };
+static const u8 kage_ball_vf2[16] = { 3, 0, 2, 4, 6, 8, 9, 11, 13, 3, 15, 18, 20, 23, 26, 28 };
+
+static void kage_balls(void) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    u32 p, i;
+    for (p = 0; p < 2u; p++) {
+        const u8 *b = char_game(RB(robs[p], 0x1B1)) == GAME_STF ? kage_ball_stf : kage_ball_vf2;
+        for (i = 0; i < 16u; i++) {
+            *cf = 0x9801313u; *cf = 0x9801313u; *cf = 0x9801313u; (void)*cf;
+            *cf = 0x24804949u; *cf = (p ? 0x307E0u : 0x306E0u) + i; *cf = b[i];
+        }
+    }
+}
+
 /* A fighter's first frame: both fighters' collision balls to the
  * coprocessor (cop_initialize_end2, which also clears their active bits),
  * both bodies' pendulums (sub_7F0E8), then the fighter's task from
- * action_init, which sets up its moves and plays the stance. */
+ * action_init, which sets up its moves and plays the stance. Its sway
+ * chains start over, as a round's start starts them: the task is
+ * osage_init again. */
 static void rob_start(u32 p) {
-    u32 w0[2] = { RW(robs[0], 0), RW(robs[1], 0) };
+    u32 w0[2] = { RW(robs[0], 0), RW(robs[1], 0) }, i;
     stf_call(stf_cop_initialize_end2, robs[0], robs[1], 0u);
+    kage_balls();
     RW(robs[0], 0) = w0[0]; RW(robs[1], 0) = w0[1];
     stf_call(stf_sub_7F0E8, robs[0], robs[1], 0u);
     stf_task((void (*)(void))RW(robs[p], 0xC), robs[p], robs[p], robs[p ^ 1u]);
+    for (i = 0; i < sizeof stf_osage[p] / 4; i++) stf_osage[p][i] = 0u;
+    RW(stf_osage[p], 0x000) = 0x80000000u;
+    RB(stf_osage[p], 0x004) = (u8)p;
+    RW(stf_osage[p], 0x008) = sizeof stf_osage[p];
+    RW(stf_osage[p], 0x00C) = (u32)stf_osage_init;
+}
+
+/* Each fighter's sway chains, a frame of them: its osage task (osage_init
+ * the first time, then osage_dsp), after the fighters' part matrices.
+ * set_obj_fifo puts each segment straight in the list (a matrix, then the
+ * object from the model table) and counts its polygons in POLYGON against
+ * POLYGON_LIMIT, which main_loop starts at 0 every frame; the board's own
+ * models go through the coprocessor and keep their own count. In a fight
+ * osage_dsp draws on the coprocessor's matrix as it finds it, the fighters'
+ * unscaled camera (cam_l: set_obj_fifo skips a segment whose m00 is past
+ * 1); only the select screen loads 0x501128. */
+static void osage_step(void) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    u32 p;
+    *cf = COP_WMATRIX;
+    for (p = 0; p < 9; p++) *cf = m2_obj_fb(cam_l.r[p]);
+    for (p = 0; p < 3; p++) *cf = m2_obj_fb(cam_l.t[p]);
+    stf_set(0x501010u, 0u);
+    stf_set(0x50101Cu, 0u);              /* POLYGON */
+    for (p = 0; p < 2u; p++)
+        stf_task((void (*)(void))RW(stf_osage[p], 0xC), stf_osage[p], robs[p], robs[p ^ 1u]);
+}
+
+/* StF's list blocks: a draw that belongs at another place in the list
+ * (osage_dsp's, at the fighter's head) writes a word, its draws and a jump,
+ * then turns the word into a jump past them. The layer table (0x501804 +
+ * 8 n) holds each layer's first block and the jump at its last one; a block
+ * that finds one before it links that jump to itself, and the place it
+ * belongs (osage_splice) jumps to the first and has the last jump back.
+ * clear_buffer_ptr clears the table every frame. */
+static void clear_buffer_ptr(void) {
+    u32 *e = (u32 *)stf_ram(0x501800u), i;
+    for (i = 0; i < 43u; i++) e[i] = 0u;
+}
+
+/* rob_disp's head entry (unit_efc_kao): layer n's blocks run here (player
+ * n's osage blocks; layer 6 both players' mirrored ones, which osage_dsp
+ * lays on Aurora Icefield). A word, after which the last block's jump comes
+ * back (or, with no block yet, the first one's place); the word becomes the
+ * jump to the first. */
+#define OSAGE_MIRROR 6u
+static void osage_splice(u32 n) {
+    volatile u32 *geo = (volatile u32 *)GEO_START, *wpos = (volatile u32 *)COP_WPOS_REG;
+    u32 *e = (u32 *)stf_ram(0x501804u + n * 8u), at = *wpos;
+    *geo = 0u;
+    if (e[1] == 0u) e[0] = *wpos;
+    else *(volatile u32 *)(GEO_BUFFERRAM + e[1]) = *wpos | 0x80000000u;
+    *(volatile u32 *)GEO_WRITE_REG = at;
+    e[1] = *wpos;
+    *geo = e[0] | 0x80000000u;
+}
+
+/* The camera osage_dsp draws the chains on, as camera_init stores it for
+ * each player (0x501128, 0x501158): read back after its 1.6 scale, cam. */
+static void osage_camera(void) {
+    u32 *c0 = (u32 *)stf_ram(0x501128u), *c1 = (u32 *)stf_ram(0x501158u), i;
+    for (i = 0; i < 9; i++) c0[i] = c1[i] = m2_obj_fb(cam.r[i]);
+    for (i = 0; i < 3; i++) c0[9 + i] = c1[9 + i] = m2_obj_fb(cam.t[i]);
+}
+
+/* The fighters' shadows, StF's own (docs/SHADOWS.md): camera_init's
+ * sub_63AC4 sends the stage's light (rob_kage_set_matrix, op 0x73: the
+ * coprocessor builds the flattening and the two passes' matrices on the
+ * camera it holds, the fighters' unscaled one, cam_l) and gets each
+ * player's two masks of sixteen slots (sub_63B10, op 0x75: the slot's
+ * collision ball slid along the light, near the ring or off it). The light
+ * is the stage's VECTER_X and VECTER_Y (0x501020, 0x501022; a guest stage's
+ * from its own record), the slide (0x501990, 0x501994) worked out from them
+ * as loc_23144 does: -sinx(VY + 0x8000, cot VX), cosx(VY + 0x8000, cot VX).
+ * Then rob_kage_disp_inside after the stage (the near mask on the ring's
+ * matrix, and the projectiles' shadows; all sixteen slots while stage_soko
+ * is 0) and rob_kage_disp_outside after each fighter (the far mask, onto
+ * the ground stage_soko down). rob_kage_disp_test draws each slot's
+ * shadow model with op 0x74 and set_obj in geometrizer mode 2 and leaves
+ * StF's mode 1; the board draws in mode 0 (kage_mode). */
+#define COP_SIN  COP_CMD(0x21)
+#define COP_COS  COP_CMD(0x22)
+#define COP_SINX COP_CMD(0x24)
+#define COP_COSX COP_CMD(0x25)
+#define KAGE_NO_INSIDE 2u                /* Aurora Icefield: StF mirrors its fighters in the ice instead */
+
+static void kage_mode(void) {
+    volatile u32 *fifo = (volatile u32 *)M2_GEOFIFO_ADDR;
+    *fifo = GEO_OP_MODE; *fifo = GEO_MODE_NP_NS;
+}
+
+/* change_scene's part: the light (VECTER_X, VECTER_Y) and stage_soko, the
+ * ground below the ring the far pass lays its shadows on (sub_29350: the
+ * stage record's +0xC8). A guest stage keeps all its shadows on the ring
+ * (stage_soko 0), whose floor is y = 0. */
+static void kage_stage(const stage_t *st) {
+    *(u16 *)stf_ram(0x501020u) = (u16)st->vx;
+    *(u16 *)stf_ram(0x501022u) = (u16)st->vy;
+    stf_set(0x50A010u, st->slot != 0xFFFFu ? *(const u32 *)(0x8F3D0u + st->slot * 256u + 0xC8u) : 0u);
+}
+
+static void kage_light(const stage_t *st) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    u32 vx, vy, i;
+    float sn, cs, cot;
+    /* FV's turning town turns its light, and the shadows with it (as
+     * stage_light) */
+    *(u16 *)stf_ram(0x501022u) = (u16)(st->vy + st->turn * (frame_counter - turn_at));
+    vx = (u32)(int)*(const short *)stf_ram(0x501020u);
+    vy = (u32)(int)*(const short *)stf_ram(0x501022u);
+    *cf = COP_SIN; *cf = vx; sn = m2_cop_gf();
+    *cf = COP_COS; *cf = vx; cs = m2_cop_gf();
+    cot = 1.0f / sn * cs;
+    vy += 0x8000u;
+    *cf = COP_SINX; *cf = vy; *cf = m2_obj_fb(cot); stf_set(0x501990u, *cf ^ 0x80000000u);
+    *cf = COP_COSX; *cf = vy; *cf = m2_obj_fb(cot); stf_set(0x501994u, *cf);
+    *cf = COP_WMATRIX;
+    for (i = 0; i < 9; i++) *cf = m2_obj_fb(cam_l.r[i]);
+    for (i = 0; i < 3; i++) *cf = m2_obj_fb(cam_l.t[i]);
+    stf_call(stf_sub_63AC4, robs[0], robs[1], 0u);
+}
+
+static void kage_inside(const stage_t *st) {
+    u32 p;
+    if (st->slot == KAGE_NO_INSIDE) return;
+    for (p = 0; p < 2u; p++) stf_call(stf_rob_kage_disp_inside, robs[p], robs[p ^ 1u], 0u);
+    kage_mode();
+}
+
+static void kage_outside(u32 p) {
+    stf_call(stf_rob_kage_disp_outside, robs[p], robs[p ^ 1u], 0u);
+    kage_mode();
 }
 
 /* One 60 Hz frame of StF's fight, its tasks in a real board's order:
@@ -357,7 +542,12 @@ static void fight_step(const u32 pad[2]) {
     stf_task((void (*)(void))RW(stf_coli, 0xC), stf_coli, robs[0], robs[1]);
     stf_task(stf_get_game_info, stf_ctl[0], robs[0], robs[1]);
     stf_task(stf_cam_mode_10, stf_cam, robs[0], robs[1]);
-    /* the afterimages: the projectile task's (sub_89FB8) last call */
+    /* the projectile task (fa_tobi's sub_89FB8): sub_8A29C steps each live
+     * object (Eggman's bombs: fly, burst, the hit test whose hit the next
+     * frame's collision task deals); sub_8A2E4 is left out (it tells StF's
+     * CPU players where a bomb will burst, and the board has none); then
+     * the afterimages */
+    stf_task(stf_sub_8A29C, stf_tobi, robs[0], robs[1]);
     stf_call(stf_zanzou_control, robs[0], robs[1], 0u);
 }
 
@@ -366,8 +556,16 @@ static void fight_step(const u32 pad[2]) {
  * only deals damage while it runs). */
 static u32 round_time = 30u;             /* seconds, the setup menu's time */
 
+/* The stage the fight is on (load_stage), and VF2's ring out on its
+ * stages: each fighter's frames since its root left the ring (0: inside). */
+static const stage_t *cur_stage;
+static u32 rout[2], ring_out;
+static u32 rout_vy[2];            /* its fall's speed, a float's bits */
+
 static void round_start(fighter_t fs[2]) {
     u32 i;
+    turn_at = kuma_at = frame_counter;
+    kuma_p = kuma_v = 0;
     for (i = 0; i < 2u; i++) {
         /* at yaw a a fighter faces (-sin a, cos a) in x, z, as StF's
          * camera does: 4.0 apart, facing each other, as a real fight starts */
@@ -379,9 +577,24 @@ static void round_start(fighter_t fs[2]) {
     RW(stf_coli, 0x000) = 0x80000000u;
     RW(stf_coli, 0x008) = sizeof stf_coli;
     stf_task(stf_coli_init, stf_coli, robs[0], robs[1]);
+    /* the projectile task, as fa_tobi starts it: the afterimage ring reset
+     * (Fn_zanzou_init) and its 30 objects (0x100 bytes each from +0x200)
+     * cleared, so no bomb lives on into the next round */
+    *(volatile u32 *)M2_COPFIFO_ADDR = COP_CMD(0x81);
+    for (i = 0; i < sizeof stf_tobi / 4; i++) stf_tobi[i] = 0u;
+    RW(stf_tobi, 0x000) = 0x80000000u;
+    RW(stf_tobi, 0x008) = sizeof stf_tobi;
     for (i = 0; i < 2u; i++) rob_start(i);
     stf_task(stf_cam_mode_9, stf_cam, robs[0], robs[1]);
     *(short *)stf_ram(0x500028u) = (short)(round_time << 6);
+    /* stage_x (0x50A00C), the half side of the square area_coli walls the
+     * fighters in: StF's cage at 8.0; VF2's ring has no walls, so out of
+     * reach (100.0), and the ring out (ring_out_step) at the ring's edge;
+     * FV's cage at its own size (FV's 6.0, scaled) */
+    stf_set(0x50A00Cu, cur_stage && m2_obj_fb(cur_stage->ring) ? 0x42C80000u :
+                       cur_stage && m2_obj_fb(cur_stage->wall) ? m2_obj_fb(cur_stage->wall) : 0x41000000u);
+    rout[0] = rout[1] = ring_out = 0u;
+    rout_vy[0] = rout_vy[1] = 0u;
     /* the HUD, as MES_ROUND_INT and MES_READY_INT leave it: both bars
      * from empty, the lamps (clear_win_lamp_cntr's, then win_lamp_int) */
     for (i = 0; i < sizeof stf_disp / 4; i++) stf_disp[i] = 0u;
@@ -559,7 +772,10 @@ static u32 seams_build(u32 p, u32 *at, const u32 **out) {
     return in;
 }
 
-static void draw_fighter(const fighter_t *f, u32 p) {
+/* mirror: the fighter's reflection in Aurora Icefield's ice, as
+ * rob_disp_mir (0x6428C) draws it: the parts, under the camera scaled by
+ * (1, -1, 1), which turns them over the floor's y = 0 (mirror_draw). */
+static void draw_fighter(const fighter_t *f, u32 p, u32 mirror) {
     volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
     const pose_anim_t *a = f->anim;
     u32 *r = robs[p], i, model, head = 0u;
@@ -572,6 +788,7 @@ static void draw_fighter(const fighter_t *f, u32 p) {
     *cf = COP_WMATRIX;
     for (i = 0; i < 9; i++) *cf = m2_obj_fb(cam_l.r[i]);
     for (i = 0; i < 3; i++) *cf = m2_obj_fb(cam_l.t[i]);
+    if (mirror) { *cf = COP_SCALE; *cf = 0x3F800000u; *cf = 0xBF800000u; *cf = 0x3F800000u; }
     /* slot 0 has no model: StF's records leave it 0, and its command
      * interpreter keeps bytes there (+0x40..0x43 of g13, the rob), so a
      * guest's slot 0 (Akira's 0x13AE) turns into an empty StF entry (0xAE),
@@ -601,10 +818,8 @@ static void draw_fighter(const fighter_t *f, u32 p) {
             }
         *cf = COP_POP;
     }
+    if (!mirror) osage_splice(p);
 }
-
-/* StF's frame_counter (see stage_col_cycle). */
-static u32 frame_counter;
 
 /* The afterimages: the coprocessor's ring of 128 copies, which
  * zanzou_control (fight_step) lays from each fighter's parts while his
@@ -634,6 +849,91 @@ static void zanzou_draw(u32 pn[3]) {
         submit_cur(info[4] & 0xFFFFu);
         *cf = COP_POP;
         pn[1u + (info[1] & 1u)] += polys - before;
+    }
+}
+
+/* The projectiles: StF's tobi_disp (0x8A518), under the unscaled camera as
+ * zanzou_disp. For each live object (+0 bit 31) not hidden (bit 9) whose
+ * type draws (_uk_projectile; the bomb's tdl_bakudan): tobi_disp_go, its
+ * model (+0x7C) at +0x44, faced to the camera (op 0x10) on bit 7 (the
+ * burst), else turned by +0x72, +0x70, +0x74 (y, x, z) unless bit 3, and
+ * scaled by +0x68. Then, while +0x8C is set (in flight), the landing marker
+ * at +0x50: a ring from bomb_fire_location_marker_circle and, by the part
+ * of its flight left (+0xA2 of +0x89, in tenths), a marker from
+ * bomb_fire_location_marker drawn twice, turned by (1 - left) a quarter
+ * turn each way. Then the fuse while +0xA0 holds a model (bit 6 clear: not
+ * burst): the point after the last frame of +0x18's list (bomb_fuse)
+ * carried through the bomb's place, turn and scale (op 0x29), faced to the
+ * camera, scaled by +0x98. Each object's faces count toward its thrower (+0x1C). */
+#define COP_FACE COP_CMD(0x10)
+#define TOBI_BOMB 2u
+static const u16 bomb_ring[11] = { 2204, 2204, 2204, 2205, 2205, 2205, 2205, 2203, 2203, 2203, 2203 };
+static const u16 bomb_mark[11] = { 2200, 2200, 2200, 2202, 2202, 2202, 2202, 2201, 2201, 2201, 2201 };
+
+static void tobi_place(const u32 *o) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    *cf = COP_SET_POS; *cf = RW(o, 0x44); *cf = RW(o, 0x48); *cf = RW(o, 0x4C);
+    if (RW(o, 0) & 0x80u) *cf = COP_FACE;
+    else if (!(RW(o, 0) & 0x8u)) {
+        *cf = COP_ANG_Y; *cf = (u32)(int)(short)RH(o, 0x72);
+        *cf = COP_ANG_X; *cf = (u32)(int)(short)RH(o, 0x70);
+        *cf = COP_ANG_Z; *cf = (u32)(int)(short)RH(o, 0x74);
+    }
+}
+
+static void tobi_draw(u32 pn[3]) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    u32 n, k;
+    *cf = COP_WMATRIX;
+    for (k = 0; k < 9; k++) *cf = m2_obj_fb(cam_l.r[k]);
+    for (k = 0; k < 3; k++) *cf = m2_obj_fb(cam_l.t[k]);
+    for (n = 0; n < 30u; n++) {
+        u32 *o = stf_tobi + (0x200u + n * 0x100u) / 4u;
+        u32 before = polys, w0 = RW(o, 0);
+        if (!(w0 & 0x80000000u) || (w0 & 0x200u) || RW(o, 8) == 0u || RB(o, 0x26) != TOBI_BOMB) continue;
+        *cf = COP_PUSH;
+        tobi_place(o);
+        *cf = COP_SCALE; *cf = RW(o, 0x68); *cf = RW(o, 0x68); *cf = RW(o, 0x68);
+        if (RH(o, 0x7C)) submit_cur(RH(o, 0x7C));
+        *cf = COP_POP;
+        if (RH(o, 0x8C) && RB(o, 0x89)) {
+            float left = (float)RB(o, 0xA2) / (float)RB(o, 0x89);
+            int i = (int)(left * 10.0f), turn = (int)((1.0f - left) * 16384.0f);
+            if (i < 0) i = 0;
+            if (i > 10) i = 10;
+            *cf = COP_PUSH;
+            *cf = COP_SET_POS; *cf = RW(o, 0x50); *cf = RW(o, 0x54); *cf = RW(o, 0x58);
+            submit_cur(bomb_ring[i]);
+            *cf = COP_PUSH;
+            *cf = COP_ANG_Y; *cf = (u32)turn;
+            submit_cur(bomb_mark[i]);
+            *cf = COP_POP;
+            *cf = COP_ANG_Y; *cf = (u32)-turn;
+            submit_cur(bomb_mark[i]);
+            *cf = COP_POP;
+        }
+        if (!(w0 & 0x40u) && RH(o, 0xA0)) {
+            const u32 *fuse = (const u32 *)RW(o, 0x18);
+            const u32 *at = fuse + 1 + 4u * fuse[0];
+            u32 w[3];
+            *cf = COP_PUSH;
+            *cf = COP_IDENTITY;
+            *cf = COP_SET_POS; *cf = RW(o, 0x44); *cf = RW(o, 0x48); *cf = RW(o, 0x4C);
+            *cf = COP_ANG_Y; *cf = (u32)(int)(short)RH(o, 0x72);
+            *cf = COP_ANG_X; *cf = (u32)(int)(short)RH(o, 0x70);
+            *cf = COP_ANG_Z; *cf = (u32)(int)(short)RH(o, 0x74);
+            *cf = COP_SCALE; *cf = RW(o, 0x68); *cf = RW(o, 0x68); *cf = RW(o, 0x68);
+            *cf = COP_M2W; *cf = at[0]; *cf = at[1]; *cf = at[2];
+            w[0] = *cf; w[1] = *cf; w[2] = *cf;
+            *cf = COP_POP;
+            *cf = COP_PUSH;
+            *cf = COP_SET_POS; *cf = w[0]; *cf = w[1]; *cf = w[2];
+            *cf = COP_FACE;
+            *cf = COP_SCALE; *cf = RW(o, 0x98); *cf = RW(o, 0x98); *cf = RW(o, 0x98);
+            submit_cur(RH(o, 0xA0));
+            *cf = COP_POP;
+        }
+        pn[1u + ((u32 *)RW(o, 0x1C) == robs[1])] += polys - before;
     }
 }
 
@@ -724,14 +1024,79 @@ static void mat_mul(mat_t *a, const mat_t *b, const float *c) {
     }
 }
 
+/* FV's cage side test (cage_display's byte_500288): a side is drawn only
+ * while the camera is inside its plane. The panel's z axis points out of the
+ * arena (its matrix puts it at z -6 in FV's units), so the camera, at the
+ * origin of m's frame, is inside while m's translation is along that axis:
+ * dot(t, z axis) < 0. The dot is one op 0x29 on the coprocessor with t as
+ * the first row; its sign bit is the answer. */
+static int fv_side_in(const mat_t *m) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    int i;
+    u32 d;
+    *cf = COP_WMATRIX;
+    for (i = 0; i < 3; i++) { *cf = m2_obj_fb(m->t[i]); *cf = 0u; *cf = 0u; }
+    for (i = 0; i < 3; i++) *cf = 0u;
+    *cf = COP_M2W;
+    for (i = 6; i < 9; i++) *cf = m2_obj_fb(m->r[i]);
+    d = *cf; (void)*cf; (void)*cf;
+    return (d & 0x80000000u) != 0u;
+}
+
+/* FV's Western bear (kuma_int, 0x6C254): an integer pendulum, a step each
+ * 60 Hz frame; the bear swings about x by the negated top half of its
+ * place. The hop (a fighter knocked into the wall before it) is the cage
+ * break's, which the board does not have. */
+static void kuma_step(void) {
+    while (kuma_at != frame_counter) {
+        int t = 0x2000 + kuma_v;
+        kuma_p += t;
+        if (kuma_p >= 0x10000000) { t = 0x2000 + t; if (t > 0) t = -t; }
+        kuma_v = t;
+        kuma_at++;
+    }
+}
+
+/* m = m * ang_x(a), on the coprocessor */
+static void mat_ang_x(mat_t *m, u32 a) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    int i;
+    *cf = COP_WMATRIX;
+    for (i = 0; i < 9; i++) *cf = m2_obj_fb(m->r[i]);
+    for (i = 0; i < 3; i++) *cf = m2_obj_fb(m->t[i]);
+    *cf = COP_ANG_X; *cf = a & 0xFFFFu;
+    *cf = COP_RMATRIX;
+    for (i = 0; i < 9; i++) m->r[i] = m2_cop_gf();
+    for (i = 0; i < 3; i++) m->t[i] = m2_cop_gf();
+}
+
 static void draw_stage(const stage_t *st) {
-    mat_t m;
+    mat_t m, ct;
     u32 i, model, x0, x1;
+    if (st->turn) {
+        /* FV's turning town: cam * ang_y(turn * frame) under the draws marked turn */
+        volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+        *cf = COP_WMATRIX;
+        for (i = 0; i < 9u; i++) *cf = m2_obj_fb(cam.r[i]);
+        for (i = 0; i < 3u; i++) *cf = m2_obj_fb(cam.t[i]);
+        *cf = COP_ANG_Y; *cf = (st->turn * (frame_counter - turn_at)) & 0xFFFFu;
+        *cf = COP_RMATRIX;
+        for (i = 0; i < 9u; i++) ct.r[i] = m2_cop_gf();
+        for (i = 0; i < 3u; i++) ct.t[i] = m2_cop_gf();
+    }
+    kuma_step();
     for (i = 0; i < st->ndraws; i++) {
-        mat_mul(&m, &cam, st->draws[i].m);
+        /* FV's windows (fvBoardPlan): each covers the ones before it */
+        if (st->draws[i].win) m2_geo_fifo_window_full();
+        mat_mul(&m, st->draws[i].turn ? &ct : &cam, st->draws[i].m);
+        if (st->draws[i].side && !fv_side_in(&m)) continue;
+        if (st->draws[i].swing) mat_ang_x(&m, (u32)-(kuma_p >> 16));
         x0 = m2_obj_fb(st->draws[i].x0); x1 = m2_obj_fb(st->draws[i].x1);
         if (x0 != x1 && cage_clip(&m, x0, x1)) continue;
         model = st->draws[i].model;
+        if (st->lit && storm_lit(st)) model = st->lit[i];
+        if (st->wind && i == st->wind_at) model = st->wind[(frame_counter >> st->wind_shift) & 255u];
+        if (model == 0u) continue;       /* VF2's: nothing in this look or frame */
         if (st->tpd.kind != 0u && model == st->tpd.model) submit_mat_ov(model, &m, st->tpd.kind == 1u ? 0u : 1u, TPD_ADDR);
         else submit_mat(model, &m);
     }
@@ -747,46 +1112,42 @@ static void cx_put(const cx_run_t *c) {
                 *(volatile u16 *)(M2_COLORXLAT + ch * 0x4000u + r * 0x200u + l * 2u) = *v++;
 }
 
-/* Stage colour cycling, as StF does it. make_lay_col_256_tbl (color_intensity)
- * builds ARRAY_NUM_RED/GREEN/BLUE: 256 entries per channel, the curve
- * (x - 116) * mul / 37 + add, 0 at or below zero, -1 from 256, then trimmed by
- * the stage's RED/GREEN/BLUE (* t >> 7). Once a frame, out of
- * interrupt_wait_b, sub_2435C walks the stage record's (row, shift) list and
- * sub_243AC refills that colorxlat row's palette slots (luma 48..63) from the
- * stage colour block in the data ROM (pointer at 0x2101010, colour set * 0x540,
- * (row - 14) * 0x60, 0x20 a channel), slot i taking colour
- * ((frame_counter >> shift) + i) & 15 through the curve. That is South
- * Island's and Canyon Cruise's shoreline and waterfall (rows 18 and 19) and
- * Casino Night's rows 14, 16 and 19. */
-#define STF_STAGE_COL_PTR 0x02101010u
-static u16 array_num[3][256];
+/* The colours (colorxlat), as StF's own routines set them (stf_motion.s):
+ * change_scene's stage_disp (the stage record's RED, GREEN and BLUE into
+ * 0x5000E0, then chg_pol_color_req's ramp, luma 0..47 of rows 1..27, which
+ * chg_pol_color_send writes a few rows each vsync), the boot's
+ * make_lay_col_256_tbl (ARRAY_NUM_RED/GREEN/BLUE, the curves every upload
+ * goes through), chg_scr_color_req (luma 64..127, the flat band palette
+ * colours go through) and sub_7B4 (the fixed rows 5..6 and 12..13), then
+ * the debug menu's colour refresh (0x46754): send_tex_col_stage with the
+ * record's colour set (+0x0E, rows 14..27), send_tex_col_skin and
+ * send_tex_col_part for each player (rob+0x1B0's character). A guest stage
+ * or fighter takes its own game's colours, baked (cx): its stage's trims
+ * go where stage_disp puts a StF record's. */
+extern void stf_call_g01(void (*fn)(void), u32 g0, u32 g1);
 
-static void make_lay_col_256_tbl(const stage_t *st) {
-    u32 ch, x;
-    for (ch = 0; ch < 3u; ch++)
-        for (x = 0; x < 256u; x++) {
-            int v = ((int)x - 116) * (int)tst_mul[ch] / 37 + (int)tst_add[ch];
-            u32 u = 0u;
-            if (v > 0) {
-                u = (u32)v;
-                if (u >= 0x100u) u = 0xFFFFFFFFu;
-                u = (u * st->tint[ch]) >> 7;
-            }
-            array_num[ch][x] = (u16)u;
-        }
+static void stage_colors(const stage_t *st) {
+    u32 i;
+    if (st->slot != 0xFFFFu) {
+        *(u8 *)stf_ram(0x500064u) = (u8)st->slot;          /* stage_num */
+        stf_call(stf_stage_disp, robs[0], robs[1], 0u);
+    } else
+        for (i = 0; i < 3u; i++) *(u8 *)stf_ram(0x5000E0u + i) = st->tint[i];
+    stf_call(stf_make_lay_col_256_tbl, robs[0], robs[1], 0u);
+    stf_call(stf_chg_scr_color_req, robs[0], robs[1], 0u);
+    if (st->slot == 0xFFFFu) { cx_put(&st->cx); return; }
+    while (*(volatile u32 *)stf_ram(0x546000u)) stf_call(stf_chg_pol_color_send, robs[0], robs[1], 0u);
+    stf_call(stf_sub_7B4, robs[0], robs[1], 0u);
+    stf_call_g01(stf_send_tex_col_stage, 14u, *(const u16 *)(0x8F3DEu + st->slot * 256u));
 }
 
-static void stage_col_cycle(const stage_t *st) {
-    const u16 *c;
-    for (c = st->cyc; c[0] != 0u; c += 2) {
-        u32 row = c[0], ph = frame_counter >> c[1], ch, i;
-        u32 blk = *(volatile u32 *)STF_STAGE_COL_PTR + st->cset * 0x540u + (row - 14u) * 0x60u;
-        for (ch = 0; ch < 3u; ch++, blk += 0x20u) {
-            volatile u16 *o = (volatile u16 *)(M2_COLORXLAT + ch * 0x4000u + row * 0x200u + 0x60u);
-            for (i = 0; i < 16u; i++)
-                o[i] = array_num[ch][*(volatile u16 *)(blk + ((ph + i) & 15u) * 2u)];
-        }
-    }
+/* A player's part and skin rows: StF's send_tex_col_part and skin for its
+ * fighter (player 1's rows 0..4 and 28..29, player 2's 7..11 and 30..31),
+ * a guest's own (seven part rows, over StF's fixed rows 5, 6, 12, 13). */
+static void fighter_colors(u32 p, const pose_anim_t *a) {
+    if (a->cx[0].rows) { cx_put(&a->cx[p * 2u]); cx_put(&a->cx[p * 2u + 1u]); return; }
+    stf_call_g01(stf_send_tex_col_skin, p, RB(robs[p], 0x1B0));
+    stf_call_g01(stf_send_tex_col_part, p, RB(robs[p], 0x1B0));
 }
 
 /* send_beta_data: an uncompressed page, every level's texels already in
@@ -849,38 +1210,168 @@ static void send_materials(const u32 *mat) {
     for (i = 0; i < 0x20u; i++) { *fifo = mat[i]; *fifo = geo_mat_int[i]; }
 }
 
+/* Aurora Icefield's reflections, as camera_init draws them there in place
+ * of the shadows inside the ring: material slots 0 to 15 dimmed to ambient
+ * 0x70 with no diffuse (change_material, dword_90F90), each fighter turned
+ * over the ice (mirror_rob_disp), the mirrored sway chains osage_dsp laid in
+ * list layer 6, then the stage's materials back. Their faces count as each
+ * fighter's. */
+static void mirror_draw(const stage_t *st, const fighter_t fs[2], u32 pn[3]) {
+    volatile u32 *fifo = (volatile u32 *)M2_GEOFIFO_ADDR;
+    u32 i;
+    *fifo = GEO_OP_TEXPARAM; *fifo = 0u; *fifo = 0x10u;
+    for (i = 0; i < 0x10u; i++) { *fifo = 0x7000u; *fifo = geo_mat_int[i]; }
+    for (i = 0; i < 2u; i++) { polys = 0u; draw_fighter(&fs[i], i, 1u); pn[1u + i] = polys; }
+    osage_splice(OSAGE_MIRROR);
+    send_materials(st->mat);
+}
+
+/* VF2's sky (tools/vf2-stages.mjs vf2SkyPlan), as 0x24314 sets it up at
+ * stage start and 0x24534 moves it every frame; FV's (tools/fv-stages.mjs
+ * fvSkyPlan, sub_29728 and 0x29A40) is the same but for its heading, which
+ * adds the sky's own turn (head) and the arena's (0x50A022, the board's
+ * -turn * frames, as stage_light turns the light). The tilemap's map2 holds 32
+ * column pairs of the 256 in the panorama (pair c in slot c & 31); map3,
+ * which split mode 1 draws above the line the vertical scroll names, is the
+ * top row's first eight tiles over and over, and map2 below the strip the
+ * last row's (0x24444, 0x243E0). VF2 reads its camera's pitch (+0x24) and
+ * heading (+0x26) two frames late (0x503010, 0x503012), the board's StF
+ * camera has the same fields. Across, the strip keeps VF2's 16 heading
+ * units a pixel, a turn to its 4096 pixels: on StF's wider view (FOCUS 280
+ * to VF2's 600) it turns faster than the stage behind it. */
+#define TILE_L3 ((volatile u16 *)0x01006000u)
+static u16 sky_have[32], sky_head[2];
+static short sky_pitch[2];
+static u8 sky_storm;
+
+static void sky_load(const sky_t *s) {
+    const volatile u16 *pano;
+    u32 b, i;
+    if (!s) { M2_L2_VPOS = 0x8000u; return; }    /* StF's stages: map2 off, as m2_init leaves it */
+    for (b = 0; b < s->nblocks; b++) {
+        volatile u32 *o = (volatile u32 *)(M2_CHARGFX + s->dest[b] * 4096u);
+        const volatile u32 *c = (const volatile u32 *)(s->chars + b * 4096u);
+        const volatile u16 *pal = (const volatile u16 *)(s->pal + b * 32u);
+        for (i = 0; i < 1024u; i++) o[i] = c[i];
+        for (i = 0; i < 16u; i++) M2_PALETTE[s->dest[b] * 16u + i] = pal[i];
+    }
+    pano = (const volatile u16 *)s->pano;
+    for (i = 0; i < 64u * 64u; i++) {
+        TILE_L3[i] = pano[i & 7u];
+        if (i >= s->rows * 64u) M2_TILE_BG[i] = pano[(s->rows - 1u) * 512u + (i & 7u)];
+    }
+    for (i = 0; i < 32u; i++) sky_have[i] = 0xFFFFu;
+    sky_storm = 0;
+    sky_pitch[0] = sky_pitch[1] = (short)RH(stf_cam, 0x24);
+    sky_head[0] = sky_head[1] = (u16)(RH(stf_cam, 0x26) + s->head);
+}
+
+static void sky_frame(const stage_t *st) {
+    const sky_t *s = st->sky;
+    const volatile u32 *pano;
+    u32 y, c, k, r;
+    int p;
+    if (!s) return;
+    p = sky_pitch[1]; y = (u16)-(int)sky_head[1];
+    sky_pitch[1] = sky_pitch[0]; sky_head[1] = sky_head[0];
+    sky_pitch[0] = (short)RH(stf_cam, 0x24);
+    sky_head[0] = (u16)(RH(stf_cam, 0x26) + s->head - st->turn * (frame_counter - turn_at));
+    /* split mode 1 at VF2's V = 8 * list[2] - (pitch - 0x2E0) / 16, which
+     * puts the strip's row 238 + 8 * list[2] on the eye line, screen row
+     * 192 + pitch / 16 (its focal, 600); FV's list[2] - 480 tan(pitch) puts
+     * row 192 + list[2] there. The board's focal is StF's, FOCUS, so the
+     * same row (eye) goes on the board's eye line, 192 + FOCUS tan(pitch). */
+    M2_L2_VPOS = (u16)(0x2000u + ((u32)((int)s->eye - 192 -
+                       m2_cop_f2int(m2_cop_fmul(FOCUS, m2_cop_tan((u32)p & 0xFFFFu)))) & 0x3FFu));
+    pano = (const volatile u32 *)s->pano;
+    for (k = 0; k < 32u; k++) {
+        c = ((y >> 8) + k) & 255u;
+        if (sky_have[c & 31u] == c) continue;
+        sky_have[c & 31u] = (u16)c;
+        for (r = 0; r < s->rows; r++) ((volatile u32 *)M2_TILE_BG)[r * 32u + (c & 31u)] = pano[r * 256u + c];
+    }
+    M2_L2_HPOS = (u16)((0u - (y >> 4)) & 0x1FFu);
+}
+
+/* The storm's sky (VF2 0x2468C's channels 0..2): channel 0 flashes the sky's
+ * palette, channel 1 the far one's (each entry its on and off colour, which
+ * VF2 writes as the channel steps on or off), and channel 2 draws the bolt
+ * on the panorama's column pairs 24..31 from row 8, where those are on the
+ * map (VF2 0x8F1C). sky_frame streams a column back unlit, so a lit bolt is
+ * drawn every frame. */
+static void sky_storm_frame(const stage_t *st) {
+    const sky_t *s = st->sky;
+    const volatile u32 *pano;
+    u32 b, ch, i, k, r, n;
+    const u16 *e;
+    if (!s || !s->bolt || !st->storm) return;
+    b = st->storm[frame_counter % FLASH_FRAMES];
+    for (ch = 0, e = s->storm_pal; ch < 2u; e += 3u * s->storm_n[ch], ch++) {
+        if (!((b ^ sky_storm) >> ch & 1u)) continue;
+        for (i = 0, n = s->storm_n[ch]; i < n; i++) M2_PALETTE[e[3u * i]] = e[3u * i + (b >> ch & 1u ? 1u : 2u)];
+    }
+    if ((b | sky_storm) & 4u) {
+        pano = (const volatile u32 *)s->pano;
+        for (k = 0; k < 8u; k++) {
+            if (sky_have[24u + k] != 24u + k) continue;
+            for (r = 0; r < 18u; r++)
+                ((volatile u32 *)M2_TILE_BG)[(8u + r) * 32u + 24u + k] =
+                    b & 4u ? s->bolt[k * 18u + r] : pano[(8u + r) * 256u + 24u + k];
+        }
+    }
+    sky_storm = (u8)b;
+}
+
 /* A stage: its texture set (each page to the bank its own origin names, as
  * StF's loader does), its colour bases, its rows of colorxlat and their
  * cycling curve, its backdrop colour and its light. */
 static void load_stage(const stage_t *st) {
     u32 i;
+    cur_stage = st;
+    kuma_p = kuma_v = 0; kuma_at = frame_counter;
     tex_load_set(st->texset);
-    cx_put(&st->cx);
-    make_lay_col_256_tbl(st);
+    stage_colors(st);
+    sky_load(st->sky);                   /* after the colorxlat: palette_w reads it */
     m2_backdrop(st->bg);                 /* scr_bg_int: the record's stage_bg_color */
     stage_light(st);
-    for (i = 0; i < st->ndraws; i++) m2_load_model_palette(st->draws[i].model);
+    kage_stage(st);
+    for (i = 0; i < st->ndraws; i++) {
+        if (st->draws[i].model) m2_load_model_palette(st->draws[i].model);
+        if (st->lit && st->lit[i]) m2_load_model_palette(st->lit[i]);
+    }
+    if (st->wind) for (i = 0; i < 256u; i++) if (st->wind[i]) m2_load_model_palette(st->wind[i]);
 }
 
 /* Every model a fighter can draw: its sixteen parts (its character record's
  * first list; player 2's at character + 26) and its eyes. */
+/* A character's shadow models (its off_64988 table, a guest table:
+ * sixteen 24-byte entries, the model at +4, then three u16 models), StF's
+ * own colours. */
+static void kage_palettes(u32 c) {
+    u32 t = *(const u32 *)(STF_GUEST_off_64988 + c * 4u), i, m;
+    for (i = 0; i < 16u; i++) if ((m = *(const u32 *)(t + i * 24u + 4u)) != 0u) m2_load_model_palette(m);
+    for (i = 0; i < 3u; i++) if ((m = *(const u16 *)(t + 16u * 24u + i * 2u)) != 0u) m2_load_model_palette(m);
+}
+
 static void load_palettes(void) {
     u32 a, i, p;
     for (a = 0; a < POSE_ANIMS; a++)
         for (p = 0; p < 2u; p++) {
             const u32 *parts = *(const u32 *const *)stf_char(pose_anims[a].chr + p * 26u);
             for (i = 0; i < 16u; i++) if (parts[i]) m2_load_model_palette(parts[i]);
+            kage_palettes(pose_anims[a].chr + p * 26u);
             if (char_game(pose_anims[a].chr) != GAME_STF) continue;
             for (i = 0; i < pose_anims[a].nparts; i++)
                 m2_load_model_palette(p ? pose_anims[a].parts[i].p2 : pose_anims[a].parts[i].model);
         }
+    m2_load_model_palette(0x195u);  /* rob_kage_disp_test's slot 0 ball */
+    m2_load_model_palette(0x736u);  /* tobi_kage_disp: a projectile's shadow */
 }
 
-/* Each player's fighter's part and skin rows: player 1's 0..4 and 28..29,
- * player 2's 7..11 and 30..31, as StF's send_tex_col_part and skin upload. */
+/* Each player's fighter's part and skin rows. */
 static void load_fighter_colors(const pose_anim_t *p1, const pose_anim_t *p2) {
-    cx_put(&p1->cx[0]); cx_put(&p1->cx[1]);
-    cx_put(&p2->cx[2]); cx_put(&p2->cx[3]);
+    fighter_colors(0u, p1);
+    fighter_colors(1u, p2);
 }
 
 static u32 edges(u32 now, u32 *held) { u32 e = now & ~*held; *held = now; return e; }
@@ -897,9 +1388,9 @@ static u32 edges(u32 now, u32 *held) { u32 e = now & ~*held; *held = now; return
  * StF's window: up and down move, punch lowers a value and kick raises it,
  * with guard held they repeat. Start begins the fight. */
 #define TILE_L1    ((volatile u16 *)0x01002000u)
-#define WIN_COL    18u
+#define WIN_COL    16u
 #define WIN_ROW    3u
-#define WIN_W      26u
+#define WIN_W      28u
 /* The polygon count's window, at the screen's top right (62 tiles across). */
 #define PWIN_COL   44u
 #define PWIN_ROW   1u
@@ -919,11 +1410,12 @@ static const u16 menu_min[M_ITEMS]  = { 0, 1, 1, 0, 0, 0, 10, 0 };
 static const u16 menu_max[M_ITEMS]  = { 0, 99, 5, STAGES - 1, POSE_ANIMS - 1, POSE_ANIMS - 1, 250, 9 };
 static const u16 menu_step[M_ITEMS] = { 0, 1, 1, 1, 1, 1, 10, 1 };
 static u16 menu_val[M_ITEMS] = { 0, 30, 2, 0, 0, 1, 140, 5 };
-static const char *const fighter_name[POSE_ANIMS] = { "SONIC", "HONEY", "EGGMAN", "AKIRA", "RYO" };
+static const char *const fighter_name[POSE_ANIMS] = { "SONIC", "HONEY", "EGGMAN", "AKIRA", "RYO", "CHAI", "HORNET" };
 /* The game a fighter's name line shows where it is not the one its code
- * runs as: Ryo (Shenmue's) fights on Akira's moves, as VF2's. */
-static const char *const fighter_from[POSE_ANIMS] = { 0, 0, 0, 0, "SHENMUE" };
-static const char *const stage_name[STAGES] = { "SOUTH_ISLAND", "AURORA_ICEFIELD" };
+ * runs as: Ryo and Chai (Shenmue's) and Hornet (Daytona USA's car, as Fighters
+ * Megamix had him) fight on Akira's moves, as VF2's. */
+static const char *const fighter_from[POSE_ANIMS] = { 0, 0, 0, 0, "SHENMUE", "SHENMUE", "DAYTONA" };
+static const char *const stage_name[STAGES] = { "SOUTH_ISLAND", "AURORA_ICEFIELD", "VF2 TOU-RIN", "VF2 COLOSSEUM", "FV WESTERN" };
 static u32 menu_cur;
 
 static u32 slen(const char *s) { u32 n = 0; while (s[n]) n++; return n; }
@@ -955,8 +1447,8 @@ static void mask_rect(u32 col, u32 row, u32 w, u32 h) {
             TILE_MASK[y * 4u + (c >> 4)] |= (u16)(0x8000u >> (c & 15u));
 }
 
-static void menu_mask(u32 on) {
-    u32 y, c;
+static void menu_ink(u32 on) {
+    u32 c;
     /* a palette colour's component c shows through colorxlat row c at
      * luma 0x40, and black there is see-through on the tile layers (MAME
      * reads 0..0x40 as 0): 0x41, the darkest it draws, gives the font's
@@ -964,6 +1456,11 @@ static void menu_mask(u32 on) {
      * 0 again restores the fight's band as StF has it */
     for (c = 0; c < 3u; c++)
         *(volatile u16 *)(M2_COLORXLAT + c * 0x4000u + 0x40u * 2u) = on ? 0x41u : 0u;
+}
+
+static void menu_mask(u32 on) {
+    u32 y, c;
+    menu_ink(on);
     for (y = 0; y < 384u; y++)
         for (c = 0; c < 4u; c++) TILE_MASK[y * 4u + c] = 0u;
     if (!on) return;
@@ -1064,6 +1561,61 @@ static u32 menu_input(u32 e, u32 h, u32 start) {
     return i;
 }
 
+/*
+ * VF2's ring out (checked in its program, Ghidra and objdump): once a frame
+ * the fighter's root (rob part 0, +0x1F4 x and +0x1FC z) against stage_x
+ * (0x50A00C, 8.0 at the default ring size, from 0x11530): at |x| or |z| at
+ * or past it the fighter falls (0x17BA8) to the ground outside (0x50A010,
+ * -0.5); once a collision ball outside the ring touches that ground (rob
+ * +0x624, area_coli 0x2396C, about 18 frames from standing) rob_check_stage
+ * (0x17BC0) sets w0 bit 5, a knock-out's bit, and JUDGE_DSP_INT (0xE5A8)
+ * calls it a ring out (0x500050) while both energies are above 0; the
+ * round goes to the one whose bit 5 is clear. StF has the same code with
+ * the bit set left out (rob_check_stage 0x181D8) and walls instead, so the
+ * board does it here: the ring, the drop and the ground in StF's units
+ * (VF2's times the guests' scale), the bit after VF2's 18 frames.
+ */
+#define RF(r, o) (*(u32 *)((u8 *)(r) + (o)))   /* a float's bits */
+#define RING_OUT_FRAMES 18u
+/* float order on the bits (the board has no float compares) */
+static u32 f_key(u32 u) { return u & 0x80000000u ? ~u : u | 0x80000000u; }
+static u32 f_add(u32 a, u32 b) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    *cf = COP_FADD; *cf = a; *cf = b;
+    return m2_obj_fb(m2_cop_gf());
+}
+
+static void ring_out_step(const stage_t *st) {
+    u32 p, ring = m2_obj_fb(st->ring), ground = m2_obj_fb(-0.5f * VF2_SCALE);
+    u32 g = *(u32 *)stf_ram(0x50A000u) ^ 0x80000000u;   /* -gravity */
+    if (ring == 0u) return;
+    for (p = 0; p < 2u; p++) {
+        u32 *r = robs[p], y;
+        if (!rout[p]) {
+            if ((RF(r, 0x1F4) & 0x7FFFFFFFu) < ring && (RF(r, 0x1FC) & 0x7FFFFFFFu) < ring) continue;
+            rout_vy[p] = 0u;
+        }
+        rout_vy[p] = f_add(rout_vy[p], g);
+        y = f_add(RF(r, 0x1C), rout_vy[p]);
+        RF(r, 0x1C) = f_key(y) < f_key(ground) ? ground : y;
+        if (++rout[p] == RING_OUT_FRAMES) {
+            if ((short)RH(robs[0], 0x1AC) > 0 && (short)RH(robs[1], 0x1AC) > 0) ring_out = 1u;
+            RW(r, 0) |= 0x20u;
+        }
+    }
+}
+
+/* RING OUT, over the 3D while the round ends */
+#define MSG_COL 27u
+#define MSG_ROW 12u
+static void ring_msg(u32 on) {
+    u32 y, c;
+    put_at(MSG_COL, MSG_ROW, on ? "RING OUT" : "        ", on ? T_INV : 0x8020u);
+    if (on) { mask_rect(MSG_COL, MSG_ROW, 8u, 1u); return; }
+    for (y = MSG_ROW * 8u; y < MSG_ROW * 8u + 8u; y++)
+        for (c = MSG_COL; c < MSG_COL + 8u; c++) TILE_MASK[y * 4u + (c >> 4)] &= (u16)~(0x8000u >> (c & 15u));
+}
+
 int main(void) {
     fighter_t fs[2];
     u32 i, stage = 0u;
@@ -1073,15 +1625,16 @@ int main(void) {
     m2_init();
     m2_silicon_boot();
     m2_cam_set_focus(FOCUS);
-    cx_put(&flat_cx);                    /* StF's flat band, which palette colours go through */
     camera_init();
     tex_load_set(SET_FIGHTERS);
     load_palettes();
-    load_stage(&stages[stage]);
-    load_fighter_colors(&pose_anims[menu_val[M_P1]], &pose_anims[menu_val[M_P2]]);
+    stf_globals();
+    /* the test menu's monitor setting as the boot reads it: CRT, StF's
+     * TST_* curve constants (load_COLORS_to_RAM, chg_scr_color_req) */
+    stf_call(stf_set_display_type_crt, robs[0], robs[1], 0u);
+    load_stage(&stages[stage]);          /* its fighters' colours once they are set up (round_start) */
     for (i = 0; i < 8u; i++) { m2_frame_begin(); m2_frame_end(); }
 
-    stf_globals();
     stf_camera();
     /* StF's tiles and their colours: the set the boot loads (the clock's
      * digits, the bars, the debug font and frames), then the fight's, as
@@ -1095,6 +1648,7 @@ int main(void) {
     fs[0].anim = &pose_anims[menu_val[M_P1]];
     fs[1].anim = &pose_anims[menu_val[M_P2]];
     round_start(fs);
+    load_fighter_colors(fs[0].anim, fs[1].anim);
     vbl = frameVBL;
     for (;;) {
         m2_player_t p[2];
@@ -1112,6 +1666,8 @@ int main(void) {
                 u16 ink = M2_PALETTE[1];
                 stage = menu_val[M_STAGE];
                 load_stage(&stages[stage]);
+                load_fighter_colors(fs[0].anim, fs[1].anim);   /* their bands, over the stage's rows */
+                menu_ink(1u);
                 M2_PALETTE[1] = ink;
                 for (i = 0; i < 64u * 64u; i++) M2_TILE_FG[i] = 0x20u;
             }
@@ -1120,7 +1676,10 @@ int main(void) {
                 fs[i].anim = &pose_anims[menu_val[c]];
                 rob_init(i, &fs[i]);
                 rob_start(i);
+                /* the scene's rows again: a guest's seven part rows took StF's fixed ones */
+                stage_colors(&stages[stage]);
                 load_fighter_colors(fs[0].anim, fs[1].anim);
+                menu_ink(1u);
             }
             if (c == M_START) {
                 round_time = menu_val[M_TIME];
@@ -1144,8 +1703,12 @@ int main(void) {
 
         m2_frame_begin();
         m2_obj_frame_setup();
+        clear_buffer_ptr();
         send_materials(stages[stage].mat);
         camera_stf(&stages[stage]);
+        sky_frame(&stages[stage]);
+        sky_storm_frame(&stages[stage]);
+        osage_camera();
         m2_geo_fifo_light(m2_obj_fb(light[0]), m2_obj_fb(light[1]), m2_obj_fb(light[2]));
         move_tpd_send(&stages[stage].tpd);
         polys = 0u;
@@ -1159,14 +1722,18 @@ int main(void) {
           if (n == 0u) n = 1u;
           step = frame_counter;
           while (n--) {
+              short clock = *(short *)stf_ram(0x500028u);
               fight_step(pad);
               if (in_menu) continue;
+              if (over) *(short *)stf_ram(0x500028u) = clock;  /* the clock stops once the round is decided */
+              if (!over && !quit) ring_out_step(&stages[stage]);
               /* a knock-out (a fighter's w0 bit 5) or the clock's end: the
                * next round three seconds later, or the setup once a
                * fighter has won the match */
               if (quit || over) {
                   if (quit || !--over) {
                       u32 won = menu_val[M_ROUND];
+                      if (ring_out) ring_msg(0u);
                       if (quit || *(u8 *)stf_ram(0x50004Fu) >= won ||
                           *(u8 *)stf_ram(0x500051u) >= won) {
                           in_menu = 1u;
@@ -1183,15 +1750,30 @@ int main(void) {
               }
               else if (((RW(robs[0], 0) | RW(robs[1], 0)) & 0x20u) ||
                        *(short *)stf_ram(0x500028u) <= 0) {
-                  /* the round to the one with more energy left */
+                  /* the round, as VF2's JUDGE_DSP_INT gives it: to the one
+                   * whose bit 5 is clear (a knock-out, a ring out), else to
+                   * the one with more energy left */
                   short e0 = (short)RH(robs[0], 0x1AC), e1 = (short)RH(robs[1], 0x1AC);
-                  if (e0 != e1) (*(u8 *)stf_ram(e0 > e1 ? 0x50004Fu : 0x500051u))++;
+                  u32 l0 = RW(robs[0], 0) & 0x20u, l1 = RW(robs[1], 0) & 0x20u;
+                  if (l0 != l1) (*(u8 *)stf_ram(l0 ? 0x500051u : 0x50004Fu))++;
+                  else if (e0 != e1) (*(u8 *)stf_ram(e0 > e1 ? 0x50004Fu : 0x500051u))++;
+                  if (ring_out) ring_msg(1u);
                   over = 180u;
               }
           } }
         if (!in_menu) hud_draw();
-        for (i = 0; i < 2u; i++) { polys = 0u; draw_fighter(&fs[i], i); pn[1u + i] = polys; }
+        osage_step();
+        kage_light(&stages[stage]);
+        kage_inside(&stages[stage]);
+        if (stages[stage].slot == KAGE_NO_INSIDE) mirror_draw(&stages[stage], fs, pn);
+        else pn[1] = pn[2] = 0u;
+        /* the fighters in one more window, over the stage, the shadows on
+         * it and the reflections, as StF draws them (camera_init's
+         * set_window(win_down) before rob_disp) and FV over its cage */
+        m2_geo_fifo_window_full();
+        for (i = 0; i < 2u; i++) { polys = 0u; draw_fighter(&fs[i], i, 0u); kage_outside(i); pn[1u + i] += polys; }
         zanzou_draw(pn);
+        tobi_draw(pn);
         if (in_menu) poly_win_draw(pn);
         *(volatile u32 *)ZCLIP_REG = 0xFFFF00FFu;
         m2_frame_commit();
@@ -1204,7 +1786,8 @@ int main(void) {
             u32 v;
             m2_vsync();
             v = frameVBL; frame_counter += v - vbl; vbl = v;
-            stage_col_cycle(&stages[stage]);
+            stf_set(0x500020u, frame_counter);
+            if (stages[stage].slot != 0xFFFFu) stf_call(stf_sub_2435C, robs[0], robs[1], 0u);
         }
     }
     return 0;

@@ -8,7 +8,8 @@ their stages, in one engine:
 - VF2: Akira, Sarah, Kage
 - Fighting Vipers: Picky, Honey, Mahler, Tokio, Bahn
 - Sonic the Fighters: Sonic, Honey, Eggman
-- Shenmue (the beta's disc, if you have it): Ryo, see `docs/RYO.md`
+- Shenmue (the beta's disc, if you have it): Ryo, see `docs/RYO.md`, and
+  Chai, the final boss, see `docs/CHAI.md`
 
 It runs in the browser. Everything you see is read from the original ROM
 sets when the page loads: models, motions, move lists, damage, textures,
@@ -35,7 +36,8 @@ python3 tools/serve.py          # prints http://127.0.0.1:<port>/
 `/roms/sfight.zip` from `$ROMS_DIR` (default `~/build/mameroms`). It reads
 them in place. You can also drop the three zips on the page instead.
 With the Shenmue beta's disc (0.400 disc 3, `$SHENMUE_DIR`) it also serves
-Ryo's four files off it at `/shenmue/<path>`, and Ryo joins the roster (`?p1=11`).
+Ryo's and Chai's files off it at `/shenmue/<path>`, and they join the roster
+(`?p1=11`, `?p1=12`).
 
 URL options: `?p1=0&p2=6&stage=3&p1cpu=1&p2cpu=1&rounds=2&start&dump`.
 
@@ -63,7 +65,10 @@ struct dump, F2 pauses and F3 steps one frame.
   gets its own game's texture RAM and colour tables.
 - `docs/STRUCTURES.md` lists the shared structures and where each game keeps them.
 - `docs/FV-GUESTS.md` measures what Fighting Vipers' Honey, Tokio and Bahn need as board guests, and what room is left in StF's ROMs and at Model 2B's sizes (`tools/fv-guest-survey.mjs`, `tools/model2-rom-limits.py`).
+- `docs/SHADOWS.md` is how each game casts the fighters' shadows, StF's way as the parent; `tools/shadow-data.mjs` reads every fighter's table in StF's form.
 - `docs/SHARED-CODE.md` audits the i960 functions StF and VF2 share: which are one code, and what a VF2 fighter still needs (guest data or a branch on `char_game`); `tools/shared-fns.py` compares them.
+- `docs/FM-SATURN.md` covers Fighters Megamix's (Saturn) fighter data and motions; `tools/fm-saturn.mjs` reads them off the disc and converts them to VF2 motion blocks (Hornet's to start with); `tools/daytona-hornet.mjs` finds Daytona USA's Hornet in the Model 2 set and cuts it where FM cuts its Hornet.
+- `docs/PROJECTILES.md` traces StF's projectiles (Eggman's bomb): how one is thrown, hits and is guarded, and what the board needs to run it; `tools/stf-projectiles.mjs` lists every motion that throws one.
 
 ## Not the board's own code
 
@@ -82,7 +87,7 @@ approximations. Each is marked `Here:` in `js/engine.js`:
 
 ```
 node tests/fighters.test.mjs    # every fighter poses, moves and reacts, across games
-node tests/bout.test.mjs        # CPU vs CPU, every pairing (121, 144 with Ryo)
+node tests/bout.test.mjs        # CPU vs CPU, every pairing (121, 169 with Ryo and Chai)
 ```
 
-Both read the zips from `$ROMS_DIR`, and Ryo from `$SHENMUE_DIR` when it is there.
+Both read the zips from `$ROMS_DIR`, and Ryo and Chai from `$SHENMUE_DIR` when it is there.

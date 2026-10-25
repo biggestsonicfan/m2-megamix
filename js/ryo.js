@@ -20,8 +20,11 @@ import { sampleMotion } from '../vendor/noclip/js/motion.js';
 import { buildPose, poseMatrices } from '../vendor/noclip/js/pose.js';
 import { makeFighter, S, P, K, G, FWD, BACK, HIGH, MID, LOW, MOTION_ID } from './fighters.js';
 
-/* The files, by their paths on the disc. */
-export const SHENMUE_FILES = { pks: 'MISC/MODELS.PKS', pkf: 'MISC/MODELS.PKF', motion: 'MISC/MOTION.BIN', script: 'SCENE/03/MFBT/EN_RYOU.BIN' };
+/* The disc's file every Shenmue fighter's motions come from; a fighter's
+ * scene can add a bank of its own (Chai's, js/chai.js). */
+export const MOTION_FILE = 'MISC/MOTION.BIN';
+/* Ryo's own files, by their paths on the disc. */
+export const SHENMUE_FILES = { pks: 'MISC/MODELS.PKS', pkf: 'MISC/MODELS.PKF', motion: MOTION_FILE, script: 'SCENE/03/MFBT/EN_RYOU.BIN' };
 /* His model, and the one Shenmue draws his fight afterimage with (each
  * scene's MAPINFO.BIN, Fight: Blur 'YKB_B.MT5'): the same bones, 288
  * triangles to 1793, the jacket and jeans painted on two textures. */
@@ -31,24 +34,19 @@ const MODEL = 'YKB_M.CHRM', LOW_MODEL = 'YKB_B.CHRM';
 const RYO_HEIGHT = 69, AKIRA_HEIGHT = 71;
 export const SIZE = RYO_HEIGHT / AKIRA_HEIGHT;
 
-/** The disc's files, or null when they cannot be had. `fetchFile(path)`
- * returns an ArrayBuffer or null. */
-export async function loadShenmue(fetchFile) {
-    const got = {};
-    for (const [k, path] of Object.entries(SHENMUE_FILES)) {
-        const b = await fetchFile(path);
-        if (!b) return null;
-        got[k] = new Uint8Array(b);
+/** The tallest and lowest of a model in its own rest pose (y). */
+export function restHeight(model) {
+    const rest = restMatrices(model);
+    let lo = Infinity, hi = -Infinity;
+    for (const n of model.nodes) {
+        if (!n.mesh) continue;
+        const M = rest[n.index], p = n.mesh.positions;
+        for (let i = 0; i < p.length; i += 3) {
+            const y = M[1] * p[i] + M[5] * p[i + 1] + M[9] * p[i + 2] + M[13];
+            lo = Math.min(lo, y); hi = Math.max(hi, y);
+        }
     }
-    const pks = readPaks(await gunzip(got.pks));
-    const model = readMt5(pks.get(MODEL)), lowModel = readMt5(pks.get(LOW_MODEL));
-    const textures = readPakf(await gunzip(got.pkf));
-    return {
-        key: 'shenmue', kind: 'shenmue', title: 'Shenmue',
-        model, lowModel, textures,
-        motions: readMotionBin(got.motion),
-        script: got.script,
-    };
+    return hi - lo;
 }
 
 /* ---- motions ------------------------------------------------------------- */
@@ -65,11 +63,73 @@ export const ACTS = {
 export const HIT = { [HIGH]: 845, [MID]: 844, [LOW]: 843 };
 export const GUARD_PUSH = 310;
 
+/*
+ * A Shenmue fighter: where his files are on the disc and what is his.
+ *   files      {pks, pkf, script, bank?}: his models' pack and its textures,
+ *              his move script, and a motion bank of his scene's own
+ *   model      the MT5 he is drawn with; lowModel, the fight afterimage's
+ *   size(sm)   his height to Akira's (sm: the loaded chars, by name)
+ *   acts, hit, guardPush   his actions and reactions, by motion id
+ *   parries    a throw of no damage is a parry (Ryo's), not a throw
+ */
+export const RYO = {
+    name: 'RYO', files: { pks: SHENMUE_FILES.pks, pkf: SHENMUE_FILES.pkf, script: SHENMUE_FILES.script },
+    model: MODEL, lowModel: LOW_MODEL, size: () => SIZE, acts: ACTS, hit: HIT, guardPush: GUARD_PUSH, parries: true,
+};
+
+/** The disc's files, or null when they cannot be had. `fetchFile(path)`
+ * returns an ArrayBuffer or null. Each of `specs` whose files are all there
+ * is in `chars`, by name; Ryo's are also the game's own fields (model,
+ * lowModel, textures, script), as the board's tools read them. */
+export async function loadShenmue(fetchFile, specs = [RYO]) {
+    const files = new Map();
+    const get = async (path) => {
+        if (!files.has(path)) {
+            const b = await fetchFile(path);
+            files.set(path, b ? new Uint8Array(b) : null);
+        }
+        return files.get(path);
+    };
+    const motion = await get(MOTION_FILE);
+    if (!motion) return null;
+    const packs = new Map();
+    const unpack = async (path, read) => {
+        if (!packs.has(path)) packs.set(path, read(await gunzip(await get(path))));
+        return packs.get(path);
+    };
+    const chars = {};
+    for (const spec of specs) {
+        const f = spec.files;
+        if (!(await get(f.pks)) || !(await get(f.pkf)) || !(await get(f.script)) || (f.bank && !(await get(f.bank)))) continue;
+        const pks = await unpack(f.pks, readPaks);
+        const mt5 = (name) => (name && pks.has(name) ? readMt5(pks.get(name)) : null);
+        chars[spec.name] = {
+            spec,
+            model: mt5(spec.model), lowModel: mt5(spec.lowModel), fullModel: mt5(spec.fullModel),
+            textures: await unpack(f.pkf, readPakf),
+            script: await get(f.script),
+            bank: f.bank ? readMotionBin(await get(f.bank)) : null,
+        };
+    }
+    if (!Object.keys(chars).length) return null;
+    for (const c of Object.values(chars)) c.size = c.spec.size(chars);
+    const ryo = chars.RYO ?? {};
+    return {
+        key: 'shenmue', kind: 'shenmue', title: 'Shenmue',
+        model: ryo.model, lowModel: ryo.lowModel, textures: ryo.textures, script: ryo.script,
+        motions: readMotionBin(motion),
+        chars,
+    };
+}
+
 /* ---- the move script (docs/SHENMUE-FIGHT.md, "The move-script VM") -------- */
 
 const LONG = new Set([5, 6, 7, 8, 9, 10, 11, 12, 14, 19, 21, 26, 27, 28, 34, 35, 36, 40, 41, 42, 50, 54,
     57, 58, 59, 62, 64, 69, 72, 73, 77, 80, 81, 82, 83, 89, 90]);
-const OP = { WINDOW: 4, PLAY: 5, IF: 13, SWITCH: 14, TRY: 15, END: 16, GOTO: 17, WHEN: 39, STICK: 76, ACTION: 71, IN: 72, IN_HELD: 73, IN_DIR: 77, SKILL: 86 };
+const OP = { WINDOW: 4, PLAY: 5, IF: 13, SWITCH: 14, TRY: 15, END: 16, GOTO: 17, BUTTON: 22, WHEN: 39, BRANCH: 40, STICK: 76, ACTION: 71, IN: 72, IN_HELD: 73, IN_DIR: 77, SKILL: 86 };
+/* Chai's script (a CPU's) checks the stick with 4-byte ops, the mask in the
+ * same u16: 0 as in_held, 1 as in, 3 as in_dir (its byte 1 0x80, as Ryo's). */
+const SHORT_IN = { 0: OP.IN_HELD, 1: OP.IN, 3: OP.IN_DIR };
 /* What a candidate may hold and still be one a press can reach here: the
  * input window and checks, the skill checks (Ryo knows every skill, at its
  * highest level), the action, the checks of a string's timing (29, 18, 52)
@@ -77,6 +137,9 @@ const OP = { WINDOW: 4, PLAY: 5, IF: 13, SWITCH: 14, TRY: 15, END: 16, GOTO: 17,
  * fight checks that itself), all passed. Anything else (9 and 83 before
  * Mistral Flash, a run; 7) is a state this fight does not have. */
 const PASSED = new Set([OP.WINDOW, OP.IN, OP.IN_HELD, OP.IN_DIR, OP.SKILL, OP.ACTION, OP.IF, 18, 29, 52, 53, 54, 58]);
+/* Op 40 (Chai's) goes on at one of three places in a run of candidates,
+ * each later than the one before: by a state of the CPU's, not read. All
+ * three are taken, which gives every candidate, as a skill's highest level. */
 /* The buttons (A 1 the hand, X 2 the leg, 0x10 the throws; P+K 3), as this
  * fight's. Ryo's other branches (B, and the states 0x05xx) are not had. */
 const KEYS = { 0x01: P, 0x02: K, 0x03: P | K, 0x10: P | G };
@@ -92,9 +155,9 @@ function readScript(b) {
     const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
     const start = v.getUint32(4, false), end = v.getUint32(8, false);
     const at = (pc) => {
-        const op = b[pc];
+        const op = SHORT_IN[b[pc]] ?? b[pc];
         return { op, b1: b[pc + 1], b2: b[pc + 2], u16: v.getUint16(pc + 2, false), u16b: v.getUint16(pc + 4, false), u16c: v.getUint16(pc + 6, false),
-            w: op === OP.PLAY ? v.getUint32(pc + 4, false) : 0, len: op === 76 ? 12 : LONG.has(op) ? 8 : 4 };
+            w: op === OP.PLAY ? v.getUint32(pc + 4, false) : 0, len: op === 76 ? 12 : LONG.has(b[pc]) ? 8 : 4 };
     };
     return { start, end, at };
 }
@@ -105,15 +168,22 @@ function readScript(b) {
  * {key, dirs, guards, motion, follow, name}. A candidate (try … play) is an
  * entry; the code after the last is the button's plain move. `if` names
  * where the script goes on once the motion plays (its string's switches),
- * `when` (39) skips a section the fight's state has to call for.
+ * `when` (39) skips a section the fight's state has to call for. A string
+ * goes on by a run of switches, or (Chai's) by op 22: one button, u16 the
+ * same as a switch's, then the candidate.
  */
-export function readRyoMoves(b, names) {
+export function readMoves(b, names) {
     const s = readScript(b);
     const tables = new Map();
     const table = (pc) => {
         if (tables.has(pc)) return pc;
         const entries = [];
         tables.set(pc, entries);
+        const first = s.at(pc);
+        if (first.op === OP.BUTTON) {
+            if (first.u16 in KEYS) for (const e of candidate(pc + first.len)) entries.push({ ...e, key: KEYS[first.u16] });
+            return pc;
+        }
         for (let i = s.at(pc); i.op === OP.SWITCH || i.op === 89; pc += i.len, i = s.at(pc)) {
             if (i.op !== OP.SWITCH || !(i.u16 in KEYS)) continue;
             for (const e of block(s.start + i.u16b)) entries.push({ ...e, key: KEYS[i.u16] });
@@ -132,7 +202,7 @@ export function readRyoMoves(b, names) {
                 out.push(...candidate(pc + i.len));
                 pc = s.start + i.u16;
             } else if (i.op === OP.WHEN || i.op === OP.GOTO) pc = s.start + i.u16;
-            else if (i.op === OP.STICK) {
+            else if (i.op === OP.STICK || i.op === OP.BRANCH) {
                 for (const t of [i.u16, i.u16b, i.u16c]) out.push(...block(s.start + t, seen));
                 break;
             } else if (PASSED.has(i.op) || i.op === OP.PLAY) {
@@ -159,18 +229,19 @@ export function readRyoMoves(b, names) {
             } else if (i.op === OP.IF) then = s.start + i.u16;
             else if (i.op === OP.TRY) fails = [...fails, { pc: s.start + i.u16, tests, then }];
             else if (i.op === OP.GOTO) { pc = s.start + i.u16; continue; }
-            else if (i.op === OP.STICK) return [i.u16, i.u16b, i.u16c].flatMap((t) => candidate(s.start + t, tests, then, fails));
+            else if (i.op === OP.STICK || i.op === OP.BRANCH) return [i.u16, i.u16b, i.u16c].flatMap((t) => candidate(s.start + t, tests, then, fails));
             else if (i.op === OP.PLAY) {
                 const id = (i.w & 0x7fff) - 1;
                 const next = then ?? pc + i.len;
-                const follow = s.at(next).op === OP.SWITCH ? next : 0;
+                const follow = s.at(next).op === OP.SWITCH || s.at(next).op === OP.BUTTON ? next : 0;
                 return [{ dirs: dirsOf(tests), guards: [], motion: id, follow, paired: !!(i.w & 0x10000000), name: names(id) }];
             } else if (!PASSED.has(i.op)) return fail();
             pc += i.len;
         }
         return [];
     };
-    const root = s.start + 4;
+    /* the root's switches: Ryo's after a 71 (4 bytes), Chai's from the start */
+    const root = s.at(s.start).op === OP.SWITCH ? s.start : s.start + 4;
     table(root);
     /* the strings' tables, as their entries name them */
     for (let grew = true; grew;) {
@@ -204,7 +275,7 @@ function dirsOf(tests) {
  * strike a byte read here as the level (VF2's 0 high, 1 mid, 2 low: 2 on the
  * low kick; 3, Ryo's sweep, as low), then one more. */
 export function readRecord(file, index) {
-    const m = file.motions[index];
+    const m = file?.motions[index];
     if (!m?.setup) return null;
     const v = file.v;
     let at = m.setup + 12, timing = null;
@@ -240,58 +311,79 @@ export const THROW_DAMAGE = 50;
 
 /* ---- the fighter --------------------------------------------------------- */
 
-export function ryoFighter(games, entry) {
+/* A motion id (a play's, less one) as its file and record there: the
+ * fighter's own bank from its base, else MOTION.BIN. */
+function locate(game, char, id) {
+    if (id == null || id < 0) return null;
+    const bank = char.bank;
+    if (bank && id >= bank.base) return id - bank.base < bank.motions.length ? { file: bank, index: id - bank.base } : null;
+    return id < game.motions.motions.length ? { file: game.motions, index: id } : null;
+}
+
+/** A Shenmue fighter (`entry.name` one of the loaded chars: RYO, CHAI). */
+export function shenmueFighter(games, entry) {
     const game = games.shenmue;
-    const file = game.motions;
-    /* A stand-in ROM: Ryo's motions carry their own views; this marks them
-     * as nobody's own but his (a VF2 body poses another's motion apart). */
+    const char = game.chars[entry.name];
+    const spec = char.spec;
+    /* A stand-in ROM: the Shenmue fighters' motions carry their own views;
+     * this marks them as nobody's own but theirs (a VF2 body poses
+     * another's motion apart). */
     const rom = game.rom ??= { game: { key: 'shenmue' }, shenmue: true };
-    const cache = game.cache ??= new Map();
+    const cache = char.cache ??= new Map();
     const motion = (id) => {
-        if (id == null || id < 0 || id >= file.motions.length) return null;
         if (!cache.has(id)) {
+            const at = locate(game, char, id);
             let m = null;
-            try { m = shenmueMotion(file, id); } catch { m = null; }
+            if (at) try { m = shenmueMotion(at.file, at.index); m.id = id; } catch { m = null; }
             cache.set(id, m);
         }
         return cache.get(id);
     };
-    const records = new Map();
+    const records = char.records ??= new Map();
     const record = (id) => {
-        if (!records.has(id)) records.set(id, readRecord(file, id));
+        if (!records.has(id)) {
+            const at = locate(game, char, id);
+            records.set(id, at ? readRecord(at.file, at.index) : null);
+        }
         return records.get(id);
     };
-    const name = (id) => file.motions[id]?.name ?? `motion ${id}`;
-    const moves = game.moves ??= readRyoMoves(game.script, name);
-    /* A parry (Swallow Flip, a throw of no damage) wants a blow to take. */
-    for (const [k, es] of moves.tables) moves.tables.set(k, es.filter((e) => !(record(e.motion)?.kind === 5 && !record(e.motion).damage)));
+    const name = (id) => { const at = locate(game, char, id); return at?.file.motions[at.index]?.name ?? `motion ${id}`; };
+    const moves = char.moves ??= readMoves(char.script, name);
+    /* Ryo's parry (Swallow Flip, a throw of no damage) wants a blow to
+     * take; Chai's throws of no damage are throws (his victim's motion
+     * carries it). */
+    const parry = (r) => spec.parries && r?.kind === 5 && !r.damage;
+    for (const [k, es] of moves.tables) moves.tables.set(k, es.filter((e) => !parry(record(e.motion))));
 
     const akira = makeFighter(games, { game: 'vf2', index: 0, name: 'AKIRA' });
     const ref = (id) => ({ rom, motion: motion(id) });
+    const { acts, hit, guardPush } = spec;
 
     const fighter = {
-        name: entry.name, game: 'shenmue', rom, kind: 'shenmue', entry, size: SIZE,
+        name: entry.name, game: 'shenmue', rom, kind: 'shenmue', entry, size: char.size,
         moves,
         motion,
-        act: (a) => (a in ACTS ? ref(ACTS[a]) : akira.act(a)),
+        act: (a) => (a in acts ? ref(acts[a]) : akira.act(a)),
         timing(id) { return record(id & MOTION_ID)?.timing ?? null; },
         attack(id) {
             const r = record(id & MOTION_ID);
             if (!r?.kind) return null;
-            if (r.kind === 5) return r.damage ? { victim: r.victim, damage: THROW_DAMAGE } : null;
+            if (r.kind === 5) return parry(r) ? null : { victim: r.victim, damage: THROW_DAMAGE };
             const lv = r.extra[0];
             return { level: lv === 3 ? LOW : lv <= LOW ? lv : MID, damage: Math.min(r.damage * DAMAGE_SCALE, MAX_DAMAGE) };
         },
         reaction(a, how) {
             if (how === 'down') return akira.reaction(a, how);
-            if (how === 'guard') return ref(GUARD_PUSH);
-            return ref(HIT[a.crouch ? LOW : a.level ?? MID] ?? HIT[MID]);
+            if (how === 'guard') return ref(guardPush);
+            return ref(hit[a.crouch ? LOW : a.level ?? MID] ?? hit[MID]);
         },
         look: { kind: 'shenmue' },
-        createBody() { return ryoBody(games, game); },
+        createBody() { return shenmueBody(games, char); },
     };
     return fighter;
 }
+/* Ryo's, as the roster first had him. */
+export const ryoFighter = shenmueFighter;
 
 /* ---- the body ------------------------------------------------------------ */
 
@@ -425,39 +517,41 @@ function akiraExtent(games, ref) {
 }
 
 /**
- * How Ryo is sized and stood, worked out once: the scale that makes him 69/71
- * of Akira's height with both in Akira's stance, and the lift that puts his
- * feet on the floor in his own (his stance's foot targets sit lower than his
- * model's ankles).
+ * How a Shenmue fighter is sized and stood, worked out once: the scale that
+ * makes him his size of Akira's height (Ryo 69/71) with both in Akira's
+ * stance, and the lift that puts his feet on the floor in his own stance
+ * (Ryo's foot targets sit lower than his model's ankles). `ryo` is the
+ * height reached, by the name Ryo's tools read it under.
  */
-export function ryoFit(games) {
+export function shenmueFit(games, char) {
+    if (char.fit) return char.fit;
     const game = games.shenmue;
-    if (game.fit) return game.fit;
-    const prep = game.prep ??= prepareModel(game.model);
+    const prep = char.prep ??= prepareModel(char.model);
     const akira = makeFighter(games, { game: 'vf2', index: 0, name: 'AKIRA' });
     const stance = akira.act('stance');
     const [alo, ahi] = akiraExtent(games, stance);
-    const [rlo, rhi] = extentY(game.model, prep, posed(prep.rig, stance, 1));
-    const scale = (SIZE * (ahi - alo)) / (rhi - rlo);
-    const own = { rom: game.rom, motion: shenmueMotion(game.motions, ACTS.stance) };
-    const [lo] = extentY(game.model, prep, posed(prep.rig, own, 1));
-    game.fit = { scale, lift: -lo * scale, akira: ahi - alo, ryo: (rhi - rlo) * scale };
-    return game.fit;
+    const [rlo, rhi] = extentY(char.model, prep, posed(prep.rig, stance, 1));
+    const scale = (char.size * (ahi - alo)) / (rhi - rlo);
+    const own = shenmueFighter(games, { name: char.spec.name }).act('stance');
+    const [lo] = extentY(char.model, prep, posed(prep.rig, own, 1));
+    char.fit = { scale, lift: -lo * scale, akira: ahi - alo, ryo: (rhi - rlo) * scale };
+    return char.fit;
 }
+export const ryoFit = (games) => shenmueFit(games, games.shenmue.chars.RYO);
 
-function ryoBody(games, game) {
-    const prep = game.prep ??= prepareModel(game.model);
-    const { scale, lift } = ryoFit(games);
-    const out = workspace(game.model, prep);
+function shenmueBody(games, char) {
+    const prep = char.prep ??= prepareModel(char.model);
+    const { scale, lift } = shenmueFit(games, char);
+    const out = workspace(char.model, prep);
     const n = prep.src.length;
     const skinPart = { positions: new Float32Array(n * 3), normals: new Float32Array(n * 3) };
     const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
     return {
         /* what the renderer builds once: UVs, the triangles by texture */
-        skin: { uv: prep.uv, index: prep.index, parts: prep.parts, textures: game.textures, count: n },
+        skin: { uv: prep.uv, index: prep.index, parts: prep.parts, textures: char.textures, count: n },
         pose(ref, frame) {
             const raw = posed(prep.rig, ref, frame);
-            skin(game.model, prep, raw, out);
+            skin(char.model, prep, raw, out);
             const P = skinPart.positions, N = skinPart.normals;
             for (let i = 0; i < n; i++) {
                 const s = prep.src[i] * 3;

@@ -10,7 +10,8 @@ import { loadRomSet } from '../vendor/noclip/js/romset.js';
 import { readStageTable } from '../vendor/noclip/js/stages.js';
 import { readVf2Stages } from '../vendor/noclip/js/vf2.js';
 import { prepareGame } from './fighters.js';
-import { loadShenmue, ryoFighter } from './ryo.js';
+import { loadShenmue, shenmueFighter, RYO as RYO_SPEC } from './ryo.js';
+import { CHAI as CHAI_SPEC } from './chai.js';
 
 export const GAMES = [
     { key: 'vf2', zip: 'vf2', title: 'Virtua Fighter 2', kind: 'vf2' },
@@ -35,8 +36,9 @@ export const ROSTER = [
     { game: 'fv', index: 4, name: 'BAHN' },
 ];
 
-/* Ryo, from the Shenmue beta's disc, when it can be had (js/ryo.js). */
+/* Ryo and Chai, from the Shenmue beta's disc, when it can be had (js/ryo.js, js/chai.js). */
 export const RYO = { game: 'shenmue', index: 0, name: 'RYO' };
+export const CHAI = { game: 'shenmue', index: 1, name: 'CHAI' };
 
 /* The arenas, as the fight code bounds them: VF2's ring is 16 square and a
  * fighter past its edge is out; FV's and StF's cages are walls. StF's stages
@@ -62,8 +64,8 @@ export function stagesOf(game) {
 }
 
 /** Load the three sets. `fetchZip(zipName)` returns an ArrayBuffer;
- * `fetchShenmue(path)` one of Ryo's files off the Shenmue disc, or null, and
- * with them he joins the roster. */
+ * `fetchShenmue(path)` a file off the Shenmue disc, or null, and
+ * with them Ryo and Chai join the roster. */
 export async function loadGames(fetchZip, onStatus = () => {}, fetchShenmue = null) {
     const games = {};
     for (const g of GAMES) {
@@ -75,10 +77,10 @@ export async function loadGames(fetchZip, onStatus = () => {}, fetchShenmue = nu
     for (const g of Object.values(games)) g.stages = stagesOf(g);
     if (fetchShenmue) {
         onStatus('LOADING SHENMUE');
-        const sm = await loadShenmue(fetchShenmue).catch(() => null);
+        const sm = await loadShenmue(fetchShenmue, [RYO_SPEC, CHAI_SPEC]).catch(() => null);
         if (sm) {
-            games.shenmue = { ...sm, makeFighter: ryoFighter };
-            if (!ROSTER.includes(RYO)) ROSTER.push(RYO);
+            games.shenmue = { ...sm, makeFighter: shenmueFighter };
+            for (const e of [RYO, CHAI]) if (sm.chars[e.name] && !ROSTER.includes(e)) ROSTER.push(e);
         }
     }
     return games;

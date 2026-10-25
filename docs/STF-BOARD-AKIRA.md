@@ -541,3 +541,14 @@ meshes would go.
   have the same tile sizes and UVs as in VF2. Every texel at levels 0–4 of
   every face's tile matches VF2's texture RAM (sets 40, 1, 2), and every
   tile lies inside one of the seven pages.
+
+### Past the seven: the shared pages
+
+With Ryo, Chai and Hornet the seven pages are full. Six more set 1 pages
+are drawn by a fight only in a corner, 16 or 20 of their 64 cells: 6, 11,
+13, 14, 20 and 17 (the kept-tile grid above). `pack-akira.mjs` packs extra
+tiles into their free cells around the kept ones (`SHARED`, `keptCells`).
+A shared page that took something is written whole, StF's texels in its
+kept cells checked unchanged, 1 KB after the set table's copy
+(`SHARED0`..`SHARED_END`), and its copy-list entry points there; the others
+stay StF's. Hornet (docs/BOARD.md) is the first to use one, page 6.

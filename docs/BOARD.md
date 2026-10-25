@@ -44,7 +44,8 @@ model-table entries, meshes and texture streams of every model the board draws
 (the stages in `poses.h`, and every part StF's code can put on the cast:
 the character records' lists, the hand, foot and body swaps and the head
 lists), the texture codec's table, the fighters' and stages' texture sets,
-the stages' colour blocks, all 519 motions (the lifted reaction code picks
+StF's colour tables (skins, parts, the stages' colour sets, the fixed
+rows), all 519 motions (the lifted reaction code picks
 them from tables of its own), the HUD's scroll tiles and patterns, and from
 the coprocessor's data ROM the sine and cosine tables StF's coprocessor
 firmware (cpres1, which the SDK boots) reads. The sound program, the samples
@@ -119,6 +120,35 @@ vblanks a pass in the menu and the fight). On m2-hle2, a breakpoint on
 the counter's store hits every frame with Akira walking. The stage
 matrices `submit_mat` sends match the soft-float ones to 1.25e-7.
 
+The sway chains (Honey's ponytail; Fang's tail and the others' are in the
+same table) are StF's too: `osage_init`, lifted with its routines, is a
+task per player (StF's `fa_osage0`/`fa_osage1`, 0x280 bytes, at
+`mod_fa_osage0_1`/`_2`), which `rob_start` starts over. It reads the
+fighter's records (`osage_per_character` by +0x1B0, player 2's from
+`kill_osage_sub` on), keeps their state in bufferram at 0x91E800 (player 1)
+and 0x91F000 (player 2), and becomes `osage_dsp`. Each frame `osage_dsp`
+steps them on the coprocessor (Fn_osage, op 0x4A) and `set_obj_fifo` puts
+each segment in the list: a matrix read back from the coprocessor, then
+the model (type 5 records, +0x1C; `import-assets.mjs` keeps them). What it
+needs from the board:
+
+- the unscaled camera (`cam_l`) on the coprocessor when it runs: a fight's
+  `osage_dsp` draws on the matrix it finds, and `set_obj_fifo` drops a
+  segment whose m00 is past 1, so on the scaled camera every one goes;
+  0x501128/0x501158 (the select screen's) hold the scaled one, as
+  `camera_init` stores it;
+- the camera's bits 1 and 2 (player shown) set, or it hides the chains
+  (w0 bit 5), and `POLYGON_LIMIT` (5000) with `POLYGON` 0 each frame;
+- the model table's count (`max_poly`, main data 0xE0000), which the
+  model check reads (`poly_data_err` hangs otherwise);
+- its block in the list: `osage_dsp` jumps over the segments it writes
+  and leaves them in the layer table (0x501804 + 8 p, cleared every frame
+  as `clear_buffer_ptr` does); `draw_fighter` ends with `rob_disp`'s head
+  entry (`unit_efc_kao`), which splices them in there.
+
+The records sit at the top of list buffer 3 (0x918000..0x91FFFF), so a
+frame's list must stay under 0x6800 bytes; it is about 0x1C70 now.
+
 Checked against real StF (MAME `sfight`, a 2P round, Sonic vs Sonic): at the
 same frame of the stance motion (278), all sixteen part positions in the rob
 (+0x1F4) match the real board's to the last digit printed, frames 39, 41 and
@@ -131,10 +161,32 @@ same frame of the stance motion (278), all sixteen part positions in the rob
   matches StF's own, word for word.
 - Colours: `m2_load_model_palette` copies each part's colour bases from the
   polygon palette ROM. The colour translation RAM (`0x01810000`) is what turns
-  them into RGB, row by row: `bake-board.mjs` bakes runs of it with the browser
-  game's `colors.js` (`buildColorxlat`). A stage's run is rows 0..27 with its
-  colour set and tint; a fighter's are its part rows (0..4, luma 48..63) and
-  skin rows (28..29) for player 1, and 7..11 and 30..31 for player 2.
+  them into RGB, row by row, and StF's own routines fill it (lifted by
+  `lift-stf.py`, called from `megamix.c`'s `stage_colors` and
+  `fighter_colors`), in the order StF's boot, `change_scene` and its debug
+  menu's colour refresh (0x46754) call them: `set_display_type_crt` (the
+  test menu's CRT setting: TST_*_ADD 22, TST_*_MUL 54, TST_B_BRIGHT 31,
+  through the backup RAM's copy to `load_COLORS_to_RAM`), `stage_disp` (the
+  record's RED/GREEN/BLUE, then `chg_pol_color_req`'s ramp, luma 0..47 of
+  rows 1..27, which `chg_pol_color_send` writes a few rows a call),
+  `make_lay_col_256_tbl` (the `ARRAY_NUM` curves every upload goes through),
+  `chg_scr_color_req` (luma 64..127, the flat band), `sub_7B4` (the fixed
+  rows 5..6 and 12..13), `send_tex_col_stage` (the record's colour set,
+  rows 14..27), and for each player `send_tex_col_skin` and
+  `send_tex_col_part` (rob+0x1B0's character: player 1's part rows 0..4 and
+  skin rows 28..29, player 2's 7..11 and 30..31; a character at 26 or past
+  reads the player-2 tables). The guests' stages and fighters take their own
+  games' colours, which `bake-board.mjs` bakes with the browser game's
+  `colors.js` (`buildColorxlat`): a guest stage's rows 0..27 (its trims go
+  where `stage_disp` puts a record's), a guest fighter's seven part rows
+  and its skin rows. Check (MAME, the setup menu walked through every stage
+  and fighter, colorxlat dumped): the stages' rows, the flat band, player
+  1's rows and the cycling rows are word for word what the noclip bake gave.
+  Player 2's part rows differ: the bake put player 1's table there, StF's
+  code reads the player-2 table (0x210100C), which has Honey's own colours
+  and zeros for Sonic and Eggman; real StF's rows 7..11 are zero too
+  (attract fight, player 2 Sonic). StF fighters on a guest stage
+  now go through the stage's trims, as StF's own would.
 - Player 2: StF writes palette RAM once, at boot, so a colour base names the
   same rows whichever side draws it. Player 2 is set apart by its own models:
   character c's player 2 is character c + 26 (Sonic 26, Honey 41, Eggman 34),
@@ -162,8 +214,8 @@ same frame of the stance motion (278), all sixteen part positions in the rob
   which writes it to pen 0 of palette banks 0..63. `m2_backdrop` does the
   same on the board's own layer, so `load_stage` calls it with the record's
   colour. A palette colour shows each component through colorxlat row c at
-  luma 0x40 (MAME's `palette_w`), so the board also writes StF's flat band
-  there at boot (`flat_cx`); the SDK's ramp would show it far too bright.
+  luma 0x40 (MAME's `palette_w`): StF's flat band (`chg_scr_color_req`);
+  the SDK's ramp would show it far too bright.
   Real StF and board snapshots show the same pixels: (0, 0, 188) on South
   Island (0xF0C0) and (213, 38, 0) on Dynamite Plant (0x017F).
 - Light: `change_scene` copies the stage record's `stage_bright` (+0x04,
@@ -200,10 +252,12 @@ same frame of the stance motion (278), all sixteen part positions in the rob
   South Island and Canyon Cruise list rows 18 (shift 2) and 19 (shift 0),
   the waterfall and the shoreline; Casino Night lists 14, 16 and 19 (shift
   1); the other six have no list. `frame_counter` counts StF's 60 Hz loop,
-  one per frame in a fight. The board bakes each stage's list, colour set
-  and trims, builds the curve in integers on stage load, and rotates the
-  rows after each vsync. Its counter follows the vblank count (`frameVBL`),
-  because a pass that runs long takes more than one. Bit 5 of
+  one per frame in a fight. The board runs StF's `sub_2435C` after each
+  vsync on a StF stage, with its counter in StF's `frame_counter`
+  (`0x500020`). The counter follows the vblank count (`frameVBL`),
+  because a pass that runs long takes more than one. The list's pointer
+  (+0xB8) points into StF's program at 0x2442C, which the board replaces:
+  `lift-stf.py` lifts that table (`dword_2442C`) and relocates the pointer. Bit 5 of
   `debug_flag` (`0x508000`) skips `sub_2435C`, so a debug-mode StF shows
   the water standing still. Check: with the board's counter held at the
   value real StF logged, colorxlat rows 14, 16, 18 and 19 (luma 48..63, R,
@@ -783,6 +837,7 @@ Inert on the board, for later:
 
   Neither is done. → Only once projectiles run on the board, and a guest
   with a projectile reaction of its own comes in.
+  docs/PROJECTILES.md has the projectile path and what running it needs.
 - `ptr_CE1CC` (0xCE0F8; `damage_unit` 14752, 15559; `sub_3261C` 19934):
   the crushed-parts table, by drawn character (rob+0x1B0). Each of 16
   parts has an 8-byte entry: four counts and a pointer to 0x28-byte pieces.
@@ -1128,6 +1183,305 @@ number 3 (0x0C0200E4) and sets scene 3, area `MFBT`, entry 99
 (0x0C20D220/4/8). Start begins it. In RetroArch the triggers need keys
 (`input_player1_l2/r2`).
 
+## The guest: Shenmue's Chai
+
+Chai (the beta's disc 3 ending fight, js/chai.js, docs/CHAI.md) is StF
+character 12 (38 for player 2), picked as CHAI in the setup (#1590). He is
+built as Ryo is, by the same code (tools/ryo-guest.mjs `importShenmue`, run
+for Ryo and then for him), on Akira's moves (`char_game` VF2).
+
+- **Slot.** Megamix uses 0, 8 and 15, Akira 6 and Ryo 1. The others StF's
+  code checks by number (above, The guest: VF2's Akira): 0, 3, 5, 7, 8, 9,
+  11, 13, 14 and 16 change what a fighter does, and 2, 4, 7 and 10 are bits
+  of the opponent mask StF's scripts test (op 0x21). 12 is named only by the
+  hit sounds' robot lists, and the board plays no sound.
+- **Model.** CHA_B, his low model (the one his Fight block blurs him with,
+  as YKB_B is Ryo's): 306 triangles on the same 15 bones as YKB_B, 15 parts,
+  116 triangles in 14 seams (12-11 and 15-14 are his, the others Ryo's).
+  Four 64×64 ARGB4444 textures (HA_MUF_, HA_KRF_, HA_KAO_, HA_KOF_; alpha 4
+  of 15 all over, not holes), packed with Akira's and Ryo's.
+- **Faces.** Every face of his keeps its own flat normal, and the winding
+  its strip gives it (#1591, "the same joints issue Ryo had"). CHA_B's
+  thighs and shins are rigid parts, where YKB_B's are seams only, and the
+  corners' normals of the shorts lean 23-68° from their faces (the shins
+  17-23°; Ryo's rigid parts under 40°). Stored averaged, as Ryo's are, the
+  board hid them seen at a slant (Ryo's ankle spikes, above): the rear
+  thigh was gone and the knees showed open. And 8 seam faces (both knees,
+  both shoulders) had corners' normals pointing in while their strip winds
+  out (each of them out from the bone, as every face whose normals and
+  winding agree is), so turned to the normals they were hidden from
+  outside, the board working out a seam's normal from its winding. Ryo
+  has 3 such seam faces (the shoulders, a hip), left as they are. MAME,
+  Chai vs Ryo, frames 720-1000: the rear thigh draws, both knees close,
+  the kicking thigh is whole; Ryo vs Ryo's frames are the same as before.
+- **Size.** `shenmueFit`, as on the web page: 1.0018 of Akira's VF2 scale.
+- **Colour.** Ryo's fit, on his own textures: 52 colours, 43 new colorbases.
+- **Room.** Models 4954..4982 below Ryo's; meshes 0xF3B568..0xF41990 and
+  materials and UVs 0x7CA1B0..0x7CCCE0 after Ryo's (the importer now carries
+  where one guest ended into the next, `ctx.polyEnd`, `ctx.texEnd`,
+  `ctx.modelIds`); heap to 0x2F1D1FC. Ryo's ROM bytes are as before.
+- **Seams.** 2460 words once, then 870 a frame, at `SEAM_POLY` (8 K words a
+  player).
+- **Not his own.** His moves: Akira's, as Ryo's. His Shenmue moveset is the
+  web roster's (docs/CHAI.md).
+
+Check: MAME, Chai vs Ryo on South Island and Honey vs Chai in the
+Colosseum: setup reads SHENMUE:CHAI and the polygon window 306 for him; he
+walks, strikes and takes hits on either side.
+
+## The guest: Daytona's Hornet
+
+Hornet (Daytona USA's car #41, as Fighters Megamix had him) is StF
+character 17 (43 for player 2), picked as HORNET in the setup (#1592), the
+name line DAYTONA. He is built by tools/hornet-guest.mjs `importHornet` on
+Akira's moves (`char_game` VF2), after Ryo and Chai.
+
+- **Slot.** 17 is no number StF's code checks and no bit of the opponent
+  mask (above, The guest: Shenmue's Chai).
+- **Model.** Daytona's own objects, polygon for polygon, quads kept
+  (tools/daytona-hornet.mjs, docs/FM-SATURN.md), in the slots FM's Hornet
+  moves: the nose on the chest (1); the cabin, the windows and the glass on
+  the pelvis (9); the front wheels on the hands (5, 8), the rear on the feet
+  (12, 15). The windows are model 2139, which Daytona draws from RAM its boot
+  copies out of the data ROM (`readRamObject`): 9 panes of one cloud tile
+  under the glass's frames. Daytona moves their texture points as the car
+  turns (`move_car_sky_tex`); here they stay put. Skeleton and pose bones are
+  FM's Hornet's at Akira's scale; collision balls are Akira's fitted to his
+  parts.
+- **Textures.** Daytona's tiles from its boot bank's sheet, levels 0-4,
+  packed with Akira's, Ryo's and Chai's. The seven pages are full by now, so
+  `pack-akira.mjs` also packs into the free cells of set 1 pages a fight
+  draws only a corner of (6, 11, 13, 14, 20, 17, `SHARED`), around the cells
+  StF keeps (`keptCells`); a shared page that took something is written whole
+  (StF's texels kept) after the set table's copy. Hornet's 23 tiles take pages
+  6 (12), 18 (1), 19 (3) and 21 (7).
+- **Colour.** Fitted from Daytona's DELUXE ramp (MAME's backup RAM's TWIN
+  ramp turns his red pink) to StF's rows, all three channels at once at
+  lights 255, 192 and 128, with a penalty on the hue (`HUE`) so light tints
+  don't go grey: 30 colours as 14 of StF's (5 new colorbases). Daytona's
+  lumabase 1 runs 63 down to 3 and StF's band 0 only up, so a tile Daytona
+  reads through it is packed apart for that use, texels turned over (15 - n,
+  14 - n with holes). Untextured faces lit past 192 would reach luma 48,
+  the fighter's palette band, so they are drawn textured on one tile of
+  texel 15 (luma 42). StF's ramps are steeper: the darkest texels (the
+  tyres) come out a little darker than Daytona's.
+- **Room.** Models 4948..4953; meshes 0xF41990..0xF4F888; headers and
+  texture points 0x7CCCE0..0x7D4F90; 1368 polygons; heap to 0x2F1D84C.
+- **Menu.** The setup window is 28 wide from column 16 (was 26 from 18) to
+  fit HORNET:DAYTONA.
+- **Not his own.** His moves: Akira's. FM's motions, turned into VF2's, come
+  later.
+
+Check: MAME, Hornet vs Honey on South Island: setup reads DAYTONA:HORNET;
+the car stands on its rear wheels, logos, the 41 and the Gaffey panel the
+right way round and coloured as Daytona's, the windows grey-blue cloud
+under the frames; he walks, strikes and takes hits.
+
+## VF2's stages: Tou-rin and the Colosseum
+
+`tools/vf2-stages.mjs` brings VF2's stage slots 0 and 1 (Tou-rin, the
+Colosseum) onto the board as setup stages 2 and 3. `vf2StagePlan` reads
+each stage's draws (noclip's `vf2.js`); `importVf2Stages` writes them into
+the data ROMs, and `bake-board.mjs` bakes their records into `poses.h`.
+
+- Models: 406 VF2 models, as board ids 4899 down to 4494 (`VF2_STAGE_TOP`;
+  import-assets checks each table entry is free). Points are scaled by
+  `SCALE` (2.02688, VF2 to StF units), as Akira's are; the draw matrices'
+  translations are scaled by the same factor (`VF2_SCALE`).
+- Textures: VF2's stage models read the fighters' sheet's slots 16..23 (all
+  eight even pages 0x20..0x2E) and the stages' sheet's slots 22 and 23 (odd
+  pages 0x2D, 0x2F). On the board the fighters' sheet holds StF's set 1, so
+  each even page moves to the same 2x4 block of the stages' sheet, 1024 to
+  the left (slot s to `((s-16)>>1)*4 + ((s-16)&1)`, g2 made odd), and each
+  face's tile word follows it (th2 `(th2 & ~0x103F) | ((x-1024)/32)`). The
+  two odd pages stay where they are; VF2's other ten pages are not read and
+  not copied. That makes 10 pages a stage, as texture sets 18 and 19. Each
+  page is copied with VF2's 16-byte phase kept (`b & 15` of padding first),
+  or the geometrizer stops with "Send Tex Align Error!!".
+- Colours: VF2's stage faces use colorxlat rows 0..27, so the stage bakes
+  VF2's rows 0..27 whole (107 colorbases moved, 96 of them into free
+  entries from 0x3FF down). The fighters' bands are laid back over them
+  (`load_fighter_colors`) once the stage has loaded.
+- Pointers of 0 mean "none" to the decoder (uvPtr 0 is a model without
+  UVs), so the importer's free-space search starts at 0x100.
+- The materials are VF2's 32 words at 0x118F0 (VF2's boot sends them with
+  the coefficients at 0x11868 between them, 0x117F8; no stage changes them).
+  The light is the stage record's (0x6EE38 + stage * 256): (0, 0, +0x6C)
+  turned by +0x70 about X, then +0x72 about Y, then the camera (0x1DA2C).
+- The ring: VF2's factory setting puts 7.5 in stage_x (0xCF64 takes
+  0x50A704, from 0x11540; 0x11530's 8.0 only when the stages cycle). The
+  floor is scaled by stage_x / 6.0, 1.25 (0x20264), and the ring ground
+  is the record's entry `trunc(2 stage_x + 0.5) - 12`, entry 3 (0x20878).
+  noclip's decoder draws them at 8.0, so `vf2StagePlan` puts them back.
+- Tou-rin's wind (VF2 draw kind 12, 0x30E74): one draw cycles through 256
+  models, `wind[(frame_counter >> 1) & 255]` (VF2's counter 0x500020, one a
+  main loop), on the bare camera. It sweeps from x 17 to x -16 at z about
+  -2, through the fighters, and shows in the fight camera's view.
+- The Colosseum's storm (0x2468C): four channels started by the low byte of
+  VF2's random number, each stepping the shared 27-step timeline at 0x24D70
+  (0 on, 1 off, 2 hold). VF2's schedule (stormSchedule, 1800 frames from a
+  fixed seed) is baked as a byte a frame, a bit for each channel. Channel 3
+  lights the arena: while it is on each draw takes its entry in the lit record (0x6FE38, 0x20AFC), one
+  for one, and the light is the flash's (9999, X 0x9D00, Y 0xBF00, 0x1FC00).
+  Four lit stands (VF2 2620, 2622, 2663, 2664) have 16 faces fewer than
+  their twins; they split the same faces into fewer coplanar polygons, so
+  the flash leaves no hole. Channels 0..2 are the sky's (`sky_storm_frame`):
+  0 flashes the sky, writing palette 0x3B0 (37 groups x 16), 0x641 and 0x701
+  from its on and off lists (0x24C6C.., 0x24C8C..); 1 the far sky's entries
+  0x645 and 0x706; 2 draws the bolt (VF2 0x8F1C, data 0x2AA8346 + 0x54 k, off
+  0x2AA85E6) on map column pairs 24..31 from row 8, where they are on the
+  map. Measured in MAME (demo stage 0, frames 4700..6300): only channel 0
+  changes the sky, (22,10,29) to (46,22,58); under channel 3 the sky stays
+  as it is. At frames 4792..4801 (channel 3 on, the sky wide open above
+  the arcade) it stays (22,10,29) and (29,17,34); the (126,131,145) of
+  #1567 is the stands' lit stone (4786, (129,134,145) on the wall), and the
+  lit record's list at +0x40 (VF2 0xA37..0xA56) is the stands' lit twins,
+  which the board swaps in already; no 3D backdrop draws over the sky. On the board the
+  sky goes from (13,4,30) to (38,13,57) on channel 0's frames.
+  The fighters take the same light (the board sends one a frame, before
+  the stage and the fighters), so channel 3 lights them as VF2's 9999 does
+  its own: every face turned to it goes to the top of its colorxlat ramp
+  (luma 0..47; the fighters' faces read the ramp, not the 48..63 band), the
+  faces turned away to the ambient. On the board Akira's gi goes (2,10,30)
+  to (46,69,104) and his skin (148,101,53) to (185,166,121), pale as VF2's
+  Shun under the flash; StF's fighters go to their own ramp tops (Sonic
+  (0,16,217) to (0,24,255)), which for their pure colours is not white.
+- Skies: VF2 scrolls a panorama on tile map 2, split with map 3 (0x2000 in
+  its vscroll), for Tou-rin's day sky and the Colosseum's storm (record
+  0x2502C + stage * 32: rows, row offset, the scroll CG). `vf2SkyPlan` bakes
+  each one into main_data at `VF2_SKY_AT` (0x2F80000): its characters (blocks
+  StF's fight CG uses are moved to free ones), its palette snapped to the
+  board's colorxlat column, and a 512-cell-wide map. `sky_frame` does what
+  VF2's 0x24F78 and its stages' +4 routines do: the camera's heading and
+  pitch read 2 frames late, 32 columns streamed into map 2 as the heading
+  turns, hscroll `-(Y >> 4)`. VF2 has a focal length of 600 and StF 280, so
+  the board puts the horizon row on its own eye line (192 + 280 tan pitch)
+  instead of using VF2's pitch formula; across the screen the sky still turns
+  at VF2's rate, faster than the stage. The storm's sky flash: see above.
+- An entry of 0xFFFF in VF2's lists draws nothing; the plan has 0 for it
+  and the board skips model 0.
+- Check: `checkVf2Stages` decodes every model from VF2 and from the patched
+  board ROMs and compares points (times SCALE), UVs, tile sizes and the
+  texels at levels 0..3. MAME: both stages draw as in VF2.
+
+### Ring out
+
+VF2's rule, from its program (Ghidra and objdump): `rob_check_stage`
+(0x17BC0) tests the fighter's root (+0x1F4 x, +0x1FC z) against stage_x
+(0x17BA8), and a fighter outside drops to the ground outside the ring
+(-0.5; vy at +0x30 less the gravity each frame, y clamped there,
+0x17A88) and gets w0 bit 5 once its body spheres hang below -0.45 outside
+(+0x624, 0x23A38): from standing, 18 frames. `JUDGE_DSP_INT` (0xE5A8) calls it a ring out when
+both fighters still have energy, and the round goes to the one whose bit 5
+is clear.
+
+StF has no ring out, so the board adds it (`ring_out_step`, megamix.c) on
+VF2's stages only. There stage_x (0x50A00C) is 100.0, so StF's walls never
+stop anyone, and the board checks the root against the ring's half size,
+7.5 times VF2_SCALE (15.2). A fighter past it falls under the gravity at
+0x50A000 to -0.5 times VF2_SCALE, and about 18 frames after the crossing
+gets w0 bit 5; the round ends as on a KO, "RING OUT" on the tile layer
+until the next round. The clock stops once a round is decided (it also ran
+on after a KO before). Check: MAME, both stages, Sonic walked back off the
+edge: he drops, RING OUT shows, P2 takes the star, and the next round
+starts (the second ends the match).
+
+## FV's Western
+
+`tools/fv-stages.mjs` brings Fighting Vipers' Western (FV stage slot 0) onto
+the board as setup stage 4, "FV WESTERN". `fvBoardPlan` orders its draws
+(floor, upper, platform, cage and top, poles, rail, objects); `importFvStages`
+writes them into the data ROMs, and `bake-board.mjs` bakes the record
+(`fvstage0_*` in `poses.h`). docs/FV-STAGES.md has FV's side of it.
+
+- Models: 47 FV models as board ids 4493 down to 4447 (`FV_STAGE_TOP`). The
+  cage break's piece (0xA90) is left out until the break is ported. Points
+  and the draws' translations are scaled by FV_SCALE (2.676 / 1.309), then
+  StF's 1/1.6.
+- Textures: FV's set 20 becomes the board's set 20 (destination list 10),
+  16 pages. Its stages'-sheet pages (slots 16..23) stay where they are; its
+  fighters'-sheet pages (slots 16..23) move to the stages' sheet's free
+  slots 0, 1, 4, 5, 8, 9, 12, 13, and the 263 faces that read them follow
+  (as VF2's do). FV's slots 12..15 are not read. The pages (282 KB) go in
+  main_data at 0x600000..0x800000, StF data the board does not keep; the
+  guests' heap is full up to VF2's skies.
+- Colours: FV's colour set 1 through its colorxlat, 80 colour bases (56
+  moved, 54 of them into free entries). Materials: FV's per-stage table
+  (0x06CE33A4 + slot × 4), 32 words.
+- The turn: the floor, the upper list and the objects turn 10 units of
+  heading a frame (FV's flag 0x10, `stage_t.turn`), and the light turns with
+  them. The cage, poles and rail stay with the ring. Both count from the
+  round start (`turn_at`), as FV's round start (0xC568) puts 0x50A022 back
+  to 0, and the bear's pendulum starts over with them.
+- The cage: each panel side is drawn while the camera is inside it (the
+  side's z axis against its position, `fv_side_in`), and the top (1801)
+  with its side, as FV's `cage_clip_m` does. Poles and rail are always drawn.
+- The bear (object 0x6C49C, `kuma_int`) swings on FV's pendulum: speed
+  0x2000 + v added to the angle each frame and turned back past 0x10000000;
+  the board turns the model by −(angle >> 16) about X. Its hop needs the
+  cage break and is left out. FV's facing cull on the bear and its stand
+  is not needed (the camera never gets that far out).
+- The ring: stage_x is 5.0 × FV_SCALE = 10.22 (`stage_t.wall`), and the
+  cage, its top, the poles and the rail are scaled by 5/6 across as FV
+  draws them (docs/FV-STAGES.md, Size), so StF's walls stand where FV's cage
+  is. MAME: Sonic walking back stops against the fence.
+- Check: import-assets decodes every model from FV and from the board's
+  ROMs and compares the texels (`checkFvStages`). MAME (setup stage 4, Sonic
+  and Honey): the floor, the cage, the poles and rail, and the town turning
+  behind them, at the fighters' size.
+- The sky: FV's tile-layer panorama, a blue sky with clouds over desert
+  hills, drawn by the VF2 skies' code (`sky_t`, `sky_load`, `sky_frame`).
+  `fvSkyPlan` (tools/fv-stages.mjs) bakes it at `FV_SKY_AT` (0x2700000,
+  after FV's pages): what sub_29728 loads from the record at 0x06CE3600 +
+  slot * 32 (the CG and palette lists of `_Scroll_Initialize`, the 16
+  patterns a turn shows; each pattern a 12-byte header, then rows of 32
+  tiles), its 23 character blocks (60..82, free on the board, so they stay
+  put) and its colours snapped as VF2's are (`packSky`). FV's per-frame
+  0x29A40 is VF2's 0x24534 but for two things, which `sky_t` carries: the
+  heading adds 16 * list[0] (`head`, -688 on Western) and the arena's turn
+  0x50A022 (the board's -turn * frames), and the vertical scroll is list[2]
+  - 480 tan(pitch), the eye line on row 192 + list[2] (`eye`, 224; VF2's
+  is 238 + 8 * its offset byte). FV clamps the pitch to 45 degrees, which
+  the fight never reaches; the board does not. Western's own sky routines
+  are a return and the plain horizontal scroll. Check (MAME, setup stage
+  4): the sky is FV's blue (0,30,188) to FV's (0,34,184) and its cloud
+  colours within 4 levels a channel, the hills show at the horizon behind
+  the town, and the sky drifts left 62 pixels in 100 frames (1000 / 16), as
+  the town turns; m2-hle2 draws it the same.
+- The windows: FV opens a polygon window (GEO command 3, full screen)
+  between parts of the list, and each window covers the ones before it,
+  whatever their depth. Its order is the floor (581), then the town and
+  objects, then the ring (583) alone, then the cage, poles and rail, then
+  the fighters. The bear's stand (599) carries its shadow, faces 20..27, a
+  far-z decal at y -0.2 out to x -6.3 that would beat the ring's wood in
+  the depth buckets. `fvBoardPlan` marks the draws that open a window
+  (`stage_draw_t.win`) and `draw_stage` sends `m2_geo_fifo_window_full`
+  there, and once more before the fighters. Check (MAME, setup stage 4,
+  frames 400..4800): wood from fence to fence at every heading; m2-hle2 the
+  same.
+
+### Western graded against FV
+
+MAME, `fvipers` (a one-credit game: Grace against Bahn on stage 1, Western,
+a snapshot a second) against the board (setup stage 4, Sonic against Honey).
+The cameras differ (StF's is higher and further out), so the comparison is
+by part, not by frame.
+
+| Part | Grade | |
+|---|---|---|
+| Models and textures | match | the town, the wagon, the skull on the top beam, the poles, cage and rail as FV's; import-assets compares every texel |
+| Colours | match | the ring floor averages (126, 72, 20) in both; the dirt (157, 118, 73) in FV, (169, 129, 82) on the board |
+| Ring size | fixed | FV's ring is 5.0, not 6.0 (FV-STAGES.md, Size): the fence stood 20% too far out |
+| Town turn | match | FV's 0x50A022 −10 a frame, drawn under its negation; light 0x501022 +10 from the record's 0xF400, elevation 0xD000 as the record |
+| Round start | fixed | the town snaps home each round: the wagon, K.O. Corral and the skull now stand behind the fighters at the start of each round, as in FV |
+| Wall | match | Sonic walking back stops against the fence |
+| Sky | match | FV's panorama, turning with the town (see the sky, above) |
+| Ring floor | fixed | the pale patch through the wood, turning with the town, was Kuma's shadow (599, faces 20..27); FV draws the ring in a window over the town's, and so does the board now (see the windows, above) |
+| Bear | not compared | FV's camera did not show it in this run; its hop and the cage break are not ported |
+
+Overall: the arena, its sky and its floor are FV's; what is left is the
+bear's hop and the cage break.
+
 ## The fight
 
 The rounds run on StF's own code, lifted by `tools/lift-stf.py`; the board
@@ -1153,8 +1507,10 @@ sets up what StF's game loop would have set up around it.
 - Damage only lands while game_timer (0x500028, seconds << 6) is above 0.
   The board starts it at the setup's time << 6 and counts it down once a
   frame.
-- A round ends on a KO (rob w0 bit 5, energy at +0x1AC reaching 0) or when
-  the clock runs out; the fighter with more energy takes the win
+- A round ends on a KO (rob w0 bit 5, energy at +0x1AC reaching 0), a ring
+  out (VF2's stages, above) or when the clock runs out; as in VF2's
+  `JUDGE_DSP_INT` the win goes to the fighter whose bit 5 is clear, else to
+  the one with more energy
   (p1_wins 0x50004F, p2_wins 0x500051, the setup's round count to win).
   Three seconds later the next round starts with both fighters reset, or,
   once a fighter has won the match, the setup comes back.
@@ -1208,6 +1564,13 @@ sets up what StF's game loop would have set up around it.
   flicker as in StF. Each frame's copies count toward their fighter in the
   polygon window. Check: Sonic with the mask forced draws his streak cards
   behind him.
+- Projectiles (#1601): Eggman's bomb is StF's own (docs/PROJECTILES.md).
+  `fight_step` runs StF's projectile step loop (`sub_8A29C`, lifted with
+  the bomb's steps) on `stf_tobi`; the bomb's burst hits through StF's
+  collision task, so damage and guard are StF's. `tobi_draw` (megamix.c)
+  is StF's `tobi_disp` and `tdl_bakudan`: the bomb, its fuse, its landing
+  marker and the burst. Check: MAME, Eggman's forward+punch takes Honey
+  from 140 to 120; with her guard held it takes nothing.
 - Characters: rob+0x1B0 is the character drawn (the alternates are +26),
   rob+0x1B1 the parent. `ADV_CPU_BATTLE_INT` sets 1B1 = 1B0 - 0x1A, and a
   real P2 Honey alternate has 1B0 0x24, 1B1 0x0A.
@@ -1223,7 +1586,7 @@ held, and a change of stage or fighter shows at once.
      GAME_START
      time        30   round time, 1..99 s (game_timer 0x500028)
      round        2   wins to take the match, 1..5 (0x500052, the lamps)
-     stage        0   South Island, Aurora Icefield
+     stage        0   South Island, Aurora Icefield, VF2 Tou-rin, VF2 Colosseum
           0:SOUTH_ISLAND
      1P CHAR  SONIC   Sonic, Honey, Eggman, Akira
      2P CHAR  HONEY
@@ -1280,22 +1643,36 @@ held, and a change of stage or fighter shows at once.
   it. After a fighter changes, his seams come in one a pass, so his
   count climbs for a few passes.
 
+## Shadows
+
+The fighters' shadows are StF's: its lifted `rob_kage_*` routines and its
+tables (`off_64988`), called by `megamix.c`'s `kage_stage`, `kage_light`,
+`kage_inside` and `kage_outside` in StF's order; each guest has a table of
+its own (`tools/guest-shadows.mjs`) and the masks' balls come from
+`kage_balls`. On Aurora Icefield, as in StF, the fighters are mirrored in
+the ice instead (`mirror_draw`). The fighters draw in a geo window after
+all of these, so nothing clips their feet. `docs/SHADOWS.md` (On the
+board) has the details and the check.
+
 ## Where it stands
 
 Two fighters (Sonic, Honey, Eggman, Akira or Ryo, picked in the setup) stand
 facing each other and play their stance motion with StF's own motion code
-(stepped and drawn at 60 fps, as StF and VF2 are), on one of two of
-StF's stages, South Island and Aurora Icefield (see Game setup). The stages are drawn from StF's stage records with its
+(stepped and drawn at 60 fps, as StF and VF2 are), on one of five
+stages: StF's South Island and Aurora Icefield, VF2's Tou-rin and the
+Colosseum, with VF2's ring out (see Game setup and VF2's stages), and FV's
+Western (see FV's Western). The stages are drawn from StF's stage records with its
 textures, colours, materials, light, colour cycling, and the sea and
 aurora. South Island matches StF's own picture closely. They push, hit and
-knock each other down, rounds end on a KO or the clock, and StF's HUD shows
+knock each other down, rounds end on a KO, a ring out or the clock, and StF's HUD shows
 the energy bars, the clock and the round stars (see The fight). Further stages will
-come from VF2 and Fighting Vipers.
+come from Fighting Vipers.
 
 Known gaps:
 
-- Player 2's part rows (7..11, luma 48..63) get the fighter's own table, as
-  player 1's do. In a 1P round against the CPU, real StF leaves them at zero.
+- Player 2's part rows (7..11, luma 48..63) get StF's player-2 table
+  (rob+0x1B0 is character + 26 on player 2's side), as in a real mirror
+  match. In a 1P round against the CPU, real StF leaves them at zero.
   Mirror matches in real StF (MAME `sfight`, 2P; Honey vs Honey by setting
   slot 0 of the select table at 0xDACAC to 0x0F) draw player 2 as the board
   does: Sonic dark grey, and Honey blonde, with purple fur, a blue dress, a
@@ -1303,7 +1680,7 @@ Known gaps:
 - Eggman's head (model 793) takes its texture from StF's texture set 7,
   which the board does not load (it loads set 1 and the stage's), so it
   does not show.
-- No shadows. The camera's round-end and replay modes are not run.
+- The camera's round-end and replay modes are not run.
 
 ## Plan
 
@@ -1316,6 +1693,8 @@ Known gaps:
    and colours go into the data ROMs (StF's unused runs, see
    `STF-BOARD-AKIRA.md`), which then ship as new ROM files beside the
    program.
+   `FV-STAGES.md` is what an import of FV's arenas (and its cage break)
+   works from.
 
 `STF-BOARD-AKIRA.md` records the earlier route (Akira dropped into StF's own
 program by data edits). Its measurements of free ROM and texture RAM still

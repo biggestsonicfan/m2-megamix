@@ -112,6 +112,12 @@ export function decodePvr(b) {
             put(x, y, v.getUint16(p + 2 * at, true));
         }
     } else throw new Error(`PVR data format ${fmt}`);
+    /* A 4444 texture none of which is half opaque is a translucent one (the
+     * fight afterimage's: Chai's low model, CHA_B, alpha 4 of 15 all over);
+     * a fighter drawn with it is drawn solid. */
+    let solid = pix === ARGB4444;
+    for (let i = 3; solid && i < rgba.length; i += 4) solid = rgba[i] < 128;
+    if (solid) for (let i = 3; i < rgba.length; i += 4) rgba[i] = 255;
     return { width: w, height: h, rgba, format: { pixel: pix, data: fmt } };
 }
 
@@ -257,7 +263,7 @@ export function restMatrices(model) {
 /* ---- motions --------------------------------------------------------------- */
 
 /* VF2's channel types (noclip motion.js) */
-const LATCHED = 1, ZERO = 3, CONST = 4, HERMITE = 6;
+const LATCHED = 1, ZERO = 3, CONST = 4, LINEAR = 5, HERMITE = 6;
 const TURN = 65535, TANGENT = 2;
 
 /* Shenmue's bone (the motion's bone list: bone << 9 | mask; 0x1C0 the
@@ -271,7 +277,9 @@ const SHOULDERS = new Set([25, 31]);
 export function readMotionBin(b) {
     const v = viewOf(b);
     const table = v.getUint32(0, true), names = v.getUint32(4, true);
-    const data = v.getUint32(8, true), count = v.getUint32(12, true);
+    /* A scene's own bank (M_FGT4.BIN and the like) numbers its motions from
+     * a base, +0x14, with the end at +0xC; MOTION.BIN's base is 0. */
+    const data = v.getUint32(8, true), base = v.getUint32(0x14, true), count = v.getUint32(12, true) - base;
     const name = (i) => {
         const p = v.getUint32(names + 4 * i, true);
         if (p < names || p >= data) return null;
@@ -286,7 +294,7 @@ export function readMotionBin(b) {
     for (let i = 0; i < count; i++) {
         motions.push({ index: i, name: name(i), offset: data + v.getUint32(table + 8 * i, true), setup: v.getUint32(table + 8 * i + 4, true) });
     }
-    return { buf: b, v, motions };
+    return { buf: b, v, base, motions };
 }
 
 /**
@@ -390,7 +398,7 @@ export function toVF2(m) {
  *  channel; four-aligned, the key times (f32), then the values. */
 export function encodeVF2(vf2) {
     const ch = vf2.channels;
-    const counts = ch.filter((c) => c.type === HERMITE).map((c) => c.times.length);
+    const counts = ch.filter((c) => c.type === LINEAR || c.type === HERMITE).map((c) => c.times.length);
     let n = (22 + counts.length + 3) & ~3;
     for (const c of ch) n += 4 * (c.times.length + c.values.length);
     const b = new Uint8Array(n), v = viewOf(b);

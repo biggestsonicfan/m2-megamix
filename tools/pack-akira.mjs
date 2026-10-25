@@ -28,7 +28,7 @@
  * Each tile keeps its size and its place on the 32-pixel grid; tiles that
  * overlap in VF2 move together, so a face that samples across them still does.
  */
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadNodeGames } from '../tests/node-roms.mjs';
@@ -36,6 +36,7 @@ import { decodeModel } from '../vendor/noclip/js/model.js';
 import { readModelEntry, meshOffsetOf, MAIN_DATA_BASE } from '../vendor/noclip/js/romset.js';
 import { buildTexram } from '../vendor/noclip/js/texture.js';
 import { levelOrigin, texelByte, SHEET_BYTES, SHEET_H } from '../vendor/noclip/js/atlas.js';
+import { readCharacter, faceVariantOwners } from '../vendor/noclip/js/characters.js';
 
 /* Akira's models in VF2 (readFighters(vf2)[0].parts) and his texture sets. */
 export const MODELS = [407, 408, 409, 410, 411, 412, 413, 414, 416, 417, 419, 420, 421, 422, 2452, 2454, 2442];
@@ -45,12 +46,40 @@ const VF2_SETS = [40, 1, 2];
 const STF_SET = 1;
 const LIST = 0xB00010;
 const PAGES = [3, 12, 15, 16, 18, 19, 21];
+/* Set 1 pages a fight draws only a corner of (16 or 20 of their 64 cells;
+ * docs/STF-BOARD-AKIRA.md). Extras that do not fit in the seven go into their
+ * free cells, around the kept ones (keptCells). */
+const SHARED = [6, 11, 13, 14, 20, 17];
 const slotOf = (i) => (i < 16 ? { x: (i >> 2) * 256, y: (i & 3) * 256 }
     : { x: 1024 + ((i - 16) >> 1) * 256, y: ((i - 16) & 1) * 256 });
 const PAGE_RUN = 0xD6F1AE, PAGE_RUN_LEN = 0x290E52;      /* main_data, 0xFF */
 const TEX_RUN = 0x78BDB8, TEX_RUN_LEN = 0x74248;         /* textures, 0xFF */
 const LEVELS = 5;                                        /* a raw page writes 0-4 */
 const PAGE_BYTES = 16 + [...Array(LEVELS)].reduce((n, _, L) => n + (256 >> L) ** 2 / 2, 0);
+
+/* The 32x32 cells of sheet 1 an StF fight samples, as (y >> 5) * 64 + (x >> 5):
+ * every part and face of Sonic, Honey and Eggman (P1 and P2, normal and
+ * squished) and every model docs/data/stf-fight-models.txt saw drawn. */
+const MEGAMIX_CAST = [0, 8, 15];
+export function keptCells(stf) {
+    const ids = new Set(readFileSync(new URL('../docs/data/stf-fight-models.txt', import.meta.url), 'utf8')
+        .split('\n').filter((l) => /^\d/.test(l)).map((l) => +l.split(' ')[0]));
+    for (const c of MEGAMIX_CAST.flatMap((c) => [c, c + 26])) {
+        for (const s of readCharacter(stf, c).slots) for (const m of [s.model, s.modelSquished]) if (m) ids.add(m);
+    }
+    for (const [id, c] of faceVariantOwners(stf)) if (MEGAMIX_CAST.includes(c % 26)) ids.add(id);
+    const kept = new Set();
+    for (const id of ids) {
+        const m = decodeModel(stf, id);
+        if (!m) continue;
+        for (let i = 0; i < m.tiles.length; i += 4) {
+            const [x, y, w, h] = m.tiles.subarray(i, i + 4);
+            if (!w || y < SHEET_H) continue;
+            for (let cy = y - SHEET_H; cy < y - SHEET_H + h; cy += 32) for (let cx = x; cx < x + w; cx += 32) kept.add((cy >> 5) * 64 + (cx >> 5));
+        }
+    }
+    return kept;
+}
 
 const hex = (v) => '0x' + v.toString(16).toUpperCase();
 const key = (t) => `${t.x},${t.y},${t.w},${t.h}`;
@@ -135,22 +164,35 @@ const extras = extra.map((t, i) => {
     return { i, t, members: [], cells, cw, ch };
 }).sort((a, b) => b.cells.length - a.cells.length || a.i - b.i);
 
-const used = PAGES.map(() => new Uint8Array(64));
+/* The seven pages first, then the shared ones with their kept cells taken. */
+const ALL = [...PAGES, ...SHARED];
+const kept = keptCells(stf);
+const used = ALL.map((page) => {
+    const u = new Uint8Array(64);
+    if (PAGES.includes(page)) return u;
+    const s = slotOf(page);
+    for (let i = 0; i < 64; i++) if (kept.has(((s.y >> 5) + (i >> 3)) * 64 + (s.x >> 5) + (i & 7))) u[i] = 1;
+    return u;
+});
+const keptIn = used.map((u) => [...u]);
 for (const c of [...clusters, ...extras]) {
-    place: for (let p = 0; p < PAGES.length; p++) {
+    place: for (let p = 0; p < ALL.length; p++) {
         for (let oy = 0; oy + c.ch <= 8; oy++) {
             for (let ox = 0; ox + c.cw <= 8; ox++) {
                 if (c.cells.some(([cx, cy]) => used[p][(oy + cy) * 8 + ox + cx])) continue;
                 for (const [cx, cy] of c.cells) used[p][(oy + cy) * 8 + ox + cx] = 1;
-                const s = slotOf(PAGES[p]);
-                Object.assign(c, { page: PAGES[p], ox: ox * 32, oy: oy * 32, nx: s.x + ox * 32, ny: s.y + oy * 32 });
+                const s = slotOf(ALL[p]);
+                Object.assign(c, { page: ALL[p], ox: ox * 32, oy: oy * 32, nx: s.x + ox * 32, ny: s.y + oy * 32 });
                 break place;
             }
         }
     }
-    if (c.page === undefined) throw new Error('out of room');
+    if (c.page === undefined) throw new Error(`out of room: ${used.reduce((n, u) => n + u.filter((x) => !x).length, 0)} cells free, a ${c.cw}x${c.ch} wanted`);
 }
 for (const c of extras) c.t.at = { x: c.nx, y: c.ny, page: c.page };
+/* The shared pages that took something; the others stay StF's. */
+const SHARED_USED = SHARED.filter((page) => [...clusters, ...extras].some((c) => c.page === page));
+const OURS = [...PAGES, ...SHARED_USED];
 /* Old tile origin (sheet-1 coordinates) -> new one. */
 const moved = new Map();
 for (const c of clusters) for (const t of c.members) moved.set(key(t), { x: c.nx + t.x - c.x, y: c.ny + t.y - c.y, page: c.page });
@@ -169,10 +211,19 @@ const setNib = (tex, x, y, v) => {
     tex[o] = hw & 0xff; tex[o + 1] = hw >> 8;
 };
 const src = texOf(buildTexram(vf2, VF2_SETS));
+const live = texOf(buildTexram(stf, [STF_SET]));
 /* Scratch texture RAM holding just the seven pages, every level, as the board
  * should end up with them; each page's bytes are then read out of it in the
  * order send_beta_data writes them back. */
 const want = new Uint8Array(SHEET_BYTES * 2);
+/* A shared page starts as StF's, levels 0-4. */
+for (const page of SHARED_USED) {
+    const s = slotOf(page);
+    for (let L = 0; L < LEVELS; L++) {
+        const o = levelOrigin(s.x, s.y + SHEET_H, L);
+        for (let j = 0; j < 256 >> L; j++) for (let i = 0; i < 256 >> L; i++) setNib(want, o.x + i, o.y + j, nib(live, o.x + i, o.y + j));
+    }
+}
 for (const c of clusters) {
     for (const t of c.members) {
         const n = moved.get(key(t));
@@ -230,7 +281,17 @@ md.set(stf.mainData.subarray(SET_TABLE, SET_TABLE + SETS * 4), TABLE_COPY);
 mdv.setUint32(TABLE_COPY + STF_SET * 4, MAIN_DATA_BASE + LIST_COPY, true);
 mdv.setUint32(HDR_SETS, MAIN_DATA_BASE + TABLE_COPY, true);
 const MD_END = TABLE_COPY + SETS * 4;
-if (MD_END > PAGE_RUN + PAGE_RUN_LEN) throw new Error('main_data run too small');
+/* The shared pages that took something go 1 KB after the table copy (which
+ * tools/vf2-stages.mjs extends past SETS), so the seven pages and the copies
+ * stay where they were without them: SHARED0..SHARED_END. */
+const SHARED0 = (TABLE_COPY + 0x400 + 15) & ~15;
+SHARED_USED.forEach((p, i) => {
+    pageAt[p] = SHARED0 + i * PAGE_BYTES;
+    md.set(pageBytes(p), pageAt[p]);
+    mdv.setUint32(LIST_COPY + 4 + p * 4, MAIN_DATA_BASE + pageAt[p], true);
+});
+const SHARED_END = SHARED0 + SHARED_USED.length * PAGE_BYTES;
+if (SHARED_END > PAGE_RUN + PAGE_RUN_LEN) throw new Error('main_data run too small');
 
 /* ---- 4. Material and UV copies in the textures region -------------------- */
 
@@ -284,11 +345,11 @@ if (mdv.getUint32(SET_TABLE + STF_SET * 4, true) !== MAIN_DATA_BASE + LIST) prob
 
 /* Set 1 through the patched header: the same texture RAM except inside the
  * seven pages' levels 0-4. */
-const live = texOf(buildTexram(stf, [STF_SET])), viaCopy = texOf(buildTexram(patched, [STF_SET]));
+const viaCopy = texOf(buildTexram(patched, [STF_SET]));
 /* 1: levels 0-4 of a packed page; 2: its levels 5-9, which a raw page does
  * not write (the copy leaves there whatever was in texture RAM before). */
 const inPages = new Uint8Array(SHEET_BYTES * 2);
-for (const p of PAGES) {
+for (const p of OURS) {
     const s = slotOf(p);
     for (let L = 9; L >= 0; L--) {
         const o = levelOrigin(s.x, s.y + SHEET_H, L);
@@ -301,6 +362,20 @@ for (let o = 0; o < live.length; o += 2) {
     if (inPages[o] === 1) { if (viaCopy[o] !== want[o] || viaCopy[o + 1] !== want[o + 1]) inside++; } else if (!same) (inPages[o] === 2 ? deep++ : outside++);
 }
 if (outside) problems.push(`${outside} halfwords outside the seven pages differ`);
+/* A shared page's kept cells: StF's texels at levels 0-4. */
+let keptDiff = 0;
+ALL.forEach((page, p) => {
+    if (!SHARED_USED.includes(page)) return;
+    const s = slotOf(page);
+    for (let i = 0; i < 64; i++) {
+        if (!keptIn[p][i]) continue;
+        for (let L = 0; L < LEVELS; L++) {
+            const o = levelOrigin(s.x + (i & 7) * 32, s.y + (i >> 3) * 32 + SHEET_H, L);
+            for (let j = 0; j < 32 >> L; j++) for (let k = 0; k < 32 >> L; k++) if (nib(live, o.x + k, o.y + j) !== nib(viaCopy, o.x + k, o.y + j)) keptDiff++;
+        }
+    }
+});
+if (keptDiff) problems.push(`${keptDiff} texels StF keeps on the shared pages differ`);
 if (inside) problems.push(`${inside} halfwords inside the seven pages are not what was packed`);
 
 /* Every face of Akira's: same size, same UVs, and the same texels at every
@@ -317,7 +392,7 @@ for (const c of copies) {
         if (w !== nw || h !== nh) { problems.push(`model ${c.m}: a tile changed size`); break; }
         if (!w) continue;
         faces++;
-        if (ny < SHEET_H || !PAGES.some((p) => { const s = slotOf(p); return nx >= s.x && nx + w <= s.x + 256 && ny - SHEET_H >= s.y && ny - SHEET_H + h <= s.y + 256; })) {
+        if (ny < SHEET_H || !OURS.some((p) => { const s = slotOf(p); return nx >= s.x && nx + w <= s.x + 256 && ny - SHEET_H >= s.y && ny - SHEET_H + h <= s.y + 256; })) {
             problems.push(`model ${c.m}: a tile outside the seven pages`); break;
         }
         let bad = false;
@@ -329,8 +404,8 @@ for (const c of copies) {
     }
 }
 
-    return { tiles, tileCount, clusters, moved, used, pageAt, PAGE0, LIST_COPY, TABLE_COPY, SET_TABLE, HDR_SETS, MD_END,
-        md, tx, at, copies, deep, faces, problems, TEX0: (TEX_RUN + 15) & ~15 };
+    return { tiles, tileCount, clusters, moved, used, pages: OURS, keptIn, pageAt, PAGE0, LIST_COPY, TABLE_COPY, SET_TABLE, HDR_SETS, MD_END,
+        SHARED0, SHARED_END, md, tx, at, copies, deep, faces, problems, TEX0: (TEX_RUN + 15) & ~15 };
 }
 
 /* ---- Report --------------------------------------------------------------- */

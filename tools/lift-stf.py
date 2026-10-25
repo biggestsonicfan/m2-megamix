@@ -42,16 +42,42 @@ import tempfile
 # fight's camera (camera_work's modes for a round: 9 places it, 10 follows);
 # zanzou_control: the afterimages (the projectile task's last call: reserves
 # a fighter's trailing parts in the geometrizer's ring while play op 0x26's
-# mask is set, megamix.c zanzou_draw draws them).
+# mask is set, megamix.c zanzou_draw draws them); sub_8A29C: the projectile
+# task's step loop (each live object's step through projectile_list; only
+# Eggman's bomb, type 2, has its steps lifted, megamix.c tobi_draw draws it).
+# The colours (colorxlat), as StF's change_scene and its debug menu's colour
+# refresh (0x46754) set them: stage_disp (the stage record's RED, GREEN, BLUE,
+# then chg_pol_color_req's ramp, luma 0..47 of rows 0..27, which
+# chg_pol_color_send writes a few rows a call), make_lay_col_256_tbl (the
+# ARRAY_NUM curves every upload goes through), chg_scr_color_req (luma
+# 64..127, the flat band palette colours go through), sub_7B4 (the boot's
+# fixed rows 5..6 and 12..13), send_tex_col_stage (the stage's sixteen
+# colours, rows 14..27), send_tex_col_skin and send_tex_col_part (a fighter's
+# skin rows and part rows); sub_2435C: the stage's colour cycling, once a
+# frame (interrupt_wait_b); set_display_type_crt: the test menu's CRT
+# setting, the TST_* curve constants (into the backup RAM and its copy, then
+# load_COLORS_to_RAM and chg_scr_color_req).
+# osage_init: a fighter's sway chains (Honey's ponytail, Fang's tail), the
+# task that sets them up and becomes osage_dsp, which steps and draws them.
+# The fighters' shadows (docs/SHADOWS.md): sub_63AC4 (camera_init's: the
+# light to the coprocessor, op 0x73, then sub_63B10's two masks a player,
+# op 0x75), rob_kage_disp_inside (after the stage: the near mask, and the
+# projectiles' shadows) and rob_kage_disp_outside (after each fighter: the
+# far mask), both through rob_kage_disp_test's op 0x74 and set_obj.
 ROOTS = ['set_motion', 'calc_rob_angle', 'calc_rob_angle_cont', 'calc_unit_mat', 'smooth_int', 'sub_7F0E8',
          'action_init', 'rob_action', 'sub_1D47C', 'coli_init', 'collision', 'get_game_info', 'cmd_native_tail',
          'cop_initialize_end2', '_Scroll_Initialize', 'energy_disp', 'barrier_left_disp', 'time_dsp',
-         'win_lamp_dsp', 'win_lamp_int', 'cam_mode_9', 'cam_mode_10', 'zanzou_control']
-# Routines the board does not run (debug text, name plates, projectiles,
-# sound, ring scatter, Super Sonic's hair objects): `ret`.
+         'win_lamp_dsp', 'win_lamp_int', 'cam_mode_9', 'cam_mode_10', 'zanzou_control', 'sub_8A29C',
+         'stage_disp', 'make_lay_col_256_tbl', 'chg_scr_color_req', 'chg_pol_color_req', 'chg_pol_color_send',
+         'sub_7B4', 'send_tex_col_stage', 'send_tex_col_skin', 'send_tex_col_part', 'sub_2435C',
+         'set_display_type_crt', 'osage_init', 'sub_63AC4', 'rob_kage_disp_inside', 'rob_kage_disp_outside']
+# Routines the board does not run (debug text, name plates,
+# sound, ring scatter, Super Sonic's hair objects; the shadow mask balls,
+# which read a table at 0x4C84 and megamix.c's kage_balls sends): `ret`.
 STUBS = ['print_mes', 'print_mes_ex', 'print_hex_w', 'debug_disp_hex', 'dsp_pattern_right',
-         'char_nameplate_dsp', 'call_projectile_routine', 'sound_request_u', 'sound_request_special',
-         'stage_contact_sound', 'ring_tobitiri_set', 'sub_1BCC0']
+         'char_nameplate_dsp', 'sound_request_u', 'sound_request_special',
+         'stage_contact_sound', 'ring_tobitiri_set', 'sub_1BCC0',
+         'send_kage_ball_pntr']
 # Labels the routines use as numbers (`lda loc_10000, r3` is 0x10000, `lda
 # off_1010, r13` the flag mask 0x1010; get_en_info's `lda loc_5550` and `lda
 # off_1018` are the facing bound 0x5550 and the flag mask 0x1018 its throw
@@ -62,6 +88,9 @@ STUBS = ['print_mes', 'print_mes_ex', 'print_hex_w', 'debug_disp_hex', 'dsp_patt
 NUMBERS = {'loc_1FFC', 'loc_2AA8', 'loc_6600', 'loc_7FF8', 'loc_8020', 'loc_8040', 'loc_BFF4', 'loc_10000',
            'loc_20010', 'loc_78AFC', 'loc_2100', 'loc_7A00', 'loc_14060', 'sys_proc_table',
            'off_1010', 'dword_4010', 'loc_AAA0', 'loc_5550', 'off_1018', 'loc_32180', 'loc_1C38'}
+# Labels the routines' data uses as numbers, where the code uses them as
+# labels: the wind table dword_689E4's `.long send_tex_col_part` is 0x800.
+DATA_NUMBERS = {'send_tex_col_part'}
 # The tail the move tables' inline code (opcode 0x13: `lda N, g0; b 0x1EF48`)
 # branches to, after sub_1E468, unlabelled in stfdisasm.
 NATIVE_TAIL = 'cmd_native_tail', 0x1EF48, 'ld      0x1A4(g7), r15  # unreachable code'
@@ -70,11 +99,14 @@ NATIVE_TAIL = 'cmd_native_tail', 0x1EF48, 'ld      0x1A4(g7), r15  # unreachable
 LOW_TABLES = {'off_FE8'}
 # Tables read on past their end, into the next label's (off_1008's eight
 # pointers run through off_1010 into off_1018; both labels are numbers to the
-# code, so nothing else keeps their data).
-RUN_ON = {'off_1008', 'off_1010'}
-# Jump tables in the ROM range that hold code (the camera's script steps):
+# code, so nothing else keeps their data). osage_per_character's 52 entries
+# run through kill_osage_sub (player 2's Honey on).
+RUN_ON = {'off_1008', 'off_1010', 'osage_per_character'}
+# Jump tables in the ROM range that hold code (the camera's script steps;
+# projectile_list's records and Eggman's bomb's start and steps):
 # lifted with the code, as the copied ROM holds StF's addresses.
-ROM_CODE_TABLES = {'off_9C83C', 'off_9C848'}
+ROM_CODE_TABLES = {'off_9C83C', 'off_9C848', 'projectile_list', 'projectile_I_list', 'bean_bomb_roll',
+                   'bean_bomb_roll_1', 'off_8D3D8'}
 # Data blocks that point into themselves (the fight camera's motion table
 # and its scripts, `.short` halves and `.long`s): lifted as words, each
 # word that is an address inside the block made relative to its label.
@@ -84,8 +116,10 @@ ROM_BIN = 'stf_rom_80000.bin'
 RAM_LO, RAM_HI = 0x500000, 0x600000     # StF's work RAM: moved into the board's
 RAM_PAD = 0x400                          # room past the highest address a block names
 # RAM the routines reach through a base: the two fighters' motion records
-# (action_init: 0x520000 and 0x5207C8, 0x800 bytes each).
-RAM_SPANS = [(0x520000, 0x520FC8)]
+# (action_init: 0x520000 and 0x5207C8, 0x800 bytes each), chg_pol_color_req's
+# ramp (0x546008, 0x120 bytes a row, rows 0..27) and the backup RAM's copy
+# (add_BACKUP_RAM_TO_RAM, 0x599000, which megamix.c points it at).
+RAM_SPANS = [(0x520000, 0x520FC8), (0x546000, 0x547F88), (0x599000, 0x59C400)]
 # The per-character tables a guest fighter (a character of another game in a
 # StF character's place) needs entries of its own in: the routines read them
 # at fixed addresses in the data ROM instead (guest_<name>), where
@@ -119,6 +153,9 @@ GUEST_BASE = 0x02E00000
 # the afterimage models (16 parts, each 3 model ids and a pad), which
 # zanzou_control reserves for each slot in play op 0x26's mask; the lists
 # are copied into its room.
+# off_64988: a pointer by character to its shadow table (rob_kage_disp_test,
+# 16 entries of 24 bytes and a tail; docs/SHADOWS.md); StF's tables are
+# copied into free room in the extra data ROM, the guests' own after them.
 GUESTS = [('CHAR_PARTS', 0x100, 52 * 4), ('SKELETON_TYPE_DATA', 0x400, 4 * 4),
           ('MOVESET_ARRAY', 0x100, 24 * 4), ('player_hand_animations', 0x100, 52 * 4),
           ('player_foot_animation', 0x100, 52 * 4), ('player_body_animation', 0x100, 52 * 4),
@@ -126,8 +163,23 @@ GUESTS = [('CHAR_PARTS', 0x100, 52 * 4), ('SKELETON_TYPE_DATA', 0x400, 4 * 4),
           ('offset_list_motions', 0x2000, 519 * 4), ('ptr_DA0B4', 0x80, 26 * 4),
           ('motion_remap', 0x80, 26 * 4), ('char_game', 0x40, 52),
           ('rob_coli_ball_types', 0x400, 4 * 4), ('midriff', 0x100, 52 * 4),
-          ('off_C2058', 0x400, 4 * 4), ('seams', 0x100, 52 * 4), ('off_B540C', 0x400, 4 * 4)]
+          ('off_C2058', 0x400, 4 * 4), ('seams', 0x100, 52 * 4), ('off_B540C', 0x400, 4 * 4),
+          ('off_64988', 0x100, 52 * 4)]
 GAMES = [('STF', 0), ('VF2', 1), ('FV', 2)]      # char_game's values (GAME_<name>)
+# Data blocks no lifted code names but StF's ROM tables point at: lifted, and
+# the code that loads such a pointer is given the board's copy
+# (INSERT_LIFTED).
+EXTRA_TABLES = ['dword_2442C']
+# Code put in at a label of StF's, before what is there, lifted as StF's own
+# lines are (its names made the board's). sub_2435C: the stage record's
+# colour-cycle list (+0xB8) is a pointer into dword_2442C, StF's program at
+# 0x2442C, which the board's copy is not at: the same prologue, with the
+# pointer moved onto the copy.
+INSERT_LIFTED = {
+    'sub_2435C': ['ld      debug_flag, r15', 'bbs     5, r15, loc_243A8', 'ldob    stage_num, r12',
+                  'shlo    8, r12, r4', 'ld      word_8F488(r4), r10',
+                  'lda     dword_2442C-0x2442C(r10), r10', 'ldos    word_8F3DE(r4), g1', 'b       loc_24384'],
+}
 # Code put in at a label of StF's, before what is there. sub_2B94C picks a
 # hit's reaction from the defender's table: (side)[category * 8], +2 from
 # behind. VF2's tables have a crouching defender's reactions 4 on; StF's
@@ -250,7 +302,7 @@ def main():
                 and not 0x3A00 <= addr.get(t, 0) < 0x3C00 and addr.get(t, 0) >= 0x1000)
     def base(t):
         return t.split('+')[0].strip()
-    live, todo, why = set(), [(labline[f], 'root') for f in ROOTS], {}
+    live, todo, why = set(), [(labline[f], 'root') for f in ROOTS + EXTRA_TABLES], {}
     stub_lines = {labline[f] for f in STUBS}
     while todo:
         i, w = todo.pop()
@@ -265,7 +317,7 @@ def main():
             op, _, args = c.partition(' ')
             if op == '.long':
                 targets = [base(t) for t in args.split(',')
-                           if base(t) in labline and (not is_data(labline[base(t)]) or table(base(t)))]
+                           if base(t) in labline and base(t) not in NUMBERS | DATA_NUMBERS and (not is_data(labline[base(t)]) or table(base(t)))]
             elif is_branch(op):
                 targets = [target(op, args)]
             else:
@@ -297,7 +349,7 @@ def main():
         if t in guest_at:
             notes.setdefault('guest', set()).add(t)
             return f'guest_{t}'
-        if t in NUMBERS:
+        if t in NUMBERS or (t in DATA_NUMBERS and c.startswith('.long')):
             notes.setdefault('num', set()).add(f'{t}=0x{addr[t]:X}')
             return f'0x{addr[t]:X}'
         if t in lifted_labels or t in STUBS:
@@ -328,6 +380,11 @@ def main():
         out.append(name_at[i] + ':')
         for c in INSERT.get(name_at[i], ()):
             out.append(c if c.endswith(':') else f'                {c}')
+        for c in INSERT_LIFTED.get(name_at[i], ()):
+            op, _, args = c.partition(' ')
+            args = TOKEN.sub(lambda mm: fix_token(mm.group(0), c), args.strip())
+            args = NUM.sub(lambda mm: ram_ref(int(mm.group(0), 16)), args)
+            out.append(f'                {op:<7} {args}'.rstrip())
         if name_at[i] in SELF_REL:
             lo = addr[name_at[i]]
             hi = min(v for v in addr.values() if v > lo)

@@ -5,8 +5,8 @@ places:
 
 - **The web Megamix.** Here they are done. `js/games.js` ROSTER has FV Honey
   (record 2), and now Tokio (3) and Bahn (4) after the first nine. The
-  first nine keep their numbers, so Ryo is now `?p1=11`.
-  `tests/bout.test.mjs` fights all 144 pairings (121 without Ryo).
+  first nine keep their numbers, so Ryo is now `?p1=11` and Chai `?p1=12`.
+  `tests/bout.test.mjs` fights all 169 pairings (121 without Ryo and Chai).
 - **The board** (the StF Model 2B build, docs/BOARD.md). An FV fighter
   could be a guest there as Akira is (`tools/vf2-guest.mjs`) and Ryo is
   (`tools/ryo-guest.mjs`). This file records what that needs and what is
