@@ -63,6 +63,7 @@ His stance, walks, dashes and guards are his own (0x800, 0x801, 0x83B,
 
 ## Not Shenmue's own
 
-- The board build (`tools/ryo-guest.mjs`) still plays a guest on Akira's
-  moves. His own moveset is the web roster's.
+- On the board (docs/BOARD.md, The guest: Shenmue's Chai) he is StF
+  character 12 with CHA_B, on Akira's moves, as Ryo is. His own moveset is
+  the web roster's.
 - The state-gated moves are left out (Tenshin and the rest above).

@@ -1125,6 +1125,38 @@ number 3 (0x0C0200E4) and sets scene 3, area `MFBT`, entry 99
 (0x0C20D220/4/8). Start begins it. In RetroArch the triggers need keys
 (`input_player1_l2/r2`).
 
+## The guest: Shenmue's Chai
+
+Chai (the beta's disc 3 ending fight, js/chai.js, docs/CHAI.md) is StF
+character 12 (38 for player 2), picked as CHAI in the setup (#1590). He is
+built as Ryo is, by the same code (tools/ryo-guest.mjs `importShenmue`, run
+for Ryo and then for him), on Akira's moves (`char_game` VF2).
+
+- **Slot.** Megamix uses 0, 8 and 15, Akira 6 and Ryo 1. The others StF's
+  code checks by number (above, The guest: VF2's Akira): 0, 3, 5, 7, 8, 9,
+  11, 13, 14 and 16 change what a fighter does, and 2, 4, 7 and 10 are bits
+  of the opponent mask StF's scripts test (op 0x21). 12 is named only by the
+  hit sounds' robot lists, and the board plays no sound.
+- **Model.** CHA_B, his low model (the one his Fight block blurs him with,
+  as YKB_B is Ryo's): 306 triangles on the same 15 bones as YKB_B, 15 parts,
+  116 triangles in 14 seams (12-11 and 15-14 are his, the others Ryo's).
+  Four 64×64 ARGB4444 textures (HA_MUF_, HA_KRF_, HA_KAO_, HA_KOF_; alpha 4
+  of 15 all over, not holes), packed with Akira's and Ryo's.
+- **Size.** `shenmueFit`, as on the web page: 1.0018 of Akira's VF2 scale.
+- **Colour.** Ryo's fit, on his own textures: 52 colours, 43 new colorbases.
+- **Room.** Models 4954..4982 below Ryo's; meshes 0xF3B568..0xF41990 and
+  materials and UVs 0x7CA1B0..0x7CCCE0 after Ryo's (the importer now carries
+  where one guest ended into the next, `ctx.polyEnd`, `ctx.texEnd`,
+  `ctx.modelIds`); heap to 0x2F1D1FC. Ryo's ROM bytes are as before.
+- **Seams.** 2460 words once, then 870 a frame, at `SEAM_POLY` (8 K words a
+  player).
+- **Not his own.** His moves: Akira's, as Ryo's. His Shenmue moveset is the
+  web roster's (docs/CHAI.md).
+
+Check: MAME, Chai vs Ryo on South Island and Honey vs Chai in the
+Colosseum: setup reads SHENMUE:CHAI and the polygon window 306 for him; he
+walks, strikes and takes hits on either side.
+
 ## VF2's stages: Tou-rin and the Colosseum
 
 `tools/vf2-stages.mjs` brings VF2's stage slots 0 and 1 (Tou-rin, the

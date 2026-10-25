@@ -1038,10 +1038,10 @@ static const u16 menu_min[M_ITEMS]  = { 0, 1, 1, 0, 0, 0, 10, 0 };
 static const u16 menu_max[M_ITEMS]  = { 0, 99, 5, STAGES - 1, POSE_ANIMS - 1, POSE_ANIMS - 1, 250, 9 };
 static const u16 menu_step[M_ITEMS] = { 0, 1, 1, 1, 1, 1, 10, 1 };
 static u16 menu_val[M_ITEMS] = { 0, 30, 2, 0, 0, 1, 140, 5 };
-static const char *const fighter_name[POSE_ANIMS] = { "SONIC", "HONEY", "EGGMAN", "AKIRA", "RYO" };
+static const char *const fighter_name[POSE_ANIMS] = { "SONIC", "HONEY", "EGGMAN", "AKIRA", "RYO", "CHAI" };
 /* The game a fighter's name line shows where it is not the one its code
- * runs as: Ryo (Shenmue's) fights on Akira's moves, as VF2's. */
-static const char *const fighter_from[POSE_ANIMS] = { 0, 0, 0, 0, "SHENMUE" };
+ * runs as: Ryo and Chai (Shenmue's) fight on Akira's moves, as VF2's. */
+static const char *const fighter_from[POSE_ANIMS] = { 0, 0, 0, 0, "SHENMUE", "SHENMUE" };
 static const char *const stage_name[STAGES] = { "SOUTH_ISLAND", "AURORA_ICEFIELD", "VF2 TOU-RIN", "VF2 COLOSSEUM" };
 static u32 menu_cur;
 
