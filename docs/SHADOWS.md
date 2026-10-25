@@ -53,17 +53,22 @@ ring) and +0xAB8 (off it). Without bit 7 both are 0.
   worked out by `loc_23144` with ops 0x21, 0x22, 0x24 and 0x25.
 - The margins: near = `stage_x` · `stage_floats[stage]` − 1.3, far = the
   same + 0.2 (`stage_x` is 8.0; `stage_floats`, 0x64948, is 1.6 or 1.0).
-- The test: for each slot, one ball of the player's collision balls (the
-  copro's points from word 16000, player 2's from 0x7E80; by the reads,
-  not yet traced to their writer), slid along the light onto y = 0, its
+- The test: for each slot, one ball of the player's collision balls (ball
+  i's world point is at copro word 16000 + 3i, player 2's at 0x7E80 + 3i,
+  written by op 0x39, `Fn_coli_point_trans`), slid along the light onto y = 0, its
   distance max(|x|, |z|), or 0.707106 · hypot on a round stage. Near if
   the ball is at or above the floor and within near; else far if at least
   far; else neither.
 - Which ball each slot tests is the table at 0x4C84, the same for every
   character: `9 0 2 3 4 5 6 7 8 9 10 11 12 14 15 16` (slot 0 uses ball 9).
   `send_kage_ball_pntr` (from `cop_initialize_end2`) writes it into the
-  copro's 0x306E0 (player 1) and 0x307E0 (player 2). The board already
-  runs it.
+  copro's 0x306E0 (player 1) and 0x307E0 (player 2), once for all
+  characters. The board already runs it. A number in it is an index into
+  the fighter's 32-ball record (`rob_coli_ball_types`, record +0 the balls,
+  +4 the part each ball rides). It fits Sonic's record exactly (slot s takes
+  a ball on part s); Honey's and Eggman's have one ball fewer up front, so
+  on them it takes each slot's next part's ball (slot 9 tests a thigh
+  ball), and StF lives with that.
 
 ### The draw: op 0x74, `Fn_kage_poly`
 
@@ -181,6 +186,37 @@ decoded with noclip's `decodeModel`; not run in MAME.)
   levels 4 to 2 (0x8970, 0x8D68, 0x9144) and none at level 1. At most 3
   shadows a frame are drawn (the count at 0x501120, zeroed at 0x1848): the
   player's and the first two rivals in the list.
+- **The balls the cards would hang off** (#1600; read from `hornet-board`
+  ae5eefa, `hornet-guest.mjs` and `ryo-guest.mjs`'s `fitBalls`; not run).
+  Hornet's 32-ball record is Akira's VF2 one (VF2's one set for its cast,
+  30 balls at 0x020078A8), each ball kept on its VF2 part and its index,
+  and moved into his part's box where he has a model there. VF2's
+  balls by part: 1: 0, 1; 2: 2; 9: 3; 3: 4, 5; 4: 6, 7; 5: 8; 6: 9, 10; 7:
+  11, 12; 8: 13; 10: 14-16; 11: 17-19; 12: 20, 21; 13: 22-24; 14: 25-27; 15:
+  28, 29. Through StF's 0x4C84:
+  - **slot 1, the nose: ball 0**, on part 1. It rides the nose, fitted to
+    its box. This one holds.
+  - **slot 9, the cabin: ball 9**, on part 6, the right shoulder. Hornet
+    has no model on slot 6 (a one-point part), so the ball is Akira's
+    scaled by `k` and hangs off the chest, the nose's frame, at FM's
+    shoulder bone (0.25, 0.02, 0.17): by the bones, near the door line,
+    not over the cabin (where it lands in a pose was not run). The cabin has a
+    ball: **ball 3**, VF2's only part 9 ball, fitted to the cabin's box.
+    No index points the cabin's test at it.
+  - So the split card holds for the nose but not as it stands for the
+    cabin: its card would go in or out of the inside and outside passes by
+    a point on the nose's frame, which is wrong where the car crosses the ring's
+    margin (the car is 4.9 m long). Either Hornet gets a 0x4C84 of his own
+    with slot 9 on ball 3 (sent per player at round start, since
+    `send_kage_ball_pntr` sends one table for both), or his balls 3 and 9
+    swap places in his record. The swap also changes which index each hit
+    and hurt mask (rob +0x1D14, op 0x3B) means, so the table is the safer
+    of the two. The wheels' slots (5, 8, 12, 15) take balls on parts 3, 5,
+    11 and 14, but their entries have model 0, so they don't matter.
+  - Akira, Ryo and Chai have the same VF2 record, so 0x4C84 tests the
+    wrong part's ball for most of their slots too (slot 3 a pelvis ball,
+    slot 9 a shoulder's). A by-character table fixes them all: VF2 tests
+    each slot's middle ball.
 - Model 770 is no shadow: it is a green and grey card that no code reads.
   `docs/FM-SATURN.md`'s "model 770 under them" (on `hornet-board`) is wrong
   about that.
@@ -281,9 +317,10 @@ What the board will need, in StF's form, for a fighter from any game:
    StF's palette.
 3. Its balls: the mask test takes ball `0x4C84[slot]` of the fighter's
    collision balls. A guest's ball list (rob +0x1D00) has to have a ball at
-   each of those indices that rides the slot's part. Hornet needs ball 0 on
-   the nose and ball 9 on the cabin, or the mask test leaves his cards out
-   (not checked on `hornet-board`).
+   each of those indices that rides the slot's part. Every guest has VF2's
+   record, on which most of 0x4C84's indices fall on another part (Hornet's
+   cabin, slot 9, tests a shoulder ball): see Daytona's Hornet, above, for
+   the table each would need.
 4. Its stage's light: VECTER_X/Y and `stage_soko` for every stage the
    board offers; a guest stage's from its own record (`tools/shadow-data.mjs`
    prints them). FV's lamps, gates and per-stage ground would be guest
