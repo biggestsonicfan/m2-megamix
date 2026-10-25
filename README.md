@@ -64,6 +64,7 @@ struct dump, F2 pauses and F3 steps one frame.
 - `js/render.js` draws the stage and fighters with noclip's shader. Each one
   gets its own game's texture RAM and colour tables.
 - `docs/STRUCTURES.md` lists the shared structures and where each game keeps them.
+- `docs/DEBUG-MODE.md` reads the three games' debug mode: how to turn it on, and every field its menus name, by offset in each game.
 - `docs/FV-GUESTS.md` measures what Fighting Vipers' Honey, Tokio and Bahn need as board guests, and what room is left in StF's ROMs and at Model 2B's sizes (`tools/fv-guest-survey.mjs`, `tools/model2-rom-limits.py`).
 - `docs/SHADOWS.md` is how each game casts the fighters' shadows, StF's way as the parent; `tools/shadow-data.mjs` reads every fighter's table in StF's form.
 - `docs/SHARED-CODE.md` audits the i960 functions StF and VF2 share: which are one code, and what a VF2 fighter still needs (guest data or a branch on `char_game`); `tools/shared-fns.py` compares them.

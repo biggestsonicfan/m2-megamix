@@ -62,7 +62,7 @@ export function makePlayer(side, fighter) {
         side,
         fighter,                    /* +0x1B0 char */
         body: fighter.createBody(),
-        state: ST.KAMAE,            /* +0x000 state / +0x19F action number */
+        state: ST.KAMAE,            /* +0x19F, the action word's top byte */
         pos: [side ? START_X : -START_X, 0, 0],   /* +0x018 position (the motion's origin) */
         yang: side ? Math.PI : 0,   /* +0x026 facing */
         act: 'stance',              /* the action-table slot playing (+0x19C action word) */
