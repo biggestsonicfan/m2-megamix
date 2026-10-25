@@ -59,13 +59,21 @@ import tempfile
 # load_COLORS_to_RAM and chg_scr_color_req).
 # osage_init: a fighter's sway chains (Honey's ponytail, Fang's tail), the
 # task that sets them up and becomes osage_dsp, which steps and draws them.
+# The fighters' shadows (docs/SHADOWS.md): sub_63AC4 (camera_init's: the
+# light to the coprocessor, op 0x73, then sub_63B10's two masks a player,
+# op 0x75), rob_kage_disp_inside (after the stage: the near mask, and the
+# projectiles' shadows) and rob_kage_disp_outside (after each fighter: the
+# far mask), both through rob_kage_disp_test's op 0x74 and set_obj.
 ROOTS = ['set_motion', 'calc_rob_angle', 'calc_rob_angle_cont', 'calc_unit_mat', 'smooth_int', 'sub_7F0E8',
          'action_init', 'rob_action', 'sub_1D47C', 'coli_init', 'collision', 'get_game_info', 'cmd_native_tail',
          'cop_initialize_end2', '_Scroll_Initialize', 'energy_disp', 'barrier_left_disp', 'time_dsp',
          'win_lamp_dsp', 'win_lamp_int', 'cam_mode_9', 'cam_mode_10', 'zanzou_control', 'sub_8A29C',
          'stage_disp', 'make_lay_col_256_tbl', 'chg_scr_color_req', 'chg_pol_color_req', 'chg_pol_color_send',
          'sub_7B4', 'send_tex_col_stage', 'send_tex_col_skin', 'send_tex_col_part', 'sub_2435C',
-         'set_display_type_crt', 'osage_init']
+         'set_display_type_crt', 'osage_init', 'sub_63AC4', 'rob_kage_disp_inside', 'rob_kage_disp_outside']
+# StF's tables the C reads by name (megamix.c's kage_palettes: each
+# character's shadow table, for its models' colours)
+DATA_ROOTS = ['off_64988']
 # Routines the board does not run (debug text, name plates,
 # sound, ring scatter, Super Sonic's hair objects): `ret`.
 STUBS = ['print_mes', 'print_mes_ex', 'print_hex_w', 'debug_disp_hex', 'dsp_pattern_right',
@@ -429,7 +437,7 @@ def main():
     S.append('')
     S.append('                .text')
     S.append('                .align  4')
-    for f in ROOTS:
+    for f in ROOTS + DATA_ROOTS:
         S.append(f'                .globl  {f}')
     S.append(text)
     S.append('')

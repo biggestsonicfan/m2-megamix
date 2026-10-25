@@ -12,7 +12,8 @@ StF draws them, from its own data put into StF's form.
 `tools/shadow-data.mjs` reads every roster fighter's table and every roster
 stage's light from the three ROM sets and prints them in StF's form
 (`--json` for all of it). `tools/import-assets.mjs` keeps the shadow models
-of the board's StF fighters in the data ROMs. Nothing is drawn yet.
+of the board's StF fighters in the data ROMs. The board draws them with
+StF's own code (On the board, below).
 
 ## Sonic the Fighters
 
@@ -342,6 +343,41 @@ One card a bone works; nothing has to be dropped or split:
   shadow models' material. Shenmue uses the same hulls for every
   character, so Chai's are Ryo's.
 
+## On the board
+
+The board runs StF's routines, lifted by `tools/lift-stf.py` (roots
+`sub_63AC4`, `rob_kage_disp_inside`, `rob_kage_disp_outside`; the lift
+pulls in `rob_kage_set_matrix`, `rob_kage_set_flag_sub`,
+`rob_kage_disp_test`, `tobi_kage_set_flag`, `tobi_kage_disp` and
+`off_64988` with its tables). `megamix.c` calls them in StF's order:
+
+- `kage_stage`, with the stage (`load_stage`): VECTER_X/Y (0x501020/22)
+  from the stage's light, and `stage_soko` (0x50A010) from StF's stage
+  record (+0xC8: South Island −10, Aurora 0). A guest stage has no StF
+  record and gets 0: its shadows all lie on the ring, whose floor is y = 0.
+- `kage_light`, each frame once the fighters are stepped: the slide
+  (0x501990/94, −sinx and cosx of VECTER_Y + 0x8000 by cot VECTER_X, as
+  StF's stage routines work it out), the fighters' unscaled camera as the
+  current matrix, then `sub_63AC4`: op 0x73 and op 0x75 for each player.
+- `kage_inside`, after the stage: `rob_kage_disp_inside` for each player
+  (and the projectiles' shadows). StF skips it on Aurora Icefield, where it
+  mirrors its fighters in the ice instead, and so does the board.
+- `kage_outside`, after each fighter: `rob_kage_disp_outside`, which StF's
+  stage flag (bit 28) turns off on Aurora.
+
+`rob_kage_disp_test` leaves the geometrizer in StF's mode 1; the board
+draws in mode 0 and sets it back after each pass. It also draws slot 0's
+entry, model 0, while the slot-0 ball is off, so the import keeps model 0's
+header (set_obj stops at a model whose header is 0: the board crashed in
+`poly_data_err`). `load_palettes` loads the colours of every fighter's
+table models, the ball (0x195) and the projectile shadow (0x736).
+
+Checked in MAME (`sfight`, the shared build) and m2-hle2, Sonic against
+Honey: shadows on South Island, Tou-rin, the Colosseum and Western, none
+on Aurora; on South Island they look as real StF's do (black, cast away
+from the light). The guests draw the table of the StF character whose
+slot they take (The board's other guests, above).
+
 ## Putting a fighter's shadows on the board
 
 What the board will need, in StF's form, for a fighter from any game:
@@ -371,12 +407,12 @@ What the board will need, in StF's form, for a fighter from any game:
    cabin, slot 9, tests a shoulder ball): see Daytona's Hornet, above, for
    the table each would need.
 4. Its stage's light: VECTER_X/Y and `stage_soko` for every stage the
-   board offers; a guest stage's from its own record (`tools/shadow-data.mjs`
+   board offers (done: the stage's light, StF's soko, 0 on a guest stage);
+   a guest stage's ground from its own record (`tools/shadow-data.mjs`
    prints them). FV's lamps, gates and per-stage ground would be guest
    branches, as would VF2's ring and ground.
-5. The calls, in StF's order, in the board's frame: op 0x73 once the
-   camera is set, op 0x75 for each player, the inside pass after the stage
-   and the outside pass after each fighter.
+5. The calls, in StF's order, in the board's frame (done, On the board,
+   above).
 
 What the guests will look like against their own games: StF's op 0x74
 flattens along the stage's light, where Daytona flattens straight down

@@ -192,6 +192,7 @@ const OSAGE_SIZE = { 1: 0x24, 2: 0x40, 3: 0x0c, 4: 0x18, 5: 0x44 };   /* osage_d
  * sixteen 24-byte entries (slot, model, flags, offset), then three u16 models */
 const SHADOW_TABLES = 0x064988, SHADOW_ENTRIES = 16, SHADOW_ENTRY = 24;
 const SHADOW_BALL = 0x195;                /* rob_kage_disp_test: slot 0's while +0x2068 is 1 */
+const SHADOW_TOBI = 0x736;                /* tobi_kage_disp: a projectile's shadow */
 const SET_FIGHTERS = 1;
 const MOTION_LIST = 0x06400004, MOTIONS = 519;
 const SCROLL_TABLE = 0x06480000;          /* _ScrollCG_Initialize / _ScrollColor_Initialize */
@@ -283,6 +284,10 @@ async function importStf(R) {
     }
     for (const list of BOMB_MARKERS) for (let i = 0; i < 11; i++) model(program.u16(list + i * 2));
     model(SHADOW_BALL);
+    /* rob_kage_disp_test draws slot 0's entry, model 0, while +0x2068 is
+     * not 1, and set_obj stops at a model whose header is 0 */
+    models.add(0);
+    model(SHADOW_TOBI);
     const colorbases = new Set();
     for (const m of [...models].sort((a, b) => a - b)) keepModel(m);
     /* the table's count (max_poly), which set_obj_fifo checks a model by */

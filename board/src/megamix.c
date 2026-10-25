@@ -425,6 +425,70 @@ static void osage_camera(void) {
     for (i = 0; i < 3; i++) c0[9 + i] = c1[9 + i] = m2_obj_fb(cam.t[i]);
 }
 
+/* The fighters' shadows, StF's own (docs/SHADOWS.md): camera_init's
+ * sub_63AC4 sends the stage's light (rob_kage_set_matrix, op 0x73: the
+ * coprocessor builds the flattening and the two passes' matrices on the
+ * camera it holds, the fighters' unscaled one, cam_l) and gets each
+ * player's two masks of sixteen slots (sub_63B10, op 0x75: the slot's
+ * collision ball slid along the light, near the ring or off it). The light
+ * is the stage's VECTER_X and VECTER_Y (0x501020, 0x501022; a guest stage's
+ * from its own record), the slide (0x501990, 0x501994) worked out from them
+ * as loc_23144 does: -sinx(VY + 0x8000, cot VX), cosx(VY + 0x8000, cot VX).
+ * Then rob_kage_disp_inside after the stage (the near mask on the ring's
+ * matrix, and the projectiles' shadows; all sixteen slots while stage_soko
+ * is 0) and rob_kage_disp_outside after each fighter (the far mask, onto
+ * the ground stage_soko down). rob_kage_disp_test draws each slot's
+ * shadow model with op 0x74 and set_obj in geometrizer mode 2 and leaves
+ * StF's mode 1; the board draws in mode 0 (kage_mode). */
+#define COP_SIN  COP_CMD(0x21)
+#define COP_COS  COP_CMD(0x22)
+#define COP_SINX COP_CMD(0x24)
+#define COP_COSX COP_CMD(0x25)
+#define KAGE_NO_INSIDE 2u                /* Aurora Icefield: StF mirrors its fighters in the ice instead */
+
+static void kage_mode(void) {
+    volatile u32 *fifo = (volatile u32 *)M2_GEOFIFO_ADDR;
+    *fifo = GEO_OP_MODE; *fifo = GEO_MODE_NP_NS;
+}
+
+/* change_scene's part: the light (VECTER_X, VECTER_Y) and stage_soko, the
+ * ground below the ring the far pass lays its shadows on (sub_29350: the
+ * stage record's +0xC8). A guest stage keeps all its shadows on the ring
+ * (stage_soko 0), whose floor is y = 0. */
+static void kage_stage(const stage_t *st) {
+    *(u16 *)stf_ram(0x501020u) = (u16)st->vx;
+    *(u16 *)stf_ram(0x501022u) = (u16)st->vy;
+    stf_set(0x50A010u, st->slot != 0xFFFFu ? *(const u32 *)(0x8F3D0u + st->slot * 256u + 0xC8u) : 0u);
+}
+
+static void kage_light(void) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    u32 vx = (u32)(int)*(const short *)stf_ram(0x501020u), vy = (u32)(int)*(const short *)stf_ram(0x501022u), i;
+    float sn, cs, cot;
+    *cf = COP_SIN; *cf = vx; sn = m2_cop_gf();
+    *cf = COP_COS; *cf = vx; cs = m2_cop_gf();
+    cot = 1.0f / sn * cs;
+    vy += 0x8000u;
+    *cf = COP_SINX; *cf = vy; *cf = m2_obj_fb(cot); stf_set(0x501990u, *cf ^ 0x80000000u);
+    *cf = COP_COSX; *cf = vy; *cf = m2_obj_fb(cot); stf_set(0x501994u, *cf);
+    *cf = COP_WMATRIX;
+    for (i = 0; i < 9; i++) *cf = m2_obj_fb(cam_l.r[i]);
+    for (i = 0; i < 3; i++) *cf = m2_obj_fb(cam_l.t[i]);
+    stf_call(stf_sub_63AC4, robs[0], robs[1], 0u);
+}
+
+static void kage_inside(const stage_t *st) {
+    u32 p;
+    if (st->slot == KAGE_NO_INSIDE) return;
+    for (p = 0; p < 2u; p++) stf_call(stf_rob_kage_disp_inside, robs[p], robs[p ^ 1u], 0u);
+    kage_mode();
+}
+
+static void kage_outside(u32 p) {
+    stf_call(stf_rob_kage_disp_outside, robs[p], robs[p ^ 1u], 0u);
+    kage_mode();
+}
+
 /* One 60 Hz frame of StF's fight, its tasks in a real board's order:
  * rob_control (each player's pad to the fighter's +0x1200, then sub_1D47C,
  * which reads the moves the pad makes), each fighter's task (rob_action: the
@@ -1222,6 +1286,7 @@ static void load_stage(const stage_t *st) {
     sky_load(st->sky);                   /* after the colorxlat: palette_w reads it */
     m2_backdrop(st->bg);                 /* scr_bg_int: the record's stage_bg_color */
     stage_light(st);
+    kage_stage(st);
     for (i = 0; i < st->ndraws; i++) {
         if (st->draws[i].model) m2_load_model_palette(st->draws[i].model);
         if (st->lit && st->lit[i]) m2_load_model_palette(st->lit[i]);
@@ -1231,16 +1296,28 @@ static void load_stage(const stage_t *st) {
 
 /* Every model a fighter can draw: its sixteen parts (its character record's
  * first list; player 2's at character + 26) and its eyes. */
+/* A character's shadow models (its off_64988 table: sixteen 24-byte
+ * entries, the model at +4, then three u16 models), StF's own colours. */
+extern const u32 stf_off_64988[] __asm__("off_64988");
+static void kage_palettes(u32 c) {
+    u32 t = stf_off_64988[c], i, m;
+    for (i = 0; i < 16u; i++) if ((m = *(const u32 *)(t + i * 24u + 4u)) != 0u) m2_load_model_palette(m);
+    for (i = 0; i < 3u; i++) if ((m = *(const u16 *)(t + 16u * 24u + i * 2u)) != 0u) m2_load_model_palette(m);
+}
+
 static void load_palettes(void) {
     u32 a, i, p;
     for (a = 0; a < POSE_ANIMS; a++)
         for (p = 0; p < 2u; p++) {
             const u32 *parts = *(const u32 *const *)stf_char(pose_anims[a].chr + p * 26u);
             for (i = 0; i < 16u; i++) if (parts[i]) m2_load_model_palette(parts[i]);
+            kage_palettes(pose_anims[a].chr + p * 26u);
             if (char_game(pose_anims[a].chr) != GAME_STF) continue;
             for (i = 0; i < pose_anims[a].nparts; i++)
                 m2_load_model_palette(p ? pose_anims[a].parts[i].p2 : pose_anims[a].parts[i].model);
         }
+    m2_load_model_palette(0x195u);  /* rob_kage_disp_test's slot 0 ball */
+    m2_load_model_palette(0x736u);  /* tobi_kage_disp: a projectile's shadow */
 }
 
 /* Each player's fighter's part and skin rows. */
@@ -1638,7 +1715,9 @@ int main(void) {
           } }
         if (!in_menu) hud_draw();
         osage_step();
-        for (i = 0; i < 2u; i++) { polys = 0u; draw_fighter(&fs[i], i); pn[1u + i] = polys; }
+        kage_light();
+        kage_inside(&stages[stage]);
+        for (i = 0; i < 2u; i++) { polys = 0u; draw_fighter(&fs[i], i); kage_outside(i); pn[1u + i] = polys; }
         zanzou_draw(pn);
         tobi_draw(pn);
         if (in_menu) poly_win_draw(pn);

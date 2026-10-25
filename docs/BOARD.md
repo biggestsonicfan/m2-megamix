@@ -1640,6 +1640,13 @@ held, and a change of stage or fighter shows at once.
   it. After a fighter changes, his seams come in one a pass, so his
   count climbs for a few passes.
 
+## Shadows
+
+The fighters' shadows are StF's: its lifted `rob_kage_*` routines and its
+tables (`off_64988`), called by `megamix.c`'s `kage_stage`, `kage_light`,
+`kage_inside` and `kage_outside` in StF's order. None on Aurora Icefield,
+as in StF. `docs/SHADOWS.md` (On the board) has the details and the check.
+
 ## Where it stands
 
 Two fighters (Sonic, Honey, Eggman, Akira or Ryo, picked in the setup) stand
@@ -1666,8 +1673,9 @@ Known gaps:
 - Eggman's head (model 793) takes its texture from StF's texture set 7,
   which the board does not load (it loads set 1 and the stage's), so it
   does not show.
-- No shadows (`docs/SHADOWS.md` has how each game draws them and what the
-  board needs). The camera's round-end and replay modes are not run.
+- The guests cast the shadows of the StF character whose slot they take
+  (`docs/SHADOWS.md`, On the board). The camera's round-end and replay
+  modes are not run.
 
 ## Plan
 
