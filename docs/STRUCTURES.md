@@ -36,7 +36,7 @@ how a throw from one game lands on a fighter from another.
 | motion setup records | `0x0200d34c`, head 8 | `0x06411e94`, head 12 | `0xce380`, head 13 |
 | setup op lengths | `0x1b7f6` | `0x1ce86` | handler table (`STF_LENGTHS`) |
 | reaction table / kinds | `0x0201ccfc` / 30 | `0x0641f834` / 22 | common motions 177, 182, 221, 225 |
-| energy | 200 | 200 | 140 (`0x5000A0`) |
+| energy (`energy_max`, 0x5000A0 in all three) | 200 | 200 | 140 |
 
 The action slots the engine plays are in `js/fighters.js` `ACTION_SLOTS`.
 Each game orders its action table its own way, but every slot is there.
@@ -56,26 +56,53 @@ numbers:
 ## The player struct
 
 `js/engine.js` `makePlayer` keeps the fields a fighter's work area holds.
-The offsets come from Sonic the Fighters' player struct. They are the ones the
-F1 dump shows.
+The names are the ones each game's debug menu prints beside the field
+(ROBn_INFO, read in `docs/DEBUG-MODE.md`, which lists all of them). The
+main ones, most of which the F1 dump shows:
 
-| offset | field |
+| field | VF2 | FV | StF | |
+|--|--|--|--|--|
+| `flag` | +0x000 | +0x000 | +0x000 | u32 bits (mot_end, lost, mirror, land...), not a state |
+| `xpos` / `zpos` | +0x018 / +0x020 | same | same | f32; `ypos` +0x01C |
+| `yang` | +0x026 | +0x026 | +0x026 | u16 facing |
+| `command` | +0x194 | +0x194 | +0x194 | the matched command |
+| `action` | +0x19C | +0x19C | +0x19C | u32. Its top byte +0x19F is the state (`ST`: 0 motion, 1 kamae, 2 syagami, 3 walk, 4 bwalk, 5 fumikomi, 6 jump, 8 down, 9 rise, 10 guard, 11 yarare, 12 nage, 13 nagerare) |
+| `mot_kind` | +0x1A4 | +0x1A4 | +0x1A4 | u32 bits (mk_attack, mk_guard, mk_down...) |
+| `mot_num` / `mot_coma` | +0x1A8 / +0x1AA | same | same | motion / frame |
+| `energy` | +0x1AC | +0x1AC | +0x1AC | |
+| character | +0x1B0 | +0x1B0 | +0x1B0 | |
+| hit combo | +0x6D8 | +0x708 | +0x6F4 | u8; +1 is the down hit combo |
+| `motd_kind` | +0x804 | +0x804 | +0x804 | the setup record's kind, the `mot_kind` bits |
+| `motd_main` / `follow1` / `follow2` | +0x808 / +0x80A / +0x80C | same | same | hit / cancel / end frames |
+| `motd_damage` | +0x822 | +0x822 | +0x822 | u8 |
+| pad | +0x1200 | +0x1200 | +0x1200 | the input ring follows (`write_pnt` +0x1202) |
+| `pc_command` | +0x1218 | +0x1218 | +0x1218 | the follow (command) table |
+
+It is one struct in the three games. Every field up to +0x62A and from +0x800
+on is at the same offset in all three. The fields between move: that is
+where the hit combo sits.
+
+`fa_rob0` / `fa_rob1` (0x500804 / 0x500808) point to the two fighters, and
+`fa_camera` (0x500814) to the camera, in all three games.
+
+## The fight globals
+
+These are at the same addresses in the three games:
+
+| address | |
 |--|--|
-| +0x000 | state (`ST`: 0 motion, 1 kamae, 2 syagami, 3 walk, 4 bwalk, 5 fumikomi, 6 jump, 8 down, 9 rise, 10 guard, 11 yarare, 12 nage, 13 nagerare) |
-| +0x018 / +0x020 | position x / z |
-| +0x026 | facing (yang) |
-| +0x19C | action word |
-| +0x1A8 / +0x1AA | motion / frame |
-| +0x1AC | energy |
-| +0x1B0 | character |
-| +0x6F4 | hit combo |
-| +0x804 | setup word |
-| +0x808 / +0x80A / +0x80C | hit / cancel / end frames |
-| +0x1200 | pad |
-| +0x1218 | follow (command) table |
+| 0x500028 | game timer, u16: `time` × 64 at the round's start, one off each frame |
+| 0x50002A / 0x500030 | mode / sub-mode |
+| 0x50004F / 0x500051 | round wins P1 / P2 |
+| 0x500052 | wins needed |
+| 0x500055 | current round |
+| 0x500064 | stage |
+| 0x50008F / 0x500090 | the rounds and time settings |
+| 0x5000A0 | `energy_max` |
 
-The fight globals are curr_round `0x500055`, game_timer `0x500028` and
-round wins `0x50004F` / `0x500051`.
+The tuning block at 0x50A000 (throw timer, rise time, combo limits, stage
+bounds) is the same in VF2 and FV; StF moves the part from 0x50A148 on by
+0x68. `docs/DEBUG-MODE.md` has it.
 
 ## Stages
 

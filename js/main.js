@@ -182,7 +182,7 @@ function structDump() {
     const row = (off, name, get) => `+${off.padEnd(6)}${name.padEnd(12)}${fight.players.map((p) => String(f(get(p))).padEnd(28)).join('')}`;
     return [
         `        ${'FIELD'.padEnd(12)}${fight.players.map((p) => `P${p.side + 1} ${gameTag(p.fighter.game)} ${p.fighter.name}`.padEnd(28)).join('')}`,
-        row('0x000', 'state', (p) => `${p.state} ${ST_NAME[p.state]}`),
+        row('0x19F', 'state', (p) => `${p.state} ${ST_NAME[p.state]}`),
         row('0x018', 'pos x', (p) => p.pos[0]),
         row('0x020', 'pos z', (p) => p.pos[2]),
         row('0x026', 'yang', (p) => `${f(p.yang)} (${((p.yang * 0x8000) / Math.PI) & 0xffff})`),
