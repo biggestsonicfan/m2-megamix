@@ -113,13 +113,30 @@ export function stageLights(NG) {
     return out;
 }
 
+/* The board's guests, by the StF character each one takes (docs/BOARD.md).
+ * Until a guest gets a table of its own, off_64988 gives it that
+ * character's StF table: StF's cards on the guest's slots. */
+export const BOARD_GUESTS = [
+    { name: 'AKIRA', from: 'vf2', chr: 6 },
+    { name: 'RYO', from: 'shenmue', chr: 1 },
+    { name: 'CHAI', from: 'shenmue', chr: 12 },
+    { name: 'HORNET', from: 'daytona', chr: 17 },
+];
+
+export function guestInherits(rom) {
+    return BOARD_GUESTS.map((g) => {
+        const t = stfTable(rom, g.chr), t2 = stfTable(rom, g.chr + 26);
+        return { ...g, at: t.at, p2: t2.at, models: t.entries.filter((e) => e.model).map((e) => e.model) };
+    });
+}
+
 if (import.meta.url === `file://${process.argv[1]}`) {
     const NG = await loadNodeGames();
     const fighters = fighterShadows(NG), stages = stageLights(NG);
     const stf = NG.stf.rom;
     const balls = [...stf.maincpu.subarray(STF.balls, STF.balls + 16)];
     if (process.argv.includes('--json')) {
-        console.log(JSON.stringify({ balls, fighters, stages }, null, 1));
+        console.log(JSON.stringify({ balls, fighters, stages, guests: guestInherits(stf) }, null, 1));
     } else {
         const hex = (n) => `0x${n.toString(16)}`;
         console.log(`StF's ball a slot (0x4C84): ${balls.join(' ')}`);
@@ -127,6 +144,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
             const drawn = f.entries.filter((e) => e.model);
             const flags = [...new Set(drawn.map((e) => e.flags))].join('/');
             console.log(`${f.game.padEnd(3)} ${f.name.padEnd(6)} table ${hex(f.own).padEnd(9)} ${drawn.length} parts, flags ${flags}, models ${drawn.map((e) => e.model).join(' ')}${f.p2 ? `; player 2 ${hex(f.p2)}` : ''}`);
+        }
+        for (const g of guestInherits(stf)) {
+            console.log(`board ${g.name.padEnd(6)} (${g.from}) StF ${String(g.chr).padStart(2)}: inherits ${hex(g.at)}${g.p2 !== g.at ? ` (player 2 ${hex(g.p2)})` : ''}, models ${g.models.join(' ')}`);
         }
         for (const s of stages) {
             const l = s.light ? `a0 ${hex(s.light.a0)} a1 ${hex(s.light.a1)}` : 'no shadows';

@@ -1,9 +1,11 @@
 # The fighters' shadows
 
-Each game lays a flat model under each part of a fighter, slid along the
-stage's light onto the floor. All three build the same three projections
-and walk the same kind of table, but they share out the work in their own
-way. Sonic the Fighters is the parent: the board runs StF's code and StF's
+Sonic the Fighters, Virtua Fighter 2 and Fighting Vipers lay a flat model
+under each part of a fighter, slid along the stage's light onto the floor.
+All three build the same three projections and walk the same kind of
+table, but they share out the work in their own way. Daytona USA, Fighters
+Megamix and Shenmue, where Hornet, Ryo and Chai come from, cast theirs
+otherwise (The board's other guests, below). Sonic the Fighters is the parent: the board runs StF's code and StF's
 coprocessor firmware, so a fighter from any game gets its shadows the way
 StF draws them, from its own data put into StF's form.
 
@@ -143,11 +145,125 @@ shadows", "Fighting Vipers' wall shadows", "The pieces' floor shadows"):
 - the Factory's four lamps (the light from the nearest one);
 - the wall shadows on Bay Side and the flying armour pieces' shadows.
 
+## The board's other guests
+
+Ryo, Chai and Hornet come from games that cast shadows another way.
+Until each one gets a table of its own, `off_64988` gives it the table of
+the StF character whose slot it takes (`tools/shadow-data.mjs` prints
+this): Ryo, character 1, gets Tails' cards (0x658D0, models 57 to 71); Chai,
+12, and Hornet, 17, get Sonic's (0x65748); Akira, 6, gets Knuckles'
+(0x65BE0). StF's cards on a guest's slots are the wrong shape: on Hornet,
+slot 1 is the nose and slot 9 the cabin.
+
+### Daytona's Hornet (Model 2)
+
+Daytona USA (rev A, `daytona`) lays one flat card under each car, squashed
+onto the road by an ordinary scale. There is no light, no copro op and no
+texture. (Read in rev A's code with stf-tools' `i960dis.mjs`; the models
+decoded with noclip's `decodeModel`; not run in MAME.)
+
+- **The models.** The player's car is model 791 (record 0x02843980): 6
+  untextured black quads at y = 0 in a car's outline with tapered ends, x
+  ±1.00 m, z −2.35 (the front) to +2.50. That is 2.0 × 4.85 m, a little
+  wider than the 1.74 m body, so it covers the tyres. It has the checker bit
+  (texheader bit 15), so it draws every other pixel, the board's
+  half-transparency. The rivals' card is model 800 (0x02843A34), the same
+  outline in 4 quads without the checker bit, solid black.
+- **Where.** The player's car, 0x7598 (called from 0x74F0), after the
+  body (0x7D38) and the tyres (0x7FB4), at 0x7738 to 0x785C: push;
+  T(+0x1C, +0x20, +0x24), the car's x and z and the road's height (+0x20,
+  without the car's height +0x5C); RY(+0x4E) RX(+0x4C) RZ(+0x50), the car's
+  heading, pitch and roll; S(1, 0.01, 1) (op 0x13, at 0x77CC); RZ(+0xA2)
+  RY(+0xA0) RX(+0x9E), the body's sway; model 791; pop. So the card lies
+  flat along the road's normal. Every car type uses 791. It is skipped
+  when 0x5014A4 is 2, probably the in-car view.
+- **Rivals.** `dsp_other_car` (0x8298) draws 800 the same way at detail
+  levels 4 to 2 (0x8970, 0x8D68, 0x9144) and none at level 1. At most 3
+  shadows a frame are drawn (the count at 0x501120, zeroed at 0x1848): the
+  player's and the first two rivals in the list.
+- Model 770 is no shadow: it is a green and grey card that no code reads.
+  `docs/FM-SATURN.md`'s "model 770 under them" (on `hornet-board`) is wrong
+  about that.
+
+### Fighters Megamix's Hornet (Saturn)
+
+FM (the prototype of Apr 08, 1997; read in Ghidra, not run) has two kinds
+of shadow, picked by the fighter row in FUN_06019440, which
+FUN_06019008 calls before it draws the body. It skips the shadow if player
++0x67 has bit 1, or if the fighter is off the ring (|x| or |z| beyond
+`*0x060E10A4`) and `*0x060E10B0` is 0.
+
+- **Everyone but Kuma, Bark and Hornet** (FUN_0601948c): VF2's way with
+  one set of models for all. FUN_06019516 builds Ry(r) S(1, 0, 1/sin a0)
+  Rx(a0 − 0x4000) Ry(−r) from the light at 0x0607A454 (elevation 0x2800,
+  negated and clamped to 0xA000..0xE000, the azimuth 0x8000), which
+  flattens onto y = 0 along the light. It draws 7 shared closed prisms,
+  each on its part's matrix (table 0x06075688): the chest (slot 1), both
+  upper arms (3, 6), both thighs (10, 13) and both shins (11, 14). There are
+  none for the head, the forearms or the feet. The VF2 cast's own models are
+  not used.
+- **Kuma, Bark and Hornet** (rows 10, 12, 14; FUN_060194d2): one ellipse
+  (0x06086D8C, 17 points and 16 polygons, outer half-axes 0.31 × 0.25 m)
+  at slot 1's x and z on y = 0, with no turn, so it keeps the world's
+  axes. It is scaled by (2k, 0, 2k), where k is a stack word no code found
+  so far writes, so its size is not known.
+- Each model slot 0, which `docs/FM-SATURN.md` calls the shadow, is a 4-point
+  square of 2 to 5 cm that no code draws.
+- The draw (FUN_06020d88) sends every face as a VDP1 polygon of colour
+  0xFFFF, in replace mode, at a fixed sort depth 0x5000. How that colour
+  comes out dark (a VDP2 sprite shadow setting, probably) is not found.
+
+The board's Hornet is Daytona's car, so his shadow should be Daytona's
+791 too, not FM's ellipse.
+
+### Shenmue's Ryo and Chai
+
+Shenmue (beta 0.400, disc 3; `1ST_READ.BIN` at 0x0C010000, not scrambled)
+casts a fighter's shadow as a PowerVR modifier volume, not as a flat
+model. Neither his models nor their textures have anything for it.
+
+- **The mode.** Each character's `Shadow{...}` block in a scene's
+  MAPINFO.BIN (Image, Mode, Position, Scale, Yang, Height; read by
+  0x0C179EC8) sets char +0x7C. In the free battle (SCENE/03/MFBT) Ryo
+  (`AKIR`) has Mode 4, his mode nearly everywhere on disc 3. The
+  dispatcher is at 0x0C113F4C (jump table 0x0C113F70):
+  - modes 0, 1, 6 and 10 flatten a stand-in man (MISC/COLD.BIN entry 11,
+    `SYD_S.BIN`, 13 untextured meshes on the same bones) onto the ground
+    at y + 0.013 (0x0C17978A), and modes 7, 8 and 11 do the same with the
+    character's own model;
+  - modes 2, 3 and 9 go to 0x0C179C2C (not read);
+  - modes 4 and 5 (0x0C12DE3C) build a shadow volume.
+- **The volume.** MISC/COLD.BIN entry 7, `SYD_MUNE.BIN` (magic MVSD,
+  10224 bytes, loaded by 0x0C12DC72): 13 closed hulls, one per bone (1, the
+  head 0xFFBD, 5, 6, 0xFFBF, 10, 11, 0xFFBE, 14, 16, 17, 21, 22), 116
+  points, 269 edges and 162 faces in all. There are none for the hands or
+  feet. Each hull is placed by its bone's matrix in the character's model.
+  For each of up to 32 scene lights, the silhouette is drawn out along the
+  light (a directional light's direction, or the light-to-character line)
+  by 1.8 / −dir.y, at most 50. The caps and sides are built from 0x0C1D0F00
+  and sent to the opaque modifier volume list (0x0C1D1C90). Inside it the
+  scene is darkened to 127/256 (0x0C12DCB8(0.5) writes 0x17F to the shadow
+  scale register, 0x005F8074).
+- **Chai.** All 13 bone ids are in CHA_B and CHA_M, so the same hulls fit
+  him. Which mode his ending fight (SCENE/03/MEND) gives him is not known:
+  MEND has no Shadow block for him or Ryo. The only scene that lists him,
+  MC5Q, gives Mode 0. Breaking on the mode's writer (0x0C0AB2A0) in that
+  fight would settle it.
+
+The board has no modifier volumes, but the copro's `inner[0]` flattens
+whatever model it is given. So each SYD_MUNE hull can be a card on the
+slot of its bone (the board's `SLOT_BONES` map, as for the model), flattened
+by op 0x74 the way StF's cards are. That draws the outline Shenmue's volume
+casts on flat ground. A hull flattened draws both its top and bottom faces,
+so only its faces turned towards the light should be kept.
+
 ## Putting a fighter's shadows on the board
 
 What the board will need, in StF's form, for a fighter from any game:
 
 1. Its table: 16 entries and a tail, as `tools/shadow-data.mjs` writes it.
+   Each guest takes an StF character's slot, so until it has its own it
+   draws that character's (above, The board's other guests).
    A VF2 or FV fighter's fifteen entries keep their order, the slot they
    lack (slot 0, as in StF's) comes last with model 0, and VF2's flags are
    turned into StF's. StF's own tables are in the program ROM (0x64988 to
@@ -155,10 +271,19 @@ What the board will need, in StF's form, for a fighter from any game:
    them, and the guests', where the board's `off_64988` reads.
 2. Its models: StF's fighters' are in the data ROMs now (45 models). A
    guest's (Akira's VF2 343 to 424) have to come in through its import,
-   renumbered as its other models are.
+   renumbered as its other models are. Ryo's and Chai's: the SYD_MUNE
+   hulls, flattened to the faces that face the light. Hornet's: Daytona's
+   791 cut at the body's cut (z = −0.46, with a row of points at x ±0.976)
+   into a nose card on slot 1 (16 broken) and a cabin card on slot 9 (24),
+   in those slots' frames as `hornetObjects` puts the nose and cabin. His
+   other slots, the wheels included, get model 0. Every guest's cards take
+   StF's shadow cards' header and colour; Daytona's colour means nothing in
+   StF's palette.
 3. Its balls: the mask test takes ball `0x4C84[slot]` of the fighter's
    collision balls. A guest's ball list (rob +0x1D00) has to have a ball at
-   each of those indices that rides the slot's part.
+   each of those indices that rides the slot's part. Hornet needs ball 0 on
+   the nose and ball 9 on the cabin, or the mask test leaves his cards out
+   (not checked on `hornet-board`).
 4. Its stage's light: VECTER_X/Y and `stage_soko` for every stage the
    board offers; a guest stage's from its own record (`tools/shadow-data.mjs`
    prints them). FV's lamps, gates and per-stage ground would be guest
@@ -166,6 +291,13 @@ What the board will need, in StF's form, for a fighter from any game:
 5. The calls, in StF's order, in the board's frame: op 0x73 once the
    camera is set, op 0x75 for each player, the inside pass after the stage
    and the outside pass after each fighter.
+
+What the guests will look like against their own games: StF's op 0x74
+flattens along the stage's light, where Daytona flattens straight down
+onto the road. On the car pose the two match. On Hornet's stance (0x11C,
+the car on its tail), his cards will make a long slanting strip. Ryo's
+and Chai's will be single, hard-edged shadows from one light, where
+Shenmue draws one for each scene light, half dark.
 
 Left for later, as in noclip: FV's wall shadows, its pieces' shadows, and
 StF's projectile, name-plate (`name_char_kage_disp`) and Tails' plane
