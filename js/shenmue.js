@@ -263,7 +263,7 @@ export function restMatrices(model) {
 /* ---- motions --------------------------------------------------------------- */
 
 /* VF2's channel types (noclip motion.js) */
-const LATCHED = 1, ZERO = 3, CONST = 4, HERMITE = 6;
+const LATCHED = 1, ZERO = 3, CONST = 4, LINEAR = 5, HERMITE = 6;
 const TURN = 65535, TANGENT = 2;
 
 /* Shenmue's bone (the motion's bone list: bone << 9 | mask; 0x1C0 the
@@ -398,7 +398,7 @@ export function toVF2(m) {
  *  channel; four-aligned, the key times (f32), then the values. */
 export function encodeVF2(vf2) {
     const ch = vf2.channels;
-    const counts = ch.filter((c) => c.type === HERMITE).map((c) => c.times.length);
+    const counts = ch.filter((c) => c.type === LINEAR || c.type === HERMITE).map((c) => c.times.length);
     let n = (22 + counts.length + 3) & ~3;
     for (const c of ch) n += 4 * (c.times.length + c.values.length);
     const b = new Uint8Array(n), v = viewOf(b);
