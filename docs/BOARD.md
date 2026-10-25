@@ -1415,6 +1415,17 @@ writes them into the data ROMs, and `bake-board.mjs` bakes the record
   colours within 4 levels a channel, the hills show at the horizon behind
   the town, and the sky drifts left 62 pixels in 100 frames (1000 / 16), as
   the town turns; m2-hle2 draws it the same.
+- The windows: FV opens a polygon window (GEO command 3, full screen)
+  between parts of the list, and each window covers the ones before it,
+  whatever their depth. Its order is the floor (581), then the town and
+  objects, then the ring (583) alone, then the cage, poles and rail, then
+  the fighters. The bear's stand (599) carries its shadow, faces 20..27, a
+  far-z decal at y -0.2 out to x -6.3 that would beat the ring's wood in
+  the depth buckets. `fvBoardPlan` marks the draws that open a window
+  (`stage_draw_t.win`) and `draw_stage` sends `m2_geo_fifo_window_full`
+  there, and once more before the fighters. Check (MAME, setup stage 4,
+  frames 400..4800): wood from fence to fence at every heading; m2-hle2 the
+  same.
 
 ### Western graded against FV
 
@@ -1432,11 +1443,11 @@ by part, not by frame.
 | Round start | fixed | the town snaps home each round: the wagon, K.O. Corral and the skull now stand behind the fighters at the start of each round, as in FV |
 | Wall | match | Sonic walking back stops against the fence |
 | Sky | match | FV's panorama, turning with the town (see the sky, above) |
-| Ring floor | wrong | a piece of the dirt (581, turning) shows through the wood (583, fixed) on the board, and moves with the turn; FV shows wood from fence to fence. Not explained yet |
+| Ring floor | fixed | the pale patch through the wood, turning with the town, was Kuma's shadow (599, faces 20..27); FV draws the ring in a window over the town's, and so does the board now (see the windows, above) |
 | Bear | not compared | FV's camera did not show it in this run; its hop and the cage break are not ported |
 
-Overall: the arena itself is FV's, and so is its sky; the dirt showing
-through the floor is what most separates it from FV.
+Overall: the arena, its sky and its floor are FV's; what is left is the
+bear's hop and the cage break.
 
 ## The fight
 

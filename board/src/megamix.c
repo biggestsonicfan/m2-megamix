@@ -803,7 +803,7 @@ static void mat_ang_x(mat_t *m, u32 a) {
 
 static void draw_stage(const stage_t *st) {
     mat_t m, ct;
-    u32 i, model, x0, x1;
+    u32 i, model, x0, x1, wins = 0u;
     if (st->turn) {
         /* FV's turning town: cam * ang_y(turn * frame) under the draws marked turn */
         volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
@@ -817,6 +817,8 @@ static void draw_stage(const stage_t *st) {
     }
     kuma_step();
     for (i = 0; i < st->ndraws; i++) {
+        /* FV's windows (fvBoardPlan): each covers the ones before it */
+        if (st->draws[i].win) { m2_geo_fifo_window_full(); wins = 1u; }
         mat_mul(&m, st->draws[i].turn ? &ct : &cam, st->draws[i].m);
         if (st->draws[i].side && !fv_side_in(&m)) continue;
         if (st->draws[i].swing) mat_ang_x(&m, (u32)-(kuma_p >> 16));
@@ -829,6 +831,8 @@ static void draw_stage(const stage_t *st) {
         if (st->tpd.kind != 0u && model == st->tpd.model) submit_mat_ov(model, &m, st->tpd.kind == 1u ? 0u : 1u, TPD_ADDR);
         else submit_mat(model, &m);
     }
+    /* and the fighters in one more, over the cage, as FV draws them */
+    if (wins) m2_geo_fifo_window_full();
 }
 
 /* Lay a baked run of colorxlat (R, G and B planes, row by row) over the SDK's ramp. */

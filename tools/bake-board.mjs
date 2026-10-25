@@ -161,10 +161,11 @@ const k = ARENA.stf.scale;
 const scale = [k, 0, 0, 0, 0, k, 0, 0, 0, 0, k, 0, 0, 0, 0, 1];
 /* x0, x1: for a cage panel, the x of its two ends in its own frame, which
  * cage_clip_m projects to cull it (see CAGE_X); equal (0, 0) for any other draw. */
-/* turn, side, swing: FV's (tools/fv-stages.mjs fvBoardPlan): the draw turns
- * with the town, is cage side 1-4 (drawn while the camera is inside it), is
- * the bear on its pendulum. */
-out.push('typedef struct { u32 model; float m[12]; float x0, x1; u8 turn, side, swing; } stage_draw_t;');
+/* turn, side, swing, win: FV's (tools/fv-stages.mjs fvBoardPlan): the draw
+ * turns with the town, is cage side 1-4 (drawn while the camera is inside
+ * it), is the bear on its pendulum, opens a new window (and a stage that
+ * opens any puts the fighters in one more, as FV does). */
+out.push('typedef struct { u32 model; float m[12]; float x0, x1; u8 turn, side, swing, win; } stage_draw_t;');
 /* bg: the record's stage_bg_color (+0x16, BGR555), which StF's scr_bg_int
  * puts behind the 3D layer (change_bg_color, bg_col_set).
  * bright, vx, vy: stage_bright (+0x04) and stage_vecter_x/y (+0x08, +0x0A),
@@ -334,7 +335,7 @@ stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
         for (const d of draws) {
             const m = composeOps(d.ops);
             for (let i = 12; i < 15; i++) m[i] *= FV_SCALE;
-            out.push(`  {${id(d.model)}, {${boardOf(mul(scale, m)).map(f32).join(',')}}, 0.0f, 0.0f, ${+d.turn}, ${d.side}, ${+d.swing}},`);
+            out.push(`  {${id(d.model)}, {${boardOf(mul(scale, m)).map(f32).join(',')}}, 0.0f, 0.0f, ${+d.turn}, ${d.side}, ${+d.swing}, ${+d.win}},`);
         }
         out.push('};');
         const cx = buildColorxlat(fv.rom, { colorSet: st.texSet[1], tint: st.tint, fighters: [] });

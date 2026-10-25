@@ -207,15 +207,24 @@ export const FV_TURN = 10;
 const KUMA = 0x407;
 
 /*
- * The board's plan: each arena's draws in FV's order (the floor, then the
- * town above it, the platform, each side's cage panels and top, the poles,
- * each side's rail, the objects), every op at frame 0 with no turn, and for
- * each draw what the board does with it each frame:
+ * The board's plan: each arena's draws in the order FV's display list has
+ * them (the floor, then the town above it and the objects, the platform,
+ * each side's cage panels and top, the poles, each side's rail), every op at
+ * frame 0 with no turn, and for each draw what the board does with it each
+ * frame:
  *   turn   it turns with the town (FV_TURN a frame about y, before its ops)
  *   side   cage side 1-4: drawn only while the camera is inside that side's
  *          plane, as cage_display does (byte_500288); the top goes with its
  *          side; the poles and the rail (sub_24224) are always drawn
  *   swing  the bear: kuma_int's pendulum about x, after its ops
+ *   win    a new geometrizer window opens before it. FV draws in windows
+ *          (GEO command 3, all full screen): the floor; the town and the
+ *          objects; the platform; the cage, poles and rail; the fighters.
+ *          The renderer draws the last window first and never draws over a
+ *          pixel, so each window covers the ones before it whatever their
+ *          depth. That is what keeps the bear stand's shadow (599's faces
+ *          20..27, flat on the ground and reaching in to the ring's middle)
+ *          under the platform, and the dirt under it too.
  * The cage break's pieces are not drawn (no break on the board yet).
  */
 export function fvBoardPlan(games) {
@@ -223,11 +232,13 @@ export function fvBoardPlan(games) {
     const stages = FV_BOARD_SLOTS.map((slot) => {
         const st = fv.stages.find((s) => s.slot === slot);
         const list = buildFlatDisplayList(st);
-        const order = ['floor', 'upper', 'platform', 'cage', 'poles', 'objects'];
+        const order = ['floor', 'upper', 'objects', 'platform', 'cage', 'poles'];
         /* the rail (sub_24224) comes after the poles in the 'cage' layer */
         const poles = list.findIndex((d) => d.layer === 'poles');
         const isRail = (d) => d.layer === 'cage' && poles >= 0 && list.indexOf(d) > poles;
-        const rank = (d) => (isRail(d) ? 4.5 : order.indexOf(d.layer));
+        const rank = (d) => (isRail(d) ? 5.5 : order.indexOf(d.layer));
+        /* FV's windows: the floor | the town and objects | the platform | the cage */
+        const winOf = (d) => [0, 1, 1, 2, 3, 3][order.indexOf(d.layer)];
         if (list.some((d) => rank(d) < 0 || d.anim)) throw new Error(`FV ${st.name}: a draw the board has no place for`);
         const draws = list.map((d, i) => ({ d, i })).sort((a, b) => rank(a.d) - rank(b.d) || a.i - b.i).map(({ d }) => {
             let ops = typeof d.ops === 'function' ? d.ops(0) : d.ops;
@@ -239,8 +250,9 @@ export function fvBoardPlan(games) {
              * (its y is cage_height / 3.1, 1 at FV's 3.1) */
             if (isRail(d)) ops = [...ops.filter(([o]) => o !== 't'), ['t', [0, 0, FV_RING]], ['s', [RING_K, 1, 1]]];
             else if (d.layer === 'cage' || d.layer === 'poles') ops = [['s', [RING_K, 1, RING_K]], ...ops];
-            return { model: d.model, ops, layer: isRail(d) ? 'rail' : d.layer, turn, side, swing: d.model === KUMA };
+            return { model: d.model, ops, layer: isRail(d) ? 'rail' : d.layer, turn, side, swing: d.model === KUMA, w: winOf(d) };
         });
+        draws.forEach((d, i) => { d.win = i > 0 && d.w !== draws[i - 1].w; });
         return { st, draws };
     });
     const models = [...new Set(stages.flatMap(({ draws }) => draws.map((d) => d.model)))].sort((a, b) => a - b);
