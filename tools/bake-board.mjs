@@ -11,14 +11,13 @@
  * game draws it), each entry a model and the same kind of matrix, with StF's
  * 1/1.6 stage scale folded in, and the texture set the stage uploads.
  *
- * Colours: the SDK's m2_color_init builds StF's ramp, but the palette band
- * (luma 48..63, where a palettised face's texel picks one of sixteen colours)
- * is per scene and per fighter. This bakes those runs of colorxlat as noclip's
- * colors.js builds them (chg_pol_color_send, send_tex_col_stage and the
- * fighter uploads): a stage's rows 0..27 at luma 0..63 (its tint trims the
- * ramp too), and a fighter's part rows 0..4 at luma 48..63 and skin rows
- * 28..29 at luma 0..63, player 1's rows; and the same in player 2's rows,
- * 7..11 and 30..31.
+ * Colours: StF's own routines set StF's stages' and fighters' colorxlat on
+ * the board (stage_disp, send_tex_col_stage, send_tex_col_skin/part, lifted
+ * by tools/lift-stf.py). The guests' come from their own games: this bakes
+ * those runs as noclip's colors.js builds them: a guest stage's rows 0..27
+ * at luma 0..63 (its tint trims the ramp too), and a guest fighter's part
+ * rows at luma 48..63 and skin rows 28..29 at luma 0..63, player 1's rows;
+ * and the same in player 2's rows, 7.. and 30..31.
  *
  * Player 2: StF writes palette RAM once, so a colour base names the same rows
  * on either side. What sets player 2 apart is its own models: character c's
@@ -93,15 +92,8 @@ for (const r of CAST) {
         out.push(`static const pose_part_t ${id}_parts[${parts.length}] = {`);
         out.push('    ' + parts.map((pt) => `{${pt.model}, ${pt.slot}, ${pt.p2}}`).join(', '));
         out.push('};');
-        const cx = buildColorxlat(f.rom, { fighters: [f.look.fighter] });
-        out.push(`static const u16 ${id}_part[] = {${u16s(cxlatRun(cx, 0, 5, 48, 16))}};`);
-        out.push(`static const u16 ${id}_skin[] = {${u16s(cxlatRun(cx, 28, 2, 0, 64))}};`);
-        const cx2 = buildColorxlat(f.rom, { fighters: [-1, f.look.fighter] });
-        out.push(`static const u16 ${id}_part2[] = {${u16s(cxlatRun(cx2, 7, 5, 48, 16))}};`);
-        out.push(`static const u16 ${id}_skin2[] = {${u16s(cxlatRun(cx2, 30, 2, 0, 64))}};\n`);
-        anims.push(`{"${e.name} ${a}", ${e.index}, ${parts.length}, ${id}_parts, ` +
-            `{{0, 5, 48, 16, ${id}_part}, {28, 2, 0, 64, ${id}_skin}, ` +
-            `{7, 5, 48, 16, ${id}_part2}, {30, 2, 0, 64, ${id}_skin2}}}`);
+        /* colours: StF's send_tex_col_part and send_tex_col_skin, no runs */
+        anims.push(`{"${e.name} ${a}", ${e.index}, ${parts.length}, ${id}_parts, {{0}, {0}, {0}, {0}}}`);
         console.log(id, 'character', e.index, 'parts', parts.length);
     }
 }
@@ -177,11 +169,10 @@ out.push('typedef struct { u32 model; float m[12]; float x0, x1; u8 turn, side, 
  * puts behind the 3D layer (change_bg_color, bg_col_set).
  * bright, vx, vy: stage_bright (+0x04) and stage_vecter_x/y (+0x08, +0x0A),
  * which change_scene copies to BRIGHT and VECTER_X/Y for camera_init's light.
- * cset, tint: the record's colour set (+0x0E, send_tex_col_stage's block) and
- * its RED/GREEN/BLUE trims (+0x10..0x12), which make_lay_col_256_tbl puts
- * into ARRAY_NUM_RED/GREEN/BLUE.
- * cyc: the record's list at +0xB8, (colorxlat row, frame-counter shift) pairs
- * ending in a zero row, which sub_2435C rotates once a frame.
+ * slot: StF's stage number (stage_num) for a StF stage, whose record StF's
+ * own colour routines read; 0xFFFF for a guest stage, whose colours are its
+ * cx and whose tint (its RED/GREEN/BLUE trims) goes where stage_disp puts a
+ * StF record's, for make_lay_col_256_tbl.
  * tpd: the block a stage hands move_tpd_req once a frame (see TPD below), for
  * the model it replaces texture headers or points on.
  * ring: VF2's ring-out square's half side in the board's units (0: StF's cage).
@@ -200,14 +191,9 @@ out.push('typedef struct { u32 model; float m[12]; float x0, x1; u8 turn, side, 
 out.push('typedef struct { u16 kind, model, n, words; const short *v; } tpd_t;');
 out.push('typedef struct { u32 chars, pal, pano; u16 rows, voff, nblocks; const u8 *dest; const u16 *storm_pal; u16 storm_n[2]; const u32 *bolt; } vf2_sky_t;');
 out.push('typedef struct { const char *name; u32 texset; u32 ndraws; const stage_draw_t *draws; cx_run_t cx; const u32 *mat; u16 bg; float bright; short vx, vy;');
-out.push('                 u16 cset; u8 tint[3]; const u16 *cyc; tpd_t tpd;');
+out.push('                 u16 slot; u8 tint[3]; tpd_t tpd;');
 out.push('                 float ring; const u16 *lit; const u8 *storm; float flash[3]; const u16 *wind; u16 wind_at, wind_shift;');
 out.push('                 const vf2_sky_t *sky; u16 turn; float wall; } stage_t;\n');
-{
-    /* color_intensity's TST_*_ADD and TST_*_MUL, the same for every stage. */
-    const C = stf.rom.game.colors;
-    out.push(`static const u8 tst_add[3] = {${C.add.join(', ')}}, tst_mul[3] = {${C.mul.join(', ')}};\n`);
-}
 /*
  * move_tpd_req's blocks, in StF's program ROM (which the board replaces, so
  * they are baked): a count, a word length, then the entries. A kind 1 block
@@ -254,12 +240,9 @@ stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
         out.push(`  {${e.model}, {${boardOf(mul(scale, composeOps(opsAt(e, 0)))).map(f32).join(',')}}, ${x.map(f32).join(', ')}},`);
     }
     out.push('};');
-    const cx = buildColorxlat(stf.rom, { colorSet: st.texSet[1], tint: st.tint, fighters: [] });
-    out.push(`static const u16 stage${n}_cx[] = {${u16s(cxlatRun(cx, 0, 28, 0, 64))}};`);
     /* set_material's 32 slots: sub_29110 picks the table by stage slot (prog 0x909E0). */
     const cv = stf.rom.mainCpuView, mt = cv.getUint32(0x909e0 + st.slot * 4, true);
     out.push(`static const u32 stage${n}_mat[32] = {${Array.from({ length: 32 }, (_, i) => `0x${cv.getUint32(mt + i * 4, true).toString(16)}u`).join(',')}};`);
-    out.push(`static const u16 stage${n}_cyc[] = {${[...st.colorCycles.flatMap((c) => [c.row, c.shift]), 0].join(', ')}};`);
     let tpd = '{0, 0, 0, 0, 0}';
     if (TPD[st.slot]) {
         const t = TPD[st.slot], cv = stf.rom.mainCpuView;
@@ -268,8 +251,7 @@ stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
         out.push(`static const short stage${n}_tpd[] = {${v.join(',')}};`);
         tpd = `{${t.kind}, ${t.model}, ${count}, ${words}, stage${n}_tpd}`;
     }
-    const tint = st.tint.map((t) => Math.round(t * 128)).join(', ');
-    stages.push(`{"${st.name}", ${st.texSets.at(-1)}, ${list.length}, stage${n}_draws, {0, 28, 0, 64, stage${n}_cx}, stage${n}_mat, 0x${st.bgColor555.toString(16)}, ${f32(st.bright)}, ${st.vecter[0]}, ${st.vecter[1]}, ${st.texSet[1]}, {${tint}}, stage${n}_cyc, ${tpd}, 0, 0, 0, {0, 0, 0}, 0, 0, 0, 0}`);
+    stages.push(`{"${st.name}", ${st.texSets.at(-1)}, ${list.length}, stage${n}_draws, {0}, stage${n}_mat, 0x${st.bgColor555.toString(16)}, ${f32(st.bright)}, ${st.vecter[0]}, ${st.vecter[1]}, ${st.slot}, {0, 0, 0}, ${tpd}, 0, 0, 0, {0, 0, 0}, 0, 0, 0, 0}`);
     console.log('stage', n, st.name, 'set', st.texSets.at(-1), 'draws', list.length);
 });
 /*
@@ -300,7 +282,6 @@ stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
         const cx = buildColorxlat(vf2.rom, { colorSet: st.texSet[1], tint: st.tint, fighters: [] });
         out.push(`static const u16 ${name}_cx[] = {${u16s(cxlatRun(cx, 0, 28, 0, 64))}};`);
         out.push(`static const u32 ${name}_mat[32] = {${Array.from({ length: 32 }, (_, i) => `0x${vr.getUint32(0x118f0 + i * 4, true).toString(16)}u`).join(',')}};`);
-        out.push(`static const u16 ${name}_cyc[] = {0};`);
         let lit = '0', storm = '0', flash = '{0, 0, 0}', wind = '0', windAt = 0, windShift = 0;
         if (draws.some((d) => d.lit !== undefined)) {
             out.push(`static const u16 ${name}_lit[] = {${draws.map((d) => id(d.lit)).join(',')}};`);
@@ -328,7 +309,7 @@ stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
         const bright = vr.getFloat32(base + 0x6c, true), vx = vr.getInt16(base + 0x70, true), vy = vr.getInt16(base + 0x72, true);
         const tint = st.tint.map((t) => Math.round(t * 128)).join(', ');
         const nm = st.name.toUpperCase();
-        stages.push(`{"${nm}", ${VF2_SET0 + n}, ${draws.length}, ${name}_draws, {0, 28, 0, 64, ${name}_cx}, ${name}_mat, 0x0, ${f32(bright)}, ${vx}, ${vy}, 0, {${tint}}, ${name}_cyc, {0, 0, 0, 0, 0}, ` +
+        stages.push(`{"${nm}", ${VF2_SET0 + n}, ${draws.length}, ${name}_draws, {0, 28, 0, 64, ${name}_cx}, ${name}_mat, 0x0, ${f32(bright)}, ${vx}, ${vy}, 0xFFFF, {${tint}}, {0, 0, 0, 0, 0}, ` +
             `${f32(VF2_RING * VF2_SCALE)}, ${lit}, ${storm}, ${flash}, ${wind}, ${windAt}, ${windShift}, &${name}_sky}`);
         console.log('stage', stages.length - 1, nm, 'VF2 set', st.texSets[0], 'as', VF2_SET0 + n, 'draws', draws.length);
     });
@@ -359,22 +340,13 @@ stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
         const mt = xv(0x06ce33a4 + st.slot * 4);
         out.push(`static const u32 ${name}_mat[32] = {${Array.from({ length: 32 }, (_, i) => `0x${xv(mt + i * 4).toString(16)}u`).join(',')}};`);
         if (st.colorCycles.length) throw new Error(`FV ${st.name}: colour cycles`);
-        out.push(`static const u16 ${name}_cyc[] = {0};`);
         const tint = st.tint.map((t) => Math.round(t * 128)).join(', ');
         const nm = `FV ${st.name.toUpperCase()}`;
         const turn = st.flags & (1 << 0x10) ? FV_TURN : 0;
-        stages.push(`{"${nm}", ${FV_SET0 + n}, ${draws.length}, ${name}_draws, {0, 28, 0, 64, ${name}_cx}, ${name}_mat, 0x${st.bgColor555.toString(16)}, ${f32(st.bright)}, ${st.vecter[0]}, ${st.vecter[1]}, 0, {${tint}}, ${name}_cyc, {0, 0, 0, 0, 0}, ` +
+        stages.push(`{"${nm}", ${FV_SET0 + n}, ${draws.length}, ${name}_draws, {0, 28, 0, 64, ${name}_cx}, ${name}_mat, 0x${st.bgColor555.toString(16)}, ${f32(st.bright)}, ${st.vecter[0]}, ${st.vecter[1]}, 0xFFFF, {${tint}}, {0, 0, 0, 0, 0}, ` +
             `0, 0, 0, {0, 0, 0}, 0, 0, 0, 0, ${turn}, ${f32(FV_RING * FV_SCALE)}}`);
         console.log('stage', stages.length - 1, nm, 'FV set', st.texSets.at(-1), 'as', FV_SET0 + n, 'draws', draws.length);
     });
-}
-/* A palette colour shows each 5-bit component through colorxlat row c at
- * luma 0x40 (MAME's palette_w). StF fills luma 64.. with its flat band at
- * boot, the same for every stage; the board needs only luma 0x40. */
-{
-    const cx = buildColorxlat(stf.rom, { colorSet: stf.stages[0].texSet[1], tint: stf.stages[0].tint, fighters: [] });
-    out.push(`static const u16 flat_cx_v[] = {${u16s(cxlatRun(cx, 0, 32, 64, 1))}};`);
-    out.push('static const cx_run_t flat_cx = {0, 32, 64, 1, flat_cx_v};');
 }
 out.push(`#define STAGES ${stages.length}`);
 out.push(`static const stage_t stages[STAGES] = {\n    ${stages.join(',\n    ')}\n};\n`);

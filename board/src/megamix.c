@@ -144,7 +144,8 @@ static void camera_init(void) {
  * in the world as the camera moves. */
 static float light[3];
 
-/* StF's frame_counter (see stage_col_cycle). */
+/* StF's frame_counter; the frame loop copies it to 0x500020, where StF's
+ * code (sub_2435C's colour cycling) reads it. */
 static u32 frame_counter;
 /* FV's turning town and its light count from the round start: 0xC568 puts
  * word_50A022 back to 0, so the town snaps home with the objects each round. */
@@ -213,7 +214,6 @@ static u32 stf_coli[0x400 / 4] __attribute__((aligned(16)));
 static u32 stf_effect[0xC80 / 4] __attribute__((aligned(16)));
 static u32 stf_tobi[0x2000 / 4] __attribute__((aligned(16)));
 static u32 stf_ctl[2][0x280 / 4] __attribute__((aligned(16)));
-static u32 stf_settings[0x3400 / 4] __attribute__((aligned(16)));
 static u32 stf_disp[0x100 / 4] __attribute__((aligned(16)));   /* game_disp's task block */
 
 extern void stf_call(void (*fn)(void), void *rob, void *enemy, u32 arg);
@@ -271,7 +271,7 @@ static void stf_globals(void) {
     stf_set(0x500090u, 0x1Eu);           /* replay_countdown (0x500092) 0 */
     stf_set(0x500804u, (u32)robs[0]);    /* fa_rob0 */
     stf_set(0x500808u, (u32)robs[1]);    /* fa_rob1 */
-    stf_set(0x50016Cu, (u32)stf_settings);
+    stf_set(0x50016Cu, (u32)stf_ram(0x599000u));   /* add_BACKUP_RAM_TO_RAM: StF's copy of the backup RAM */
     stf_set(0x500828u, (u32)stf_coli);   /* mod_fa_coli */
     stf_set(0x500834u, (u32)stf_disp);   /* mod_fa_game_disp */
     stf_set(0x50083Cu, (u32)stf_ctl[0]);
@@ -841,46 +841,42 @@ static void cx_put(const cx_run_t *c) {
                 *(volatile u16 *)(M2_COLORXLAT + ch * 0x4000u + r * 0x200u + l * 2u) = *v++;
 }
 
-/* Stage colour cycling, as StF does it. make_lay_col_256_tbl (color_intensity)
- * builds ARRAY_NUM_RED/GREEN/BLUE: 256 entries per channel, the curve
- * (x - 116) * mul / 37 + add, 0 at or below zero, -1 from 256, then trimmed by
- * the stage's RED/GREEN/BLUE (* t >> 7). Once a frame, out of
- * interrupt_wait_b, sub_2435C walks the stage record's (row, shift) list and
- * sub_243AC refills that colorxlat row's palette slots (luma 48..63) from the
- * stage colour block in the data ROM (pointer at 0x2101010, colour set * 0x540,
- * (row - 14) * 0x60, 0x20 a channel), slot i taking colour
- * ((frame_counter >> shift) + i) & 15 through the curve. That is South
- * Island's and Canyon Cruise's shoreline and waterfall (rows 18 and 19) and
- * Casino Night's rows 14, 16 and 19. */
-#define STF_STAGE_COL_PTR 0x02101010u
-static u16 array_num[3][256];
+/* The colours (colorxlat), as StF's own routines set them (stf_motion.s):
+ * change_scene's stage_disp (the stage record's RED, GREEN and BLUE into
+ * 0x5000E0, then chg_pol_color_req's ramp, luma 0..47 of rows 1..27, which
+ * chg_pol_color_send writes a few rows each vsync), the boot's
+ * make_lay_col_256_tbl (ARRAY_NUM_RED/GREEN/BLUE, the curves every upload
+ * goes through), chg_scr_color_req (luma 64..127, the flat band palette
+ * colours go through) and sub_7B4 (the fixed rows 5..6 and 12..13), then
+ * the debug menu's colour refresh (0x46754): send_tex_col_stage with the
+ * record's colour set (+0x0E, rows 14..27), send_tex_col_skin and
+ * send_tex_col_part for each player (rob+0x1B0's character). A guest stage
+ * or fighter takes its own game's colours, baked (cx): its stage's trims
+ * go where stage_disp puts a StF record's. */
+extern void stf_call_g01(void (*fn)(void), u32 g0, u32 g1);
 
-static void make_lay_col_256_tbl(const stage_t *st) {
-    u32 ch, x;
-    for (ch = 0; ch < 3u; ch++)
-        for (x = 0; x < 256u; x++) {
-            int v = ((int)x - 116) * (int)tst_mul[ch] / 37 + (int)tst_add[ch];
-            u32 u = 0u;
-            if (v > 0) {
-                u = (u32)v;
-                if (u >= 0x100u) u = 0xFFFFFFFFu;
-                u = (u * st->tint[ch]) >> 7;
-            }
-            array_num[ch][x] = (u16)u;
-        }
+static void stage_colors(const stage_t *st) {
+    u32 i;
+    if (st->slot != 0xFFFFu) {
+        *(u8 *)stf_ram(0x500064u) = (u8)st->slot;          /* stage_num */
+        stf_call(stf_stage_disp, robs[0], robs[1], 0u);
+    } else
+        for (i = 0; i < 3u; i++) *(u8 *)stf_ram(0x5000E0u + i) = st->tint[i];
+    stf_call(stf_make_lay_col_256_tbl, robs[0], robs[1], 0u);
+    stf_call(stf_chg_scr_color_req, robs[0], robs[1], 0u);
+    if (st->slot == 0xFFFFu) { cx_put(&st->cx); return; }
+    while (*(volatile u32 *)stf_ram(0x546000u)) stf_call(stf_chg_pol_color_send, robs[0], robs[1], 0u);
+    stf_call(stf_sub_7B4, robs[0], robs[1], 0u);
+    stf_call_g01(stf_send_tex_col_stage, 14u, *(const u16 *)(0x8F3DEu + st->slot * 256u));
 }
 
-static void stage_col_cycle(const stage_t *st) {
-    const u16 *c;
-    for (c = st->cyc; c[0] != 0u; c += 2) {
-        u32 row = c[0], ph = frame_counter >> c[1], ch, i;
-        u32 blk = *(volatile u32 *)STF_STAGE_COL_PTR + st->cset * 0x540u + (row - 14u) * 0x60u;
-        for (ch = 0; ch < 3u; ch++, blk += 0x20u) {
-            volatile u16 *o = (volatile u16 *)(M2_COLORXLAT + ch * 0x4000u + row * 0x200u + 0x60u);
-            for (i = 0; i < 16u; i++)
-                o[i] = array_num[ch][*(volatile u16 *)(blk + ((ph + i) & 15u) * 2u)];
-        }
-    }
+/* A player's part and skin rows: StF's send_tex_col_part and skin for its
+ * fighter (player 1's rows 0..4 and 28..29, player 2's 7..11 and 30..31),
+ * a guest's own (seven part rows, over StF's fixed rows 5, 6, 12, 13). */
+static void fighter_colors(u32 p, const pose_anim_t *a) {
+    if (a->cx[0].rows) { cx_put(&a->cx[p * 2u]); cx_put(&a->cx[p * 2u + 1u]); return; }
+    stf_call_g01(stf_send_tex_col_skin, p, RB(robs[p], 0x1B0));
+    stf_call_g01(stf_send_tex_col_part, p, RB(robs[p], 0x1B0));
 }
 
 /* send_beta_data: an uncompressed page, every level's texels already in
@@ -1041,9 +1037,8 @@ static void load_stage(const stage_t *st) {
     cur_stage = st;
     kuma_p = kuma_v = 0; kuma_at = frame_counter;
     tex_load_set(st->texset);
-    cx_put(&st->cx);
+    stage_colors(st);
     sky_load(st->sky);                   /* after the colorxlat: palette_w reads it */
-    make_lay_col_256_tbl(st);
     m2_backdrop(st->bg);                 /* scr_bg_int: the record's stage_bg_color */
     stage_light(st);
     for (i = 0; i < st->ndraws; i++) {
@@ -1067,11 +1062,10 @@ static void load_palettes(void) {
         }
 }
 
-/* Each player's fighter's part and skin rows: player 1's 0..4 and 28..29,
- * player 2's 7..11 and 30..31, as StF's send_tex_col_part and skin upload. */
+/* Each player's fighter's part and skin rows. */
 static void load_fighter_colors(const pose_anim_t *p1, const pose_anim_t *p2) {
-    cx_put(&p1->cx[0]); cx_put(&p1->cx[1]);
-    cx_put(&p2->cx[2]); cx_put(&p2->cx[3]);
+    fighter_colors(0u, p1);
+    fighter_colors(1u, p2);
 }
 
 static u32 edges(u32 now, u32 *held) { u32 e = now & ~*held; *held = now; return e; }
@@ -1147,8 +1141,8 @@ static void mask_rect(u32 col, u32 row, u32 w, u32 h) {
             TILE_MASK[y * 4u + (c >> 4)] |= (u16)(0x8000u >> (c & 15u));
 }
 
-static void menu_mask(u32 on) {
-    u32 y, c;
+static void menu_ink(u32 on) {
+    u32 c;
     /* a palette colour's component c shows through colorxlat row c at
      * luma 0x40, and black there is see-through on the tile layers (MAME
      * reads 0..0x40 as 0): 0x41, the darkest it draws, gives the font's
@@ -1156,6 +1150,11 @@ static void menu_mask(u32 on) {
      * 0 again restores the fight's band as StF has it */
     for (c = 0; c < 3u; c++)
         *(volatile u16 *)(M2_COLORXLAT + c * 0x4000u + 0x40u * 2u) = on ? 0x41u : 0u;
+}
+
+static void menu_mask(u32 on) {
+    u32 y, c;
+    menu_ink(on);
     for (y = 0; y < 384u; y++)
         for (c = 0; c < 4u; c++) TILE_MASK[y * 4u + c] = 0u;
     if (!on) return;
@@ -1320,15 +1319,16 @@ int main(void) {
     m2_init();
     m2_silicon_boot();
     m2_cam_set_focus(FOCUS);
-    cx_put(&flat_cx);                    /* StF's flat band, which palette colours go through */
     camera_init();
     tex_load_set(SET_FIGHTERS);
     load_palettes();
-    load_stage(&stages[stage]);
-    load_fighter_colors(&pose_anims[menu_val[M_P1]], &pose_anims[menu_val[M_P2]]);
+    stf_globals();
+    /* the test menu's monitor setting as the boot reads it: CRT, StF's
+     * TST_* curve constants (load_COLORS_to_RAM, chg_scr_color_req) */
+    stf_call(stf_set_display_type_crt, robs[0], robs[1], 0u);
+    load_stage(&stages[stage]);          /* its fighters' colours once they are set up (round_start) */
     for (i = 0; i < 8u; i++) { m2_frame_begin(); m2_frame_end(); }
 
-    stf_globals();
     stf_camera();
     /* StF's tiles and their colours: the set the boot loads (the clock's
      * digits, the bars, the debug font and frames), then the fight's, as
@@ -1342,6 +1342,7 @@ int main(void) {
     fs[0].anim = &pose_anims[menu_val[M_P1]];
     fs[1].anim = &pose_anims[menu_val[M_P2]];
     round_start(fs);
+    load_fighter_colors(fs[0].anim, fs[1].anim);
     vbl = frameVBL;
     for (;;) {
         m2_player_t p[2];
@@ -1360,6 +1361,7 @@ int main(void) {
                 stage = menu_val[M_STAGE];
                 load_stage(&stages[stage]);
                 load_fighter_colors(fs[0].anim, fs[1].anim);   /* their bands, over the stage's rows */
+                menu_ink(1u);
                 M2_PALETTE[1] = ink;
                 for (i = 0; i < 64u * 64u; i++) M2_TILE_FG[i] = 0x20u;
             }
@@ -1368,7 +1370,10 @@ int main(void) {
                 fs[i].anim = &pose_anims[menu_val[c]];
                 rob_init(i, &fs[i]);
                 rob_start(i);
+                /* the scene's rows again: a guest's seven part rows took StF's fixed ones */
+                stage_colors(&stages[stage]);
                 load_fighter_colors(fs[0].anim, fs[1].anim);
+                menu_ink(1u);
             }
             if (c == M_START) {
                 round_time = menu_val[M_TIME];
@@ -1463,7 +1468,8 @@ int main(void) {
             u32 v;
             m2_vsync();
             v = frameVBL; frame_counter += v - vbl; vbl = v;
-            stage_col_cycle(&stages[stage]);
+            stf_set(0x500020u, frame_counter);
+            if (stages[stage].slot != 0xFFFFu) stf_call(stf_sub_2435C, robs[0], robs[1], 0u);
         }
     }
     return 0;

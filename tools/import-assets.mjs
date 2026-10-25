@@ -11,7 +11,7 @@
  *               the models the board draws (with every hand, head and part
  *               StF's code can swap into its fighters), the codec's table,
  *               the texture sets it uploads (the
- *               fighters' and its stages'), the stages' colour blocks, StF's
+ *               fighters' and its stages'), StF's colour tables, StF's
  *               motions, and the HUD's tiles and patterns
  *   copro       the coprocessor firmware's sine and cosine tables
  *   polygons    those models' meshes
@@ -136,7 +136,7 @@ class Region {
  * set, colour set and moving-texture model. */
 function boardTables() {
     const h = readFileSync(`${ROOT}board/src/poses.h`, 'utf8');
-    const models = new Set(), chars = new Set(), texsets = new Set(), csets = new Set();
+    const models = new Set(), chars = new Set(), texsets = new Set();
     for (const m of h.matchAll(/pose_part_t \w+\[\d+\] = \{([^;]*)\};/g))
         for (const p of m[1].matchAll(/\{(\d+), \d+, (\d+)\}/g)) { models.add(+p[1]); models.add(+p[2]); }
     /* VF2's stages (vf2stageN_draws, sets VF2_SET0 on) are tools/vf2-stages.mjs's,
@@ -145,13 +145,13 @@ function boardTables() {
         for (const d of m[1].matchAll(/^\s*\{(\d+), \{/gm)) models.add(+d[1]);
     for (const m of h.matchAll(/\{"[^"]+ stance", (\d+), \d+, \w+_parts/g)) chars.add(+m[1]);
     const stages = h.match(/stage_t stages\[STAGES\] = \{([^;]*)\};/)[1];
-    for (const m of stages.matchAll(/\{"([^"]+)", (\d+), \d+, \w+, \{[^}]*\}, \w+, \w+, [-\d.]+f, -?\d+, -?\d+, (\d+), \{[^}]*\}, \w+, \{(\d+), (\d+),/g)) {
+    for (const m of stages.matchAll(/\{"([^"]+)", (\d+), \d+, \w+, \{[^}]*\}, \w+, \w+, [-\d.]+f, -?\d+, -?\d+, \d+, \{[^}]*\}, \{(\d+), (\d+),/g)) {
         if (+m[2] >= VF2_SET0) continue;
-        texsets.add(+m[2]); csets.add(+m[3]);
-        if (+m[4]) models.add(+m[5]);
+        texsets.add(+m[2]);
+        if (+m[3]) models.add(+m[4]);
     }
     if (!chars.size || !texsets.size) throw new Error('poses.h: no fighters or stages (run tools/bake-board.mjs)');
-    return { models, chars: [...chars], texsets: [...texsets], csets: [...csets] };
+    return { models, chars: [...chars], texsets: [...texsets] };
 }
 
 /* board/src/stf_motion.h (tools/lift-stf.py): the guest tables, where the
@@ -326,11 +326,13 @@ async function importStf(R) {
         }
     }
 
-    /* The stages' colour blocks (stage_col_cycle): a pointer, then 0x540
-     * bytes a colour set. */
-    main.keep(0x101010, 4, 'stage colour table');
-    const COL = main.u32(0x101010);
-    for (const c of board.csets) keepAt(COL + c * 0x540, 0x540, `stage colours ${c}`);
+    /* StF's colour tables, which its own colour routines (stf_motion.s) read:
+     * seven pointers (0x2101000: the skins, player 1's and 2's; the parts,
+     * player 1's and 2's; the stages' colour sets, 0x540 bytes each; the
+     * fixed rows 5..6 and 12..13, two rows of 0x60 bytes each), their tables
+     * one after another. */
+    main.keep(0x101000, 7 * 4, 'colour tables');
+    keepAt(main.u32(0x101000), main.u32(0x101018) + 2 * 0x60 - main.u32(0x101000), 'colour tables');
 
     /* Motions: the list and every block. The fighters run StF's own motion
      * and fight code (set_motion, rob_action, collision), which picks a hit's

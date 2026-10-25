@@ -44,7 +44,8 @@ model-table entries, meshes and texture streams of every model the board draws
 (the stages in `poses.h`, and every part StF's code can put on the cast:
 the character records' lists, the hand, foot and body swaps and the head
 lists), the texture codec's table, the fighters' and stages' texture sets,
-the stages' colour blocks, all 519 motions (the lifted reaction code picks
+StF's colour tables (skins, parts, the stages' colour sets, the fixed
+rows), all 519 motions (the lifted reaction code picks
 them from tables of its own), the HUD's scroll tiles and patterns, and from
 the coprocessor's data ROM the sine and cosine tables StF's coprocessor
 firmware (cpres1, which the SDK boots) reads. The sound program, the samples
@@ -131,10 +132,32 @@ same frame of the stance motion (278), all sixteen part positions in the rob
   matches StF's own, word for word.
 - Colours: `m2_load_model_palette` copies each part's colour bases from the
   polygon palette ROM. The colour translation RAM (`0x01810000`) is what turns
-  them into RGB, row by row: `bake-board.mjs` bakes runs of it with the browser
-  game's `colors.js` (`buildColorxlat`). A stage's run is rows 0..27 with its
-  colour set and tint; a fighter's are its part rows (0..4, luma 48..63) and
-  skin rows (28..29) for player 1, and 7..11 and 30..31 for player 2.
+  them into RGB, row by row, and StF's own routines fill it (lifted by
+  `lift-stf.py`, called from `megamix.c`'s `stage_colors` and
+  `fighter_colors`), in the order StF's boot, `change_scene` and its debug
+  menu's colour refresh (0x46754) call them: `set_display_type_crt` (the
+  test menu's CRT setting: TST_*_ADD 22, TST_*_MUL 54, TST_B_BRIGHT 31,
+  through the backup RAM's copy to `load_COLORS_to_RAM`), `stage_disp` (the
+  record's RED/GREEN/BLUE, then `chg_pol_color_req`'s ramp, luma 0..47 of
+  rows 1..27, which `chg_pol_color_send` writes a few rows a call),
+  `make_lay_col_256_tbl` (the `ARRAY_NUM` curves every upload goes through),
+  `chg_scr_color_req` (luma 64..127, the flat band), `sub_7B4` (the fixed
+  rows 5..6 and 12..13), `send_tex_col_stage` (the record's colour set,
+  rows 14..27), and for each player `send_tex_col_skin` and
+  `send_tex_col_part` (rob+0x1B0's character: player 1's part rows 0..4 and
+  skin rows 28..29, player 2's 7..11 and 30..31; a character at 26 or past
+  reads the player-2 tables). The guests' stages and fighters take their own
+  games' colours, which `bake-board.mjs` bakes with the browser game's
+  `colors.js` (`buildColorxlat`): a guest stage's rows 0..27 (its trims go
+  where `stage_disp` puts a record's), a guest fighter's seven part rows
+  and its skin rows. Check (MAME, the setup menu walked through every stage
+  and fighter, colorxlat dumped): the stages' rows, the flat band, player
+  1's rows and the cycling rows are word for word what the noclip bake gave.
+  Player 2's part rows differ: the bake put player 1's table there, StF's
+  code reads the player-2 table (0x210100C), which has Honey's own colours
+  and zeros for Sonic and Eggman; real StF's rows 7..11 are zero too
+  (attract fight, player 2 Sonic). StF fighters on a guest stage
+  now go through the stage's trims, as StF's own would.
 - Player 2: StF writes palette RAM once, at boot, so a colour base names the
   same rows whichever side draws it. Player 2 is set apart by its own models:
   character c's player 2 is character c + 26 (Sonic 26, Honey 41, Eggman 34),
@@ -162,8 +185,8 @@ same frame of the stance motion (278), all sixteen part positions in the rob
   which writes it to pen 0 of palette banks 0..63. `m2_backdrop` does the
   same on the board's own layer, so `load_stage` calls it with the record's
   colour. A palette colour shows each component through colorxlat row c at
-  luma 0x40 (MAME's `palette_w`), so the board also writes StF's flat band
-  there at boot (`flat_cx`); the SDK's ramp would show it far too bright.
+  luma 0x40 (MAME's `palette_w`): StF's flat band (`chg_scr_color_req`);
+  the SDK's ramp would show it far too bright.
   Real StF and board snapshots show the same pixels: (0, 0, 188) on South
   Island (0xF0C0) and (213, 38, 0) on Dynamite Plant (0x017F).
 - Light: `change_scene` copies the stage record's `stage_bright` (+0x04,
@@ -200,10 +223,12 @@ same frame of the stance motion (278), all sixteen part positions in the rob
   South Island and Canyon Cruise list rows 18 (shift 2) and 19 (shift 0),
   the waterfall and the shoreline; Casino Night lists 14, 16 and 19 (shift
   1); the other six have no list. `frame_counter` counts StF's 60 Hz loop,
-  one per frame in a fight. The board bakes each stage's list, colour set
-  and trims, builds the curve in integers on stage load, and rotates the
-  rows after each vsync. Its counter follows the vblank count (`frameVBL`),
-  because a pass that runs long takes more than one. Bit 5 of
+  one per frame in a fight. The board runs StF's `sub_2435C` after each
+  vsync on a StF stage, with its counter in StF's `frame_counter`
+  (`0x500020`). The counter follows the vblank count (`frameVBL`),
+  because a pass that runs long takes more than one. The list's pointer
+  (+0xB8) points into StF's program at 0x2442C, which the board replaces:
+  `lift-stf.py` lifts that table (`dword_2442C`) and relocates the pointer. Bit 5 of
   `debug_flag` (`0x508000`) skips `sub_2435C`, so a debug-mode StF shows
   the water standing still. Check: with the board's counter held at the
   value real StF logged, colorxlat rows 14, 16, 18 and 19 (luma 48..63, R,
@@ -1568,8 +1593,9 @@ come from Fighting Vipers.
 
 Known gaps:
 
-- Player 2's part rows (7..11, luma 48..63) get the fighter's own table, as
-  player 1's do. In a 1P round against the CPU, real StF leaves them at zero.
+- Player 2's part rows (7..11, luma 48..63) get StF's player-2 table
+  (rob+0x1B0 is character + 26 on player 2's side), as in a real mirror
+  match. In a 1P round against the CPU, real StF leaves them at zero.
   Mirror matches in real StF (MAME `sfight`, 2P; Honey vs Honey by setting
   slot 0 of the select table at 0xDACAC to 0x0F) draw player 2 as the board
   does: Sonic dark grey, and Honey blonde, with purple fur, a blue dress, a

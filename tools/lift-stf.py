@@ -43,10 +43,25 @@ import tempfile
 # zanzou_control: the afterimages (the projectile task's last call: reserves
 # a fighter's trailing parts in the geometrizer's ring while play op 0x26's
 # mask is set, megamix.c zanzou_draw draws them).
+# The colours (colorxlat), as StF's change_scene and its debug menu's colour
+# refresh (0x46754) set them: stage_disp (the stage record's RED, GREEN, BLUE,
+# then chg_pol_color_req's ramp, luma 0..47 of rows 0..27, which
+# chg_pol_color_send writes a few rows a call), make_lay_col_256_tbl (the
+# ARRAY_NUM curves every upload goes through), chg_scr_color_req (luma
+# 64..127, the flat band palette colours go through), sub_7B4 (the boot's
+# fixed rows 5..6 and 12..13), send_tex_col_stage (the stage's sixteen
+# colours, rows 14..27), send_tex_col_skin and send_tex_col_part (a fighter's
+# skin rows and part rows); sub_2435C: the stage's colour cycling, once a
+# frame (interrupt_wait_b); set_display_type_crt: the test menu's CRT
+# setting, the TST_* curve constants (into the backup RAM and its copy, then
+# load_COLORS_to_RAM and chg_scr_color_req).
 ROOTS = ['set_motion', 'calc_rob_angle', 'calc_rob_angle_cont', 'calc_unit_mat', 'smooth_int', 'sub_7F0E8',
          'action_init', 'rob_action', 'sub_1D47C', 'coli_init', 'collision', 'get_game_info', 'cmd_native_tail',
          'cop_initialize_end2', '_Scroll_Initialize', 'energy_disp', 'barrier_left_disp', 'time_dsp',
-         'win_lamp_dsp', 'win_lamp_int', 'cam_mode_9', 'cam_mode_10', 'zanzou_control']
+         'win_lamp_dsp', 'win_lamp_int', 'cam_mode_9', 'cam_mode_10', 'zanzou_control',
+         'stage_disp', 'make_lay_col_256_tbl', 'chg_scr_color_req', 'chg_pol_color_req', 'chg_pol_color_send',
+         'sub_7B4', 'send_tex_col_stage', 'send_tex_col_skin', 'send_tex_col_part', 'sub_2435C',
+         'set_display_type_crt']
 # Routines the board does not run (debug text, name plates, projectiles,
 # sound, ring scatter, Super Sonic's hair objects): `ret`.
 STUBS = ['print_mes', 'print_mes_ex', 'print_hex_w', 'debug_disp_hex', 'dsp_pattern_right',
@@ -84,8 +99,10 @@ ROM_BIN = 'stf_rom_80000.bin'
 RAM_LO, RAM_HI = 0x500000, 0x600000     # StF's work RAM: moved into the board's
 RAM_PAD = 0x400                          # room past the highest address a block names
 # RAM the routines reach through a base: the two fighters' motion records
-# (action_init: 0x520000 and 0x5207C8, 0x800 bytes each).
-RAM_SPANS = [(0x520000, 0x520FC8)]
+# (action_init: 0x520000 and 0x5207C8, 0x800 bytes each), chg_pol_color_req's
+# ramp (0x546008, 0x120 bytes a row, rows 0..27) and the backup RAM's copy
+# (add_BACKUP_RAM_TO_RAM, 0x599000, which megamix.c points it at).
+RAM_SPANS = [(0x520000, 0x520FC8), (0x546000, 0x547F88), (0x599000, 0x59C400)]
 # The per-character tables a guest fighter (a character of another game in a
 # StF character's place) needs entries of its own in: the routines read them
 # at fixed addresses in the data ROM instead (guest_<name>), where
@@ -128,6 +145,20 @@ GUESTS = [('CHAR_PARTS', 0x100, 52 * 4), ('SKELETON_TYPE_DATA', 0x400, 4 * 4),
           ('rob_coli_ball_types', 0x400, 4 * 4), ('midriff', 0x100, 52 * 4),
           ('off_C2058', 0x400, 4 * 4), ('seams', 0x100, 52 * 4), ('off_B540C', 0x400, 4 * 4)]
 GAMES = [('STF', 0), ('VF2', 1), ('FV', 2)]      # char_game's values (GAME_<name>)
+# Data blocks no lifted code names but StF's ROM tables point at: lifted, and
+# the code that loads such a pointer is given the board's copy
+# (INSERT_LIFTED).
+EXTRA_TABLES = ['dword_2442C']
+# Code put in at a label of StF's, before what is there, lifted as StF's own
+# lines are (its names made the board's). sub_2435C: the stage record's
+# colour-cycle list (+0xB8) is a pointer into dword_2442C, StF's program at
+# 0x2442C, which the board's copy is not at: the same prologue, with the
+# pointer moved onto the copy.
+INSERT_LIFTED = {
+    'sub_2435C': ['ld      debug_flag, r15', 'bbs     5, r15, loc_243A8', 'ldob    stage_num, r12',
+                  'shlo    8, r12, r4', 'ld      word_8F488(r4), r10',
+                  'lda     dword_2442C-0x2442C(r10), r10', 'ldos    word_8F3DE(r4), g1', 'b       loc_24384'],
+}
 # Code put in at a label of StF's, before what is there. sub_2B94C picks a
 # hit's reaction from the defender's table: (side)[category * 8], +2 from
 # behind. VF2's tables have a crouching defender's reactions 4 on; StF's
@@ -250,7 +281,7 @@ def main():
                 and not 0x3A00 <= addr.get(t, 0) < 0x3C00 and addr.get(t, 0) >= 0x1000)
     def base(t):
         return t.split('+')[0].strip()
-    live, todo, why = set(), [(labline[f], 'root') for f in ROOTS], {}
+    live, todo, why = set(), [(labline[f], 'root') for f in ROOTS + EXTRA_TABLES], {}
     stub_lines = {labline[f] for f in STUBS}
     while todo:
         i, w = todo.pop()
@@ -328,6 +359,11 @@ def main():
         out.append(name_at[i] + ':')
         for c in INSERT.get(name_at[i], ()):
             out.append(c if c.endswith(':') else f'                {c}')
+        for c in INSERT_LIFTED.get(name_at[i], ()):
+            op, _, args = c.partition(' ')
+            args = TOKEN.sub(lambda mm: fix_token(mm.group(0), c), args.strip())
+            args = NUM.sub(lambda mm: ram_ref(int(mm.group(0), 16)), args)
+            out.append(f'                {op:<7} {args}'.rstrip())
         if name_at[i] in SELF_REL:
             lo = addr[name_at[i]]
             hi = min(v for v in addr.values() if v > lo)
