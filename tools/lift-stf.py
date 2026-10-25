@@ -71,14 +71,13 @@ ROOTS = ['set_motion', 'calc_rob_angle', 'calc_rob_angle_cont', 'calc_unit_mat',
          'stage_disp', 'make_lay_col_256_tbl', 'chg_scr_color_req', 'chg_pol_color_req', 'chg_pol_color_send',
          'sub_7B4', 'send_tex_col_stage', 'send_tex_col_skin', 'send_tex_col_part', 'sub_2435C',
          'set_display_type_crt', 'osage_init', 'sub_63AC4', 'rob_kage_disp_inside', 'rob_kage_disp_outside']
-# StF's tables the C reads by name (megamix.c's kage_palettes: each
-# character's shadow table, for its models' colours)
-DATA_ROOTS = ['off_64988']
 # Routines the board does not run (debug text, name plates,
-# sound, ring scatter, Super Sonic's hair objects): `ret`.
+# sound, ring scatter, Super Sonic's hair objects; the shadow mask balls,
+# which read a table at 0x4C84 and megamix.c's kage_balls sends): `ret`.
 STUBS = ['print_mes', 'print_mes_ex', 'print_hex_w', 'debug_disp_hex', 'dsp_pattern_right',
          'char_nameplate_dsp', 'sound_request_u', 'sound_request_special',
-         'stage_contact_sound', 'ring_tobitiri_set', 'sub_1BCC0']
+         'stage_contact_sound', 'ring_tobitiri_set', 'sub_1BCC0',
+         'send_kage_ball_pntr']
 # Labels the routines use as numbers (`lda loc_10000, r3` is 0x10000, `lda
 # off_1010, r13` the flag mask 0x1010; get_en_info's `lda loc_5550` and `lda
 # off_1018` are the facing bound 0x5550 and the flag mask 0x1018 its throw
@@ -154,6 +153,9 @@ GUEST_BASE = 0x02E00000
 # the afterimage models (16 parts, each 3 model ids and a pad), which
 # zanzou_control reserves for each slot in play op 0x26's mask; the lists
 # are copied into its room.
+# off_64988: a pointer by character to its shadow table (rob_kage_disp_test,
+# 16 entries of 24 bytes and a tail; docs/SHADOWS.md); StF's tables are
+# copied into free room in the extra data ROM, the guests' own after them.
 GUESTS = [('CHAR_PARTS', 0x100, 52 * 4), ('SKELETON_TYPE_DATA', 0x400, 4 * 4),
           ('MOVESET_ARRAY', 0x100, 24 * 4), ('player_hand_animations', 0x100, 52 * 4),
           ('player_foot_animation', 0x100, 52 * 4), ('player_body_animation', 0x100, 52 * 4),
@@ -161,7 +163,8 @@ GUESTS = [('CHAR_PARTS', 0x100, 52 * 4), ('SKELETON_TYPE_DATA', 0x400, 4 * 4),
           ('offset_list_motions', 0x2000, 519 * 4), ('ptr_DA0B4', 0x80, 26 * 4),
           ('motion_remap', 0x80, 26 * 4), ('char_game', 0x40, 52),
           ('rob_coli_ball_types', 0x400, 4 * 4), ('midriff', 0x100, 52 * 4),
-          ('off_C2058', 0x400, 4 * 4), ('seams', 0x100, 52 * 4), ('off_B540C', 0x400, 4 * 4)]
+          ('off_C2058', 0x400, 4 * 4), ('seams', 0x100, 52 * 4), ('off_B540C', 0x400, 4 * 4),
+          ('off_64988', 0x100, 52 * 4)]
 GAMES = [('STF', 0), ('VF2', 1), ('FV', 2)]      # char_game's values (GAME_<name>)
 # Data blocks no lifted code names but StF's ROM tables point at: lifted, and
 # the code that loads such a pointer is given the board's copy
@@ -437,7 +440,7 @@ def main():
     S.append('')
     S.append('                .text')
     S.append('                .align  4')
-    for f in ROOTS + DATA_ROOTS:
+    for f in ROOTS:
         S.append(f'                .globl  {f}')
     S.append(text)
     S.append('')

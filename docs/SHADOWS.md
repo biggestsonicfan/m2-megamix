@@ -159,12 +159,13 @@ shadows", "Fighting Vipers' wall shadows", "The pieces' floor shadows"):
 ## The board's other guests
 
 Ryo, Chai and Hornet come from games that cast shadows another way.
-Until each one gets a table of its own, `off_64988` gives it the table of
-the StF character whose slot it takes (`tools/shadow-data.mjs` prints
-this): Ryo, character 1, gets Tails' cards (0x658D0, models 57 to 71); Chai,
-12, and Hornet, 17, get Sonic's (0x65748); Akira, 6, gets Knuckles'
-(0x65BE0). StF's cards on a guest's slots are the wrong shape: on Hornet,
-slot 1 is the nose and slot 9 the cabin.
+StF's own `off_64988` would give each guest the table of the StF character
+whose slot it takes (`tools/shadow-data.mjs` prints this): Ryo, character
+1, Tails' cards (0x658D0, models 57 to 71); Chai, 12, and Hornet, 17,
+Sonic's (0x65748); Akira, 6, Knuckles' (0x65BE0). StF's cards on a guest's
+slots are the wrong shape (on Hornet, slot 1 is the nose and slot 9 the
+cabin), so the board gives each guest a table of its own
+(`tools/guest-shadows.mjs`, On the board, below).
 
 ### Daytona's Hornet (Model 2)
 
@@ -364,6 +365,44 @@ pulls in `rob_kage_set_matrix`, `rob_kage_set_flag_sub`,
   mirrors its fighters in the ice instead, and so does the board.
 - `kage_outside`, after each fighter: `rob_kage_disp_outside`, which StF's
   stage flag (bit 28) turns off on Aurora.
+- On Western, VECTER_Y turns with the round as FV's light does: `kage_light`
+  sets it each frame from the stage's light and its turn since the round
+  start.
+
+The guests' tables (`tools/guest-shadows.mjs`) go into `off_64988`'s room
+in the extra data ROM after StF's own copied tables, and their models after
+the guests' others, each with StF's shadow cards' material and every face
+both ways round:
+
+- Akira: VF2's own table (0x61D64) as StF's (`guestTable`), VF2's cards
+  scaled as his body is.
+- Ryo and Chai: Shenmue's 13 SYD_MUNE hulls (MISC/COLD.BIN), each on its
+  bone's slot, ends capped, at each one's own size.
+- Hornet: Daytona's car card (model 791) cut into a nose card on slot 1 and
+  a cabin card on slot 9.
+
+The masks: `send_kage_ball_pntr` sends each slot's collision ball to the
+copro (0x306E0 + slot for player 1, 0x307E0 + slot for player 2), which
+op 0x75 tests. It reads the ball numbers from 0x4C84, which on the board is
+UART code, so the masks were garbage (Akira's shadow broke into pieces).
+The lift stubs it, and `megamix.c`'s `kage_balls` sends the tables at
+`rob_start`: StF's (9 0 2 3 4 5 6 7 8 9 10 11 12 14 15 16) for an StF
+fighter, and VF2's record's middle balls (3 0 2 4 6 8 9 11 13 3 15 18 20
+23 26 28) for a guest, all of whom ride VF2's ball record.
+
+The reflection on Aurora Icefield is `mirror_draw`, as StF's camera_init
+draws it there: materials 0 to 15 set to 0x7000 (ambient 0x70, no
+diffuse: StF's `change_material`), then each fighter's parts under the
+camera scaled by (1, −1, 1) (`rob_disp_mir`, 0x6428C), then the mirrored
+osage chains (`osage_dsp`'s list layer 6, Honey's ponytail), then the
+stage's materials back.
+
+The fighters draw in a geo window of their own, after the stage, its
+shadows and the reflections, as StF's camera_init calls
+`set_window(win_down)` before `rob_disp`. MAME draws a later window over an
+earlier one; in one window, the shadows and reflections, a hair under or
+over the floor, clipped through the feet. FV's Western windows (the cage)
+come before it.
 
 `rob_kage_disp_test` leaves the geometrizer in StF's mode 1; the board
 draws in mode 0 and sets it back after each pass. It also draws slot 0's
@@ -375,16 +414,18 @@ table models, the ball (0x195) and the projectile shadow (0x736).
 Checked in MAME (`sfight`, the shared build) and m2-hle2, Sonic against
 Honey: shadows on South Island, Tou-rin, the Colosseum and Western, none
 on Aurora; on South Island they look as real StF's do (black, cast away
-from the light). The guests draw the table of the StF character whose
-slot they take (The board's other guests, above).
+from the light). Akira, Ryo, Chai and Hornet each cast their own, whole,
+on South Island and Tou-rin; on Western they turn with the light. On
+Aurora, Sonic, Honey (and her ponytail) and Akira are mirrored, dimmed,
+under their feet (m2-hle2 too, Akira against Honey), and nothing clips
+through the feet there or on South Island.
 
 ## Putting a fighter's shadows on the board
 
 What the board will need, in StF's form, for a fighter from any game:
 
-1. Its table: 16 entries and a tail, as `tools/shadow-data.mjs` writes it.
-   Each guest takes an StF character's slot, so until it has its own it
-   draws that character's (above, The board's other guests).
+1. Its table: 16 entries and a tail, as `tools/shadow-data.mjs` writes it
+   (done for every guest: On the board, above).
    A VF2 or FV fighter's fifteen entries keep their order, the slot they
    lack (slot 0, as in StF's) comes last with model 0, and VF2's flags are
    turned into StF's. StF's own tables are in the program ROM (0x64988 to
@@ -400,7 +441,7 @@ What the board will need, in StF's form, for a fighter from any game:
    other slots, the wheels included, get model 0. Every guest's cards take
    StF's shadow cards' header and colour; Daytona's colour means nothing in
    StF's palette.
-3. Its balls: the mask test takes ball `0x4C84[slot]` of the fighter's
+3. Its balls (done: `kage_balls`, On the board): the mask test takes ball `0x4C84[slot]` of the fighter's
    collision balls. A guest's ball list (rob +0x1D00) has to have a ball at
    each of those indices that rides the slot's part. Every guest has VF2's
    record, on which most of 0x4C84's indices fall on another part (Hornet's

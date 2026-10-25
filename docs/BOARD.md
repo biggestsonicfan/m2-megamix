@@ -1644,8 +1644,12 @@ held, and a change of stage or fighter shows at once.
 
 The fighters' shadows are StF's: its lifted `rob_kage_*` routines and its
 tables (`off_64988`), called by `megamix.c`'s `kage_stage`, `kage_light`,
-`kage_inside` and `kage_outside` in StF's order. None on Aurora Icefield,
-as in StF. `docs/SHADOWS.md` (On the board) has the details and the check.
+`kage_inside` and `kage_outside` in StF's order; each guest has a table of
+its own (`tools/guest-shadows.mjs`) and the masks' balls come from
+`kage_balls`. On Aurora Icefield, as in StF, the fighters are mirrored in
+the ice instead (`mirror_draw`). The fighters draw in a geo window after
+all of these, so nothing clips their feet. `docs/SHADOWS.md` (On the
+board) has the details and the check.
 
 ## Where it stands
 
@@ -1673,9 +1677,7 @@ Known gaps:
 - Eggman's head (model 793) takes its texture from StF's texture set 7,
   which the board does not load (it loads set 1 and the stage's), so it
   does not show.
-- The guests cast the shadows of the StF character whose slot they take
-  (`docs/SHADOWS.md`, On the board). The camera's round-end and replay
-  modes are not run.
+- The camera's round-end and replay modes are not run.
 
 ## Plan
 

@@ -634,6 +634,6 @@ export function importShenmue(R, ctx, games, { tiles, byTex }, { name: who = 'RY
         triangles: faces.length, colours: cbOf.size, balls: moved,
         moves: 'Akira\'s (his own motions are not on the board yet)',
     };
-    return { report, coverage, meshes, partModel };
+    return { report, coverage, meshes, partModel, scale: k };
 }
 export const importRyo = (R, ctx, games, tex) => importShenmue(R, ctx, games, tex, { name: 'RYO', chr: CHR });

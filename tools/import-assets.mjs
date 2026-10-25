@@ -36,12 +36,13 @@
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { readZipDirectory, extractZipEntry } from '../vendor/noclip/js/zip.js';
-import { loadNodeGames } from '../tests/node-roms.mjs';
-import { importAkira } from './vf2-guest.mjs';
+import { loadNodeGames, shenmueFile } from '../tests/node-roms.mjs';
+import { importAkira, CHR as AKIRA_CHR } from './vf2-guest.mjs';
 import { CHR as RYO_CHR, CHAI_CHR, shenmueTiles, importShenmue } from './ryo-guest.mjs';
 import { CHR as HORNET_CHR, loadHornet, hornetTiles, importHornet } from './hornet-guest.mjs';
 import { importVf2Stages, VF2_SET0 } from './vf2-stages.mjs';
 import { importFvStages } from './fv-stages.mjs';
+import { importGuestShadows } from './guest-shadows.mjs';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const ROMS = process.env.ROMS_DIR || `${process.env.HOME}/build/mameroms`;
@@ -191,6 +192,7 @@ const OSAGE_SIZE = { 1: 0x24, 2: 0x40, 3: 0x0c, 4: 0x18, 5: 0x44 };   /* osage_d
 /* program ROM: off_64988, each character's shadow table (docs/SHADOWS.md):
  * sixteen 24-byte entries (slot, model, flags, offset), then three u16 models */
 const SHADOW_TABLES = 0x064988, SHADOW_ENTRIES = 16, SHADOW_ENTRY = 24;
+const SHADOW_ROOM = 0x2a00;             /* StF's 0x2260 bytes of tables, and four guests' */
 const SHADOW_BALL = 0x195;                /* rob_kage_disp_test: slot 0's while +0x2068 is 1 */
 const SHADOW_TOBI = 0x736;                /* tobi_kage_disp: a projectile's shadow */
 const SET_FIGHTERS = 1;
@@ -428,6 +430,37 @@ async function importStf(R) {
         srcs.forEach((a, k) => v.setUint32(k * 4, t.at + 0x10 + a - from, true));
         Object.assign(t, { bytes: b, view: v, lists: 0x10 });
     }
+    /* off_64988 (SHADOW_TABLES) is a list by character of shadow tables:
+     * StF's tables are copied into free room in the extra data ROM (main_data
+     * has none to spare under the VF2 skies), each pointer moved onto its
+     * copy; the guests' own go after them (shadowTable, tools/guest-shadows.mjs). */
+    {
+        const t = tables.off_64988, len = SHADOW_ENTRIES * SHADOW_ENTRY + 8, room = SHADOW_ROOM;
+        const srcs = Array.from({ length: 52 }, (_, c) => t.view.getUint32(c * 4, true));
+        const from = Math.min(...srcs), n = Math.max(...srcs) - from + len;
+        if (n > room) throw new Error('off_64988: StF\'s shadow tables do not fit SHADOW_ROOM');
+        const iv = xtra.kept.map(([a, b]) => [a, b]).sort((a, b) => a[0] - b[0]);
+        let off = 0x100;
+        for (const [a, b] of iv) {
+            if (b <= off) continue;
+            if (a >= off + room) break;
+            off = (b + 15) & ~15;
+        }
+        if (off + room > xtra.out.length) throw new Error('off_64988: no room in the extra data ROM');
+        const b = new Uint8Array(room), v = new DataView(b.buffer);
+        for (let i = 0; i < n; i += 4) v.setUint32(i, program.u32(from + i), true);
+        srcs.forEach((a, c) => t.view.setUint32(c * 4, XTRA + off + a - from, true));
+        xtra.put(off, b, 'shadow tables');
+        let free = (n + 3) & ~3;
+        const shadowTable = (chrs, table) => {
+            if (free + table.length > room) throw new Error('off_64988: no room for a guest\'s shadow table (SHADOW_ROOM)');
+            xtra.put(off + free, table, 'a guest\'s shadow table');
+            for (const c of chrs) t.view.setUint32(c * 4, XTRA + off + free, true);
+            free = (free + table.length + 3) & ~3;
+            return XTRA + off + free - ((table.length + 3) & ~3);
+        };
+        Object.assign(t, { shadowTable });
+    }
     R.guest = { ...G, tables };
 
     /* The HUD's tiles (_Scroll_Initialize n: _ScrollCG_Initialize n, then
@@ -530,6 +563,13 @@ const shenmue = SHENMUE.map((g, i) => {
 });
 const hornet = importHornet(R, akira.ctx, NG, HO, hoTex, { chr: HORNET_CHR });
 for (const line of hornet.report) console.log(`Hornet: ${line}`);
+/* each guest's own shadows (tools/guest-shadows.mjs) */
+const cold = shenmueFile('MISC/COLD.BIN');
+const shadows = importGuestShadows(R, akira.ctx, { vf2: NG.vf2.rom, stf: NG.stf.rom, daytona: HO.rom, cold: cold && new Uint8Array(cold) }, {
+    akira: { chr: AKIRA_CHR }, hornet: { chr: HORNET_CHR },
+    shenmue: SHENMUE.map((g, i) => ({ name: g.name[0] + g.name.slice(1).toLowerCase(), chr: g.chr, scale: shenmue[i].scale })),
+});
+for (const line of shadows.report) console.log(`Shadows: ${line}`);
 /* VF2's Tou-rin and Colosseum (tools/vf2-stages.mjs) */
 const vf2st = importVf2Stages(R, NG, akira.ctx);
 for (const line of vf2st.report) console.log(`VF2 stages: ${line}`);

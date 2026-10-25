@@ -51,7 +51,7 @@ const flagsOf = (game, f) => (game === 'vf2' ? (f & FLAG_OFFSET) | (f & 1 ? FLAG
 
 /* A VF2 or FV table as StF's: their fifteen entries, the slot they lack (in
  * StF's tables, slot 0 with model 0) as the sixteenth, and an empty tail. */
-function guestTable(game, entries) {
+export function guestTable(game, entries) {
     const slots = new Set(entries.map((e) => e.slot));
     const missing = [...Array(STF.entries).keys()].filter((s) => !slots.has(s));
     return {
@@ -70,6 +70,7 @@ export function fighterShadows(NG) {
     const cache = {};
     for (const f of ROSTER) {
         const rom = NG[f.game].rom;
+        if (!rom) continue;      /* Shenmue's: no table (docs/SHADOWS.md) */
         if (f.game === 'stf') {
             const t = stfTable(rom, f.index), t2 = stfTable(rom, f.index + 26);
             out.push({ ...f, own: t.at, ...t, p2: t2.at === t.at ? null : t2.at });
@@ -90,6 +91,7 @@ export function stageLights(NG) {
     const out = [];
     for (const [game, G] of Object.entries(NG)) {
         const rom = G.rom;
+        if (!rom) continue;
         for (const s of G.stages) {
             if (game === 'stf') {
                 const v = rom.mainCpuView, at = STF.stages + 256 * s.slot;
@@ -114,8 +116,8 @@ export function stageLights(NG) {
 }
 
 /* The board's guests, by the StF character each one takes (docs/BOARD.md).
- * Until a guest gets a table of its own, off_64988 gives it that
- * character's StF table: StF's cards on the guest's slots. */
+ * Each has its own table now (tools/guest-shadows.mjs); this prints the StF
+ * table its slot held, which StF's own off_64988 would give it. */
 export const BOARD_GUESTS = [
     { name: 'AKIRA', from: 'vf2', chr: 6 },
     { name: 'RYO', from: 'shenmue', chr: 1 },
@@ -146,7 +148,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
             console.log(`${f.game.padEnd(3)} ${f.name.padEnd(6)} table ${hex(f.own).padEnd(9)} ${drawn.length} parts, flags ${flags}, models ${drawn.map((e) => e.model).join(' ')}${f.p2 ? `; player 2 ${hex(f.p2)}` : ''}`);
         }
         for (const g of guestInherits(stf)) {
-            console.log(`board ${g.name.padEnd(6)} (${g.from}) StF ${String(g.chr).padStart(2)}: inherits ${hex(g.at)}${g.p2 !== g.at ? ` (player 2 ${hex(g.p2)})` : ''}, models ${g.models.join(' ')}`);
+            console.log(`board ${g.name.padEnd(6)} (${g.from}) StF ${String(g.chr).padStart(2)}: slot held ${hex(g.at)}${g.p2 !== g.at ? ` (player 2 ${hex(g.p2)})` : ''}, models ${g.models.join(' ')}`);
         }
         for (const s of stages) {
             const l = s.light ? `a0 ${hex(s.light.a0)} a1 ${hex(s.light.a1)}` : 'no shadows';
