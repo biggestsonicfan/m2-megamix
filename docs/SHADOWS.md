@@ -112,9 +112,14 @@ matrix at rob +0xF34 + 0x34 · rob +0xF00, needing rob +0x78A and the slot
 rob +0x788 in the mask; on bit 27, slot rob +0x7A0 (op 0x37), needing rob
 +0x7A2. All of StF's tables have a tail of zeros, so no StF fighter uses it.
 
-StF's tables (`node tools/shadow-data.mjs`) are flat cards, flags 0, one a
+StF's tables (`node tools/shadow-data.mjs`) have flags 0 and one model a
 part (Sonic models 25 to 39, Honey 3822 to 3836, Eggman 1847 to 1860; slot
-9 is Sonic's model 33 on every character but 11).
+9 is Sonic's model 33 on every character but 11). Those models are not
+flat: each is a low solid of the part (noclip's `decodeModel`: Sonic's
+head, 26, 74 faces 1.9 m across with the quills; his chest, 25, 43; a limb
+6 or 9, a three-sided prism), which op 0x74's `inner[0]` flattens. A
+table is 209 to 265 faces (Honey 209, Tails 246, Sonic 251, Eggman 265).
+VF2's and FV's are two quads a part.
 Character 26, player 2's Sonic, points at a table of its own, 0x64EA8,
 in VF2's style: offsets, three cards on slot 1 and flags 1, 2, 5 and 6.
 That one has not been checked in MAME.
@@ -270,10 +275,10 @@ model. Neither his models nor their textures have anything for it.
   - modes 2, 3 and 9 go to 0x0C179C2C (not read);
   - modes 4 and 5 (0x0C12DE3C) build a shadow volume.
 - **The volume.** MISC/COLD.BIN entry 7, `SYD_MUNE.BIN` (magic MVSD,
-  10224 bytes, loaded by 0x0C12DC72): 13 closed hulls, one per bone (1, the
+  10224 bytes, loaded by 0x0C12DC72): 13 hulls, one per bone (1, the
   head 0xFFBD, 5, 6, 0xFFBF, 10, 11, 0xFFBE, 14, 16, 17, 21, 22), 116
-  points, 269 edges and 162 faces in all. There are none for the hands or
-  feet. Each hull is placed by its bone's matrix in the character's model.
+  points, 269 edges and 162 triangles in all (table below). There are none
+  for the feet. Each hull is placed by its bone's matrix in the character's model.
   For each of up to 32 scene lights, the silhouette is drawn out along the
   light (a directional light's direction, or the light-to-character line)
   by 1.8 / −dir.y, at most 50. The caps and sides are built from 0x0C1D0F00
@@ -287,11 +292,55 @@ model. Neither his models nor their textures have anything for it.
   fight would settle it.
 
 The board has no modifier volumes, but the copro's `inner[0]` flattens
-whatever model it is given. So each SYD_MUNE hull can be a card on the
-slot of its bone (the board's `SLOT_BONES` map, as for the model), flattened
-by op 0x74 the way StF's cards are. That draws the outline Shenmue's volume
-casts on flat ground. A hull flattened draws both its top and bottom faces,
-so only its faces turned towards the light should be kept.
+whatever model it is given, and StF's own shadow models are solids. So
+each SYD_MUNE hull can be a shadow model on the slot of its bone, flattened
+by op 0x74 as StF's are. That draws the outline Shenmue's volume casts on
+flat ground.
+
+The hulls (#1600; read off disc 3's MISC/COLD.BIN, the MVSD at 0x21B880,
+10224 bytes; not built or run). A node is: the bone (u16) +0, child +4,
+next +8, points (3 × f32) +12, face normals +16, a work buffer +20, edges
+(two u16 points) +24, faces +28 (24 bytes: the normal, three points, three
+edges), and the counts of points, edges and faces at +32, +34, +36. The
+slot is the board's `SLOT_BONES` (js/ryo.js on the chai branch), which the model rides on too.
+
+| bone | slot | points | triangles | open ends | |
+|---|---|---|---|---|---|
+| 0x01 | 1 chest | 12 | 20 | none | x −0.14..0.41, y ±0.11, z ±0.23 |
+| 0xFFBD | 2 head | 21 | 36 | one, 4 edges (the neck) | |
+| 0x05, 0x0A | 3, 6 | 7 | 9 | one, 3 edges | |
+| 0x06, 0x0B | 4, 7 | 6 | 6 | two, 3 edges each | a three-sided tube |
+| 0xFFBF, 0xFFBE | 5, 8 | 10 | 15 | one, 3 edges | |
+| 0x0E | 9 pelvis | 13 | 22 | none | |
+| 0x10, 0x11, 0x15, 0x16 | 10, 11, 13, 14 | 6 | 6 | two, 3 edges each | three-sided tubes |
+
+Take the chest: 12 points and 20 triangles on bone 1 (StF slot 1), a
+closed shell (12 − 30 + 20 = 2). Every hull's faces wind the way their
+normals point, and all point out. They are near convex: no point is more
+than 2 cm in front of a face's plane, but the head's 4 cm. So flattened
+along any light each hull covers one patch, a near-convex polygon, once by
+its faces turned to the light and once by those turned away. With culling
+only the first half is drawn, as on StF's solids.
+
+One card a bone works; nothing has to be dropped or split:
+
+- 13 hulls on 13 slots, no two on one slot, so they fit StF's sixteen
+  entries; slots 0, 12 and 15 (the feet, which SYD_MUNE has none for) get
+  model 0.
+- 162 triangles in all, under any StF table (209 to 265), and the biggest
+  (the head, 36) is under Sonic's head card (74). A Model 2 mesh holds
+  triangles as they are.
+- The open ends are where a hull meets the next at a joint (the neck, the
+  shoulders, elbows, wrists, hips and knees).
+  Flattened, a tube seen end on (a forearm pointing at the light) leaves a
+  small hole, mostly under the next hull's patch. Closing each end costs a
+  triangle (the neck two): 18 more, 180 in all.
+- Still to do when they are built: the board's Z is mirrored from
+  Shenmue's (js/ryo.js `local`), which turns every face's winding round;
+  the hulls are in bone space at Shenmue's size, so they take the model's
+  `shenmueFit` scale; and they take StF's
+  shadow models' material. Shenmue uses the same hulls for every
+  character, so Chai's are Ryo's.
 
 ## Putting a fighter's shadows on the board
 
@@ -307,8 +356,8 @@ What the board will need, in StF's form, for a fighter from any game:
    them, and the guests', where the board's `off_64988` reads.
 2. Its models: StF's fighters' are in the data ROMs now (45 models). A
    guest's (Akira's VF2 343 to 424) have to come in through its import,
-   renumbered as its other models are. Ryo's and Chai's: the SYD_MUNE
-   hulls, flattened to the faces that face the light. Hornet's: Daytona's
+   renumbered as its other models are. Ryo's and Chai's: the 13 SYD_MUNE
+   hulls as they are, one on each bone's slot (their ends capped). Hornet's: Daytona's
    791 cut at the body's cut (z = −0.46, with a row of points at x ±0.976)
    into a nose card on slot 1 (16 broken) and a cabin card on slot 9 (24),
    in those slots' frames as `hornetObjects` puts the nose and cabin. His
