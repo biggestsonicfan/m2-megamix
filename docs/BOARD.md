@@ -1352,7 +1352,9 @@ writes them into the data ROMs, and `bake-board.mjs` bakes the record
   (0x06CE33A4 + slot × 4), 32 words.
 - The turn: the floor, the upper list and the objects turn 10 units of
   heading a frame (FV's flag 0x10, `stage_t.turn`), and the light turns with
-  them. The cage, poles and rail stay with the ring.
+  them. The cage, poles and rail stay with the ring. Both count from the
+  round start (`turn_at`), as FV's round start (0xC568) puts 0x50A022 back
+  to 0, and the bear's pendulum starts over with them.
 - The cage: each panel side is drawn while the camera is inside it (the
   side's z axis against its position, `fv_side_in`), and the top (1801)
   with its side, as FV's `cage_clip_m` does. Poles and rail are always drawn.
@@ -1361,14 +1363,40 @@ writes them into the data ROMs, and `bake-board.mjs` bakes the record
   the board turns the model by −(angle >> 16) about X. Its hop needs the
   cage break and is left out. FV's facing cull on the bear and its stand
   is not needed (the camera never gets that far out).
-- The ring: stage_x is 6.0 × FV_SCALE = 12.27 (`stage_t.wall`), so StF's
-  walls stand where FV's cage is. Not yet checked in a fight.
+- The ring: stage_x is 5.0 × FV_SCALE = 10.22 (`stage_t.wall`), and the
+  cage, its top, the poles and the rail are scaled by 5/6 across as FV
+  draws them (docs/FV-STAGES.md, Size), so StF's walls stand where FV's cage
+  is. MAME: Sonic walking back stops against the fence.
 - Check: import-assets decodes every model from FV and from the board's
   ROMs and compares the texels (`checkFvStages`). MAME (setup stage 4, Sonic
   and Honey): the floor, the cage, the poles and rail, and the town turning
   behind them, at the fighters' size.
 - Missing: the sky. The board clears to 0x8000 (FV's record), so it is
-  black; FV's sky has not been looked at.
+  black. FV's sky is the tile layer's panorama (js/scroll.js, games.js
+  `scroll`), a blue sky with clouds over desert hills on Western; the
+  board's VF2 skies (`vf2_sky_t`) are the same kind of thing.
+
+### Western graded against FV
+
+MAME, `fvipers` (a one-credit game: Grace against Bahn on stage 1, Western,
+a snapshot a second) against the board (setup stage 4, Sonic against Honey).
+The cameras differ (StF's is higher and further out), so the comparison is
+by part, not by frame.
+
+| Part | Grade | |
+|---|---|---|
+| Models and textures | match | the town, the wagon, the skull on the top beam, the poles, cage and rail as FV's; import-assets compares every texel |
+| Colours | match | the ring floor averages (126, 72, 20) in both; the dirt (157, 118, 73) in FV, (169, 129, 82) on the board |
+| Ring size | fixed | FV's ring is 5.0, not 6.0 (FV-STAGES.md, Size): the fence stood 20% too far out |
+| Town turn | match | FV's 0x50A022 −10 a frame, drawn under its negation; light 0x501022 +10 from the record's 0xF400, elevation 0xD000 as the record |
+| Round start | fixed | the town snaps home each round: the wagon, K.O. Corral and the skull now stand behind the fighters at the start of each round, as in FV |
+| Wall | match | Sonic walking back stops against the fence |
+| Sky | missing | black on the board; a third of FV's screen |
+| Ring floor | wrong | a piece of the dirt (581, turning) shows through the wood (583, fixed) on the board, and moves with the turn; FV shows wood from fence to fence. Not explained yet |
+| Bear | not compared | FV's camera did not show it in this run; its hop and the cage break are not ported |
+
+Overall: the arena itself is FV's; the missing sky is what most separates
+it from FV, then the dirt showing through the floor.
 
 ## The fight
 

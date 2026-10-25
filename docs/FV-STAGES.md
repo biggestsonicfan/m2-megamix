@@ -47,10 +47,16 @@ FV_SCALE = 2.676 / 1.309 = 2.04. That is within 1% of `vf2-guest.mjs` SCALE
 (2.03), which sized Akira against FV's Bahn and Sonic. An FV stage scaled by it
 puts StF's fighters in it at FV's fighters' size.
 
-FV's ring is 6.0 to a side (half width, the default setting). Scaled, that is
-12.3 in StF's units, so the board's stage_x (0x50A00C) for an FV stage is
-12.3, not StF's 8.0. `area_coli` (op 0x70) reads it, so the walls move with
-it.
+FV's ring is 5.0 to a side (half width): MAME reads 5.0 at 0x50A00C from
+boot on, through the attract and a fight on Western. Scaled, that is 10.2 in
+StF's units, so the board's stage_x for an FV stage is 10.2, not StF's 8.0.
+`area_coli` (op 0x70) reads it, so the walls move with it. The cage, the
+poles and the rail are modelled at 6.0 and drawn at stage_x: cage_display
+(0x221E4) and pole_disp (0x22ED8) push scale (stage_x / 6, 1, stage_x / 6)
+over the panels' and poles' six-unit push, and sub_24294 pushes the rail out
+stage_x, then scale (stage_x / 6, cage_height / 3.1, 1) (cage_height,
+0x50027C, is 3.1). Forcing 6.0 in MAME moves FV's fence out. The platform
+is scaled the same way except on Western (stages 0 and 4, sub_235BC).
 
 ## The arenas
 
@@ -342,7 +348,7 @@ done for it, and its turn, light, cage culling and bear (without the hop).
 3. Repack the textures onto the stages' sheet; remap the colour bases.
 4. Bake `stage_t`/`stage_draw_t`: identity × FV_SCALE / 1.6 per draw, the
    cage panels' ends for 4/2/1 panels a wall, poles, top and rail.
-5. Set stage_x 12.3 for FV arenas.
+5. Set stage_x 10.2 for FV arenas; scale the cage, poles and rail by 5/6.
 6. Port the hooks and object routines arena by arena; Factory or Tower
    next (few moving parts).
 7. Port the cage break (above): camera mode 0x1A first, the replay later.

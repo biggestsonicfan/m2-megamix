@@ -19,8 +19,8 @@
  * poses, frame 1), so FV_SCALE is 2.676 / 1.309 = 2.04, within 1% of
  * vf2-guest.mjs SCALE (Akira, sized against FV's Bahn and Sonic). An FV stage
  * scaled by it puts StF's fighters in it at FV's fighters' size; FV's ring
- * (half 6.0 at the default, 0x50A00C) becomes 12.3 in StF's units, so the
- * board's stage_x for an FV stage is 12.3, not StF's 8.0.
+ * (half 5.0, 0x50A00C) becomes 10.2 in StF's units, so the board's stage_x
+ * for an FV stage is 10.2, not StF's 8.0.
  *
  *   node tools/fv-stages.mjs [--json out.json]   (reads $ROMS_DIR's zips)
  */
@@ -37,8 +37,11 @@ import { levelOrigin, texelByte, SHEET_BYTES } from '../vendor/noclip/js/atlas.j
 export const FV_STAGE_SLOTS = [0, 1, 2, 3, 5, 6, 7, 8];
 /* FV's Sonic onto StF's Sonic (above). */
 export const FV_SCALE = 2.676 / 1.309;
-/* FV's ring at the default setting (0x50A00C), in its own units. */
-export const FV_RING = 6.0;
+/* FV's ring (0x50A00C), in its own units: 5.0 from boot on (MAME). The cage,
+ * the poles and the rail are modelled at 6.0, and cage_display (0x221E4),
+ * pole_disp (0x22ED8) and sub_24294 scale them by stage_x / 6 across. */
+export const FV_RING = 5.0;
+const RING_K = FV_RING / 6.0;
 
 /* The record's cage list: 24 models from +0x84, three groups of eight. The
  * group is the wall's damage state (cage_clip_m indexes it by the wall's hit
@@ -222,10 +225,15 @@ export function fvBoardPlan(games) {
         const rank = (d) => (isRail(d) ? 4.5 : order.indexOf(d.layer));
         if (list.some((d) => rank(d) < 0 || d.anim)) throw new Error(`FV ${st.name}: a draw the board has no place for`);
         const draws = list.map((d, i) => ({ d, i })).sort((a, b) => rank(a.d) - rank(b.d) || a.i - b.i).map(({ d }) => {
-            const ops = typeof d.ops === 'function' ? d.ops(0) : d.ops;
+            let ops = typeof d.ops === 'function' ? d.ops(0) : d.ops;
             const turn = typeof d.ops === 'function' || d.layer === 'objects';
             const r = ops.find(([k]) => k === 'r');
             const side = d.layer === 'cage' && !isRail(d) ? Math.round((r ? r[1] : 0) / 90) + 1 : 0;
+            /* the ring at FV_RING: the panels, the top and the poles under
+             * scale (k, 1, k); the rail pushed out stage_x, then scale (k, 1, 1)
+             * (its y is cage_height / 3.1, 1 at FV's 3.1) */
+            if (isRail(d)) ops = [...ops.filter(([o]) => o !== 't'), ['t', [0, 0, FV_RING]], ['s', [RING_K, 1, 1]]];
+            else if (d.layer === 'cage' || d.layer === 'poles') ops = [['s', [RING_K, 1, RING_K]], ...ops];
             return { model: d.model, ops, layer: isRail(d) ? 'rail' : d.layer, turn, side, swing: d.model === KUMA };
         });
         return { st, draws };

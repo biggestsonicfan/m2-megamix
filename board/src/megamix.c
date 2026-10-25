@@ -146,6 +146,12 @@ static float light[3];
 
 /* StF's frame_counter (see stage_col_cycle). */
 static u32 frame_counter;
+/* FV's turning town and its light count from the round start: 0xC568 puts
+ * word_50A022 back to 0, so the town snaps home with the objects each round. */
+static u32 turn_at;
+/* the Western bear's pendulum (kuma_step) */
+static int kuma_p, kuma_v;
+static u32 kuma_at;
 
 /* VF2's Colosseum storm (VF2 0x2468C), storm[] its four channels by frame:
  * while channel 3 is on, the arena is lit, each draw its lit twin and the
@@ -162,7 +168,7 @@ static void stage_light(const stage_t *st) {
     for (i = 0; i < 9; i++) *cf = m2_obj_fb(cam_l.r[i]);
     for (i = 0; i < 3; i++) *cf = 0u;
     /* FV's turning town turns its light with it (0x1EF94) */
-    *cf = COP_ANG_Y; *cf = (u32)(int)(lit ? st->flash[2] : st->vy) + st->turn * frame_counter;
+    *cf = COP_ANG_Y; *cf = (u32)(int)(lit ? st->flash[2] : st->vy) + st->turn * (frame_counter - turn_at);
     *cf = COP_ANG_X; *cf = (u32)(int)(lit ? st->flash[1] : st->vx);
     m2_cop_m2w(0.0f, 0.0f, lit ? st->flash[0] : st->bright, light);
 }
@@ -386,6 +392,8 @@ static u32 rout_vy[2];            /* its fall's speed, a float's bits */
 
 static void round_start(fighter_t fs[2]) {
     u32 i;
+    turn_at = kuma_at = frame_counter;
+    kuma_p = kuma_v = 0;
     for (i = 0; i < 2u; i++) {
         /* at yaw a a fighter faces (-sin a, cos a) in x, z, as StF's
          * camera does: 4.0 apart, facing each other, as a real fight starts */
@@ -770,8 +778,6 @@ static int fv_side_in(const mat_t *m) {
  * 60 Hz frame; the bear swings about x by the negated top half of its
  * place. The hop (a fighter knocked into the wall before it) is the cage
  * break's, which the board does not have. */
-static int kuma_p, kuma_v;
-static u32 kuma_at;
 static void kuma_step(void) {
     while (kuma_at != frame_counter) {
         int t = 0x2000 + kuma_v;
@@ -804,7 +810,7 @@ static void draw_stage(const stage_t *st) {
         *cf = COP_WMATRIX;
         for (i = 0; i < 9u; i++) *cf = m2_obj_fb(cam.r[i]);
         for (i = 0; i < 3u; i++) *cf = m2_obj_fb(cam.t[i]);
-        *cf = COP_ANG_Y; *cf = (st->turn * frame_counter) & 0xFFFFu;
+        *cf = COP_ANG_Y; *cf = (st->turn * (frame_counter - turn_at)) & 0xFFFFu;
         *cf = COP_RMATRIX;
         for (i = 0; i < 9u; i++) ct.r[i] = m2_cop_gf();
         for (i = 0; i < 3u; i++) ct.t[i] = m2_cop_gf();
