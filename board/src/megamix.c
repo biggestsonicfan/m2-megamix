@@ -298,6 +298,67 @@ static void stf_globals(void) {
     stf_set(0x50A000u, 0x3CCE9ED5u);
 }
 
+/* ---- sound ----------------------------------------------------------------
+ * StF's sound board (a 68000 running StF's sound program, epr-19021, on its
+ * samples) takes 24-bit codes from the i8251 at 0x9C0000, a byte at a time,
+ * the high byte first. StF's sound_request_special puts a code in a ring of
+ * 32 (AUDIO_2; the count at 0x504001, dropped when it is full), and its IRQ
+ * 10 (the USART ready for a byte) sends them (send_sound_code). The SDK's
+ * interrupt table has no handler for IRQ 10, so the board sends from its own
+ * loop: snd_pump puts out bytes while the USART takes them, without
+ * waiting, and the main loop pumps while it waits for the vsync. The lifted
+ * code's sound_request_u and sound_request_special come here (lift-stf.py
+ * TO_C), with every register kept. */
+static u32 snd_q[32], snd_head, snd_tail, snd_n, snd_code, snd_left;
+
+void snd_request_special(u32 code) {
+    if (snd_n >= 32u) return;
+    snd_q[snd_head] = code;
+    snd_head = (snd_head + 1u) & 31u;
+    snd_n++;
+}
+
+/* sound_request_u: 0xA00001 (the sound program's reset) as it is; a code of
+ * bank 0x9E is sent as 0x9C's. (StF's attract mode with its sound off in the
+ * backup RAM sends nothing; the board has no attract mode.) */
+void snd_request_u(u32 code) {
+    if (code != 0xA00001u && (code & 0xFF0000u) == 0x9E0000u) code -= 0x20000u;
+    snd_request_special(code);
+}
+
+static void snd_pump(void) {
+    while (M2_SND_CTL & 1u) {            /* TxRDY */
+        if (!snd_left) {
+            if (!snd_n) return;
+            snd_code = snd_q[snd_tail];
+            snd_tail = (snd_tail + 1u) & 31u;
+            snd_n--;
+            snd_left = 3u;
+        }
+        snd_left--;
+        M2_SND_DATA = (snd_code >> (snd_left * 8u)) & 0xFFu;
+    }
+}
+
+/* StF's sound codes for the fight's flow: SET_INT's 0xA00003 as a round is
+ * set, sd_gong_4 as it starts (ROUND_DSP's gong_ring) and as it is decided
+ * (JUDGE_INT), the stage's music from round 1 (stage_bgm_select's
+ * STAGE_MUSIC_IN_ORDER by stage_num), and the reset that stops it when the
+ * match is over (VIC_INT's 0xA00001). stage_bgm_select's 2-player cases are
+ * left out: North Wind is for Sonic against Knuckles, whose slot is Akira's
+ * on the board, and South Island's music for stages 4 and 5, which the board
+ * does not have. A guest stage has no StF music, and plays none. */
+#define SND_RESET   0xA00001u
+#define SND_SET     0xA00003u
+#define SND_GONG    0xAE1302u
+#define STF_STAGE_MUSIC ((const u32 *)0xDBFDCu)   /* STAGE_MUSIC_IN_ORDER, in the copied ROM */
+
+static void snd_round(const stage_t *st, u32 first) {
+    snd_request_u(SND_SET);
+    if (first && st->slot != 0xFFFFu) snd_request_u(STF_STAGE_MUSIC[st->slot & 15u]);
+    snd_request_u(SND_GONG);
+}
+
 /* The board's camera as StF's camera object: at (0, CAM_Y, CAM_Z), yaw 0
  * (StF's camera looks along (-sin, cos) in x, z: +z). */
 static void stf_camera(void) {
@@ -1624,6 +1685,7 @@ int main(void) {
 
     m2_init();
     m2_silicon_boot();
+    m2_sound_init();                     /* init_sound: the USART, then the sound program's reset */
     m2_cam_set_focus(FOCUS);
     camera_init();
     tex_load_set(SET_FIGHTERS);
@@ -1689,6 +1751,7 @@ int main(void) {
                 *(u8 *)stf_ram(0x50004Fu) = *(u8 *)stf_ram(0x500051u) = 0u;
                 menu_clear();
                 round_start(fs);
+                snd_round(&stages[stage], 1u);
                 over = 0u;
                 in_menu = 0u;
             } else {
@@ -1741,10 +1804,12 @@ int main(void) {
                           menu_mask(1u);
                           *(u8 *)stf_ram(0x50004Fu) = *(u8 *)stf_ram(0x500051u) = 0u;
                           round_start(fs);
+                          snd_request_u(SND_RESET);
                           over = quit = 0u;
                           break;
                       }
                       round_start(fs);
+                      snd_round(&stages[stage], 0u);
                       over = 0u;
                   }
               }
@@ -1758,6 +1823,7 @@ int main(void) {
                   if (l0 != l1) (*(u8 *)stf_ram(l0 ? 0x500051u : 0x50004Fu))++;
                   else if (e0 != e1) (*(u8 *)stf_ram(e0 > e1 ? 0x50004Fu : 0x500051u))++;
                   if (ring_out) ring_msg(1u);
+                  snd_request_u(SND_GONG);
                   over = 180u;
               }
           } }
@@ -1783,8 +1849,9 @@ int main(void) {
          * A pass that runs past a vsync steps the fighters for each vblank it
          * took, so the count follows the vblanks. */
         {
-            u32 v;
-            m2_vsync();
+            u32 v = frameVBL;
+            /* m2_vsync's wait, sending the sound queue meanwhile */
+            while (frameVBL == v) snd_pump();
             v = frameVBL; frame_counter += v - vbl; vbl = v;
             stf_set(0x500020u, frame_counter);
             if (stages[stage].slot != 0xFFFFu) stf_call(stf_sub_2435C, robs[0], robs[1], 0u);

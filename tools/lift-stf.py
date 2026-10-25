@@ -71,13 +71,18 @@ ROOTS = ['set_motion', 'calc_rob_angle', 'calc_rob_angle_cont', 'calc_unit_mat',
          'stage_disp', 'make_lay_col_256_tbl', 'chg_scr_color_req', 'chg_pol_color_req', 'chg_pol_color_send',
          'sub_7B4', 'send_tex_col_stage', 'send_tex_col_skin', 'send_tex_col_part', 'sub_2435C',
          'set_display_type_crt', 'osage_init', 'sub_63AC4', 'rob_kage_disp_inside', 'rob_kage_disp_outside']
-# Routines the board does not run (debug text, name plates,
-# sound, ring scatter, Super Sonic's hair objects; the shadow mask balls,
-# which read a table at 0x4C84 and megamix.c's kage_balls sends): `ret`.
+# Routines the board does not run (debug text, name plates, ring scatter,
+# Super Sonic's hair objects; the shadow mask balls, which read a table at
+# 0x4C84 and megamix.c's kage_balls sends): `ret`.
 STUBS = ['print_mes', 'print_mes_ex', 'print_hex_w', 'debug_disp_hex', 'dsp_pattern_right',
-         'char_nameplate_dsp', 'sound_request_u', 'sound_request_special',
-         'stage_contact_sound', 'ring_tobitiri_set', 'sub_1BCC0',
+         'char_nameplate_dsp', 'ring_tobitiri_set', 'sub_1BCC0',
          'send_kage_ball_pntr']
+# Routines the board's C does in their place: StF's two sound requests,
+# which queue a code (g0) for the sound board (megamix.c snd_request_u and
+# snd_request_special; StF's sends it from an interrupt of its own, which the
+# SDK's table does not have). They keep every g register, as StF's do
+# (sound_request_special saves g0..g3 and g14; its callers keep values there).
+TO_C = {'sound_request_u': '_snd_request_u', 'sound_request_special': '_snd_request_special'}
 # Labels the routines use as numbers (`lda loc_10000, r3` is 0x10000, `lda
 # off_1010, r13` the flag mask 0x1010; get_en_info's `lda loc_5550` and `lda
 # off_1018` are the facing bound 0x5550 and the flag mask 0x1018 its throw
@@ -303,7 +308,7 @@ def main():
     def base(t):
         return t.split('+')[0].strip()
     live, todo, why = set(), [(labline[f], 'root') for f in ROOTS + EXTRA_TABLES], {}
-    stub_lines = {labline[f] for f in STUBS}
+    stub_lines = {labline[f] for f in STUBS + list(TO_C)}
     while todo:
         i, w = todo.pop()
         if i in live or i in stub_lines:
@@ -352,7 +357,7 @@ def main():
         if t in NUMBERS or (t in DATA_NUMBERS and c.startswith('.long')):
             notes.setdefault('num', set()).add(f'{t}=0x{addr[t]:X}')
             return f'0x{addr[t]:X}'
-        if t in lifted_labels or t in STUBS:
+        if t in lifted_labels or t in STUBS or t in TO_C:
             return t
         op, _, args = c.partition(' ')
         if t in addr and is_branch(op) and target(op, args) == t:
@@ -447,6 +452,13 @@ def main():
     S.append('# ---- StF routines the board leaves out')
     for f in STUBS:
         S.append(f'{f + ":":<24}ret')
+    S.append('')
+    S.append('# ---- StF routines the board\'s C does: g0..g7, g13 and g14 kept')
+    for f, c in TO_C.items():
+        S.append(f'{f}:')
+        for l in ['movq    g0, r4', 'movq    g4, r8', 'mov     g13, r12', 'mov     g14, r13', 'mov     0, g14',
+                  f'call    {c}', 'movq    r4, g0', 'movq    r8, g4', 'mov     r12, g13', 'mov     r13, g14', 'ret']:
+            S.append(f'                {l}')
     S.append('')
     S.append('# ---- StF\'s RAM, in the board\'s')
     S.append('                .section .bss')

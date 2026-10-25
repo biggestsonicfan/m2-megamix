@@ -48,9 +48,10 @@ StF's colour tables (skins, parts, the stages' colour sets, the fixed
 rows), all 519 motions (the lifted reaction code picks
 them from tables of its own), the HUD's scroll tiles and patterns, and from
 the coprocessor's data ROM the sine and cosine tables StF's coprocessor
-firmware (cpres1, which the SDK boots) reads. The sound program, the samples
-and the billboard's program (`segabill`'s epr-18022) are zeros: the board
-never reads them. Of 53 MB of data it keeps about 4 MB;
+firmware (cpres1, which the SDK boots) reads. StF's sound program and samples
+are copied whole (see Sound); the billboard's program (`segabill`'s
+epr-18022) is zeros: the board never reads it. Of 53 MB of data it keeps
+about 4 MB;
 `board/roms/assets.txt` lists every run it kept, by region, address and
 reason.
 
@@ -804,18 +805,18 @@ Inert on the board, for later:
   voice codes (0xDB3D0); `dword_DB2A8` after it is by 1B1 too.
   `loc_2B33C` (14175) picks hit sounds by the attacker's parent (3, 11, 12,
   13: robot lists) or else by the drawn character (rob+0x1B0 × 12 into
-  `dword_DB964` / `dword_DB6F4`), so Knuckles' again. Left as it is: every
-  path ends in `sound_request_u`, which is a stub (`ret`, 25081), and the
-  board's sound program and samples are zeros, so nothing is heard and the
-  codes change nothing else. VF2 has voice codes of its own (its damage
+  `dword_DB964` / `dword_DB6F4`), so Knuckles' again: the board plays StF's
+  sounds now (see Sound), so Akira's punches land with Knuckles' hit
+  sounds. (StF's voice tables are all zeros: no StF fighter has a voice.)
+  VF2 has voice codes of its own (its damage
   code plays one by rob+0x1B1 through 0x201E44C, see `damage_calculation`
   above), but they are commands to VF2's sound program and samples, not
   StF's; the same number sent to StF's sound program plays a different
   sample, so it is not a value of the same meaning, and a mapping from
   VF2's voices to StF's codes would be invented. Gating the lookups on
   `char_game` would change the shared path; neither is done. It stays on
-  this list because the tables are by StF id. → Only once the board has
-  sound, with a guest's own samples and codes to point at.
+  this list because the tables are by StF id. → Only once the board's sound
+  ROMs hold a guest's own samples, with codes to point at.
 - `sub_2C7E4` (15480), a projectile's hit: it picks the victim's reaction
   from StF's `uk_hit_motions` (0xDA0B4) by the projectile's kind byte
   (+0x7E of the object), crouch (0x1A4 bit 3), side and behind, not through
@@ -1194,7 +1195,7 @@ for Ryo and then for him), on Akira's moves (`char_game` VF2).
   code checks by number (above, The guest: VF2's Akira): 0, 3, 5, 7, 8, 9,
   11, 13, 14 and 16 change what a fighter does, and 2, 4, 7 and 10 are bits
   of the opponent mask StF's scripts test (op 0x21). 12 is named only by the
-  hit sounds' robot lists, and the board plays no sound.
+  hit sounds' robot lists (a robot's hit sounds, if Chai lands a blow).
 - **Model.** CHA_B, his low model (the one his Fight block blurs him with,
   as YKB_B is Ryo's): 306 triangles on the same 15 bones as YKB_B, 15 parts,
   116 triangles in 14 seams (12-11 and 15-14 are his, the others Ryo's).
@@ -1653,6 +1654,55 @@ its own (`tools/guest-shadows.mjs`) and the masks' balls come from
 the ice instead (`mirror_draw`). The fighters draw in a geo window after
 all of these, so nothing clips their feet. `docs/SHADOWS.md` (On the
 board) has the details and the check.
+
+## Sound
+
+The sound board runs StF's own sound program (epr-19021, a 68000 driving the
+SCSP) on StF's samples, both copied whole by the import. The board sends it
+StF's 24-bit codes, as StF does, through the i8251 at 0x9C0000, the high
+byte first:
+
+- The lifted code's `sound_request_u` and `sound_request_special` are
+  `megamix.c`'s `snd_request_u` and `snd_request_special` (lift-stf.py
+  `TO_C`, which keeps every g register, as StF's do). They put the code in
+  a ring of 32, as StF's do (AUDIO_2; a code is dropped when it is full),
+  and `sound_request_u` turns bank 0x9E into 0x9C's. StF's attract-mode
+  check (sound off in the backup RAM) is left out: the board has no attract
+  mode.
+- StF sends the ring a byte at a time from IRQ 10 (`send_sound_code`, the
+  USART ready for a byte). The SDK's interrupt table has no handler for it,
+  so `snd_pump` sends instead, without waiting, while the main loop waits
+  for the vsync (about 7 ms a pass).
+- So every sound StF's fight code makes is heard: the swings, the hits and
+  the guards (`loc_2B33C`, by the attacker), the motions' sounds
+  (`play_audio_per_character`, `play_motion`'s op), the stage contacts
+  (`stage_contact_sound`, lifted now with `check_same_sound`). StF's voice
+  tables are zeros: StF's fighters have no voices, and it has no announcer
+  (its `sound_queue_input` scripts each play 0xA00000 and stop).
+- The fight's flow, from `megamix.c` (`snd_round`): 0xA00001 (the sound
+  program's reset) at boot (the SDK's `m2_sound_init`, StF's
+  `init_sound`); 0xA00003 as a round is set (SET_INT); the stage's music on
+  round 1 (`stage_bgm_select`: `STAGE_MUSIC_IN_ORDER`, 0xDBFDC, by
+  stage_num: South Island 0xAE1004, Aurora Icefield 0xAE1003); sd_gong_4
+  (0xAE1302) as a round starts and as it is decided (JUDGE_INT); the reset
+  again when the match is over, which stops the music (VIC_INT). Left out of
+  `stage_bgm_select`: North Wind for Sonic against Knuckles (Knuckles' slot
+  is Akira's) and South Island's music on stages 4 and 5 (not on the board).
+- VF2's and FV's stages have no StF music and play none; guests' fighters
+  make the sounds of the StF character whose slot they take.
+
+Check: a write tap on 0x9C0000 in MAME (`sfight -rompath board/roms`, a fight
+started and P1 punching and kicking) logs 0xA00001 at frame 14, then
+0xA00003, 0xAE1004 and 0xAE1302 at the fight's start, then StF's swing and
+hit codes (0xAE1176, 0xAE110F, 0xAE1114, 0xAE1236, 0xAE1118); `-wavwrite`
+is silent in the setup and about 800 RMS from the fight's start on.
+
+Next: VF2's and FV's music, voices and hit sounds. FV's sound program is
+StF's driver (their first 32 KB are the same; VF2's is an older one), its
+song and tone data from about 0x8000 to 0x48000; 0x48000..0x7FFFF of StF's
+program ROM is free. All three games fill their 8 MB of samples, so a
+guest's samples go in where StF's songs and sounds the board never plays
+were, once the driver's song and tone tables are read.
 
 ## Where it stands
 
