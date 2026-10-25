@@ -4,7 +4,7 @@ Ryo is the roster's tenth fighter, from Shenmue. Like the rest of the cast,
 everything about him is read off the original data when the page loads: the
 Shenmue beta's GD-ROM (0.400, disc 3). `tools/serve.py` serves four files
 off it, at `/shenmue/<path>`. It reads the disc image through
-`tools/shenmue-fight.py cat`. Without the disc, the roster is the nine
+`tools/shenmue-fight.py cat`. Without the disc, the roster is the eleven
 Model 2 fighters.
 
 | file | what |

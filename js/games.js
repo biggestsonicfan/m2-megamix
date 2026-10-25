@@ -19,8 +19,9 @@ export const GAMES = [
     { key: 'stf', zip: 'sfight', title: 'Sonic the Fighters', kind: 'stf' },
 ];
 
-/* The nine: VF2's and FV's record numbers (readFighters), StF's character
- * numbers (js/characters.js CHARACTERS). Honey is in two games. */
+/* The eleven: VF2's and FV's record numbers (readFighters), StF's character
+ * numbers (js/characters.js CHARACTERS). Honey is in two games. Tokio and
+ * Bahn came last so the first nine keep their numbers. */
 export const ROSTER = [
     { game: 'vf2', index: 0, name: 'AKIRA' },
     { game: 'vf2', index: 2, name: 'SARAH' },
@@ -31,6 +32,8 @@ export const ROSTER = [
     { game: 'stf', index: 0, name: 'SONIC' },
     { game: 'stf', index: 15, name: 'HONEY' },
     { game: 'stf', index: 8, name: 'EGGMAN' },
+    { game: 'fv', index: 3, name: 'TOKIO' },
+    { game: 'fv', index: 4, name: 'BAHN' },
 ];
 
 /* Ryo and Chai, from the Shenmue beta's disc, when it can be had (js/ryo.js, js/chai.js). */
