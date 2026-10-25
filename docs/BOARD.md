@@ -1182,6 +1182,14 @@ the data ROMs, and `bake-board.mjs` bakes their records into `poses.h`.
   changes the sky, (22,10,29) to (46,22,58); under channel 3 the sky stays
   as it is (#1567's (126,131,145) was lit 3D, not sky). On the board the
   sky goes from (13,4,30) to (38,13,57) on channel 0's frames.
+  The fighters take the same light (the board sends one a frame, before
+  the stage and the fighters), so channel 3 lights them as VF2's 9999 does
+  its own: every face turned to it goes to the top of its colorxlat ramp
+  (luma 0..47; the fighters' faces read the ramp, not the 48..63 band), the
+  faces turned away to the ambient. On the board Akira's gi goes (2,10,30)
+  to (46,69,104) and his skin (148,101,53) to (185,166,121), pale as VF2's
+  Shun under the flash; StF's fighters go to their own ramp tops (Sonic
+  (0,16,217) to (0,24,255)), which for their pure colours is not white.
 - Skies: VF2 scrolls a panorama on tile map 2, split with map 3 (0x2000 in
   its vscroll), for Tou-rin's day sky and the Colosseum's storm (record
   0x2502C + stage * 32: rows, row offset, the scroll CG). `vf2SkyPlan` bakes
