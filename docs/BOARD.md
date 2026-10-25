@@ -981,7 +981,8 @@ Known gaps:
 - Eggman's head (model 793) takes its texture from StF's texture set 7,
   which the board does not load (it loads set 1 and the stage's), so it
   does not show.
-- No shadows. The camera's round-end and replay modes are not run.
+- No shadows (`docs/SHADOWS.md` has how each game draws them and what the
+  board needs). The camera's round-end and replay modes are not run.
 
 ## Plan
 

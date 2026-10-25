@@ -172,6 +172,10 @@ const CHAR_PARTS = 0x0c5268;              /* program ROM: each character's recor
 const PLAYER2 = 26;                       /* character c's player 2 is c + 26 */
 const HAND_MODELS = 0x0c6570, FOOT_MODELS = 0x0c6640, BODY_MODELS = 0x0c6710;   /* program ROM, by character */
 const HEAD_LIST = 0x0c540c;
+/* program ROM: off_64988, each character's shadow table (docs/SHADOWS.md):
+ * sixteen 24-byte entries (slot, model, flags, offset), then three u16 models */
+const SHADOW_TABLES = 0x064988, SHADOW_ENTRIES = 16, SHADOW_ENTRY = 24;
+const SHADOW_BALL = 0x195;                /* rob_kage_disp_test: slot 0's while +0x2068 is 1 */
 const SET_FIGHTERS = 1;
 const MOTION_LIST = 0x06400004, MOTIONS = 519;
 const SCROLL_TABLE = 0x06480000;          /* _ScrollCG_Initialize / _ScrollColor_Initialize */
@@ -231,7 +235,13 @@ async function importStf(R) {
             const step = program.u16(h + 4 + 8), frames = step ? Math.floor(program.u16(h) / step) + 1 : 1;
             for (let f = 0; f < frames; f++) for (let w = 0; w < 4; w++) model(program.u16(h + 4 + f * 0x14 + w * 2));
         }
+        /* the shadows: the table's parts, and the tail's three (the extra
+         * part at +0x78A, or the two at +0x7A2 on flag bit 27) */
+        const shadow = program.u32(SHADOW_TABLES + ch * 4);
+        for (let i = 0; i < SHADOW_ENTRIES; i++) model(program.u32(shadow + i * SHADOW_ENTRY + 4));
+        for (let i = 0; i < 3; i++) model(program.u16(shadow + SHADOW_ENTRIES * SHADOW_ENTRY + i * 2));
     }
+    model(SHADOW_BALL);
     const colorbases = new Set();
     for (const m of [...models].sort((a, b) => a - b)) keepModel(m);
     Object.assign(R, { models, colorbases, modelTable: MODEL_TABLE, modelCount: MODELS });
