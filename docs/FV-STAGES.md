@@ -352,4 +352,7 @@ done for it, and its turn, light, cage culling and bear (without the hop).
 6. Port the hooks and object routines arena by arena; Factory or Tower
    next (few moving parts).
 7. Port the cage break (above): camera mode 0x1A first, the replay later.
-8. FV's skies: not looked at yet; the board draws Western on black.
+8. FV's skies: `fvSkyPlan` bakes each board arena's (docs/BOARD.md, FV's
+   Western); another arena needs only its slot in `FV_BOARD_SLOTS`, its
+   blocks free on the board, and its own sky routines (record +0x04, +0x08)
+   looked at.

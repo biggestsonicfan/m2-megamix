@@ -1396,10 +1396,25 @@ writes them into the data ROMs, and `bake-board.mjs` bakes the record
   ROMs and compares the texels (`checkFvStages`). MAME (setup stage 4, Sonic
   and Honey): the floor, the cage, the poles and rail, and the town turning
   behind them, at the fighters' size.
-- Missing: the sky. The board clears to 0x8000 (FV's record), so it is
-  black. FV's sky is the tile layer's panorama (js/scroll.js, games.js
-  `scroll`), a blue sky with clouds over desert hills on Western; the
-  board's VF2 skies (`vf2_sky_t`) are the same kind of thing.
+- The sky: FV's tile-layer panorama, a blue sky with clouds over desert
+  hills, drawn by the VF2 skies' code (`sky_t`, `sky_load`, `sky_frame`).
+  `fvSkyPlan` (tools/fv-stages.mjs) bakes it at `FV_SKY_AT` (0x2700000,
+  after FV's pages): what sub_29728 loads from the record at 0x06CE3600 +
+  slot * 32 (the CG and palette lists of `_Scroll_Initialize`, the 16
+  patterns a turn shows; each pattern a 12-byte header, then rows of 32
+  tiles), its 23 character blocks (60..82, free on the board, so they stay
+  put) and its colours snapped as VF2's are (`packSky`). FV's per-frame
+  0x29A40 is VF2's 0x24534 but for two things, which `sky_t` carries: the
+  heading adds 16 * list[0] (`head`, -688 on Western) and the arena's turn
+  0x50A022 (the board's -turn * frames), and the vertical scroll is list[2]
+  - 480 tan(pitch), the eye line on row 192 + list[2] (`eye`, 224; VF2's
+  is 238 + 8 * its offset byte). FV clamps the pitch to 45 degrees, which
+  the fight never reaches; the board does not. Western's own sky routines
+  are a return and the plain horizontal scroll. Check (MAME, setup stage
+  4): the sky is FV's blue (0,30,188) to FV's (0,34,184) and its cloud
+  colours within 4 levels a channel, the hills show at the horizon behind
+  the town, and the sky drifts left 62 pixels in 100 frames (1000 / 16), as
+  the town turns; m2-hle2 draws it the same.
 
 ### Western graded against FV
 
@@ -1416,12 +1431,12 @@ by part, not by frame.
 | Town turn | match | FV's 0x50A022 −10 a frame, drawn under its negation; light 0x501022 +10 from the record's 0xF400, elevation 0xD000 as the record |
 | Round start | fixed | the town snaps home each round: the wagon, K.O. Corral and the skull now stand behind the fighters at the start of each round, as in FV |
 | Wall | match | Sonic walking back stops against the fence |
-| Sky | missing | black on the board; a third of FV's screen |
+| Sky | match | FV's panorama, turning with the town (see the sky, above) |
 | Ring floor | wrong | a piece of the dirt (581, turning) shows through the wood (583, fixed) on the board, and moves with the turn; FV shows wood from fence to fence. Not explained yet |
 | Bear | not compared | FV's camera did not show it in this run; its hop and the cage break are not ported |
 
-Overall: the arena itself is FV's; the missing sky is what most separates
-it from FV, then the dirt showing through the floor.
+Overall: the arena itself is FV's, and so is its sky; the dirt showing
+through the floor is what most separates it from FV.
 
 ## The fight
 

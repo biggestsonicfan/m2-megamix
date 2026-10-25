@@ -31,6 +31,9 @@ import { readModelEntry, meshOffsetOf, xtraResolve } from '../vendor/noclip/js/r
 import { decodeModel } from '../vendor/noclip/js/model.js';
 import { buildTexram } from '../vendor/noclip/js/texture.js';
 import { levelOrigin, texelByte, SHEET_BYTES } from '../vendor/noclip/js/atlas.js';
+import { loadScrollCG, scrollAt } from '../vendor/noclip/js/scroll.js';
+import { buildColorxlat } from '../vendor/noclip/js/colors.js';
+import { packSky } from './vf2-stages.mjs';
 
 /* The arenas, by slot (js/games.js STAGE_SLOTS.fv): 4 is a copy, 9.. are
  * Western 2, name entry and unnamed records. */
@@ -194,8 +197,10 @@ export const FV_STAGE_TOP = 4493;
  * set table copy, and the destination list it uses (VF2's is 9). */
 export const FV_SET0 = 20;
 const FV_DATA_INDEX = 10;
-/* where its pages go in main_data (importFvStages) */
-const FV_PAGES_AT = 0x600000, FV_PAGES_END = 0x800000;
+/* where its pages go in main_data (importFvStages), and its skies after them */
+const FV_PAGES_AT = 0x600000, FV_PAGES_END = 0x700000;
+export const FV_SKY_AT = 0x02700000;
+const FV_SKY_END = 0x02800000;
 /* The town's turn (fvstages.js, 0x1EF94): 10 a frame on the turning flag. */
 export const FV_TURN = 10;
 /* The Western bear (fvobjects.js kuma_dsp): it swings about x on its stand. */
@@ -241,6 +246,60 @@ export function fvBoardPlan(games) {
     const models = [...new Set(stages.flatMap(({ draws }) => draws.map((d) => d.model)))].sort((a, b) => a - b);
     const idOf = new Map(models.map((m, i) => [m, FV_STAGE_TOP - i]));
     return { stages, models, idOf };
+}
+
+/*
+ * The skies (noclip scroll.js buildSkyPanorama): what sub_29728 loads at
+ * stage start from the record at 0x06CE3600 + slot * 32, in the shape
+ * vf2SkyPlan gives VF2's, which the board draws with the same code.
+ *
+ * sub_29728 hands the record's +0x0C to _Scroll_Initialize (the CG list and
+ * the palette list, entries n and n + 1 of 0x06450000) and lays the
+ * patterns its +0x14 list names (through 0x06450300; each a header whose
+ * +0x04 is the row count, then rows of 32 tiles at 64 bytes) side by side at
+ * 0x579000; the board's panorama is the 16 a turn shows. Then, as VF2's
+ * 0x24314: map 2 below the strip is the last row's first eight tiles, map 3
+ * the top row's (0x297EC..0x298A8).
+ *
+ * Every frame 0x29A40, as VF2's 0x24534 but for two things: the heading it
+ * streams and scrolls by is the camera's plus 16 * list[0] (0x503040, the
+ * sky's turn against the arena: `head`) plus 0x50A022 (the arena's turn),
+ * and the vertical scroll is list[2] - 480 tan(pitch) (0x501084, the fight's
+ * focal), which puts row 192 + list[2] (`eye`) on the eye line, screen row
+ * 192. The pitch is clamped to list+0x4C and +0x4E (45 degrees), which the
+ * fight's camera never reaches; the board does not clamp. Western's own
+ * routines (+0x04, +0x08) are a bare return and the plain horizontal scroll.
+ */
+export function fvSkyPlan(games) {
+    const fv = games.fv.rom, stf = games.stf.rom, S = fv.game.stageTable.scroll;
+    const stfCx = buildColorxlat(stf, { colorSet: games.stf.stages[0].texSet[1], tint: games.stf.stages[0].tint, fighters: [] });
+    const word = (a) => { const t = scrollAt(fv, a); return t.view.getUint32(t.off, true); };
+    const parts = [];
+    let at = FV_SKY_AT;
+    const place = (bytes) => { const a = at; parts.push(bytes); at += (bytes.length + 15) & ~15; if (bytes.length & 15) parts.push(new Uint8Array(16 - (bytes.length & 15))); return a; };
+    const skies = FV_BOARD_SLOTS.map((slot) => {
+        const st = games.fv.stages.find((s) => s.slot === slot);
+        const rec = S.records + slot * S.stride;
+        const cg = word(rec + S.fields.cg), list = word(rec + S.fields.patterns);
+        const L = scrollAt(fv, list);
+        const head = L.view.getInt16(L.off, true) * 16, eye = 192 + L.view.getInt16(L.off + 2, true);
+        const pats = Array.from({ length: 16 }, (_, i) => scrollAt(fv, word(S.patternTable + word(list + 4 + i * 4) * 4)));
+        const rows = pats[0].view.getUint32(pats[0].off + 4, true);
+        if (pats.some((P) => P.view.getUint32(P.off + 4, true) !== rows)) throw new Error(`FV sky ${st.name}: patterns of different heights`);
+        const cells = new Uint16Array(rows * 512);
+        pats.forEach((P, i) => {
+            for (let r = 0; r < rows; r++) for (let x = 0; x < 32; x++) cells[r * 512 + i * 32 + x] = P.view.getUint16(P.off + 12 + r * 64 + x * 2, true);
+        });
+        const { chars, pal } = loadScrollCG(fv, word(S.cgTable + cg * 4), word(S.cgTable + (cg + 1) * 4), S.charBytes);
+        const fCx = buildColorxlat(fv, { colorSet: st.texSet[1], tint: st.tint, fighters: [] });
+        const { dest, cb, pb } = packSky(`FV sky ${st.name}`, cells, [], chars, pal, fCx, stfCx);
+        return { name: st.name, rows, eye, head, dest, chars: place(cb), pal: place(pb), pano: place(new Uint8Array(cells.buffer)) };
+    });
+    if (at > FV_SKY_END) throw new Error(`FV skies: 0x${(at - FV_SKY_AT).toString(16)} bytes, past their room`);
+    const blob = new Uint8Array(at - FV_SKY_AT);
+    let o = 0;
+    for (const b of parts) { blob.set(b, o); o += b.length; }
+    return { skies, blob };
 }
 
 /* A slot on a sheet and an even page's new slot on the stages' sheet, as in
@@ -447,6 +506,10 @@ export function importFvStages(R, games, ctx) {
     if (!isFree(main, dataTable + FV_DATA_INDEX * 4, 4)) throw new Error(`FV stages: destination list ${FV_DATA_INDEX} is taken`);
     main.put(dataTable + FV_DATA_INDEX * 4, u32s([dAt]), `destination list ${FV_DATA_INDEX}`);
     report.push(`set ${sets.join(', ')} as ${sets.map((_, k) => FV_SET0 + k).join(', ')}: ${list[0]} pages, ${(pageBytes / 1024).toFixed(0)} KB at ${hex(MAIN_DATA + Math.min(...where))}..${hex(MAIN_DATA + Math.max(...whereEnd))}`);
+    const sky = fvSkyPlan(games);
+    if (!isFree(main, FV_SKY_AT - MAIN_DATA, sky.blob.length)) throw new Error('FV skies: their room in main_data is taken');
+    main.put(FV_SKY_AT - MAIN_DATA, sky.blob, 'FV stage skies');
+    report.push(`skies: ${sky.skies.map((k) => `${k.name} ${k.rows} rows, blocks ${k.dest[0]}..${k.dest.at(-1)}`).join('; ')}, ${(sky.blob.length / 1024).toFixed(0)} KB at ${hex(FV_SKY_AT)}`);
     const problems = checkFvStages(R, games, plan);
     if (problems.length) throw new Error(`FV stages: ${problems.slice(0, 8).join('; ')}`);
     report.push('every model decodes through the board\'s ROMs as through FV\'s: points at its scale, UVs, tile sizes, texels at levels 0-3');

@@ -34,7 +34,7 @@ import { makeFighter } from '../js/fighters.js';
 import { buildColorxlat } from '../vendor/noclip/js/colors.js';
 import { stormSchedule } from '../vendor/noclip/js/vf2.js';
 import { vf2StagePlan, vf2SkyPlan, VF2_SET0, VF2_RING, SCALE as VF2_SCALE } from './vf2-stages.mjs';
-import { fvBoardPlan, FV_SET0, FV_RING, FV_SCALE, FV_TURN } from './fv-stages.mjs';
+import { fvBoardPlan, fvSkyPlan, FV_SET0, FV_RING, FV_SCALE, FV_TURN } from './fv-stages.mjs';
 import { xtraResolve } from '../vendor/noclip/js/romset.js';
 
 const OUT = process.argv[2] ?? new URL('../board/src/poses.h', import.meta.url).pathname;
@@ -181,19 +181,21 @@ out.push('typedef struct { u32 model; float m[12]; float x0, x1; u8 turn, side, 
  * flash (VF2 0x2468C's light: bright, vx, vy).
  * wind, wind_at: Tou-rin's wind (kind 12, 0x30E74), draw wind_at's model is
  * wind[(frame >> wind_shift) & 255] (0: none that frame).
- * sky: VF2's sky (tools/vf2-stages.mjs vf2SkyPlan), in main_data: its
- * character blocks (4 KB each, to the blocks dest[] names), their palette
- * groups (to the groups of the same numbers) and the panorama, rows of 512
- * tiles; voff, the list's vertical offset byte.
+ * sky: the tile layer's sky (tools/vf2-stages.mjs vf2SkyPlan, tools/fv-stages.mjs
+ * fvSkyPlan), in main_data: its character blocks (4 KB each, to the blocks
+ * dest[] names), their palette groups (to the groups of the same numbers) and
+ * the panorama, rows of 512 tiles; eye, the panorama row on the eye line
+ * (VF2: 238 + 8 * the list's offset byte; FV: 192 + list[2]); head, added to
+ * the camera's heading (FV: 16 * list[0]; VF2: 0).
  * turn: FV's turning town, its angle a frame (the draws marked turn and the
  * light). wall: stage_x, the cage's half side in the board's units (0: StF's
  * 8.0). */
 out.push('typedef struct { u16 kind, model, n, words; const short *v; } tpd_t;');
-out.push('typedef struct { u32 chars, pal, pano; u16 rows, voff, nblocks; const u8 *dest; const u16 *storm_pal; u16 storm_n[2]; const u32 *bolt; } vf2_sky_t;');
+out.push('typedef struct { u32 chars, pal, pano; u16 rows, eye, nblocks; short head; const u8 *dest; const u16 *storm_pal; u16 storm_n[2]; const u32 *bolt; } sky_t;');
 out.push('typedef struct { const char *name; u32 texset; u32 ndraws; const stage_draw_t *draws; cx_run_t cx; const u32 *mat; u16 bg; float bright; short vx, vy;');
 out.push('                 u16 slot; u8 tint[3]; tpd_t tpd;');
 out.push('                 float ring; const u16 *lit; const u8 *storm; float flash[3]; const u16 *wind; u16 wind_at, wind_shift;');
-out.push('                 const vf2_sky_t *sky; u16 turn; float wall; } stage_t;\n');
+out.push('                 const sky_t *sky; u16 turn; float wall; } stage_t;\n');
 /*
  * move_tpd_req's blocks, in StF's program ROM (which the board replaces, so
  * they are baked): a count, a word length, then the entries. A kind 1 block
@@ -304,7 +306,7 @@ stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
             out.push(`static const u32 ${name}_bolt[] = {${Array.from(b32, (v) => `0x${v.toString(16)}u`).join(',')}};`);
             spal = `${name}_skyst`; sn = `{${k.storm.pal[0].length}, ${k.storm.pal[1].length}}`; bolt = `${name}_bolt`;
         }
-        out.push(`static const vf2_sky_t ${name}_sky = {0x${k.chars.toString(16)}u, 0x${k.pal.toString(16)}u, 0x${k.pano.toString(16)}u, ${k.rows}, ${k.voff}, ${k.dest.length}, ${name}_skyb, ${spal}, ${sn}, ${bolt}};`);
+        out.push(`static const sky_t ${name}_sky = {0x${k.chars.toString(16)}u, 0x${k.pal.toString(16)}u, 0x${k.pano.toString(16)}u, ${k.rows}, ${238 + 8 * k.voff}, ${k.dest.length}, 0, ${name}_skyb, ${spal}, ${sn}, ${bolt}};`);
         const base = vf2.rom.game.stageTable.vf2.at + st.num * 256;
         const bright = vr.getFloat32(base + 0x6c, true), vx = vr.getInt16(base + 0x70, true), vy = vr.getInt16(base + 0x72, true);
         const tint = st.tint.map((t) => Math.round(t * 128)).join(', ');
@@ -323,7 +325,7 @@ stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
  * Materials: the arena's 32 from FV's XTRA table (0x06CE33A4 + slot * 4).
  */
 {
-    const fv = games.fv, plan = fvBoardPlan(games);
+    const fv = games.fv, plan = fvBoardPlan(games), skies = fvSkyPlan(games).skies;
     const id = (m) => plan.idOf.get(m);
     const xv = (a) => { const r = xtraResolve(fv.rom, a); return r.view.getUint32(r.off, true); };
     plan.stages.forEach(({ st, draws }, n) => {
@@ -343,8 +345,11 @@ stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
         const tint = st.tint.map((t) => Math.round(t * 128)).join(', ');
         const nm = `FV ${st.name.toUpperCase()}`;
         const turn = st.flags & (1 << 0x10) ? FV_TURN : 0;
+        const k = skies[n];
+        out.push(`static const u8 ${name}_skyb[] = {${k.dest.join(',')}};`);
+        out.push(`static const sky_t ${name}_sky = {0x${k.chars.toString(16)}u, 0x${k.pal.toString(16)}u, 0x${k.pano.toString(16)}u, ${k.rows}, ${k.eye}, ${k.dest.length}, ${k.head}, ${name}_skyb, 0, {0, 0}, 0};`);
         stages.push(`{"${nm}", ${FV_SET0 + n}, ${draws.length}, ${name}_draws, {0, 28, 0, 64, ${name}_cx}, ${name}_mat, 0x${st.bgColor555.toString(16)}, ${f32(st.bright)}, ${st.vecter[0]}, ${st.vecter[1]}, 0xFFFF, {${tint}}, {0, 0, 0, 0, 0}, ` +
-            `0, 0, 0, {0, 0, 0}, 0, 0, 0, 0, ${turn}, ${f32(FV_RING * FV_SCALE)}}`);
+            `0, 0, 0, {0, 0, 0}, 0, 0, 0, &${name}_sky, ${turn}, ${f32(FV_RING * FV_SCALE)}}`);
         console.log('stage', stages.length - 1, nm, 'FV set', st.texSets.at(-1), 'as', FV_SET0 + n, 'draws', draws.length);
     });
 }

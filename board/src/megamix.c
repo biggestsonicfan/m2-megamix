@@ -940,7 +940,10 @@ static void send_materials(const u32 *mat) {
 }
 
 /* VF2's sky (tools/vf2-stages.mjs vf2SkyPlan), as 0x24314 sets it up at
- * stage start and 0x24534 moves it every frame. The tilemap's map2 holds 32
+ * stage start and 0x24534 moves it every frame; FV's (tools/fv-stages.mjs
+ * fvSkyPlan, sub_29728 and 0x29A40) is the same but for its heading, which
+ * adds the sky's own turn (head) and the arena's (0x50A022, the board's
+ * -turn * frames, as stage_light turns the light). The tilemap's map2 holds 32
  * column pairs of the 256 in the panorama (pair c in slot c & 31); map3,
  * which split mode 1 draws above the line the vertical scroll names, is the
  * top row's first eight tiles over and over, and map2 below the strip the
@@ -954,7 +957,7 @@ static u16 sky_have[32], sky_head[2];
 static short sky_pitch[2];
 static u8 sky_storm;
 
-static void sky_load(const vf2_sky_t *s) {
+static void sky_load(const sky_t *s) {
     const volatile u16 *pano;
     u32 b, i;
     if (!s) { M2_L2_VPOS = 0x8000u; return; }    /* StF's stages: map2 off, as m2_init leaves it */
@@ -973,22 +976,25 @@ static void sky_load(const vf2_sky_t *s) {
     for (i = 0; i < 32u; i++) sky_have[i] = 0xFFFFu;
     sky_storm = 0;
     sky_pitch[0] = sky_pitch[1] = (short)RH(stf_cam, 0x24);
-    sky_head[0] = sky_head[1] = RH(stf_cam, 0x26);
+    sky_head[0] = sky_head[1] = (u16)(RH(stf_cam, 0x26) + s->head);
 }
 
-static void sky_frame(const vf2_sky_t *s) {
+static void sky_frame(const stage_t *st) {
+    const sky_t *s = st->sky;
     const volatile u32 *pano;
     u32 y, c, k, r;
     int p;
     if (!s) return;
     p = sky_pitch[1]; y = (u16)-(int)sky_head[1];
     sky_pitch[1] = sky_pitch[0]; sky_head[1] = sky_head[0];
-    sky_pitch[0] = (short)RH(stf_cam, 0x24); sky_head[0] = RH(stf_cam, 0x26);
+    sky_pitch[0] = (short)RH(stf_cam, 0x24);
+    sky_head[0] = (u16)(RH(stf_cam, 0x26) + s->head - st->turn * (frame_counter - turn_at));
     /* split mode 1 at VF2's V = 8 * list[2] - (pitch - 0x2E0) / 16, which
      * puts the strip's row 238 + 8 * list[2] on the eye line, screen row
-     * 192 + pitch / 16 (its focal, 600). The board's is StF's, FOCUS, so the
-     * same row goes on the board's eye line, 192 + FOCUS tan(pitch). */
-    M2_L2_VPOS = (u16)(0x2000u + ((u32)(238 + 8 * (int)s->voff - 192 -
+     * 192 + pitch / 16 (its focal, 600); FV's list[2] - 480 tan(pitch) puts
+     * row 192 + list[2] there. The board's focal is StF's, FOCUS, so the
+     * same row (eye) goes on the board's eye line, 192 + FOCUS tan(pitch). */
+    M2_L2_VPOS = (u16)(0x2000u + ((u32)((int)s->eye - 192 -
                        m2_cop_f2int(m2_cop_fmul(FOCUS, m2_cop_tan((u32)p & 0xFFFFu)))) & 0x3FFu));
     pano = (const volatile u32 *)s->pano;
     for (k = 0; k < 32u; k++) {
@@ -1007,7 +1013,7 @@ static void sky_frame(const vf2_sky_t *s) {
  * map (VF2 0x8F1C). sky_frame streams a column back unlit, so a lit bolt is
  * drawn every frame. */
 static void sky_storm_frame(const stage_t *st) {
-    const vf2_sky_t *s = st->sky;
+    const sky_t *s = st->sky;
     const volatile u32 *pano;
     u32 b, ch, i, k, r, n;
     const u16 *e;
@@ -1399,7 +1405,7 @@ int main(void) {
         m2_obj_frame_setup();
         send_materials(stages[stage].mat);
         camera_stf(&stages[stage]);
-        sky_frame(stages[stage].sky);
+        sky_frame(&stages[stage]);
         sky_storm_frame(&stages[stage]);
         m2_geo_fifo_light(m2_obj_fb(light[0]), m2_obj_fb(light[1]), m2_obj_fb(light[2]));
         move_tpd_send(&stages[stage].tpd);

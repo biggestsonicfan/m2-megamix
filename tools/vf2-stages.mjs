@@ -181,25 +181,8 @@ export function vf2SkyPlan(games) {
                 if (v !== own) throw new Error(`VF2 sky ${st.name}: the bolt's off block is not the panorama at pair ${BOLT.col + k} row ${r}`);
             });
         }
-        const used = [...new Set(Array.from([...cells, ...bolt], (v) => (v & 0x3fff) >> 7))].sort((a, b) => a - b);
-        if (cells.some((v) => v & 0xc000)) throw new Error(`VF2 sky ${st.name}: a tile in front or in groups 128 up`);
-        const taken = new Set(used.filter((b) => SKY_FREE_BLOCKS.includes(b)));
-        const spare = SKY_FREE_BLOCKS.filter((b) => !taken.has(b));
-        const dest = used.map((b) => (taken.has(b) ? b : spare.shift()));
-        if (dest.some((b) => b === undefined)) throw new Error(`VF2 sky ${st.name}: ${used.length} blocks, not enough free`);
-        const to = new Map(used.map((b, i) => [b, dest[i]]));
-        for (let i = 0; i < cells.length; i++) cells[i] = (to.get(cells[i] >> 7) << 7) | (cells[i] & 0x7f);
-        for (let i = 0; i < bolt.length; i++) bolt[i] = (to.get(bolt[i] >> 7) << 7) | (bolt[i] & 0x7f);
         const vCx = buildColorxlat(vf2, { colorSet: st.texSet[1], tint: st.tint, fighters: [] });
-        const near = [0, 1, 2].map((p) => {
-            const v = lumaCol(vCx, p), b = lumaCol(stfCx, p);
-            return v.map((x) => {
-                let best = 1;
-                for (let w = 2; w < 32; w++) if (Math.abs(gamma(b[w]) - gamma(x)) < Math.abs(gamma(b[best]) - gamma(x))) best = w;
-                return best;
-            });
-        });
-        const snap = (c) => near[0][c & 31] | near[1][(c >> 5) & 31] << 5 | near[2][(c >> 10) & 31] << 10;
+        const { dest, to, snap, cb, pb } = packSky(`VF2 sky ${st.name}`, cells, bolt, chars, pal, vCx, stfCx);
         const stormPal = !storm ? null : STORM_PAL.map((writes) => writes.flatMap(([first, groups, count, on, off]) => {
             const out = [];
             for (let g = 0; g < groups; g++) {
@@ -212,15 +195,6 @@ export function vf2SkyPlan(games) {
             }
             return out;
         }));
-        const pb = new Uint8Array(used.length * 32), pv = new DataView(pb.buffer);
-        used.forEach((b, k) => {
-            for (let i = 0; i < 16; i++) {
-                const c = pal[b * 16 + i];
-                pv.setUint16((k * 16 + i) * 2, snap(c), true);
-            }
-        });
-        const cb = new Uint8Array(used.length * 4096);
-        used.forEach((b, k) => cb.set(chars.subarray(b * 4096, (b + 1) * 4096), k * 4096));
         return { name: st.name, rows, voff, dest, chars: place(cb), pal: place(pb), pano: place(new Uint8Array(cells.buffer)),
             storm: storm ? { pal: stormPal, bolt } : null };
     });
@@ -229,6 +203,41 @@ export function vf2SkyPlan(games) {
     let o = 0;
     for (const b of parts) { blob.set(b, o); o += b.length; }
     return { skies, blob };
+}
+
+/*
+ * A sky's character blocks and palette groups onto the board (vf2SkyPlan's
+ * notes): `cells` (and `extra`, more tiles to load with them) renumbered in
+ * place to the blocks `dest` names, `cb` those blocks' characters and `pb`
+ * their groups' colours, snapped from the game's colorxlat `srcCx` to the
+ * board's `stfCx`. `snap` snaps one more colour.
+ */
+export function packSky(name, cells, extra, chars, pal, srcCx, stfCx) {
+    const used = [...new Set(Array.from([...cells, ...extra], (v) => (v & 0x3fff) >> 7))].sort((a, b) => a - b);
+    if (cells.some((v) => v & 0xc000)) throw new Error(`${name}: a tile in front or in groups 128 up`);
+    const taken = new Set(used.filter((b) => SKY_FREE_BLOCKS.includes(b)));
+    const spare = SKY_FREE_BLOCKS.filter((b) => !taken.has(b));
+    const dest = used.map((b) => (taken.has(b) ? b : spare.shift()));
+    if (dest.some((b) => b === undefined)) throw new Error(`${name}: ${used.length} blocks, not enough free`);
+    const to = new Map(used.map((b, i) => [b, dest[i]]));
+    for (let i = 0; i < cells.length; i++) cells[i] = (to.get(cells[i] >> 7) << 7) | (cells[i] & 0x7f);
+    for (let i = 0; i < extra.length; i++) extra[i] = (to.get(extra[i] >> 7) << 7) | (extra[i] & 0x7f);
+    const near = [0, 1, 2].map((p) => {
+        const v = lumaCol(srcCx, p), b = lumaCol(stfCx, p);
+        return v.map((x) => {
+            let best = 1;
+            for (let w = 2; w < 32; w++) if (Math.abs(gamma(b[w]) - gamma(x)) < Math.abs(gamma(b[best]) - gamma(x))) best = w;
+            return best;
+        });
+    });
+    const snap = (c) => near[0][c & 31] | near[1][(c >> 5) & 31] << 5 | near[2][(c >> 10) & 31] << 10;
+    const pb = new Uint8Array(used.length * 32), pv = new DataView(pb.buffer);
+    used.forEach((b, k) => {
+        for (let i = 0; i < 16; i++) pv.setUint16((k * 16 + i) * 2, snap(pal[b * 16 + i]), true);
+    });
+    const cb = new Uint8Array(used.length * 4096);
+    used.forEach((b, k) => cb.set(chars.subarray(b * 4096, (b + 1) * 4096), k * 4096));
+    return { dest, to, snap, cb, pb };
 }
 
 /* Channel 2's bolt as 0x8F1C writes it: BOLT.pairs blocks of BOLT.rows rows
