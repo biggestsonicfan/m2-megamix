@@ -347,15 +347,25 @@ static void snd_pump(void) {
  * match is over (VIC_INT's 0xA00001). stage_bgm_select's 2-player cases are
  * left out: North Wind is for Sonic against Knuckles, whose slot is Akira's
  * on the board, and South Island's music for stages 4 and 5, which the board
- * does not have. A guest stage has no StF music, and plays none. */
+ * does not have. A guest stage plays its own game's song, added to StF's
+ * sound program's data by tools/guest-sound.mjs as a song of StF's: FV's
+ * Western its western_song, StF's 26th (0xAE1019; the tool checks the
+ * number). VF2's stages have none yet. */
 #define SND_RESET   0xA00001u
 #define SND_SET     0xA00003u
 #define SND_GONG    0xAE1302u
+#define SND_FV_WESTERN 0xAE1019u
 #define STF_STAGE_MUSIC ((const u32 *)0xDBFDCu)   /* STAGE_MUSIC_IN_ORDER, in the copied ROM */
 
-static void snd_round(const stage_t *st, u32 first) {
+/* by stage (stage_name's order): 0 for StF's own, by its slot */
+static const u32 guest_music[] = { 0u, 0u, 0u, 0u, SND_FV_WESTERN };
+
+static void snd_round(u32 stage, const stage_t *st, u32 first) {
     snd_request_u(SND_SET);
-    if (first && st->slot != 0xFFFFu) snd_request_u(STF_STAGE_MUSIC[st->slot & 15u]);
+    if (first) {
+        if (st->slot != 0xFFFFu) snd_request_u(STF_STAGE_MUSIC[st->slot & 15u]);
+        else if (guest_music[stage]) snd_request_u(guest_music[stage]);
+    }
     snd_request_u(SND_GONG);
 }
 
@@ -1751,7 +1761,7 @@ int main(void) {
                 *(u8 *)stf_ram(0x50004Fu) = *(u8 *)stf_ram(0x500051u) = 0u;
                 menu_clear();
                 round_start(fs);
-                snd_round(&stages[stage], 1u);
+                snd_round(stage, &stages[stage], 1u);
                 over = 0u;
                 in_menu = 0u;
             } else {
@@ -1809,7 +1819,7 @@ int main(void) {
                           break;
                       }
                       round_start(fs);
-                      snd_round(&stages[stage], 0u);
+                      snd_round(stage, &stages[stage], 0u);
                       over = 0u;
                   }
               }

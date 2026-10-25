@@ -18,8 +18,9 @@
  *   textures    their texture points and headers
  *
  * and the rest is free for other games' data (VF2's, Fighting Vipers'), which
- * later steps of this script will import into it. StF's sound program and
- * samples are copied as they are (the board sends StF's sound codes); the
+ * later steps of this script will import into it. StF's sound program gets
+ * FV's songs added to its data, and the sample ROMs only what that data plays
+ * (tools/guest-sound.mjs; the board sends StF's sound codes); the
  * billboard's program, which the board never reads, is written as zeros.
  *
  * Zero is what a word the board never reads holds, and also what most of StF's
@@ -43,6 +44,7 @@ import { CHR as HORNET_CHR, loadHornet, hornetTiles, importHornet } from './horn
 import { importVf2Stages, VF2_SET0 } from './vf2-stages.mjs';
 import { importFvStages } from './fv-stages.mjs';
 import { importGuestShadows } from './guest-shadows.mjs';
+import { guestSound, STF_FILES } from './guest-sound.mjs';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const ROMS = process.env.ROMS_DIR || `${process.env.HOME}/build/mameroms`;
@@ -53,7 +55,7 @@ const OUT = process.argv[2] ?? `${ROOT}board/roms`;
 /* MAME's ROM_START(sfight), less the program pair (the board's own, built by
  * board/CMakeLists.txt). A pair is ROM_LOAD32_WORD: the first file holds
  * bytes 0-1 of each 32-bit word, the second bytes 2-3. A single is loaded as
- * it is (the sound program and samples, copied whole). */
+ * it is (the sound program and samples, from tools/guest-sound.mjs). */
 const SFIGHT = {
     main:     { size: 0x1000000, pairs: [[0x000000, 'mpr-19007.11', 'mpr-19008.12'], [0x800000, 'mpr-19005.9', 'mpr-19006.10']] },
     /* main_data + 0x1000000: the XTRA_DATA window (0x06000000), which StF
@@ -583,8 +585,12 @@ const dir = `${OUT}/sfight`;
 mkdirSync(dir, { recursive: true });
 const data = [R.main, R.xtra, R.copro, R.polygons, R.textures];
 for (const r of data) for (const [f, d] of Object.entries(r.files())) writeFileSync(`${dir}/${f}`, d);
-/* the sound board's: StF's 68000 program and its samples, whole */
-for (const f of [...SFIGHT.audio.singles, ...SFIGHT.samples.singles]) writeFileSync(`${dir}/${f}`, files[f]);
+/* the sound board's: StF's 68000 program with FV's songs added to its data,
+ * and the samples that data plays (tools/guest-sound.mjs) */
+const snd = await guestSound(files);
+for (const line of snd.report) console.log(`Sound: ${line}`);
+writeFileSync(`${dir}/${STF_FILES.prog}`, snd.prog);
+for (const [f, d] of Object.entries(snd.samples)) writeFileSync(`${dir}/${f}`, d);
 for (const [f, n] of Object.entries(SFIGHT.billboard.zeros)) writeFileSync(`${dir}/${f}`, new Uint8Array(n));
 writeFileSync(`${OUT}/assets.txt`, manifest(data));
 /* what each guest lost on the way in (tools/grade-guest.mjs reads it) */
