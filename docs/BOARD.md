@@ -1180,7 +1180,11 @@ the data ROMs, and `bake-board.mjs` bakes their records into `poses.h`.
   0x2AA85E6) on map column pairs 24..31 from row 8, where they are on the
   map. Measured in MAME (demo stage 0, frames 4700..6300): only channel 0
   changes the sky, (22,10,29) to (46,22,58); under channel 3 the sky stays
-  as it is (#1567's (126,131,145) was lit 3D, not sky). On the board the
+  as it is. At frames 4792..4801 (channel 3 on, the sky wide open above
+  the arcade) it stays (22,10,29) and (29,17,34); the (126,131,145) of
+  #1567 is the stands' lit stone (4786, (129,134,145) on the wall), and the
+  lit record's list at +0x40 (VF2 0xA37..0xA56) is the stands' lit twins,
+  which the board swaps in already; no 3D backdrop draws over the sky. On the board the
   sky goes from (13,4,30) to (38,13,57) on channel 0's frames.
   The fighters take the same light (the board sends one a frame, before
   the stage and the fighters), so channel 3 lights them as VF2's 9999 does
