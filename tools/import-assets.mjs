@@ -188,6 +188,10 @@ const PROJECTILE_LIST = 0x0b46ac, PROJECTILE_TYPES = [2];
 const BOMB_MARKERS = [0x08a720, 0x08a736];
 const OSAGE = 0x068d64;                   /* program ROM: osage_per_character, each character's sway chains */
 const OSAGE_SIZE = { 1: 0x24, 2: 0x40, 3: 0x0c, 4: 0x18, 5: 0x44 };   /* osage_dsp's records, type word in */
+/* program ROM: off_64988, each character's shadow table (docs/SHADOWS.md):
+ * sixteen 24-byte entries (slot, model, flags, offset), then three u16 models */
+const SHADOW_TABLES = 0x064988, SHADOW_ENTRIES = 16, SHADOW_ENTRY = 24;
+const SHADOW_BALL = 0x195;                /* rob_kage_disp_test: slot 0's while +0x2068 is 1 */
 const SET_FIGHTERS = 1;
 const MOTION_LIST = 0x06400004, MOTIONS = 519;
 const SCROLL_TABLE = 0x06480000;          /* _ScrollCG_Initialize / _ScrollColor_Initialize */
@@ -260,6 +264,11 @@ async function importStf(R) {
             if (!OSAGE_SIZE[t]) throw new Error(`osage record type ${t} at 0x${a.toString(16)}`);
             if (t === 5) model(program.u32(a + 0x1c));
         }
+        /* the shadows: the table's parts, and the tail's three (the extra
+         * part at +0x78A, or the two at +0x7A2 on flag bit 27) */
+        const shadow = program.u32(SHADOW_TABLES + ch * 4);
+        for (let i = 0; i < SHADOW_ENTRIES; i++) model(program.u32(shadow + i * SHADOW_ENTRY + 4));
+        for (let i = 0; i < 3; i++) model(program.u16(shadow + SHADOW_ENTRIES * SHADOW_ENTRY + i * 2));
     }
     /* the projectiles' models: each record's three animations (+4 flying,
      * +8 the burst, +0xC the fuse: a count, then 16-byte frames whose model
@@ -273,6 +282,7 @@ async function importStf(R) {
         }
     }
     for (const list of BOMB_MARKERS) for (let i = 0; i < 11; i++) model(program.u16(list + i * 2));
+    model(SHADOW_BALL);
     const colorbases = new Set();
     for (const m of [...models].sort((a, b) => a - b)) keepModel(m);
     /* the table's count (max_poly), which set_obj_fifo checks a model by */

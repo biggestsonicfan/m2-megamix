@@ -64,6 +64,7 @@ struct dump, F2 pauses and F3 steps one frame.
 - `js/render.js` draws the stage and fighters with noclip's shader. Each one
   gets its own game's texture RAM and colour tables.
 - `docs/STRUCTURES.md` lists the shared structures and where each game keeps them.
+- `docs/SHADOWS.md` is how each game casts the fighters' shadows, StF's way as the parent; `tools/shadow-data.mjs` reads every fighter's table in StF's form.
 - `docs/SHARED-CODE.md` audits the i960 functions StF and VF2 share: which are one code, and what a VF2 fighter still needs (guest data or a branch on `char_game`); `tools/shared-fns.py` compares them.
 - `docs/FM-SATURN.md` covers Fighters Megamix's (Saturn) fighter data and motions; `tools/fm-saturn.mjs` reads them off the disc and converts them to VF2 motion blocks (Hornet's to start with); `tools/daytona-hornet.mjs` finds Daytona USA's Hornet in the Model 2 set and cuts it where FM cuts its Hornet.
 - `docs/PROJECTILES.md` traces StF's projectiles (Eggman's bomb): how one is thrown, hits and is guarded, and what the board needs to run it; `tools/stf-projectiles.mjs` lists every motion that throws one.
