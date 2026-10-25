@@ -1532,6 +1532,13 @@ sets up what StF's game loop would have set up around it.
   flicker as in StF. Each frame's copies count toward their fighter in the
   polygon window. Check: Sonic with the mask forced draws his streak cards
   behind him.
+- Projectiles (#1601): Eggman's bomb is StF's own (docs/PROJECTILES.md).
+  `fight_step` runs StF's projectile step loop (`sub_8A29C`, lifted with
+  the bomb's steps) on `stf_tobi`; the bomb's burst hits through StF's
+  collision task, so damage and guard are StF's. `tobi_draw` (megamix.c)
+  is StF's `tobi_disp` and `tdl_bakudan`: the bomb, its fuse, its landing
+  marker and the burst. Check: MAME, Eggman's forward+punch takes Honey
+  from 140 to 120; with her guard held it takes nothing.
 - Characters: rob+0x1B0 is the character drawn (the alternates are +26),
   rob+0x1B1 the parent. `ADV_CPU_BATTLE_INT` sets 1B1 = 1B0 - 0x1A, and a
   real P2 Honey alternate has 1B0 0x24, 1B1 0x0A.

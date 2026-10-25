@@ -42,7 +42,9 @@ import tempfile
 # fight's camera (camera_work's modes for a round: 9 places it, 10 follows);
 # zanzou_control: the afterimages (the projectile task's last call: reserves
 # a fighter's trailing parts in the geometrizer's ring while play op 0x26's
-# mask is set, megamix.c zanzou_draw draws them).
+# mask is set, megamix.c zanzou_draw draws them); sub_8A29C: the projectile
+# task's step loop (each live object's step through projectile_list; only
+# Eggman's bomb, type 2, has its steps lifted, megamix.c tobi_draw draws it).
 # The colours (colorxlat), as StF's change_scene and its debug menu's colour
 # refresh (0x46754) set them: stage_disp (the stage record's RED, GREEN, BLUE,
 # then chg_pol_color_req's ramp, luma 0..47 of rows 0..27, which
@@ -58,14 +60,14 @@ import tempfile
 ROOTS = ['set_motion', 'calc_rob_angle', 'calc_rob_angle_cont', 'calc_unit_mat', 'smooth_int', 'sub_7F0E8',
          'action_init', 'rob_action', 'sub_1D47C', 'coli_init', 'collision', 'get_game_info', 'cmd_native_tail',
          'cop_initialize_end2', '_Scroll_Initialize', 'energy_disp', 'barrier_left_disp', 'time_dsp',
-         'win_lamp_dsp', 'win_lamp_int', 'cam_mode_9', 'cam_mode_10', 'zanzou_control',
+         'win_lamp_dsp', 'win_lamp_int', 'cam_mode_9', 'cam_mode_10', 'zanzou_control', 'sub_8A29C',
          'stage_disp', 'make_lay_col_256_tbl', 'chg_scr_color_req', 'chg_pol_color_req', 'chg_pol_color_send',
          'sub_7B4', 'send_tex_col_stage', 'send_tex_col_skin', 'send_tex_col_part', 'sub_2435C',
          'set_display_type_crt']
-# Routines the board does not run (debug text, name plates, projectiles,
+# Routines the board does not run (debug text, name plates,
 # sound, ring scatter, Super Sonic's hair objects): `ret`.
 STUBS = ['print_mes', 'print_mes_ex', 'print_hex_w', 'debug_disp_hex', 'dsp_pattern_right',
-         'char_nameplate_dsp', 'call_projectile_routine', 'sound_request_u', 'sound_request_special',
+         'char_nameplate_dsp', 'sound_request_u', 'sound_request_special',
          'stage_contact_sound', 'ring_tobitiri_set', 'sub_1BCC0']
 # Labels the routines use as numbers (`lda loc_10000, r3` is 0x10000, `lda
 # off_1010, r13` the flag mask 0x1010; get_en_info's `lda loc_5550` and `lda
@@ -87,9 +89,11 @@ LOW_TABLES = {'off_FE8'}
 # pointers run through off_1010 into off_1018; both labels are numbers to the
 # code, so nothing else keeps their data).
 RUN_ON = {'off_1008', 'off_1010'}
-# Jump tables in the ROM range that hold code (the camera's script steps):
+# Jump tables in the ROM range that hold code (the camera's script steps;
+# projectile_list's records and Eggman's bomb's start and steps):
 # lifted with the code, as the copied ROM holds StF's addresses.
-ROM_CODE_TABLES = {'off_9C83C', 'off_9C848'}
+ROM_CODE_TABLES = {'off_9C83C', 'off_9C848', 'projectile_list', 'projectile_I_list', 'bean_bomb_roll',
+                   'bean_bomb_roll_1', 'off_8D3D8'}
 # Data blocks that point into themselves (the fight camera's motion table
 # and its scripts, `.short` halves and `.long`s): lifted as words, each
 # word that is an address inside the block made relative to its label.

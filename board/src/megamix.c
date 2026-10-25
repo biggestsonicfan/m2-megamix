@@ -375,7 +375,12 @@ static void fight_step(const u32 pad[2]) {
     stf_task((void (*)(void))RW(stf_coli, 0xC), stf_coli, robs[0], robs[1]);
     stf_task(stf_get_game_info, stf_ctl[0], robs[0], robs[1]);
     stf_task(stf_cam_mode_10, stf_cam, robs[0], robs[1]);
-    /* the afterimages: the projectile task's (sub_89FB8) last call */
+    /* the projectile task (fa_tobi's sub_89FB8): sub_8A29C steps each live
+     * object (Eggman's bombs: fly, burst, the hit test whose hit the next
+     * frame's collision task deals); sub_8A2E4 is left out (it tells StF's
+     * CPU players where a bomb will burst, and the board has none); then
+     * the afterimages */
+    stf_task(stf_sub_8A29C, stf_tobi, robs[0], robs[1]);
     stf_call(stf_zanzou_control, robs[0], robs[1], 0u);
 }
 
@@ -405,6 +410,13 @@ static void round_start(fighter_t fs[2]) {
     RW(stf_coli, 0x000) = 0x80000000u;
     RW(stf_coli, 0x008) = sizeof stf_coli;
     stf_task(stf_coli_init, stf_coli, robs[0], robs[1]);
+    /* the projectile task, as fa_tobi starts it: the afterimage ring reset
+     * (Fn_zanzou_init) and its 30 objects (0x100 bytes each from +0x200)
+     * cleared, so no bomb lives on into the next round */
+    *(volatile u32 *)M2_COPFIFO_ADDR = COP_CMD(0x81);
+    for (i = 0; i < sizeof stf_tobi / 4; i++) stf_tobi[i] = 0u;
+    RW(stf_tobi, 0x000) = 0x80000000u;
+    RW(stf_tobi, 0x008) = sizeof stf_tobi;
     for (i = 0; i < 2u; i++) rob_start(i);
     stf_task(stf_cam_mode_9, stf_cam, robs[0], robs[1]);
     *(short *)stf_ram(0x500028u) = (short)(round_time << 6);
@@ -665,6 +677,91 @@ static void zanzou_draw(u32 pn[3]) {
         submit_cur(info[4] & 0xFFFFu);
         *cf = COP_POP;
         pn[1u + (info[1] & 1u)] += polys - before;
+    }
+}
+
+/* The projectiles: StF's tobi_disp (0x8A518), under the unscaled camera as
+ * zanzou_disp. For each live object (+0 bit 31) not hidden (bit 9) whose
+ * type draws (_uk_projectile; the bomb's tdl_bakudan): tobi_disp_go, its
+ * model (+0x7C) at +0x44, faced to the camera (op 0x10) on bit 7 (the
+ * burst), else turned by +0x72, +0x70, +0x74 (y, x, z) unless bit 3, and
+ * scaled by +0x68. Then, while +0x8C is set (in flight), the landing marker
+ * at +0x50: a ring from bomb_fire_location_marker_circle and, by the part
+ * of its flight left (+0xA2 of +0x89, in tenths), a marker from
+ * bomb_fire_location_marker drawn twice, turned by (1 - left) a quarter
+ * turn each way. Then the fuse while +0xA0 holds a model (bit 6 clear: not
+ * burst): the point after the last frame of +0x18's list (bomb_fuse)
+ * carried through the bomb's place, turn and scale (op 0x29), faced to the
+ * camera, scaled by +0x98. Each object's faces count toward its thrower (+0x1C). */
+#define COP_FACE COP_CMD(0x10)
+#define TOBI_BOMB 2u
+static const u16 bomb_ring[11] = { 2204, 2204, 2204, 2205, 2205, 2205, 2205, 2203, 2203, 2203, 2203 };
+static const u16 bomb_mark[11] = { 2200, 2200, 2200, 2202, 2202, 2202, 2202, 2201, 2201, 2201, 2201 };
+
+static void tobi_place(const u32 *o) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    *cf = COP_SET_POS; *cf = RW(o, 0x44); *cf = RW(o, 0x48); *cf = RW(o, 0x4C);
+    if (RW(o, 0) & 0x80u) *cf = COP_FACE;
+    else if (!(RW(o, 0) & 0x8u)) {
+        *cf = COP_ANG_Y; *cf = (u32)(int)(short)RH(o, 0x72);
+        *cf = COP_ANG_X; *cf = (u32)(int)(short)RH(o, 0x70);
+        *cf = COP_ANG_Z; *cf = (u32)(int)(short)RH(o, 0x74);
+    }
+}
+
+static void tobi_draw(u32 pn[3]) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    u32 n, k;
+    *cf = COP_WMATRIX;
+    for (k = 0; k < 9; k++) *cf = m2_obj_fb(cam_l.r[k]);
+    for (k = 0; k < 3; k++) *cf = m2_obj_fb(cam_l.t[k]);
+    for (n = 0; n < 30u; n++) {
+        u32 *o = stf_tobi + (0x200u + n * 0x100u) / 4u;
+        u32 before = polys, w0 = RW(o, 0);
+        if (!(w0 & 0x80000000u) || (w0 & 0x200u) || RW(o, 8) == 0u || RB(o, 0x26) != TOBI_BOMB) continue;
+        *cf = COP_PUSH;
+        tobi_place(o);
+        *cf = COP_SCALE; *cf = RW(o, 0x68); *cf = RW(o, 0x68); *cf = RW(o, 0x68);
+        if (RH(o, 0x7C)) submit_cur(RH(o, 0x7C));
+        *cf = COP_POP;
+        if (RH(o, 0x8C) && RB(o, 0x89)) {
+            float left = (float)RB(o, 0xA2) / (float)RB(o, 0x89);
+            int i = (int)(left * 10.0f), turn = (int)((1.0f - left) * 16384.0f);
+            if (i < 0) i = 0;
+            if (i > 10) i = 10;
+            *cf = COP_PUSH;
+            *cf = COP_SET_POS; *cf = RW(o, 0x50); *cf = RW(o, 0x54); *cf = RW(o, 0x58);
+            submit_cur(bomb_ring[i]);
+            *cf = COP_PUSH;
+            *cf = COP_ANG_Y; *cf = (u32)turn;
+            submit_cur(bomb_mark[i]);
+            *cf = COP_POP;
+            *cf = COP_ANG_Y; *cf = (u32)-turn;
+            submit_cur(bomb_mark[i]);
+            *cf = COP_POP;
+        }
+        if (!(w0 & 0x40u) && RH(o, 0xA0)) {
+            const u32 *fuse = (const u32 *)RW(o, 0x18);
+            const u32 *at = fuse + 1 + 4u * fuse[0];
+            u32 w[3];
+            *cf = COP_PUSH;
+            *cf = COP_IDENTITY;
+            *cf = COP_SET_POS; *cf = RW(o, 0x44); *cf = RW(o, 0x48); *cf = RW(o, 0x4C);
+            *cf = COP_ANG_Y; *cf = (u32)(int)(short)RH(o, 0x72);
+            *cf = COP_ANG_X; *cf = (u32)(int)(short)RH(o, 0x70);
+            *cf = COP_ANG_Z; *cf = (u32)(int)(short)RH(o, 0x74);
+            *cf = COP_SCALE; *cf = RW(o, 0x68); *cf = RW(o, 0x68); *cf = RW(o, 0x68);
+            *cf = COP_M2W; *cf = at[0]; *cf = at[1]; *cf = at[2];
+            w[0] = *cf; w[1] = *cf; w[2] = *cf;
+            *cf = COP_POP;
+            *cf = COP_PUSH;
+            *cf = COP_SET_POS; *cf = w[0]; *cf = w[1]; *cf = w[2];
+            *cf = COP_FACE;
+            *cf = COP_SCALE; *cf = RW(o, 0x98); *cf = RW(o, 0x98); *cf = RW(o, 0x98);
+            submit_cur(RH(o, 0xA0));
+            *cf = COP_POP;
+        }
+        pn[1u + ((u32 *)RW(o, 0x1C) == robs[1])] += polys - before;
     }
 }
 
@@ -1466,6 +1563,7 @@ int main(void) {
         if (!in_menu) hud_draw();
         for (i = 0; i < 2u; i++) { polys = 0u; draw_fighter(&fs[i], i); pn[1u + i] = polys; }
         zanzou_draw(pn);
+        tobi_draw(pn);
         if (in_menu) poly_win_draw(pn);
         *(volatile u32 *)ZCLIP_REG = 0xFFFF00FFu;
         m2_frame_commit();

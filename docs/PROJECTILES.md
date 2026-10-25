@@ -6,8 +6,9 @@ own fight code, so the projectile can come from StF's code too. This note
 traces the code from stfdisasm (addresses are StF's), lists Eggman's data
 (`tools/stf-projectiles.mjs` reads it from `sfight.zip`), says what damage a
 bomb does and when a guard stops it, and lists what the board needs to run it.
-None of it runs on the board yet: `call_projectile_routine` is in
-`tools/lift-stf.py`'s STUBS, and nothing runs the projectile task.
+Eggman's bomb runs on the board (#1601): StF's step loop and the bomb's
+steps are lifted, `megamix.c` runs them each frame and draws the bomb, its
+fuse, its landing marker and its burst. See Checks for what was tested.
 
 ## StF's path
 
@@ -111,10 +112,10 @@ he stands in the burst.
 victim's own list, so Akira would get StF's (then `motion_remap`). See
 docs/BOARD.md, `sub_2C7E4`.
 
-## What the board needs
+## What the board does
 
-A dry run of `tools/lift-stf.py` with these changes lifts it all with no new
-RAM (≈750 lines more in `stf_motion.s`; `stf_rom_80000.bin` unchanged):
+`tools/lift-stf.py` lifts it all with no new RAM (`stf_rom_80000.bin`
+unchanged):
 
 - STUBS: drop `call_projectile_routine`.
 - ROOTS: add `sub_8A29C` (the step loop). Leave `sub_8A2E4` out: it writes to
@@ -124,23 +125,34 @@ RAM (≈750 lines more in `stf_motion.s`; `stf_rom_80000.bin` unchanged):
   record still holds StF's code addresses; only add them with their own
   characters.
 
-Then in `megamix.c`:
+In `megamix.c`:
 
-1. Zero `stf_tobi` at each round's start, as `fa_tobi` does (0x1E00 bytes
-   from +0x200; it also sends coprocessor op 0x40808181).
-2. Each frame, `stf_task(stf_sub_8A29C, stf_tobi, robs[0], robs[1])` after
-   the fighters' tasks and before the collision task, so the burst frame's
-   hit is taken that frame (check StF's order on MAME).
-3. Draw each live object (bit 31; not bit 9): its model (+0x7C) at +0x44,
+1. `round_start` zeroes `stf_tobi` at each round's start, as `fa_tobi` does
+   (and sends coprocessor op 0x81, `Fn_zanzou_init`).
+2. `fight_step` runs `stf_task(stf_sub_8A29C, stf_tobi, robs[0], robs[1])`
+   each frame, before `zanzou_control` (StF's own order in `fa_tobi`). The
+   step sets the burst's hit balls; the next frame's collision task deals
+   the damage, as in StF.
+3. `tobi_draw` draws each live object (bit 31; not bit 9): its model (+0x7C) at +0x44,
    turned by +0x72, +0x70, +0x74 unless bit 7 or 3, scaled by +0x68, as
    `tobi_disp_go` does; and the bomb's marker at +0x50 (`tdl_bakudan`).
-4. `tools/import-assets.mjs`: keep models 1703, 807–810, 1710, 1711 and
+4. `tools/import-assets.mjs` keeps (from `projectile_list`'s type 2 and the
+   marker lists) models 1703, 807–810, 1710, 1711 and
    2200–2205 and their textures.
 
 ## Checks
 
-On the board (m2-hle2, or MAME's model2 with the board ROMs), Eggman against
-Sonic, each beside real StF on MAME:
+Done on MAME (`shared`, board ROMs), P1 Eggman against P2 Honey, standing:
+
+- 298 (forward+punch): one bomb 12 frames in, bursts on her 50 frames
+  later; 0x1AC 140 → 120, knocked down (motion 266). Snapshots show the
+  bomb with its lit fuse, the marker going from green to red, and the burst.
+- 298 with Honey holding guard: 0x1AC stays 140, guard reaction (109).
+- 297 (forward, neutral, forward+punch): three bombs; 140 → 130 → 123 →
+  115 (the second and third hit her while down, at StF's reduced rate).
+
+Not checked yet: the guard from behind, Eggman in his own burst, the clock
+at 0, and m2-hle2. The original list, each beside real StF on MAME:
 
 - 298 at a Sonic who stands: Sonic's 0x1AC 140 → 120, knocked down.
 - The same with Sonic holding guard: 0x1AC stays 140, guard reaction, pushed.

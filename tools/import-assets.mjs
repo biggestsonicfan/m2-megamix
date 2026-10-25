@@ -180,6 +180,12 @@ const PLAYER2 = 26;                       /* character c's player 2 is c + 26 */
 const HAND_MODELS = 0x0c6570, FOOT_MODELS = 0x0c6640, BODY_MODELS = 0x0c6710;   /* program ROM, by character */
 const HEAD_LIST = 0x0c540c;
 const TRAIL_MODELS = 0x0b540c, TRAIL_OPTION = 0x0b5408;   /* program ROM: zanzou_control's models, by skeleton */
+/* program ROM: the projectiles the board runs (docs/PROJECTILES.md): their
+ * records in projectile_list, by type (2: the bomb Eggman throws,
+ * bean_bomb_roll), and the bomb's landing marker (tdl_bakudan's two lists of
+ * 11 models, bomb_fire_location_marker_circle and bomb_fire_location_marker) */
+const PROJECTILE_LIST = 0x0b46ac, PROJECTILE_TYPES = [2];
+const BOMB_MARKERS = [0x08a720, 0x08a736];
 const SET_FIGHTERS = 1;
 const MOTION_LIST = 0x06400004, MOTIONS = 519;
 const SCROLL_TABLE = 0x06480000;          /* _ScrollCG_Initialize / _ScrollColor_Initialize */
@@ -247,6 +253,18 @@ async function importStf(R) {
             if (e) for (let s = 0; s < 16; s++) for (let i = 0; i < 3; i++) model(program.u16(e + s * 8 + i * 2));
         }
     }
+    /* the projectiles' models: each record's three animations (+4 flying,
+     * +8 the burst, +0xC the fuse: a count, then 16-byte frames whose model
+     * is the halfword at +8, as sub_8AE04 and sub_8D590 read them), and the
+     * bomb's landing marker */
+    for (const t of PROJECTILE_TYPES) {
+        const rec = program.u32(PROJECTILE_LIST + t * 4);
+        for (let k = 1; k <= 3; k++) {
+            const a = program.u32(rec + k * 4);
+            if (a) for (let i = 0; i < program.u32(a); i++) model(program.u16(a + 4 + i * 16 + 8));
+        }
+    }
+    for (const list of BOMB_MARKERS) for (let i = 0; i < 11; i++) model(program.u16(list + i * 2));
     const colorbases = new Set();
     for (const m of [...models].sort((a, b) => a - b)) keepModel(m);
     Object.assign(R, { models, colorbases, modelTable: MODEL_TABLE, modelCount: MODELS });
