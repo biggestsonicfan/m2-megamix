@@ -120,6 +120,35 @@ vblanks a pass in the menu and the fight). On m2-hle2, a breakpoint on
 the counter's store hits every frame with Akira walking. The stage
 matrices `submit_mat` sends match the soft-float ones to 1.25e-7.
 
+The sway chains (Honey's ponytail; Fang's tail and the others' are in the
+same table) are StF's too: `osage_init`, lifted with its routines, is a
+task per player (StF's `fa_osage0`/`fa_osage1`, 0x280 bytes, at
+`mod_fa_osage0_1`/`_2`), which `rob_start` starts over. It reads the
+fighter's records (`osage_per_character` by +0x1B0, player 2's from
+`kill_osage_sub` on), keeps their state in bufferram at 0x91E800 (player 1)
+and 0x91F000 (player 2), and becomes `osage_dsp`. Each frame `osage_dsp`
+steps them on the coprocessor (Fn_osage, op 0x4A) and `set_obj_fifo` puts
+each segment in the list: a matrix read back from the coprocessor, then
+the model (type 5 records, +0x1C; `import-assets.mjs` keeps them). What it
+needs from the board:
+
+- the unscaled camera (`cam_l`) on the coprocessor when it runs: a fight's
+  `osage_dsp` draws on the matrix it finds, and `set_obj_fifo` drops a
+  segment whose m00 is past 1, so on the scaled camera every one goes;
+  0x501128/0x501158 (the select screen's) hold the scaled one, as
+  `camera_init` stores it;
+- the camera's bits 1 and 2 (player shown) set, or it hides the chains
+  (w0 bit 5), and `POLYGON_LIMIT` (5000) with `POLYGON` 0 each frame;
+- the model table's count (`max_poly`, main data 0xE0000), which the
+  model check reads (`poly_data_err` hangs otherwise);
+- its block in the list: `osage_dsp` jumps over the segments it writes
+  and leaves them in the layer table (0x501804 + 8 p, cleared every frame
+  as `clear_buffer_ptr` does); `draw_fighter` ends with `rob_disp`'s head
+  entry (`unit_efc_kao`), which splices them in there.
+
+The records sit at the top of list buffer 3 (0x918000..0x91FFFF), so a
+frame's list must stay under 0x6800 bytes; it is about 0x1C70 now.
+
 Checked against real StF (MAME `sfight`, a 2P round, Sonic vs Sonic): at the
 same frame of the stance motion (278), all sixteen part positions in the rob
 (+0x1F4) match the real board's to the last digit printed, frames 39, 41 and
@@ -808,6 +837,7 @@ Inert on the board, for later:
 
   Neither is done. → Only once projectiles run on the board, and a guest
   with a projectile reaction of its own comes in.
+  docs/PROJECTILES.md has the projectile path and what running it needs.
 - `ptr_CE1CC` (0xCE0F8; `damage_unit` 14752, 15559; `sub_3261C` 19934):
   the crushed-parts table, by drawn character (rob+0x1B0). Each of 16
   parts has an 8-byte entry: four counts and a pointer to 0x28-byte pieces.
@@ -1531,6 +1561,13 @@ sets up what StF's game loop would have set up around it.
   flicker as in StF. Each frame's copies count toward their fighter in the
   polygon window. Check: Sonic with the mask forced draws his streak cards
   behind him.
+- Projectiles (#1601): Eggman's bomb is StF's own (docs/PROJECTILES.md).
+  `fight_step` runs StF's projectile step loop (`sub_8A29C`, lifted with
+  the bomb's steps) on `stf_tobi`; the bomb's burst hits through StF's
+  collision task, so damage and guard are StF's. `tobi_draw` (megamix.c)
+  is StF's `tobi_disp` and `tdl_bakudan`: the bomb, its fuse, its landing
+  marker and the burst. Check: MAME, Eggman's forward+punch takes Honey
+  from 140 to 120; with her guard held it takes nothing.
 - Characters: rob+0x1B0 is the character drawn (the alternates are +26),
   rob+0x1B1 the parent. `ADV_CPU_BATTLE_INT` sets 1B1 = 1B0 - 0x1A, and a
   real P2 Honey alternate has 1B0 0x24, 1B1 0x0A.
@@ -1603,6 +1640,17 @@ held, and a change of stage or fighter shows at once.
   it. After a fighter changes, his seams come in one a pass, so his
   count climbs for a few passes.
 
+## Shadows
+
+The fighters' shadows are StF's: its lifted `rob_kage_*` routines and its
+tables (`off_64988`), called by `megamix.c`'s `kage_stage`, `kage_light`,
+`kage_inside` and `kage_outside` in StF's order; each guest has a table of
+its own (`tools/guest-shadows.mjs`) and the masks' balls come from
+`kage_balls`. On Aurora Icefield, as in StF, the fighters are mirrored in
+the ice instead (`mirror_draw`). The fighters draw in a geo window after
+all of these, so nothing clips their feet. `docs/SHADOWS.md` (On the
+board) has the details and the check.
+
 ## Where it stands
 
 Two fighters (Sonic, Honey, Eggman, Akira or Ryo, picked in the setup) stand
@@ -1629,7 +1677,7 @@ Known gaps:
 - Eggman's head (model 793) takes its texture from StF's texture set 7,
   which the board does not load (it loads set 1 and the stage's), so it
   does not show.
-- No shadows. The camera's round-end and replay modes are not run.
+- The camera's round-end and replay modes are not run.
 
 ## Plan
 

@@ -9,7 +9,7 @@ const ROMS = process.env.ROMS_DIR || `${process.env.HOME}/build/mameroms`;
 export const SHENMUE_DIR = process.env.SHENMUE_DIR || `${process.env.HOME}/source/repos/ai/SHENMUE 1 BETA 0.400 DISC 3 PERFECT DUMP`;
 const TOOL = fileURLToPath(new URL('../tools/shenmue-fight.py', import.meta.url));
 
-function shenmueFile(path) {
+export function shenmueFile(path) {
     if (!existsSync(SHENMUE_DIR)) return null;
     const b = execFileSync('python3', ['-I', TOOL, 'cat', SHENMUE_DIR, path], { maxBuffer: 1 << 26 });
     return b.buffer.slice(b.byteOffset, b.byteOffset + b.length);
