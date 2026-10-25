@@ -152,7 +152,7 @@ const unit = (a) => { const l = Math.hypot(...a) || 1; return [a[0] / l, a[1] / 
  * parent's) and not to the rigid part, and each corner on the parent keeps
  * its point in O's frame too (`o`), which the board carries into S's frame
  * every frame (megamix.c seams_build). */
-function cutParts(model, k, flatFaces) {
+function cutParts(model, k, { flatFaces = false, stripWinding = false } = {}) {
     const rest = restMatrices(model), nodes = model.nodes;
     const anchor = [];
     for (const n of nodes) {
@@ -185,8 +185,14 @@ function cutParts(model, k, flatFaces) {
                 const face = cross(sub(b.p, a.p), sub(d.p, a.p));
                 if (Math.hypot(...face) < 1e-9) { dropped++; continue; }
                 const out = unit([a.n[0] + b.n[0] + d.n[0], a.n[1] + b.n[1] + d.n[1], a.n[2] + b.n[2] + d.n[2]]);
-                /* Akira's faces wind A, B, C about their outward side */
-                if (dot(face, out) < 0) [a, b] = [b, a];
+                /* Akira's faces wind A, B, C about their outward side: the
+                 * corners' normals', or with stripWinding the strip's own.
+                 * 8 of CHA_B's seam faces (the knees, the shoulders) have
+                 * corners' normals that point in while the strip winds out,
+                 * and a seam's normal the board works out from its winding,
+                 * so turned round they were hidden from outside (#1591). */
+                if (!stripWinding && dot(face, out) < 0) [a, b] = [b, a];
+                const outward = stripWinding && dot(face, out) < 0 ? out.map((x) => -x) : out;
                 /* A face is stored with its corners' normals, averaged. The
                  * board culls a face whose stored normal turns from the eye
                  * (MAME model2_v.cpp, normal · corner C), so one that leans
@@ -196,8 +202,8 @@ function cutParts(model, k, flatFaces) {
                  * front lost faces in sight. The shin faces in FLAT, the ones
                  * measured hidden there, keep their own flat normal (#1546); a
                  * seam's normals the board works out itself. */
-                const flat = flatFaces && !(a.o || b.o || d.o) && FLAT.get(slot)?.has(slots.get(slot)?.length ?? 0);
-                const stored = flat ? unit(dot(face, out) < 0 ? face.map((x) => -x) : face) : out;
+                const flat = !(a.o || b.o || d.o) && (flatFaces === 'all' || (flatFaces && FLAT.get(slot)?.has(slots.get(slot)?.length ?? 0)));
+                const stored = flat ? unit(dot(face, outward) < 0 ? face.map((x) => -x) : face) : outward;
                 /* a seam's far corners first (A, or A and B), turning the
                  * corners round, so each is one run of words to patch */
                 const fars = [a, b, d].map((q) => !!q.o);
@@ -266,7 +272,12 @@ export function importShenmue(R, ctx, games, { tiles, byTex }, { name: who = 'RY
     report.push(`size x${k.toFixed(4)} (${fit.scale.toFixed(4)} of Akira's VF2 scale, x${SCALE.toFixed(4)})`);
 
     /* ---- his parts ---- */
-    const { slots, seams, dropped } = cutParts(model, k, FULL && who === 'RYO');
+    /* Chai's faces all keep their own flat normal and their strip's winding:
+     * CHA_B's thighs and shins are rigid parts whose corners' normals lean
+     * up to 68° from the face (the shorts), so the board hid them seen at a
+     * slant and his knees opened (#1591). Ryo's YKB_B has those as seams;
+     * his rigid parts lean under 40°, and stay as they were. */
+    const { slots, seams, dropped } = cutParts(model, k, who === 'RYO' ? { flatFaces: FULL } : { flatFaces: 'all', stripWinding: true });
     const order = [...slots.keys()].sort((a, b) => a - b);
     /* every mesh: the parts, then the seams (each drawn on its slot S) */
     const pieces = [...order.map((slot) => ({ slot, tris: slots.get(slot) })),

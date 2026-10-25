@@ -1142,6 +1142,20 @@ for Ryo and then for him), on Akira's moves (`char_game` VF2).
   116 triangles in 14 seams (12-11 and 15-14 are his, the others Ryo's).
   Four 64×64 ARGB4444 textures (HA_MUF_, HA_KRF_, HA_KAO_, HA_KOF_; alpha 4
   of 15 all over, not holes), packed with Akira's and Ryo's.
+- **Faces.** Every face of his keeps its own flat normal, and the winding
+  its strip gives it (#1591, "the same joints issue Ryo had"). CHA_B's
+  thighs and shins are rigid parts, where YKB_B's are seams only, and the
+  corners' normals of the shorts lean 23-68° from their faces (the shins
+  17-23°; Ryo's rigid parts under 40°). Stored averaged, as Ryo's are, the
+  board hid them seen at a slant (Ryo's ankle spikes, above): the rear
+  thigh was gone and the knees showed open. And 8 seam faces (both knees,
+  both shoulders) had corners' normals pointing in while their strip winds
+  out (each of them out from the bone, as every face whose normals and
+  winding agree is), so turned to the normals they were hidden from
+  outside, the board working out a seam's normal from its winding. Ryo
+  has 3 such seam faces (the shoulders, a hip), left as they are. MAME,
+  Chai vs Ryo, frames 720-1000: the rear thigh draws, both knees close,
+  the kicking thigh is whole; Ryo vs Ryo's frames are the same as before.
 - **Size.** `shenmueFit`, as on the web page: 1.0018 of Akira's VF2 scale.
 - **Colour.** Ryo's fit, on his own textures: 52 colours, 43 new colorbases.
 - **Room.** Models 4954..4982 below Ryo's; meshes 0xF3B568..0xF41990 and
