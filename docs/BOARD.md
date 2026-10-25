@@ -808,6 +808,7 @@ Inert on the board, for later:
 
   Neither is done. → Only once projectiles run on the board, and a guest
   with a projectile reaction of its own comes in.
+  docs/PROJECTILES.md has the projectile path and what running it needs.
 - `ptr_CE1CC` (0xCE0F8; `damage_unit` 14752, 15559; `sub_3261C` 19934):
   the crushed-parts table, by drawn character (rob+0x1B0). Each of 16
   parts has an 8-byte entry: four counts and a pointer to 0x28-byte pieces.
