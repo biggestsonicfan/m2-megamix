@@ -371,20 +371,27 @@ pulls in `rob_kage_set_matrix`, `rob_kage_set_flag_sub`,
 
 The guests' tables (`tools/guest-shadows.mjs`) go into `off_64988`'s room
 in the extra data ROM after StF's own copied tables, and their models after
-the guests' others, each with StF's shadow cards' material and every face
-both ways round:
+the guests' others, each with StF's shadow cards' material:
 
-- Akira: VF2's own table (0x61D64) as StF's (`guestTable`), VF2's cards
-  scaled as his body is.
+- Akira, Hornet and Mahler: a low solid a part, as StF's tables have: the
+  convex hull of each part's farthest points along 26 directions
+  (`hullTable`, `convexHull`), 26 to 48 triangles each, flags 0, no offset.
+  Akira's are his VF2 parts ×SCALE (slots 1 to 15, 28 to 48 triangles);
+  Hornet's his six pieces of Daytona's car, the nose (slot 1), the cabin
+  (9) and the four wheels (5, 8, 12, 15); Mahler's his FV parts, the chest
+  with its pads, the hands (#1616). Each hull goes in once: its faces
+  turned to the light and those turned away each cover its outline.
 - Ryo and Chai: Shenmue's 13 SYD_MUNE hulls (MISC/COLD.BIN), each on its
-  bone's slot, ends capped, at each one's own size.
-- Hornet: Daytona's car card (model 791) cut into a nose half on slot 1 and
-  a cabin half on slot 9, each stood up into a prism (#1610).
-- Mahler: a low solid a part, as StF's tables have: the convex hull of
-  each part's farthest points along 26 directions (the chest with its pads,
-  the hands; `convexHull`), 26 to 48 triangles each, flags 0 (#1616). FV's
-  own table (0x60BC8) is two crossed cards a part, which op 0x74 flattens
-  into thin broken strips (Akira's VF2 cards do the same).
+  bone's slot, ends capped, at each one's own size, every face both ways
+  round (they are near convex, not convex).
+
+What the hulls replaced (#1622): VF2's own table (0x61D64) and FV's
+(0x60BC8) are two crossed cards on some parts, which op 0x74 flattens
+into thin broken strips: Akira's shadow was a row of jagged slivers.
+Hornet had Daytona's car card (model 791) cut into a nose half on slot 1
+and a cabin half on slot 9, each stood up into a prism (#1610); in a
+fight it cast a short patch at the car's base, with nothing for the
+wheels.
 
 The masks: `send_kage_ball_pntr` sends each slot's collision ball to the
 copro (0x306E0 + slot for player 1, 0x307E0 + slot for player 2), which
@@ -420,7 +427,9 @@ Checked in MAME (`sfight`, the shared build) and m2-hle2, Sonic against
 Honey: shadows on South Island, Tou-rin, the Colosseum and Western, none
 on Aurora; on South Island they look as real StF's do (black, cast away
 from the light). Akira, Ryo, Chai, Hornet and Mahler each cast their own, whole,
-on South Island and Tou-rin; on Western they turn with the light. On
+on South Island and Tou-rin (Akira's and Hornet's hulls checked again in
+#1622, each fighter on each side, punching and kicking: Akira one solid
+figure, Hornet the whole car with its wheels); on Western they turn with the light. On
 Aurora, Sonic, Honey (and her ponytail) and Akira are mirrored, dimmed,
 under their feet (m2-hle2 too, Akira against Honey), and nothing clips
 through the feet there or on South Island.
@@ -439,15 +448,12 @@ What the board will need, in StF's form, for a fighter from any game:
 2. Its models: StF's fighters' are in the data ROMs now (45 models). A
    guest's (Akira's VF2 343 to 424) have to come in through its import,
    renumbered as its other models are. Ryo's and Chai's: the 13 SYD_MUNE
-   hulls as they are, one on each bone's slot (their ends capped). Hornet's: Daytona's
-   791 cut at the body's cut (z = −0.46, with a row of points at x ±0.976)
-   into a nose half on slot 1 and a cabin half on slot 9, each stood up into
-   a prism over the card (the nose to the cowl, 0.70 m; the cabin to the
-   roof, 1.16 m), in those slots' frames as `hornetObjects` puts the nose and
-   cabin. A flat card stood edge-on to the floor on FM's stance (0x11C, the
-   car on its tail), and op 0x74 flattened it into a strip hidden behind
-   the tyres; a solid's outline along the light is the car's in any pose. His
-   other slots, the wheels included, get model 0. Every guest's cards take
+   hulls as they are, one on each bone's slot (their ends capped). Akira's,
+   Hornet's and Mahler's: the convex hull of each of their own parts, the
+   pieces they are drawn with (On the board, above). A flat card stood
+   edge-on to the floor (Hornet's on FM's stance, 0x11C, the car on its
+   tail) is flattened by op 0x74 into a strip; a solid's outline along the
+   light is the part's in any pose. Every guest's cards take
    StF's shadow cards' header and colour; Daytona's colour means nothing in
    StF's palette.
 3. Its balls (done: `kage_balls`, On the board): the mask test takes ball `0x4C84[slot]` of the fighter's
@@ -467,8 +473,9 @@ What the board will need, in StF's form, for a fighter from any game:
 What the guests will look like against their own games: StF's op 0x74
 flattens along the stage's light, where Daytona flattens straight down
 onto the road. On the car pose the two match closely. On Hornet's stance
-(0x11C, the car on its tail) his prisms cast a long shadow away from the
-light, as a standing car would. Ryo's
+(0x11C, the car on its tail) his hulls cast a long shadow away from the
+light, as a standing car would; leaning towards the light (player 2 on
+South Island, player 1 on Tou-rin) the car's shadow is short. Ryo's
 and Chai's will be single, hard-edged shadows from one light, where
 Shenmue draws one for each scene light, half dark.
 

@@ -4,30 +4,26 @@
  * off_64988's room (import-assets' shadowTable), its models new ones after
  * the guests' others, all with StF's shadow cards' material.
  *
- *   - Akira (character 6): VF2's own table (0x61D64) as StF's
- *     (shadow-data.mjs guestTable), VF2's cards ×SCALE, his offsets too.
+ *   - Akira (6), Hornet (17) and Mahler (18): a low solid a part, as StF's
+ *     own tables have: the convex hull of each of his parts (Akira's VF2
+ *     meshes ×SCALE; Hornet's pieces of Daytona's car, the wheels too;
+ *     Mahler's, the chest with its pads, the hands), on its slot. VF2's and
+ *     FV's own cards (two crossed quads a part) draw as broken strips on
+ *     StF's op 0x74, and Daytona's card under the car, stood up into a
+ *     prism a half, left most of the car without a shadow.
  *   - Ryo (1) and Chai (12): Shenmue's 13 SYD_MUNE hulls (MISC/COLD.BIN's
  *     MVSD, at 0x21B880 on disc 3), each on its bone's slot (js/ryo.js
  *     SLOT_BONES), its open ends capped, Z mirrored to the board's, at each
  *     one's own size (importShenmue's `scale`).
- *   - Hornet (17): Daytona's model 791, the card under the player's car, cut
- *     at the body's cut (CUT_Z) into a nose half on slot 1 and a cabin half
- *     on slot 9, each stood up into a prism, in those slots' frames as
- *     hornetObjects puts the body.
- *   - Mahler (18): a low solid a part, as StF's own tables have: the convex
- *     hull of each of his parts (the chest with its pads, the hands), at his
- *     size, on its slot. FV's own cards (0x60BC8, two crossed quads a part)
- *     draw as thin strips on StF's op 0x74.
  *
- * Every face goes in twice, once each way round: StF's shadow models are
- * solids whose faces turned to the light draw (op 0x74 flattens them), and
- * a card or a hull drawn both ways covers its outline whichever way the
- * board culls it.
+ * StF's shadow models are solids whose faces turned to the light draw (op
+ * 0x74 flattens them). A convex hull covers its outline once with the faces
+ * turned to the light and once with those turned away, so it goes in as it
+ * is; every face of a SYD_MUNE hull (near convex, capped) goes in twice, once
+ * each way round, so it covers its outline whichever way the board culls it.
  */
-import { readShadows } from '../vendor/noclip/js/fightershadow.js';
-import { guestTable } from './shadow-data.mjs';
-import { readObject, mapPolys, bodyMap, CUT_Z } from './daytona-hornet.mjs';
-import { MODEL_UNITS } from './fm-saturn.mjs';
+import { readFighters } from '../vendor/noclip/js/vf2fighters.js';
+import { readObject } from './daytona-hornet.mjs';
 import { SCALE } from './vf2-guest.mjs';
 import { SLOT_BONES } from '../js/ryo.js';
 
@@ -46,9 +42,6 @@ const CARD_UV = [0, 0, 0, 0x1ff, 0x1ff, 0x1ff, 0, 0, 0, 0, 0, 0, 0, 0];
 const MVSD_AT = 0x21b880, MVSD_MAGIC = 0x4d565344;   /* 'MVSD' */
 /* the board's guests (import-assets: vf2-guest, ryo-guest, hornet-guest) */
 const PLAYER2 = 26;
-/* Hornet's shadow prisms' heights over card 791 (y = 0, the floor): the cowl
- * (daytona-hornet COWL_Y) and the roof (Daytona's body is 1.16 m high) */
-const NOSE_H = 0.70, ROOF_H = 1.16;
 
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
@@ -170,13 +163,13 @@ export function readHulls(cold) {
 /**
  * Every guest's shadow table and models. R: import-assets' regions (R.guest's
  * off_64988 has shadowTable); ctx: Akira's import's (its model ids, the end of
- * the polygons and textures it and the guests after him used); vf2, stf,
- * daytona: the ROM sets; cold: Shenmue's MISC/COLD.BIN, or null; guests:
- * { akira: { chr }, shenmue: [{ name, chr, scale }], hornet: { chr },
- * mahler: { chr, pieces } } (pieces: importMahler's, slot and polygons at
+ * the polygons and textures it and the guests after him used); vf2, stf: the
+ * ROM sets; cold: Shenmue's MISC/COLD.BIN, or null; guests: { akira: { chr },
+ * shenmue: [{ name, chr, scale }], hornet: { chr, pieces }, mahler: { chr,
+ * pieces } } (pieces: importHornet's and importMahler's, slot and polygons at
  * his size).
  */
-export function importGuestShadows(R, ctx, { vf2, stf, daytona, cold }, guests) {
+export function importGuestShadows(R, ctx, { vf2, stf, cold }, guests) {
     const { main, polygons, textures } = R;
     const T = R.guest.tables.off_64988;
     const { u32s, u16s } = ctx;
@@ -185,8 +178,10 @@ export function importGuestShadows(R, ctx, { vf2, stf, daytona, cold }, guests) 
     const tex = stf.texturesView, mt = stf.game.modelTable.offset;
     const card = [0, 1, 2, 3].map((i) => tex.getUint16(stf.mainDataView.getUint32(mt + STF_CARD * 16 + 4, true) * 2 + i * 2, true));
     let poly = ctx.polyEnd, texAt = ctx.texEnd;
-    const newModel = (tris, what) => {
-        const both = bothWays(tris);
+    /* closed: a convex hull, whose faces turned to the light and those
+     * turned away each cover its outline once, so it goes in one way round */
+    const newModel = (tris, what, closed = false) => {
+        const both = closed ? tris : bothWays(tris);
         let id = R.modelCount - 1;
         while (id > 0 && (R.models.has(id) || ctx.modelIds.has(id))) id--;
         if (id <= 0) throw new Error(`${what}: no free model ids`);
@@ -228,33 +223,27 @@ export function importGuestShadows(R, ctx, { vf2, stf, daytona, cold }, guests) 
         report.push(`${who}: table ${hex(at)} for ${chr} and ${chr + PLAYER2}, ${drawn.length} parts, models ${drawn.map((e) => e.model).join(' ')}`);
     };
 
-    /* Akira: VF2's table, each card at the size his parts are */
-    const ownTable = (who, game, rom, fighter, k, chr) => {
-        const own = guestTable(game, readShadows(rom).tables[fighter]).entries.filter((e) => e.model);
-        const ids = new Map();
-        const entries = own.map((e) => {
-            if (!ids.has(e.model)) {
-                const tris = readObject(rom, e.model).flatMap((q) => fan(q.quad ? q.p : q.p.slice(0, 3))).map((t) => t.map((p) => p.map((x) => x * k)));
-                ids.set(e.model, newModel(tris, `${who} shadow ${e.model}`));
-            }
-            return { ...e, model: ids.get(e.model), offset: e.offset.map((x) => x * k) };
+    /* A low solid a part, as StF's own tables have: the convex hull of each
+     * part's farthest points along 26 directions (the cube's faces, edges and
+     * corners), on its slot. pieces: { slot, polys } at the guest's size. */
+    const dirs = [];
+    for (const a of [-1, 0, 1]) for (const b of [-1, 0, 1]) for (const c of [-1, 0, 1]) if (a || b || c) dirs.push([a, b, c]);
+    const extremes = (pts) => dirs.map((d) => pts.reduce((m, p) => (p[0] * d[0] + p[1] * d[1] + p[2] * d[2] > m[0] * d[0] + m[1] * d[1] + m[2] * d[2] ? p : m)));
+    const hullTable = (who, chr, pieces) => {
+        const entries = pieces.filter((q) => q.slot).map((q) => {
+            const tris = convexHull(extremes(q.polys.flatMap((x) => x.p)));
+            return { slot: q.slot, model: newModel(tris, `${who} shadow ${q.slot}`, true), flags: 0, offset: [0, 0, 0], tris: tris.length };
         });
         seat(who, chr, entries);
+        report.push(`${who}: hulls of ${entries.map((e) => `${e.slot}:${e.tris}`).join(' ')} triangles`);
     };
-    if (guests.akira) ownTable('Akira', 'vf2', vf2, 0, SCALE, guests.akira.chr);
-    /* Mahler: each slotted part's hull, low: its farthest points along 26
-     * directions (the cube's faces, edges and corners) */
-    if (guests.mahler) {
-        const dirs = [];
-        for (const a of [-1, 0, 1]) for (const b of [-1, 0, 1]) for (const c of [-1, 0, 1]) if (a || b || c) dirs.push([a, b, c]);
-        const extremes = (pts) => dirs.map((d) => pts.reduce((m, p) => (p[0] * d[0] + p[1] * d[1] + p[2] * d[2] > m[0] * d[0] + m[1] * d[1] + m[2] * d[2] ? p : m)));
-        const entries = guests.mahler.pieces.filter((q) => q.slot !== undefined).map((q) => {
-            const tris = convexHull(extremes(q.polys.flatMap((x) => x.p)));
-            return { slot: q.slot, model: newModel(tris, `Mahler shadow ${q.slot}`), flags: 0, offset: [0, 0, 0], tris: tris.length };
-        });
-        seat('Mahler', guests.mahler.chr, entries);
-        report.push(`Mahler: hulls of ${entries.map((e) => `${e.slot}:${e.tris}`).join(' ')} triangles`);
-    }
+    /* Akira: his VF2 parts (×SCALE, as his meshes); VF2's own cards (0x61D64,
+     * two crossed quads on some parts) draw as broken strips on op 0x74 */
+    if (guests.akira) hullTable('Akira', guests.akira.chr, readFighters(vf2)[0].parts.map(({ model }, slot) => ({
+        slot, polys: model > 0 ? readObject(vf2, model).map((q) => ({ p: q.p.map((v) => v.map((x) => x * SCALE)) })) : [],
+    })).filter((q) => q.polys.length));
+    /* Mahler: his parts (the chest with its pads, the hands) */
+    if (guests.mahler) hullTable('Mahler', guests.mahler.chr, guests.mahler.pieces.filter((q) => q.slot !== undefined));
 
     /* Ryo and Chai: a hull a bone, Z mirrored, at the guest's size; the
      * models are each guest's (their sizes differ) */
@@ -273,39 +262,9 @@ export function importGuestShadows(R, ctx, { vf2, stf, daytona, cold }, guests) 
         }
     } else if (guests.shenmue?.length) report.push('Shenmue: no COLD.BIN, Ryo and Chai keep their StF slots\' tables');
 
-    /* Hornet: Daytona's card, cut at CUT_Z (noclip's z: the stored z the
-     * other way), the nose's half on slot 1 and the cabin's on 9 */
-    if (guests.hornet) {
-        const cardPolys = readObject(daytona, 791);
-        const cut = (front) => cardPolys.flatMap((q) => {
-            const p = q.quad ? q.p : q.p.slice(0, 3);
-            const side = (x) => (front ? x[2] - -CUT_Z : -CUT_Z - x[2]);
-            const out = [];
-            p.forEach((a, i) => {
-                const b = p[(i + 1) % p.length], sa = side(a), sb = side(b);
-                if (sa >= 0) out.push(a);
-                if ((sa >= 0) !== (sb >= 0)) { const t = sa / (sa - sb); out.push(a.map((x, k) => x + t * (b[k] - x))); }
-            });
-            return out.length >= 3 ? [{ ...q, quad: false, p: out }] : [];
-        });
-        /* each half stood up into a prism, the nose to the cowl and the cabin
-         * to the roof: a flat card on FM's stance (the car on its tail) is
-         * edge-on to the floor, and op 0x74 flattens it into a strip */
-        const prism = (h) => (q) => {
-            const top = q.p.map(([x, , z]) => [x, h, z]);
-            return [...fan(q.p), ...fan(top), ...q.p.flatMap((a, i) => {
-                const j = (i + 1) % q.p.length;
-                return [[a, q.p[j], top[j]], [a, top[j], top[i]]];
-            })];
-        };
-        const entries = [[1, true, NOSE_H], [9, false, ROOF_H]].map(([slot, front, h]) => {
-            const solid = cut(front).flatMap(prism(h)).map((p) => ({ quad: false, normal: [0, 1, 0], p }));
-            const placed = mapPolys(solid, bodyMap(slot, MODEL_UNITS));
-            const t = placed.map((q) => q.p.map((p) => p.map((x) => x * SCALE)));
-            return { slot, model: newModel(t, `Hornet shadow ${slot}`), flags: 0, offset: [0, 0, 0] };
-        });
-        seat('Hornet', guests.hornet.chr, entries);
-    }
+    /* Hornet: his pieces, Daytona's car as FM cuts it (the nose, the cabin,
+     * the wheels); a hull's outline along the light is the piece's in any pose */
+    if (guests.hornet) hullTable('Hornet', guests.hornet.chr, guests.hornet.pieces);
 
     report.push(`meshes ${hex(ctx.polyEnd)}..${hex(poly)}; materials and UVs ${hex(ctx.texEnd)}..${hex(texAt)}`);
     ctx.polyEnd = poly; ctx.texEnd = texAt;
