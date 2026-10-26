@@ -489,6 +489,82 @@ static void rob_start(u32 p) {
     RW(stf_osage[p], TASK_FN) = (u32)stf_osage_init;
 }
 
+/* Fighting Vipers' armour, which StF kept FV's code for: damage_unit adds
+ * each hit's damage to the part it lands on (ROB_PART_DAMAGE), and
+ * calc_up_down_damage sums the upper body's parts and the lower's and sets
+ * ARMOUR_UP_DAMAGED or ARMOUR_DOWN_DAMAGED once a sum reaches its limit
+ * (ROB_ARMOUR_LIMIT). A damaged piece breaks (ARMOUR_UP_BROKEN,
+ * ARMOUR_DOWN_BROKEN) on a hit from a move whose setup has kind2 bit 5
+ * (+0x70C): FV's own and FM's for their guests, a strike of 30 or more for
+ * the others (tools/lift-stf.py, vf2-guest.mjs); both broken, the rob's
+ * ROB_F_NAKED. StF's copy tests that only on a slot with crush pieces,
+ * which it has none of: lift-stf.py puts the test in without them. The match's winning hit breaks both (mod_fa_effect +0x914).
+ * action_init sets the limits from StF's records (500 and 200, which
+ * nothing reaches): the board sets FV's (its records' +0x3C, the upper and
+ * the lower), in the board's damage (x140/200), times the rounds to win, as
+ * action_init multiplies them: Mahler's, FV's fighter 8, 500 and 200, and
+ * everyone else's 200 and 75 (six of FV's twenty records; six have 150
+ * and 50, the rest more). As in FV, the damage stays from one round to
+ * the next and goes at a match's start (FV 0x2CD04). */
+static const u16 armour_fv[2][2] = { { 200u, 75u }, { 500u, 200u } };
+static struct { u16 part[16]; u32 sum[4], bits, w0; } armour_kept[2];
+
+static void armour_limits(u32 p) {
+    const u16 *l = armour_fv[char_game(RB(robs[p], ROB_CHAR_IS)) == GAME_FV];
+    u32 k;
+    for (k = 0; k < 2u; k++) RW(robs[p], ROB_ARMOUR_LIMIT + 4u * k) = l[k] * 140u / 200u * RAM8(G_WINS_NEEDED);
+}
+
+static void armour_keep(u32 p) {
+    u32 k;
+    for (k = 0; k < 16u; k++) armour_kept[p].part[k] = RH(robs[p], ROB_PART_DAMAGE + 2u * k);
+    for (k = 0; k < 4u; k++) armour_kept[p].sum[k] = RW(robs[p], ROB_ARMOUR_DAMAGE + 4u * k);
+    armour_kept[p].bits = RW(robs[p], ROB_ARMOUR) & 0xFu;
+    armour_kept[p].w0 = RW(robs[p], ROB_FLAG) & ROB_F_NAKED;
+}
+
+static void armour_back(u32 p) {
+    u32 k;
+    for (k = 0; k < 16u; k++) RH(robs[p], ROB_PART_DAMAGE + 2u * k) = armour_kept[p].part[k];
+    for (k = 0; k < 4u; k++) RW(robs[p], ROB_ARMOUR_DAMAGE + 4u * k) = armour_kept[p].sum[k];
+    RW(robs[p], ROB_ARMOUR) = (RW(robs[p], ROB_ARMOUR) & ~0xFu) | armour_kept[p].bits;
+    RW(robs[p], ROB_FLAG) |= armour_kept[p].w0;
+}
+
+/* The armour on the HUD, as FV shows it: each fighter's figure (FV's
+ * patterns 0x20 and 0x147, in FV's own tiles and colours: tools/bake-board.mjs)
+ * on the front layer, row 1, at the screen's left (column 0) and right
+ * (57), and its two pieces coloured each frame as energy_disp (FV 0x346A8)
+ * colours them: green whole, FV's green blink once damaged, its red one
+ * once broken. */
+static const u32 *const armour_chars[2] = { armour_chars0, armour_chars1 };
+
+static void armour_hud_load(void) {
+    u32 k, i;
+    for (k = 0; k < 2u; k++) {
+        volatile u32 *o = (volatile u32 *)(M2_CHARGFX + ((k ? ARMOUR_BLOCK1 : ARMOUR_BLOCK0) * 128u + armour_first[k]) * 32u);
+        for (i = 0; i < armour_count[k] * 8u; i++) o[i] = armour_chars[k][i];
+    }
+}
+
+static u16 armour_pen(u32 bits, u32 damaged, u32 broken) {
+    if (bits & broken) return armour_red[(frame_counter >> 3) % 6u];
+    if (bits & damaged) return armour_green[(frame_counter >> 2) % 6u];
+    return armour_whole;
+}
+
+static void armour_hud(void) {
+    u32 k, i;
+    for (k = 0; k < 2u; k++) {
+        u32 g = (k ? ARMOUR_BLOCK1 : ARMOUR_BLOCK0) * 16u, bits = RW(robs[k], ROB_ARMOUR), col = k ? 57u : 0u, pen = k ? 12u : 9u;
+        for (i = 0; i < 16u; i++) M2_PALETTE[g + i] = armour_pal[k][i];
+        M2_PALETTE[g + pen + 1u] = armour_pen(bits, ARMOUR_UP_DAMAGED, ARMOUR_UP_BROKEN);
+        M2_PALETTE[g + pen] = armour_pen(bits, ARMOUR_DOWN_DAMAGED, ARMOUR_DOWN_BROKEN);
+        for (i = 0; i < 55u; i++)
+            if (armour_cells[k][i]) M2_TILE_FG[(1u + i / 5u) * 64u + col + i % 5u] = armour_cells[k][i];
+    }
+}
+
 /* Each fighter's sway chains, a frame of them: its osage task (osage_init
  * the first time, then osage_dsp), after the fighters' part matrices.
  * set_obj_fifo puts each segment straight in the list (a matrix, then the
@@ -671,11 +747,13 @@ static const stage_t *cur_stage;
 static u32 rout[2], ring_out;
 static u32 rout_vy[2];            /* its fall's speed, a float's bits */
 
-static void round_start(fighter_t fs[2]) {
+/* next: the match's next round, the armour as the last one left it */
+static void round_start(fighter_t fs[2], u32 next) {
     u32 i;
     turn_at = kuma_at = frame_counter;
     kuma_p = kuma_v = 0;
     for (i = 0; i < 2u; i++) {
+        if (next) armour_keep(i);
         /* at yaw a a fighter faces (-sin a, cos a) in x, z, as StF's
          * camera does: 4.0 apart, facing each other, as a real fight starts */
         fs[i].x = i ? 2.0f : -2.0f;
@@ -693,7 +771,11 @@ static void round_start(fighter_t fs[2]) {
     for (i = 0; i < sizeof stf_tobi / 4; i++) stf_tobi[i] = 0u;
     RW(stf_tobi, TASK_FLAG) = TASK_ALIVE;
     RW(stf_tobi, TASK_SIZE) = sizeof stf_tobi;
-    for (i = 0; i < 2u; i++) rob_start(i);
+    for (i = 0; i < 2u; i++) {
+        rob_start(i);
+        armour_limits(i);
+        if (next) armour_back(i);
+    }
     /* the effect task, as fa_effect starts it (efc_ram_init: no sparks,
      * smoke or barrier pieces left from the last round), then efc_cont */
     for (i = 0; i < sizeof stf_effect / 4; i++) stf_effect[i] = 0u;
@@ -720,7 +802,9 @@ static void round_start(fighter_t fs[2]) {
     RAM8(G_SUB_MODE + 1u) = SUB_FIGHT_DSP;
     RAM8(G_JUDGE) = 0u;
     /* the HUD, as MES_ROUND_INT and MES_READY_INT leave it: both bars
-     * from empty, the lamps (clear_win_lamp_cntr's, then win_lamp_int) */
+     * from empty, the lamps (clear_win_lamp_cntr's, then win_lamp_int);
+     * and MES_FIGHT_INT's barrier boxes (barrier_left_disp_init: each
+     * side's box, BARRIER and a chevron a barrier left, or NO BARRIER) */
     for (i = 0; i < sizeof stf_disp / 4; i++) stf_disp[i] = 0u;
     stf_disp[0] = 0x84800000u;
     for (i = 0; i < 10u; i++) {
@@ -728,16 +812,20 @@ static void round_start(fighter_t fs[2]) {
         RB(stf_disp, DISP_LAMP1 + i) = i < 5u ? 0x3Fu : 4u;
     }
     stf_call(stf_win_lamp_int, robs[0], robs[1], 0u);
+    stf_task(stf_barrier_left_disp_init, stf_disp, robs[0], robs[1]);
+    armour_hud_load();
 }
 
 /* StF's HUD, game_display_cont's part of it: the energy bars, the
- * barriers left, the clock and the round lamps, in StF's own tiles. */
+ * barriers left, the clock and the round lamps, in StF's own tiles; then
+ * the armour, in FV's. */
 static void hud_draw(void) {
     stf_task(stf_energy_disp, stf_disp, robs[0], robs[1]);
     stf_task(stf_energy_disp, stf_disp, robs[1], robs[0]);
     stf_task(stf_barrier_left_disp, stf_disp, robs[0], robs[1]);
     stf_task(stf_time_dsp, stf_disp, robs[0], robs[1]);
     stf_task(stf_win_lamp_dsp, stf_disp, robs[0], robs[1]);
+    armour_hud();
 }
 
 /* The fight's camera is StF's own: camera_work's mode 9 (cam_mode_9) places
@@ -1977,7 +2065,7 @@ int main(void) {
     menu_mask(1u);
     fs[0].anim = &pose_anims[menu_val[M_P1]];
     fs[1].anim = &pose_anims[menu_val[M_P2]];
-    round_start(fs);
+    round_start(fs, 0u);
     load_fighter_colors(fs[0].anim, fs[1].anim);
     vbl = frameVBL;
     for (;;) {
@@ -2006,6 +2094,7 @@ int main(void) {
                 fs[i].anim = &pose_anims[menu_val[c]];
                 rob_init(i, &fs[i]);
                 rob_start(i);
+                armour_limits(i);
                 /* the scene's rows again: a guest's seven part rows took StF's fixed ones */
                 stage_colors(&stages[stage]);
                 load_fighter_colors(fs[0].anim, fs[1].anim);
@@ -2018,7 +2107,7 @@ int main(void) {
                 RAM8(G_WINS_NEEDED) = (u8)menu_val[M_ROUND];
                 RAM8(G_ROUND_WINS0) = RAM8(G_ROUND_WINS1) = 0u;
                 menu_clear();
-                round_start(fs);
+                round_start(fs, 0u);
                 snd_round(stage, &stages[stage], 1u);
                 over = 0u;
                 in_menu = 0u;
@@ -2071,12 +2160,12 @@ int main(void) {
                           for (i = 0; i < 64u * 64u; i++) M2_TILE_FG[i] = 0x20u;
                           menu_mask(1u);
                           RAM8(G_ROUND_WINS0) = RAM8(G_ROUND_WINS1) = 0u;
-                          round_start(fs);
+                          round_start(fs, 0u);
                           snd_request_u(SND_RESET);
                           over = quit = 0u;
                           break;
                       }
-                      round_start(fs);
+                      round_start(fs, 1u);
                       snd_round(stage, &stages[stage], 0u);
                       over = 0u;
                   }

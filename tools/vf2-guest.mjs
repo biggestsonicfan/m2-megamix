@@ -198,6 +198,10 @@ export const THROWN = [SCALE, 1.07, SCALE];
 /* Damage (setup op 4, a strike, and op 5, a throw: byte +3; play op 8: byte
  * +3) is out of VF2's 200 energy; StF's fighters have 140. */
 export const DAMAGE = 140 / 200;
+/* Fighting Vipers' armour: a strike this strong (the board's damage) breaks
+ * a damaged piece for a fighter whose game has no armour (setup head byte 4
+ * bit 5, kind2's; StF's own get it in tools/lift-stf.py, ARMOUR_BREAK) */
+export const ARMOUR_BREAK = 30;
 
 /* A strike's afterimage (trailOf, below): attack id `part`'s parts
  * (STRIKE_PARTS), the arms as they are and a leg's thigh or shin moved to
@@ -532,6 +536,10 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
          * motion 40 sets bit 7 of the kind word (0x804), and 578 flips bit 15 of
          * op 0xB's word (0x844). StF's has no such patches: put them in the data. */
         if (id === 40) out[0] |= 0x80;
+        /* VF2 has no armour: a strike of ARMOUR_BREAK or more (the board's
+         * damage) breaks a damaged piece, as StF's own (tools/lift-stf.py) */
+        const strike = s.setup.find((x) => x.op === 4);
+        if (strike && damage(strike.b[3]) >= ARMOUR_BREAK) out[4] |= 0x20;
         for (const { op, b } of s.setup) {
             let o;
             switch (op) {

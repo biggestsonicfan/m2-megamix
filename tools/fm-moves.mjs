@@ -167,8 +167,9 @@ export function importFmMoves(R, ctx, game, fighter, { who = 'Hornet' } = {}) {
     let trails = 0;
     function convertSetup(id) {
         const s = setups.get(id), h = s.head;
-        /* the head: FM's kind word (+0) is StF's 0x804, its +8 and +9 StF's 0x810 and 0x814 */
-        const out = [h[3], h[2], h[1], h[0], 0, 0, 0, 0, h[8], 0, h[9], 0, 0];
+        /* the head: FM's kind word (+0) is StF's 0x804, its +8 and +9 StF's 0x810 and 0x814;
+         * of its kind2 (+4, big-endian) only bit 5, the armour breaker, means the same to StF */
+        const out = [h[3], h[2], h[1], h[0], h[7] & 0x20, 0, 0, 0, h[8], 0, h[9], 0, 0];
         let strike = null, win = null;
         for (const { op, b } of s.setup) {
             const u16 = (o) => b.readUInt16BE(o);

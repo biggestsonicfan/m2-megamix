@@ -78,8 +78,9 @@ import tempfile
 # megamix.c spin_frame draws as it does.
 ROOTS = ['set_motion', 'calc_rob_angle', 'calc_rob_angle_cont', 'calc_unit_mat', 'smooth_int', 'sub_7F0E8',
          'action_init', 'rob_action', 'sub_1D47C', 'coli_init', 'collision', 'get_game_info', 'cmd_native_tail',
-         'cop_initialize_end2', '_Scroll_Initialize', 'energy_disp', 'barrier_left_disp', 'time_dsp',
-         'win_lamp_dsp', 'win_lamp_int', 'cam_mode_9', 'cam_mode_10', 'zanzou_control', 'sub_8A29C',
+         'cop_initialize_end2', '_Scroll_Initialize', 'energy_disp', 'barrier_left_disp_init',
+         'barrier_left_disp', 'time_dsp', 'win_lamp_dsp', 'win_lamp_int', 'cam_mode_9', 'cam_mode_10',
+         'zanzou_control', 'sub_8A29C',
          'stage_disp', 'make_lay_col_256_tbl', 'chg_scr_color_req', 'chg_pol_color_req', 'chg_pol_color_send',
          'sub_7B4', 'send_tex_col_stage', 'send_tex_col_skin', 'send_tex_col_part', 'sub_2435C',
          'set_display_type_crt', 'osage_init', 'sub_63AC4', 'rob_kage_disp_inside', 'rob_kage_disp_outside',
@@ -134,6 +135,10 @@ ROM_CODE_TABLES = {'off_9C83C', 'off_9C848', 'projectile_list', 'projectile_I_li
 SELF_REL = {'word_6BE90'}
 ROM_LO, ROM_HI = 0x80000, 0x100000      # copied to the same addresses
 ROM_BIN = 'stf_rom_80000.bin'
+# animation_related (519 motions' setups, a 13-byte head then ops, each
+# op's length in byte_1D006) and the strike damage that breaks armour
+MOTION_SETUPS, MOTIONS, SETUP_HEAD, SETUP_LENGTHS = 0xCE380, 519, 13, 0x1D006
+ARMOUR_BREAK = 30
 RAM_LO, RAM_HI = 0x500000, 0x600000     # StF's work RAM: moved into the board's
 RAM_PAD = 0x400                          # room past the highest address a block names
 # RAM the routines reach through a base: the two fighters' motion records
@@ -229,9 +234,30 @@ INSERT_LIFTED = {
 # 0x3F9BAF44, 0x3FE986E6), where StF has no wall and +-0.4. FV's exec_action
 # (F 0x1435C) is StF's, in FV's units: an FV fighter's +-0.4 and 0.8 are * K
 # (0x3F515653, 0x3FD15653).
+# damage_unit's slot loop (loc_2BBDC, r11 the slot): FV's test whether a hit
+# breaks a damaged half of the armour runs only on a slot with crush pieces
+# (ptr_CE1CC), and StF has none, so nothing broke. The same test, once (on
+# slot 0), with no pieces: a clean hit (+0x26C bit 1 or 4) from a move with
+# kind2 bit 5, on a defender without +0x7EC bit 5, in the half the attack's
+# class (byte_2CA3C: 0 upper, 1 lower) picks, once the half's sum and its
+# last are at the limit: that half's broken bit (+0x7F0 bit 2 or 3), both
+# broken the flags' bit 28. The match's winning blow (+0x914) is StF's own.
 # ring_tobitiri_set (a hit's rings, damage_calculation's): only StF's own
 # fighters carry rings; a guest (char_game not 0) drops none.
 INSERT = {
+    'loc_2BBDC': ['cmpobne 0, r11, loc_2BBDC_own', 'ld      0x914(r10), r14',
+                  'cmpobne 0, r14, loc_2BBDC_own', 'ld      0x26C(g13), r15',
+                  'bbs     1, r15, loc_2BBDC_hit', 'bbc     4, r15, loc_2BBDC_own',
+                  'loc_2BBDC_hit:', 'ld      0x70C(g7), r15', 'bbc     5, r15, loc_2BBDC_own',
+                  'ld      0x7EC(g8), r15', 'bbs     5, r15, loc_2BBDC_own',
+                  'ldob    0x821(g7), r5', 'ldob    byte_2CA3C[r5], r5',
+                  'ld      0xAF0(g8)[r5*4], r13', 'ld      0x1F74(g8)[r5*4], r12',
+                  'cmpobl  r12, r13, loc_2BBDC_own', 'ld      0x1F7C(g8)[r5*4], r12',
+                  'cmpobl  r12, r13, loc_2BBDC_own', 'ld      0x7F0(g8), r15', 'addo    2, r5, r5',
+                  'setbit  r5, r15, r15', 'st      r15, 0x7F0(g8)', 'and     0xC, r15, r15',
+                  'cmpobne 0xC, r15, loc_2BBDC_own', 'ld      0x0(g8), r15',
+                  'setbit  0x1C, r15, r15', 'st      r15, 0x0(g8)',
+                  'loc_2BBDC_own:'],
     'ring_tobitiri_set': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                           'cmpobe  GAME_STF, r14, ring_tobitiri_set_own', 'ret',
                           'ring_tobitiri_set_own:'],
@@ -516,7 +542,25 @@ def main():
     S.append('')
     S.append('# ---- StF\'s ROM tables at their own addresses')
     # The move tables' inline code branches to the lifted tail instead.
-    image = rom[ROM_LO:ROM_HI].ljust(ROM_HI - ROM_LO, b'\xff')
+    image = bytearray(rom[ROM_LO:ROM_HI].ljust(ROM_HI - ROM_LO, b'\xff'))
+    # Fighting Vipers' armour (docs/BOARD.md): a motion whose setup has
+    # kind2 bit 5 (head byte 4, 0x20; set_mot_dat puts it in +0x70C) breaks
+    # a damaged piece, damage_unit's test. FV flags its heavy hits by hand
+    # and no StF motion has it: StF's strikes of ARMOUR_BREAK or more (30
+    # of its 209; FV flags one in ten of its strikes) get it.
+    u32 = lambda o: int.from_bytes(rom[o:o + 4], 'little')
+    for i in range(MOTIONS):
+        rec = u32(MOTION_SETUPS + i * 4)
+        if not ROM_LO <= rec < ROM_HI:
+            continue
+        p = rec + SETUP_HEAD
+        while rom[p] not in (0, 8) and rom[SETUP_LENGTHS + rom[p]]:
+            if rom[p] == 4:
+                if rom[p + 3] >= ARMOUR_BREAK:
+                    image[rec + 4 - ROM_LO] |= 0x20
+                break
+            p += rom[SETUP_LENGTHS + rom[p]]
+    image = bytes(image)
     patches = []
     for o in range(0, len(image), 4):
         w = int.from_bytes(image[o:o + 4], 'little')

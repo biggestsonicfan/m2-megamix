@@ -33,9 +33,11 @@ import { readFrameTables, buildStageDisplayList, opsAt } from '../vendor/noclip/
 import { makeFighter } from '../js/fighters.js';
 import { buildColorxlat } from '../vendor/noclip/js/colors.js';
 import { stormSchedule } from '../vendor/noclip/js/vf2.js';
-import { vf2StagePlan, vf2SkyPlan, VF2_SET0, VF2_RING, SCALE as VF2_SCALE } from './vf2-stages.mjs';
+import { vf2StagePlan, vf2SkyPlan, VF2_SET0, VF2_RING, SCALE as VF2_SCALE, ARMOUR_BLOCKS, colourSnap } from './vf2-stages.mjs';
 import { fvBoardPlan, fvSkyPlan, FV_SET0, FV_RING, FV_SCALE, FV_TURN } from './fv-stages.mjs';
 import { xtraResolve } from '../vendor/noclip/js/romset.js';
+import { resolveData } from '../vendor/noclip/js/motion.js';
+import { loadScrollCG } from '../vendor/noclip/js/scroll.js';
 
 const OUT = process.argv[2] ?? new URL('../board/src/poses.h', import.meta.url).pathname;
 /* StF's fighters: their models and textures are already on the board. */
@@ -384,6 +386,66 @@ stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
             `0, 0, 0, {0, 0, 0}, 0, 0, 0, &${name}_sky, ${turn}, ${f32(FV_RING * FV_SCALE)}}`);
         console.log('stage', stages.length - 1, nm, 'FV set', st.texSets.at(-1), 'as', FV_SET0 + n, 'draws', draws.length);
     });
+}
+/* Fighting Vipers' armour on the HUD (board/src/megamix.c armour_hud): each
+ * player's figure as FV's energy_disp draws it beside the bar, FV's own
+ * tiles, pattern and colours. The figures are patterns 0x20 (player 1) and
+ * 0x147 (player 2) of FV's tile patterns (0x06450300), 11 rows of 5, their
+ * tiles in blocks 0x15 and 0x18 of the HUD's characters (the CG at
+ * 0x02817094, from tile 0xA80) and coloured by those blocks' groups (FV's
+ * colour list 0x0280239C); a cell of another block (the blank 0xA80, the
+ * bar's end caps in 0x1C, which StF's HUD has its own of) is left out. The
+ * figures go to the board's blocks ARMOUR_BLOCKS, their groups the same.
+ * Pens 8, 9, 10 are player 1's outline, lower piece and upper piece; 11,
+ * 12, 13 player 2's (a figure may draw in all six). energy_disp (FV
+ * 0x346A8) sets the pieces' each frame,
+ * green (31 << 5) when whole, FV's green blink (0x345C8, frame / 4) when
+ * damaged, its red one (0x345D4, frame / 8) when broken. Colours snapped
+ * from FV's colorxlat (its first stage's) to StF's, as the skies' are. */
+{
+    const fv = games.fv.rom;
+    const R = (a) => { const r = resolveData(fv, a); if (!r) throw new Error(`FV armour: 0x${a.toString(16)}`); return r; };
+    const u32 = (a) => { const r = R(a); return r.view.getUint32(r.off, true); };
+    const s16 = (a) => { const r = R(a); return r.view.getInt16(r.off, true); };
+    const u16 = (a) => { const r = R(a); return r.view.getUint16(r.off, true); };
+    const CG = 0x02817094, CG_FIRST = 0xa80, PALS = 0x0280239c, PATTERNS = 0x06450300;
+    const FIG = [{ pattern: 0x20, block: 0x15 }, { pattern: 0x147, block: 0x18 }];
+    const { pal } = loadScrollCG(fv, 0, PALS, 0x80000);
+    const st = games.fv.stages[0], stf = games.stf.stages[0];
+    const snap = colourSnap(buildColorxlat(fv, { colorSet: st.texSet[1], tint: st.tint, fighters: [] }),
+        buildColorxlat(games.stf.rom, { colorSet: stf.texSet[1], tint: stf.tint, fighters: [] }));
+    const cgTiles = u32(CG);
+    const cells = [], chars = [], first = [], count = [];
+    FIG.forEach((f, k) => {
+        const a = u32(PATTERNS + f.pattern * 4), base = s16(a), words = s16(a + 2), h = u32(a + 4), w = u32(a + 8);
+        if (h !== 11 || w !== 5 || words !== 1) throw new Error(`FV armour: pattern 0x${f.pattern.toString(16)} is ${w}x${h}`);
+        const c = [], tiles = [];
+        for (let i = 0; i < h * w; i++) {
+            const v = (u16(a + 12 + i * 2) + base) & 0xffff, t = v & 0x3fff;
+            if (t >> 7 !== f.block || t === CG_FIRST) { c.push(0); continue; }
+            tiles.push(t & 0x7f);
+            c.push((v & 0x8000) | ARMOUR_BLOCKS[k] << 7 | (t & 0x7f));
+        }
+        const lo = Math.min(...tiles), hi = Math.max(...tiles);
+        if (f.block * 128 + hi - CG_FIRST >= cgTiles) throw new Error('FV armour: a tile past the CG');
+        const px = R(CG + 4 + (f.block * 128 + lo - CG_FIRST) * 32), b = px.data.subarray(px.off, px.off + (hi - lo + 1) * 32);
+        const pens = new Set();
+        for (const x of b) { pens.add(x >> 4); pens.add(x & 15); }
+        pens.delete(0);
+        if ([...pens].some((p) => p < 8 || p > 13)) throw new Error(`FV armour: figure ${k} has pens ${[...pens]}`);
+        cells.push(c); first.push(lo); count.push(hi - lo + 1);
+        chars.push(Array.from({ length: b.length / 4 }, (_, i) => (b[i * 4] | b[i * 4 + 1] << 8 | b[i * 4 + 2] << 16 | b[i * 4 + 3] << 24) >>> 0));
+    });
+    const blink = (at) => Array.from({ length: 6 }, (_, i) => snap(fv.mainCpuView.getUint16(at + i * 2, true)));
+    out.push('/* Fighting Vipers\' armour figures (tools/bake-board.mjs): their blocks, cells (0: none), tiles and colours */');
+    out.push(`#define ARMOUR_BLOCK0 ${ARMOUR_BLOCKS[0]}u`);
+    out.push(`#define ARMOUR_BLOCK1 ${ARMOUR_BLOCKS[1]}u`);
+    out.push(`static const u16 armour_cells[2][55] = {${cells.map((c) => `{${u16s(c)}}`).join(', ')}};`);
+    out.push(`static const u16 armour_first[2] = {${first.join(', ')}}, armour_count[2] = {${count.join(', ')}};`);
+    chars.forEach((c, k) => out.push(`static const u32 armour_chars${k}[${c.length}] = {${c.map((x) => `0x${x.toString(16)}u`).join(',')}};`));
+    out.push(`static const u16 armour_pal[2][16] = {${FIG.map((f) => `{${u16s(Array.from({ length: 16 }, (_, i) => snap(pal[f.block * 16 + i])))}}`).join(', ')}};`);
+    out.push(`static const u16 armour_whole = 0x${snap(31 << 5).toString(16)}, armour_green[6] = {${u16s(blink(0x345c8))}}, armour_red[6] = {${u16s(blink(0x345d4))}};`);
+    console.log('armour figures: tiles', first.map((f, k) => `${f}+${count[k]}`).join(', '));
 }
 out.push(`#define STAGES ${stages.length}`);
 out.push(`static const stage_t stages[STAGES] = {\n    ${stages.join(',\n    ')}\n};\n`);

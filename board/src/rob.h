@@ -50,6 +50,7 @@
 #define ROB_GZPOS         0x1FCu
 #define ROB_OUT_ON        0x624u   /* a collision ball outside the ring touches the ground */
 #define ROB_HIT_COMBO     0x6F4u   /* u8, counted on the fighter hit (VF2 +0x6D8, FV +0x708) */
+#define ROB_ARMOUR        0x7F0u   /* u32 parts_flag, FV's armour: ARMOUR_ bits */
 #define ROB_MOTD_LENG     0x800u   /* the motion's setup record from here: its length */
 #define ROB_MOTD_NEXT     0x802u   /* the next motion */
 #define ROB_MOTD_KIND     0x804u   /* u32, the mot_kind bits */
@@ -59,7 +60,10 @@
 #define ROB_PAD           0x1200u  /* u8 this frame's pad; the input ring (write_pnt) follows */
 #define ROB_CONTROL       0x1208u  /* control_init's bits: 1 << 3 the pad drives it */
 #define ROB_PC_COMMAND    0x1218u  /* the command (move matcher) table in use */
+#define ROB_ARMOUR_LIMIT  0xAF0u   /* u32 x2: the damage that damages the upper piece, and the lower */
 #define ROB_BALLS         0x1D00u  /* the collision balls' records, nine pointers */
+#define ROB_PART_DAMAGE   0x1F00u  /* u16 x16, the damage each part has taken (damage_unit) */
+#define ROB_ARMOUR_DAMAGE 0x1F74u  /* u32 x4: parts 0..8's sum (upper), 9..15's (lower), then the last ones */
 #define ROB_DENT_SCALE    0x1F88u  /* the dent pendulums: three unit scales, and three at +0x1FEC */
 #define ROB_DENT_SCALE2   0x1FECu
 #define ROB_DENTED_CNT    0x219Cu  /* the countdown camera_init runs down; swings them while >= 0 */
@@ -84,6 +88,13 @@
 #define ROB_F_LAND           (1u << 13)
 #define ROB_F_NO_EYES        (1u << 20)  /* no eye tracking (camera_init), eyes drawn as they are (rob_disp) */
 #define ROB_F_SMOOTH_SWITCH  (1u << 26)
+#define ROB_F_NAKED          (1u << 28)  /* both armour pieces broken (damage_unit) */
+
+/* ROB_ARMOUR's bits */
+#define ARMOUR_UP_DAMAGED    (1u << 0)
+#define ARMOUR_DOWN_DAMAGED  (1u << 1)
+#define ARMOUR_UP_BROKEN     (1u << 2)
+#define ARMOUR_DOWN_BROKEN   (1u << 3)
 
 /* ---- the camera (fa_camera; CAMERA, CAMERA_INFO) ---- */
 #define CAMERA_FLAG       TASK_FLAG   /* the CAMERA_ROBn_DISP bits */

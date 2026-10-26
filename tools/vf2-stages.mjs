@@ -143,7 +143,9 @@ const STORM_PAL = [
 /* Channel 2's blocks for 0x8F1C (s16 added, s16 0 for byte entries, u32
  * rows, u32 width), one a column pair from map row 8, on and off. */
 export const BOLT = { on: 0x2aa8346, off: 0x2aa85e6, step: 0x54, pairs: 8, col: 24, row: 8, rows: 18 };
-const SKY_FREE_BLOCKS = [...Array.from({ length: 44 }, (_, i) => 40 + i), ...Array.from({ length: 21 }, (_, i) => 107 + i)];
+/* blocks 126 and 127: FV's armour figures on the HUD (tools/bake-board.mjs) */
+export const ARMOUR_BLOCKS = [126, 127];
+const SKY_FREE_BLOCKS = [...Array.from({ length: 44 }, (_, i) => 40 + i), ...Array.from({ length: 19 }, (_, i) => 107 + i)];
 /* The skies' place in main_data: free room above the guests' heap (366 KB
  * of skies in 384; the heap below runs up to it, its end checked on import). */
 export const VF2_SKY_AT = 0x02fa0000;
@@ -223,6 +225,19 @@ export function packSky(name, cells, extra, chars, pal, srcCx, stfCx) {
     const to = new Map(used.map((b, i) => [b, dest[i]]));
     for (let i = 0; i < cells.length; i++) cells[i] = (to.get(cells[i] >> 7) << 7) | (cells[i] & 0x7f);
     for (let i = 0; i < extra.length; i++) extra[i] = (to.get(extra[i] >> 7) << 7) | (extra[i] & 0x7f);
+    const snap = colourSnap(srcCx, stfCx);
+    const pb = new Uint8Array(used.length * 32), pv = new DataView(pb.buffer);
+    used.forEach((b, k) => {
+        for (let i = 0; i < 16; i++) pv.setUint16((k * 16 + i) * 2, snap(pal[b * 16 + i]), true);
+    });
+    const cb = new Uint8Array(used.length * 4096);
+    used.forEach((b, k) => cb.set(chars.subarray(b * 4096, (b + 1) * 4096), k * 4096));
+    return { dest, to, snap, cb, pb };
+}
+
+/* A tile colour as the game's colorxlat `srcCx` shows it, to the nearest
+ * the board's `stfCx` shows, channel by channel. */
+export function colourSnap(srcCx, stfCx) {
     const near = [0, 1, 2].map((p) => {
         const v = lumaCol(srcCx, p), b = lumaCol(stfCx, p);
         return v.map((x) => {
@@ -231,14 +246,7 @@ export function packSky(name, cells, extra, chars, pal, srcCx, stfCx) {
             return best;
         });
     });
-    const snap = (c) => near[0][c & 31] | near[1][(c >> 5) & 31] << 5 | near[2][(c >> 10) & 31] << 10;
-    const pb = new Uint8Array(used.length * 32), pv = new DataView(pb.buffer);
-    used.forEach((b, k) => {
-        for (let i = 0; i < 16; i++) pv.setUint16((k * 16 + i) * 2, snap(pal[b * 16 + i]), true);
-    });
-    const cb = new Uint8Array(used.length * 4096);
-    used.forEach((b, k) => cb.set(chars.subarray(b * 4096, (b + 1) * 4096), k * 4096));
-    return { dest, to, snap, cb, pb };
+    return (c) => near[0][c & 31] | near[1][(c >> 5) & 31] << 5 | near[2][(c >> 10) & 31] << 10;
 }
 
 /* Channel 2's bolt as 0x8F1C writes it: BOLT.pairs blocks of BOLT.rows rows

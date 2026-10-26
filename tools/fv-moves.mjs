@@ -33,10 +33,10 @@ import { resolveData } from '../vendor/noclip/js/motion.js';
 import { MOTION_ID, STF_ACTIONS, DAMAGE, scaleMotion, strikeTrail, trailOp } from './vf2-guest.mjs';
 
 const MAIN_DATA = 0x02000000;
-/* His moves go in main_data's room from 0x991340 (nothing StF's the board
+/* His moves go in main_data's room from 0x9913a0 (nothing StF's the board
  * keeps, nor another guest's: tools/import-assets.mjs's assets.txt) up to
  * set 1's page list (pack-akira.mjs LIST). */
-export const FV_MOVES_AT = 0x991340, FV_MOVES_END = 0xb00000;
+export const FV_MOVES_AT = 0x9913a0, FV_MOVES_END = 0xb00000;
 
 /* FV (noclip games.js fvipers; tools/fv-guest-survey.mjs) */
 const COMMANDS = 0x1ebe0;
@@ -269,8 +269,9 @@ export function importFvMoves(R, ctx, fv, A, { who, k, thrown, handShape = (s) =
     let trails = 0;
     function convertSetup(id) {
         const s = setups.get(id), h = s.head;
-        const out = [h[0], h[1], h[2], h[3], 0, 0, 0, 0, h[8], h[9], h[10], h[11], 0];
-        if (h[4] | h[5] | h[6] | h[7]) lost.head860++;
+        /* of kind2 (bytes 4..7) only bit 5, the armour breaker, means the same to StF */
+        const out = [h[0], h[1], h[2], h[3], h[4] & 0x20, 0, 0, 0, h[8], h[9], h[10], h[11], 0];
+        if ((h[4] & ~0x20) | h[5] | h[6] | h[7]) lost.head860++;
         for (const { op, b } of s.setup) {
             const o = [...b];
             switch (op) {

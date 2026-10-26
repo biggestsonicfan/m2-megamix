@@ -1437,8 +1437,9 @@ this follows.
   strips on StF's op 0x74, as Akira's VF2 one did; he has hulls too.
 - **Room.** Models 4908..4947 (19 a player), shadows 4878..4892; meshes
   0xF4F888..0xF62280; headers and texture points 0x7D4F90..0x7E34B0; 1807
-  polygons; heap to 0x2F2A21C. His moves are in main_data
-  0x991340..0x9FB6D4. The VF2 and FV stage ids moved down 64 to make room.
+  polygons; heap to 0x2F2A21C. His moves are in main_data from 0x9913A0
+  (`FV_MOVES_AT`; 0x60 on from before, for the barrier boxes' patterns).
+  The VF2 and FV stage ids moved down 64 to make room.
 - **Not yet his.** His sway chain (one tail of six, models 1507-1512, FV's
   0x63E34) isn't copied into `osage_per_character`; his record's weight
   and ranges are still Akira's.
@@ -1462,12 +1463,13 @@ natives), all 52 action slots and 17 of the 30 reaction kinds (FV's 22 at
 140/200; 59 strikes trail.
 
 - **Setups.** FV's ops are StF's but op 4: its five effect bytes go and
-  StF's float (2.0) comes in. The head loses +4..+7 (FV's 0x860). Op 3's
+  StF's float (2.0) comes in. The head's +4..+7 (FV's 0x860, kind2) go
+  but bit 5, the armour breaker, which means the same to StF. Op 3's
   landing height is scaled.
 - **Commits.** Types StF has none of play the FV action that does the same
   (`COMMIT_ACTION`): 4 of 107.
 - **Lost.** FV's effect and armour play ops, its sounds and the flag bits
-  StF never sets. `node tools/grade-guest.mjs` lists them.
+  StF never sets (all but kind2's bit 5). `node tools/grade-guest.mjs` lists them.
 
 Check: MAME (shared build), Mahler against Mahler on South Island: setup
 reads FV:MAHLER for both; both look the same, the pads on the chest; he
@@ -1716,7 +1718,31 @@ sets up what StF's game loop would have set up around it.
   (0x500834; w0 0x84800000, lamp bytes as in the real block) in g13. They
   write StF's tiles to the FG layer; `_Scroll_Initialize` loads the CG
   slots they need (0 at boot, 70 and 170 as `MES_ROUND_INT` does). The FG
-  layer is cleared to StF's blank tile 0x20 first.
+  layer is cleared to StF's blank tile 0x20 first. The barrier boxes are
+  `MES_FIGHT_INT`'s: `barrier_left_disp_init` at each round's start (the
+  box, BARRIER and a chevron a barrier left, or NO BARRIER), then
+  `barrier_left_disp` each frame, StF's patterns 117..122 and 307.
+- Armour: Fighting Vipers', which StF kept the code of. `damage_unit`
+  adds each hit's damage to the part it lands on (rob +0x1F00), in its
+  half (`byte_2CA3C` of the attack's level: 0 upper, 1 lower; a high
+  attack on a leg counts nothing, as in FV); `calc_up_down_damage` sums
+  the halves (+0x1F74, +0x1F78) and marks one damaged (+0x7F0 bit 0, 1)
+  at its limit (+0xAF0, +0xAF4). FV's limits (its records' +0x3C:
+  Mahler 500/200, the others the most common, 200/75) × 140/200 × the
+  rounds to win; StF's records' 500 are not FV's. A damaged half breaks
+  (bit 2, 3; both: w0 bit 28) on a clean hit (+0x26C bit 1 or 4) from a
+  move with kind2 bit 5 once the half's sum and its last are at the
+  limit. StF's copy runs that test only on a slot with crush pieces
+  (`ptr_CE1CC`), which StF has none of, so `lift-stf.py` puts the same
+  test at the slot loop's head (`loc_2BBDC`), without the pieces. Kind2
+  bit 5: FV's and FM's own flags for their fighters; StF's and VF2's
+  strikes of 30 or more (board damage: 30 of StF's 209). The match's
+  winning blow breaks both halves (StF's own path, mod_fa_effect +0x914).
+  The damage stays from round to round and goes at the match's start,
+  as in FV. On the HUD, FV's figures (patterns 0x20 and 0x147, FV's own
+  tiles and colours, in board blocks 126 and 127) at the top corners;
+  each half green, FV's green blink once damaged, its red one once
+  broken, as FV's `energy_disp` (0x346A8) colours them.
 - Camera: StF's own. `camera_work` runs the camera object (`fa_camera`,
   0x500814) by its mode byte (+0x40) through `cam_mode_list`. In a round
   mode 9 places the camera and sets mode 10, the in-fight follow; 11, 12,
