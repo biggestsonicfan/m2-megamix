@@ -351,6 +351,8 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
                 const len = OP_LENGTH[op];
                 units.set(a, { kind: 'op', op, len });
                 if (op === 0x0d) todo.push([p32(a + 1), 'table']);
+                /* a header's test in a script: the u16 at +1 matched, its script at +3 */
+                if (op === 0x0e) todo.push([p32(a + 3), 'script']);
                 if (op === 0x0f || op === 0x27 || op === 0x32 || op === 0x33) todo.push([p32(a + 1), 'script']);
                 /* a throw's follow-up: the script it runs once it lands (0x1228) */
                 if (op === 0x15 && p32(a + 5)) todo.push([p32(a + 5), 'script']);
@@ -683,6 +685,7 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
             default:
                 if (u.op === 0x2b && b[2]) { lost.op2bBytes += !quiet; b[2] = 0; }
                 if ([0x0d, 0x0f, 0x27, 0x11].includes(u.op)) reloc(1, b);
+                if (u.op === 0x0e) reloc(3, b);
                 if (u.op === 0x28) for (const o of [1, 5, 9]) reloc(o, b);
                 if (u.op === 0x15 && p32(a + 5)) reloc(5, b);
                 prog.push(...b);
