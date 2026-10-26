@@ -38,7 +38,7 @@ import { buildColorxlat } from '../vendor/noclip/js/colors.js';
 export const VF2_STAGE_SLOTS = [0, 1];
 /* The board's model ids for them, from here down (import-assets checks that
  * neither StF's models the board keeps nor the guests' are among them). */
-export const VF2_STAGE_TOP = 4899;
+export const VF2_STAGE_TOP = 4835;
 /* The board's texture sets for them: after StF's 18, in the copy of the set
  * table pack-akira makes; and the destination list they share. */
 export const VF2_SET0 = 18;

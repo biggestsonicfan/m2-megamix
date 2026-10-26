@@ -310,18 +310,19 @@ export function fitBalls(ctx, vf2, partBox, k, alloc) {
     return { ballRec, moved };
 }
 
-/* His records (Akira's, with his parts, 16 model ids, and his skeleton) and
+/* His records (Akira's, with his parts, 16 model ids, and his skeleton; his
+ * player 2's p2Parts, where they are models of their own) and
  * his entries in the guest tables, for StF character chr and its player 2:
  * Akira's moves, actions, reactions and remap (ctx), unless moves, actions,
  * kinds or remap name his own (ctx.ownMoveset); his skeleton, pose bones,
  * balls, seams, afterimage, hands, head and game. Returns the two
  * characters. */
-export function seatGuest(R, ctx, { chr: CHR, parts, skel, rigAt, ballRec, seamList, game, moves = ctx.newRoot, actions = ctx.actionsAt, kinds = ctx.kindsAt, remap = ctx.ownAt }, alloc) {
+export function seatGuest(R, ctx, { chr: CHR, parts, skel, rigAt, ballRec, seamList, game, moves = ctx.newRoot, actions = ctx.actionsAt, kinds = ctx.kindsAt, remap = ctx.ownAt, p2Parts = parts }, alloc) {
     const T = R.guest.tables;
     const { u32s, u16s } = ctx;
-    const list = alloc(u32s([...parts, ...parts]), 'parts');
+    const lists = [parts, p2Parts].map((l, p) => (p && l === parts ? null : alloc(u32s([...l, ...l]), p ? 'parts P2' : 'parts')));
     ctx.recs.forEach((src, p) => {
-        const rec = Uint8Array.from(src), rv = new DataView(rec.buffer);
+        const rec = Uint8Array.from(src), rv = new DataView(rec.buffer), list = lists[p] ?? lists[0];
         rv.setUint32(0, list, true); rv.setUint32(4, skel, true); rv.setUint32(8, list, true); rv.setUint32(0xc, actions, true);
         T.CHAR_PARTS.view.setUint32((CHR + p * PLAYER2) * 4, alloc(rec, `record ${p ? 'P2' : 'P1'}`), true);
     });
@@ -348,16 +349,17 @@ export function seatGuest(R, ctx, { chr: CHR, parts, skel, rigAt, ballRec, seamL
      * off_B540C[type][character]). The board draws a copy every other frame,
      * opaque, as StF does its cards. */
     {
-        const t = T.off_B540C, e = new Array(16 * 4).fill(0);
-        for (let s = 0; s < 16; s++) e.fill(parts[s], s * 4, s * 4 + 3);
-        const at = alloc(u16s(e), 'trail models');
-        for (let k = 0; k < 4; k++) for (const c of chars) t.view.setUint32(t.view.getUint32(k * 4, true) - t.at + c * 4, at, true);
+        const t = T.off_B540C;
+        const trail = (l) => { const e = new Array(16 * 4).fill(0); for (let s = 0; s < 16; s++) e.fill(l[s], s * 4, s * 4 + 3); return alloc(u16s(e), 'trail models'); };
+        const ats = [trail(parts), p2Parts === parts ? null : trail(p2Parts)];
+        for (let k = 0; k < 4; k++) chars.forEach((c, p) => t.view.setUint32(t.view.getUint32(k * 4, true) - t.at + c * 4, ats[p] ?? ats[0], true));
     }
     const hands = [...new Array(16).fill(parts[5]), ...new Array(16).fill(parts[8])];
     const handsAt = alloc(u16s(hands), 'hands');
-    const head = alloc(u16s([0, 0, parts[2], parts[2], 0, 0, 0, 0, 0, 0, 0, 0]), 'head');
+    const heads = [parts, p2Parts].map((l, p) => (p && l === parts ? null : alloc(u16s([0, 0, l[2], l[2], 0, 0, 0, 0, 0, 0, 0, 0]), 'head')));
     const H = T.PLAYER_HEAD_LIST;
-    for (const c of chars) {
+    for (const [p, c] of chars.entries()) {
+        const head = heads[p] ?? heads[0];
         T.player_hand_animations.view.setUint32(c * 4, handsAt, true);
         T.player_foot_animation.view.setUint32(c * 4, 0, true);
         T.player_body_animation.view.setUint32(c * 4, 0, true);

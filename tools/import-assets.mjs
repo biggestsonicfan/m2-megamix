@@ -41,6 +41,7 @@ import { loadNodeGames, shenmueFile } from '../tests/node-roms.mjs';
 import { importAkira, CHR as AKIRA_CHR } from './vf2-guest.mjs';
 import { CHR as RYO_CHR, CHAI_CHR, shenmueTiles, importShenmue } from './ryo-guest.mjs';
 import { CHR as HORNET_CHR, loadHornet, hornetTiles, importHornet } from './hornet-guest.mjs';
+import { CHR as MAHLER_CHR, mahlerTiles, importMahler } from './mahler-guest.mjs';
 import { importVf2Stages, VF2_SET0 } from './vf2-stages.mjs';
 import { importFvStages } from './fv-stages.mjs';
 import { importGuestShadows } from './guest-shadows.mjs';
@@ -586,13 +587,15 @@ await importStf(R);
 /* the guests: VF2's Akira as StF's character 6 (tools/vf2-guest.mjs), the
  * Shenmue beta's Ryo as character 1 and Chai as 12, both on Akira's moves
  * (tools/ryo-guest.mjs), and Fighters Megamix's Hornet, Daytona USA's car, as
- * 17 (tools/hornet-guest.mjs), their textures packed with Akira's */
+ * 17 (tools/hornet-guest.mjs), and Fighting Vipers' Mahler as 18
+ * (tools/mahler-guest.mjs), their textures packed with Akira's */
 const NG = await loadNodeGames();
 const SHENMUE = [{ name: 'RYO', chr: RYO_CHR }, { name: 'CHAI', chr: CHAI_CHR }];
 const shTex = SHENMUE.map((g) => shenmueTiles(NG, g.name));
 const HO = await loadHornet();
 const hoTex = hornetTiles(HO);
-const akira = importAkira(R, NG.vf2.rom, NG.stf.rom, { extraTiles: [...shTex.flatMap((t) => t.tiles), ...hoTex.tiles] });
+const maTex = mahlerTiles(NG.fv.rom);
+const akira = importAkira(R, NG.vf2.rom, NG.stf.rom, { extraTiles: [...shTex.flatMap((t) => t.tiles), ...hoTex.tiles, ...maTex.tiles] });
 for (const line of akira.report) console.log(`Akira: ${line}`);
 const shenmue = SHENMUE.map((g, i) => {
     const r = importShenmue(R, akira.ctx, NG, shTex[i], g);
@@ -601,10 +604,12 @@ const shenmue = SHENMUE.map((g, i) => {
 });
 const hornet = importHornet(R, akira.ctx, NG, HO, hoTex, { chr: HORNET_CHR });
 for (const line of hornet.report) console.log(`Hornet: ${line}`);
+const mahler = importMahler(R, akira.ctx, NG, maTex, { chr: MAHLER_CHR });
+for (const line of mahler.report) console.log(`Mahler: ${line}`);
 /* each guest's own shadows (tools/guest-shadows.mjs) */
 const cold = shenmueFile('MISC/COLD.BIN');
 const shadows = importGuestShadows(R, akira.ctx, { vf2: NG.vf2.rom, stf: NG.stf.rom, daytona: HO.rom, cold: cold && new Uint8Array(cold) }, {
-    akira: { chr: AKIRA_CHR }, hornet: { chr: HORNET_CHR },
+    akira: { chr: AKIRA_CHR }, hornet: { chr: HORNET_CHR }, mahler: { chr: MAHLER_CHR, pieces: mahler.pieces },
     shenmue: SHENMUE.map((g, i) => ({ name: g.name[0] + g.name.slice(1).toLowerCase(), chr: g.chr, scale: shenmue[i].scale })),
 });
 for (const line of shadows.report) console.log(`Shadows: ${line}`);
@@ -630,7 +635,7 @@ for (const [f, d] of Object.entries(snd.samples)) writeFileSync(`${dir}/${f}`, d
 for (const [f, n] of Object.entries(SFIGHT.billboard.zeros)) writeFileSync(`${dir}/${f}`, new Uint8Array(n));
 writeFileSync(`${OUT}/assets.txt`, manifest(data));
 /* what each guest lost on the way in (tools/grade-guest.mjs reads it) */
-writeFileSync(`${OUT}/guests.json`, JSON.stringify({ guests: [akira.coverage, ...shenmue.map((r) => r.coverage), hornet.coverage] }, null, 1) + '\n');
+writeFileSync(`${OUT}/guests.json`, JSON.stringify({ guests: [akira.coverage, ...shenmue.map((r) => r.coverage), hornet.coverage, mahler.coverage] }, null, 1) + '\n');
 for (const r of data) {
     let n = 0;
     for (const x of r.out) if (x) n++;

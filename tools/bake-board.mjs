@@ -109,6 +109,7 @@ const GUESTS = [
     { name: 'RYO', chr: 1, game: games.vf2.rom, fighter: 0, rows: 7 },
     { name: 'CHAI', chr: 12, game: games.vf2.rom, fighter: 0, rows: 7 },
     { name: 'HORNET', chr: 17, game: games.vf2.rom, fighter: 0, rows: 7 },
+    { name: 'MAHLER', chr: 18, game: games.fv.rom, fighter: 8, rows: 7 },
 ];
 for (const g of GUESTS) {
     const id = `${g.name.toLowerCase()}_stance`;
