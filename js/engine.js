@@ -1,10 +1,10 @@
 /*
  * The fight: one engine for fighters from all three games.
  *
- * The player record is the AM2 one (docs/STRUCTURES.md): the fields keep the
- * names the games' fight code gives them, and the comment beside each is its
- * offset in Sonic the Fighters' player block (P1 0x510D00, P2 0x514100; VF2's
- * and FV's blocks hold the same fields). What drives it is the games' own
+ * The player record is the AM2 one, the rob: its fields keep the names AM2's
+ * debug mode prints beside them (docs/DEBUG-MODE.md, ROBn_INFO), and the
+ * comment beside each is its offset in Sonic the Fighters' rob (VF2's and
+ * FV's hold the same fields). What drives it is the games' own
  * data: motions, action tables, the input matcher's tables, the setup
  * records' timing, strike and throw ops, and the reaction tables. Where the
  * three games' rules differ or are not read here, the engine says what it
@@ -59,28 +59,30 @@ function segDist(p, a, b) {
 
 export function makePlayer(side, fighter) {
     const p = {
-        side,
-        fighter,                    /* +0x1B0 char */
-        body: fighter.createBody(),
-        state: ST.KAMAE,            /* +0x19F, the action word's top byte */
-        pos: [side ? START_X : -START_X, 0, 0],   /* +0x018 position (the motion's origin) */
+        /* the rob's fields, by the debug mode's names and StF's offsets */
+        fighter,                    /* +0x1B0 char (1P CHAR / 2P CHAR) */
+        state: ST.KAMAE,            /* +0x19F, action's top byte */
+        action: 'stance',           /* +0x19C: here the action-table slot playing */
+        pos: [side ? START_X : -START_X, 0, 0],   /* +0x018 xpos, ypos, zpos: the motion's origin */
         yang: side ? Math.PI : 0,   /* +0x026 facing */
-        act: 'stance',              /* the action-table slot playing (+0x19C action word) */
-        ref: null,                  /* +0x1A8 motion: {rom, motion}; another game's for a throw */
-        frame: 1,                   /* +0x1AA frame */
-        loop: true, hold: false,
-        energy: ENERGY,             /* +0x1AC energy */
-        timing: null,               /* +0x808 hit / +0x80A cancel / +0x80C end */
-        attack: null,               /* the setup record's strike or throw (+0x804 setup word) */
-        hitDone: false,
-        follow: 0,                  /* the follow table a string parks (+0x1218 pc_command) */
+        mot: null,                  /* +0x1A8 mot_num: {rom, motion}; another game's for a throw */
+        mot_coma: 1,                /* +0x1AA its frame */
+        energy: ENERGY,             /* +0x1AC */
+        attack: null,               /* +0x804 motd_kind and on: the setup record's strike or throw */
+        timing: null,               /* +0x808 motd_main, follow1, follow2: hit, cancel, end */
+        hit_combo: 0,               /* +0x6F4 hits taken in a row */
         pad: 0, padOld: 0,          /* +0x1200 pad, this frame and the last */
+        pc_command: 0,              /* +0x1218 the follow table a string parks */
+        /* the engine's own */
+        side,
+        body: fighter.createBody(),
+        loop: true, hold: false,
+        hitDone: false,
         hist: [],                   /* the stick, a sample a frame, for the matcher */
         press: null,                /* a press waiting for its chord or for a move to end */
         tapAt: -99, tapDir: 0,
-        combo: 0,                   /* +0x6F4 hit_combo */
         downFor: 0,
-        wins: 0,                    /* 0x50004F / 0x500051 */
+        wins: 0,                    /* 0x50004F p1_wins / 0x500051 p2_wins */
         posed: null,
         lastMove: '',
     };
@@ -91,12 +93,12 @@ export function makePlayer(side, fighter) {
 /* Play `ref` from frame 1. The body is kept where it is drawn: the origin
  * moves by the old motion's root where it stopped less the new one's at 1. */
 export function setMotion(p, ref, { loop = false, hold = false, state = null } = {}) {
-    if (p.ref?.motion && ref?.motion) {
-        const a = rootAt(p.ref.rom, p.ref.motion, p.frame), b = rootAt(ref.rom, ref.motion, 1);
+    if (p.mot?.motion && ref?.motion) {
+        const a = rootAt(p.mot.rom, p.mot.motion, p.mot_coma), b = rootAt(ref.rom, ref.motion, 1);
         carry(p, a[0] - b[0], a[2] - b[2]);
     }
-    p.ref = ref;
-    p.frame = 1;
+    p.mot = ref;
+    p.mot_coma = 1;
     p.loop = loop; p.hold = hold;
     if (state != null) p.state = state;
 }
@@ -117,7 +119,7 @@ const ACT_STATE = {
 function setAct(p, act) {
     const ref = p.fighter.act(act);
     if (!ref.motion) return;
-    p.act = act;
+    p.action = act;
     p.crouching = act === 'crouch' || act === 'toCrouch' || act === 'crouchGuard';
     setMotion(p, ref, { loop: LOOPS.has(act), hold: HOLDS.has(act), state: ACT_STATE[act] });
     p.attack = null; p.timing = null;
@@ -155,8 +157,8 @@ function resetRound(fight) {
         p.pos = [i ? START_X : -START_X, 0, 0];
         p.yang = i ? Math.PI : 0;
         p.energy = ENERGY;
-        p.ref = null;
-        p.follow = 0; p.press = null; p.hist = []; p.combo = 0;
+        p.mot = null;
+        p.pc_command = 0; p.press = null; p.hist = []; p.hit_combo = 0;
         p.finished = false;
         setAct(p, 'stance');
     });
@@ -190,7 +192,7 @@ export function stepFight(fight, pads, screenRight = [1, 0]) {
 }
 
 function poseNow(fight, p) {
-    p.posed = p.body.pose(p.ref, p.frame);
+    p.posed = p.body.pose(p.mot, p.mot_coma);
 }
 
 /* The pad as the matcher reads it: buttons, and the stick turned to the
@@ -248,8 +250,8 @@ function think(fight, p, o) {
      * cancel frame of the move that parked it (the engine's string window). */
     if (p.press && fight.tick - p.press.at > CHORD) {
         const age = fight.tick - p.press.at;
-        const inString = p.state === ST.MOTION && p.follow && p.timing && p.frame >= p.timing.cancel;
-        const table = inString ? p.follow : FREE.has(p.state) ? p.fighter.moves.root : null;
+        const inString = p.state === ST.MOTION && p.pc_command && p.timing && p.mot_coma >= p.timing.cancel;
+        const table = inString ? p.pc_command : FREE.has(p.state) ? p.fighter.moves.root : null;
         if (table) {
             const hist = p.press.hist;
             const e = matchPress(p.fighter.moves.tables.get(table), p.press.btn, hist.length ? hist : [0], dist);
@@ -266,17 +268,17 @@ function think(fight, p, o) {
     if (p.dash && !crouch) return setAct(p, p.dash === FWD ? 'dashF' : 'dashB');
     if (guard) {
         const want = crouch ? 'crouchGuard' : 'guard';
-        if (p.act !== want) setAct(p, want);
+        if (p.action !== want) setAct(p, want);
         return;
     }
-    if (p.state === ST.GUARD) return setAct(p, p.act === 'crouchGuard' ? 'crouchGuardEnd' : 'guardEnd');
+    if (p.state === ST.GUARD) return setAct(p, p.action === 'crouchGuard' ? 'crouchGuardEnd' : 'guardEnd');
     if (crouch) {
         if (!p.crouching) setAct(p, 'toCrouch');
         return;
     }
     if (p.crouching) return setAct(p, 'toStand');
     const want = v & FWD ? 'walkF' : v & BACK ? 'walkB' : 'stance';
-    if (p.act !== want) setAct(p, want);
+    if (p.action !== want) setAct(p, want);
 }
 
 /* Commit to a move (the matcher's commit op): the motion, its timing and
@@ -292,10 +294,10 @@ function startMove(fight, p, o, e, press) {
         return;
     }
     setMotion(p, { rom: p.fighter.rom, motion }, { state: ST.MOTION });
-    p.act = 'move';
+    p.action = 'move';
     p.crouching = false;
     p.moveId = id;
-    p.follow = e.follow || 0;
+    p.pc_command = e.follow || 0;
     p.attack = atk ? { ...atk, level: atk.level ?? levelOf(press), game: p.fighter.game } : null;
     p.timing = p.fighter.timing(id) ?? { hit: 1, cancel: motion.frames, end: motion.frames };
     if (p.timing.end <= 0 || p.timing.end > motion.frames) p.timing.end = motion.frames;
@@ -329,18 +331,18 @@ function throwStart(fight, p, o, id, atk) {
     const victim = motionFor(p.fighter, atk.victim);
     if (!victim) return;
     setMotion(p, { rom: p.fighter.rom, motion }, { state: ST.NAGE });
-    p.act = 'throw';
+    p.action = 'throw';
     p.moveId = id;
-    p.follow = 0;
+    p.pc_command = 0;
     p.attack = null;
     p.timing = { hit: 1, cancel: motion.frames, end: motion.frames };
     /* Where the board stands the two at the throw: the thrower's motion and
      * the victim's share an origin, the thrower's. */
-    o.ref = null;
+    o.mot = null;
     o.pos = p.pos.slice();
     o.yang = p.yang;
     setMotion(o, { rom: p.fighter.rom, motion: victim }, { state: ST.NAGERARE });
-    o.act = 'thrown';
+    o.action = 'thrown';
     o.attack = null; o.timing = null; o.press = null;
     o.throwDamage = atk.damage;
     o.thrower = p.fighter.name;
@@ -351,15 +353,15 @@ function throwStart(fight, p, o, id, atk) {
 /* ---- playback ------------------------------------------------------------ */
 
 function advance(fight, p) {
-    const m = p.ref.motion;
-    if (p.state === ST.DOWN && p.act === 'down') {
+    const m = p.mot.motion;
+    if (p.state === ST.DOWN && p.action === 'down') {
         if (++p.downFor > DOWN_FRAMES && p.energy > 0) { p.downFor = 0; setAct(p, 'rise'); return; }
     }
-    if (p.frame < m.frames) { p.frame++; return; }
+    if (p.mot_coma < m.frames) { p.mot_coma++; return; }
     if (p.loop) {
-        const a = rootAt(p.ref.rom, m, m.frames), b = rootAt(p.ref.rom, m, 1);
+        const a = rootAt(p.mot.rom, m, m.frames), b = rootAt(p.mot.rom, m, 1);
         carry(p, a[0] - b[0], a[2] - b[2]);
-        p.frame = 1;
+        p.mot_coma = 1;
         return;
     }
     if (p.hold) return;
@@ -380,8 +382,8 @@ function ended(fight, p) {
     case ST.DOWN:
         return setAct(p, 'down');
     default:
-        p.follow = 0;
-        if (p.act === 'toCrouch' || p.act === 'crouchGuardEnd') return setAct(p, 'crouch');
+        p.pc_command = 0;
+        if (p.action === 'toCrouch' || p.action === 'crouchGuardEnd') return setAct(p, 'crouch');
         return setAct(p, 'stance');
     }
 }
@@ -400,7 +402,7 @@ const INNER = { [S.LHAND]: S.LHAND - 1, [S.RHAND]: S.RHAND - 1, [S.LFOOT]: S.LFO
 function strike(fight, p, o) {
     if (p.state !== ST.MOTION || !p.attack || p.hitDone || !p.timing) return;
     const { hit, cancel } = p.timing;
-    if (p.frame < hit || p.frame > Math.max(hit + 2, cancel)) return;
+    if (p.mot_coma < hit || p.mot_coma > Math.max(hit + 2, cancel)) return;
     const fwd = [Math.cos(p.yang), 0, -Math.sin(p.yang)];
     const base = bodyPoint(p);
     let best = null, reach = -Infinity;
@@ -431,11 +433,13 @@ function strike(fight, p, o) {
         fight.events.push({ kind: 'guard', side: p.side });
         return;
     }
-    const counter = o.state === ST.MOTION && o.timing && o.frame < o.timing.hit;
+    const counter = o.state === ST.MOTION && o.timing && o.mot_coma < o.timing.hit;
     const damage = Math.round(a.damage * (counter ? COUNTER : 1));
     o.energy = Math.max(0, o.energy - damage);
-    p.combo = (fight.tick - (p.comboAt ?? -99) < 60) ? p.combo + 1 : 1;
-    p.comboAt = fight.tick;
+    /* counted on the fighter hit, as the games count it (hit_combo); a
+     * second without a hit ends it here */
+    o.hit_combo = (fight.tick - (o.comboAt ?? -99) < 60) ? o.hit_combo + 1 : 1;
+    o.comboAt = fight.tick;
     o.knocked = o.energy <= 0 || damage >= 40;
     if (o.energy <= 0 && finishes(p, a)) o.finished = true;
     react(fight, o, how, o.knocked ? 'down' : counter ? 'counter' : 'hit');
@@ -444,10 +448,10 @@ function strike(fight, p, o) {
 
 function react(fight, o, how, kind) {
     const ref = o.fighter.reaction(how, kind) ?? o.fighter.reaction(how, 'hit');
-    o.follow = 0; o.press = null; o.attack = null; o.timing = null;
+    o.pc_command = 0; o.press = null; o.attack = null; o.timing = null;
     if (!ref?.motion) return;
     setMotion(o, ref, { state: ST.YARARE });
-    o.act = kind;
+    o.action = kind;
     if (kind === 'guard') { o.state = ST.YARARE; o.guardStun = true; }
     /* StF's guard is its own guard motion held: give it a step back. */
     if (kind === 'guard' && o.fighter.kind === 'stf') carry(o, -0.25, 0);

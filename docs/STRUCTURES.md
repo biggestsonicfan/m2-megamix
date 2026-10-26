@@ -72,35 +72,38 @@ main ones, most of which the F1 dump shows:
 | `mot_kind` | +0x1A4 | +0x1A4 | +0x1A4 | u32 bits (mk_attack, mk_guard, mk_down...) |
 | `mot_num` / `mot_coma` | +0x1A8 / +0x1AA | same | same | motion / frame |
 | `energy` | +0x1AC | +0x1AC | +0x1AC | |
-| character | +0x1B0 | +0x1B0 | +0x1B0 | |
-| hit combo | +0x6D8 | +0x708 | +0x6F4 | u8; +1 is the down hit combo |
+| `fighter` | +0x1B0 | +0x1B0 | +0x1B0 | the character |
+| `hit_combo` | +0x6D8 | +0x708 | +0x6F4 | u8, counted on the fighter hit; +1 is the down hit combo |
 | `motd_kind` | +0x804 | +0x804 | +0x804 | the setup record's kind, the `mot_kind` bits |
 | `motd_main` / `follow1` / `follow2` | +0x808 / +0x80A / +0x80C | same | same | hit / cancel / end frames |
 | `motd_damage` | +0x822 | +0x822 | +0x822 | u8 |
-| pad | +0x1200 | +0x1200 | +0x1200 | the input ring follows (`write_pnt` +0x1202) |
+| `pad` | +0x1200 | +0x1200 | +0x1200 | the input ring follows (`write_pnt` +0x1202) |
 | `pc_command` | +0x1218 | +0x1218 | +0x1218 | the follow (command) table |
 
 It is one struct in the three games. Every field up to +0x62A and from +0x800
 on is at the same offset in all three. The fields between move: that is
 where the hit combo sits.
 
+Every task block (rob, camera, projectile, HUD) starts with the same head:
+`flag` (bit 31 alive), `idnm`, `size` and `fn` (`TASK_` in `rob.h`).
 `fa_rob0` / `fa_rob1` (0x500804 / 0x500808) point to the two fighters, and
-`fa_camera` (0x500814) to the camera, in all three games.
+`fa_camera` (0x500814) to the camera, in all three games; `rob.h` names the
+other `fa_` pointers StF uses.
 
 ## The fight globals
 
-These are at the same addresses in the three games:
+These are at the same addresses in the three games (`G_` in `rob.h`):
 
-| address | |
-|--|--|
-| 0x500028 | game timer, u16: `time` × 64 at the round's start, one off each frame |
-| 0x50002A / 0x500030 | mode / sub-mode |
-| 0x50004F / 0x500051 | round wins P1 / P2 |
-| 0x500052 | wins needed |
-| 0x500055 | current round |
-| 0x500064 | stage |
-| 0x50008F / 0x500090 | the rounds and time settings |
-| 0x5000A0 | `energy_max` |
+| address | name | |
+|--|--|--|
+| 0x500028 | `G_GAME_TIMER` | u16: `time` × 64 at the round's start, one off each frame |
+| 0x50002A / 0x500030 | `G_MODE` / `G_SUB_MODE` | |
+| 0x50004F / 0x500051 | `G_ROUND_WINS0` / `1` | |
+| 0x500052 | `G_WINS_NEEDED` | |
+| 0x500055 | | current round |
+| 0x500064 | `G_STAGE` | |
+| 0x50008F / 0x500090 | `G_TIME` (0x500090) | the rounds and time settings |
+| 0x5000A0 | `G_ENERGY_MAX` | |
 
 The tuning block at 0x50A000 (throw timer, rise time, combo limits, stage
 bounds) is the same in VF2 and FV; StF moves the part from 0x50A148 on by

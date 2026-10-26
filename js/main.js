@@ -177,25 +177,25 @@ function hud() {
 }
 
 /* The player work areas, field by field, with the offsets the fields have in
- * StF's player struct (docs/STRUCTURES.md has all three games). */
+ * StF's player struct (docs/DEBUG-MODE.md has all three games). */
 function structDump() {
     const f = (v) => (typeof v === 'number' ? (Number.isInteger(v) ? v : v.toFixed(3)) : v);
-    const row = (off, name, get) => `+${off.padEnd(6)}${name.padEnd(12)}${fight.players.map((p) => String(f(get(p))).padEnd(28)).join('')}`;
+    const row = (off, name, get) => `+${off.padEnd(6)}${name.padEnd(16)}${fight.players.map((p) => String(f(get(p))).padEnd(28)).join('')}`;
     return [
-        `        ${'FIELD'.padEnd(12)}${fight.players.map((p) => `P${p.side + 1} ${gameTag(p.fighter.game)} ${p.fighter.name}`.padEnd(28)).join('')}`,
+        `        ${'FIELD'.padEnd(16)}${fight.players.map((p) => `P${p.side + 1} ${gameTag(p.fighter.game)} ${p.fighter.name}`.padEnd(28)).join('')}`,
         row('0x19F', 'state', (p) => `${p.state} ${ST_NAME[p.state]}`),
-        row('0x018', 'pos x', (p) => p.pos[0]),
-        row('0x020', 'pos z', (p) => p.pos[2]),
+        row('0x018', 'xpos', (p) => p.pos[0]),
+        row('0x020', 'zpos', (p) => p.pos[2]),
         row('0x026', 'yang', (p) => `${f(p.yang)} (${((p.yang * 0x8000) / Math.PI) & 0xffff})`),
-        row('0x19C', 'action', (p) => p.act ?? '-'),
-        row('0x1A8', 'motion', (p) => `${p.ref?.rom === p.fighter.rom ? '' : 'foreign '}${p.ref?.motion?.index ?? p.ref?.motion?.id ?? '?'}`),
-        row('0x1AA', 'frame', (p) => `${p.frame}/${p.ref?.motion?.frames ?? '?'}`),
+        row('0x19C', 'action', (p) => p.action ?? '-'),
+        row('0x1A8', 'mot_num', (p) => `${p.mot?.rom === p.fighter.rom ? '' : 'foreign '}${p.mot?.motion?.index ?? p.mot?.motion?.id ?? '?'}`),
+        row('0x1AA', 'mot_coma', (p) => `${p.mot_coma}/${p.mot?.motion?.frames ?? '?'}`),
         row('0x1AC', 'energy', (p) => p.energy),
-        row('0x6F4', 'combo', (p) => p.combo),
-        row('0x804', 'attack', (p) => (p.attack ? (p.attack.victim != null ? `throw v${p.attack.victim}` : `lv${p.attack.level} dmg${p.attack.damage}`) : '-')),
-        row('0x808', 'hit/can/end', (p) => (p.timing ? `${p.timing.hit}/${p.timing.cancel}/${p.timing.end}` : '-')),
+        row('0x6F4', 'hit_combo', (p) => p.hit_combo),
+        row('0x804', 'motd_kind', (p) => (p.attack ? (p.attack.victim != null ? `throw v${p.attack.victim}` : `lv${p.attack.level} dmg${p.attack.damage}`) : '-')),
+        row('0x808', 'motd_main/f1/f2', (p) => (p.timing ? `${p.timing.hit}/${p.timing.cancel}/${p.timing.end}` : '-')),
         row('0x1200', 'pad', (p) => `0x${p.pad.toString(16).padStart(2, '0')}`),
-        row('0x1218', 'follow tbl', (p) => p.follow),
+        row('0x1218', 'pc_command', (p) => p.pc_command),
         row('', 'last move', (p) => p.lastMove),
         `        tick ${fight.tick}  phase ${fight.phase}  round ${fight.round}  timer ${fight.timer}`,
     ];
