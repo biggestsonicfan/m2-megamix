@@ -1570,6 +1570,14 @@ static void sky_storm_frame(const stage_t *st) {
     sky_storm = (u8)b;
 }
 
+/* bg_col_set: the backdrop colour in pen 0 of palette banks 0..63, where
+ * the 3D layer shows it. StF's scr_bg_int sets it after MES_ROUND_INT's
+ * scroll colours, whose tables put 0xB60A (a dark green) there. */
+static void bg_col_set(u16 c) {
+    u32 i;
+    for (i = 0; i < 64u; i++) M2_PALETTE[i * 16u] = c;
+}
+
 /* A stage: its texture set (each page to the bank its own origin names, as
  * StF's loader does), its colour bases, its rows of colorxlat and their
  * cycling curve, its backdrop colour and its light. */
@@ -1581,6 +1589,7 @@ static void load_stage(const stage_t *st) {
     stage_colors(st);
     sky_load(st->sky);                   /* after the colorxlat: palette_w reads it */
     m2_backdrop(st->bg);                 /* scr_bg_int: the record's stage_bg_color */
+    bg_col_set(st->bg);
     stage_light(st);
     kage_stage(st);
     for (i = 0; i < st->ndraws; i++) {
@@ -1899,6 +1908,7 @@ int main(void) {
     stf_call(stf__Scroll_Initialize, robs[0], robs[1], 0u);
     stf_call(stf__Scroll_Initialize, robs[0], robs[1], 70u);
     stf_call(stf__Scroll_Initialize, robs[0], robs[1], 170u);
+    bg_col_set(stages[stage].bg);       /* scr_bg_int, after them: the stage's pen 0 again */
     for (i = 0; i < 64u * 64u; i++) M2_TILE_FG[i] = 0x20u;   /* StF's blank (clr_pattern_s) */
     menu_clear();
     menu_mask(1u);
