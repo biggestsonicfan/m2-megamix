@@ -197,8 +197,8 @@ export function matchPress(entries, btn, hist, dist) {
  *   act(name)          the motion the named action plays, as {rom, motion}
  *   moves              {root, tables} for matchPress
  *   timing(id)         {hit, cancel, end} of the fighter's own motion id
- *   attack(id)         {level, damage, kind, side} strike, {victim, damage}
- *                      throw, or null
+ *   attack(id)         {level, damage, kind, side, finish} strike, {victim,
+ *                      damage} throw, or null (finish: FV's finish kind)
  *   reaction(a, how)   the motion this fighter plays under attack `a`
  *   createBody()       a drawable body: pose(ref, frame) -> {mats, parts, pose}
  *   look               what its material needs (js/render.js)
@@ -251,7 +251,7 @@ function vfFighter(game, entry) {
             const a = attackOf(rom, id);
             return a?.times ? { hit: a.times[0], cancel: a.times[1], end: a.times[2] } : null;
         },
-        attack(id) { return vfAttack(rom, id); },
+        attack(id) { return vfAttack(rom, id, game.key === 'fv'); },
         reaction(a, how) {
             const kind = a.game === game.key && a.kind != null ? a.kind : game.kindFor(a);
             const cat = REACTIONS.find((r) => r.key === how);
@@ -323,16 +323,19 @@ function decodeKey(rom, key) {
 }
 
 /* A VF2/FV strike: op 4's kind word (js/reactions.js), its byte 2 the level
- * (0 high, 1 mid, 2 low; FV's 4 and 5 are its low sweeps) and byte 3 the
- * damage. A throw: op 5's victim motion. */
-function vfAttack(rom, id) {
+ * (0 high, 1 mid, 2 low; FV's 4 and 5 are its low sweeps), byte 3 the
+ * damage and, in FV, byte 0xE the finish kind (+0x874; 3 breaks the cage,
+ * docs/FV-STAGES.md). A throw: op 5's victim motion. */
+const FINISH_AT = 0xe;
+function vfAttack(rom, id, fv) {
     const a = attackOf(rom, id);
     if (!a) return null;
     if (a.victim != null) return { victim: a.victim, damage: THROW_DAMAGE };
     const s = vfSetupOps(rom, id);
     const op = s?.ops.find((o) => o.op === 4);
     const lv = op ? s.dv.getUint8(op.at + 2) : MID;
-    return { kind: a.kind, side: a.side, level: lv > LOW ? LOW : lv, damage: op ? s.dv.getUint8(op.at + 3) : 10 };
+    return { kind: a.kind, side: a.side, level: lv > LOW ? LOW : lv, damage: op ? s.dv.getUint8(op.at + 3) : 10,
+        finish: fv && op ? s.dv.getUint8(op.at + FINISH_AT) : 0 };
 }
 
 function stfFighter(game, entry) {

@@ -127,3 +127,104 @@ comes later, he costs almost nothing more than his own models.
    entry.
 4. Draw his pads rigid on slot 1, or with their swing.
 5. Decide his player 2's colours (above).
+6. Give the board the cage break that stays broken (below).
+
+## Breaking the cage
+
+The owner's rule (pin #1614): Mahler breaks FV's cages with his
+finishing blows, and the others break them with theirs on him. A broken
+side **stays broken for the rest of the match**, and anyone can be rung
+out through it. FV's own rule (docs/FV-STAGES.md, Cage break) is the
+first half: a KO by a blow of finish kind 3 that drives the loser into a
+wall breaks that side, and the loser flies through. FV mends the cage at
+the next round (`SET_INT` clears `finish_wall_flag`) and never rings
+anyone out. Keeping it broken and ringing out through it are Megamix's.
+
+### His finishing blows
+
+The finish kind is byte +0xE of setup op 4 (the attacker's +0x874). The
+survey now lists each fighter's kinds (`finish kinds:`), and the kind-3
+motions are the cage breakers:
+
+| | Kind 3 (cage break) | Others |
+|--|--|--|
+| Mahler | 9: 346 349 355 356 570 676 866 867 868 | 2 ×1, 4 ×2 |
+| Honey | 10: 346 349 355 356 497 570 606 676 827 980 | 1, 2, 4 ×7 |
+| Tokio | 11: 346 349 355 356 570 609 676 680 830 985 1010 | 2, 4 ×4 |
+| Bahn | 13: 346 349 355 356 570 605 652 676 727 826 831 854 981 | 1, 2, 4 ×6 |
+| B.M. | 15: Mahler's and 610 822 824 828 830 831 | 2, 4 ×2 |
+
+Mahler's, by FV's names and his inputs (facing right):
+
+- 868 TA_TURN_LPU_BM, ← ↙ ↓ ↘ → + P: his own, one press.
+- 866 TA_SKI_MID_BM2 and 867 TA_SKI_HI_BM2, the second kick after
+  ↓↘ + K: → + K and K. His and B.M.'s.
+- 676 TA_PU_BODY_03, P, P, → + P: the punch string's last blow, which
+  the whole cast shares.
+- 570 TACKLE_N, and 346-356 (JU_*), the jumping blows: shared.
+
+### On the web Megamix (done)
+
+`js/engine.js` runs it on FV's stages (`ARENA.fv.cage`), and
+`tests/cage.test.mjs` checks it:
+
+- A strike that takes the loser's energy to 0 marks it `finished` when it
+  is the attacker's kind 3 (`js/fighters.js` reads FV's byte +0xE). VF2's,
+  StF's and Shenmue's motions have no finish kinds: their KO blows of 30
+  damage or more count (a third or so of each moveset, as FV's kind-3
+  share).
+- The walls now hold during the KO too (they didn't). A `finished` loser
+  that the wall stops breaks that side instead: `fight.broken` gets it
+  (FV's numbering, 0 +z, 1 −x, 2 −z, 3 +x), a `cagebreak` event goes out,
+  and the loser carries on through.
+- `fight.broken` isn't cleared between rounds. On a broken side a fighter
+  is not stopped, and one whose body goes past the cage's line is out
+  (`ringout`, energy 0, "RING OUT"), as at VF2's ring. A thrown fighter
+  is out when the throw lets go. The other sides stay walls.
+- `js/render.js` doesn't draw a broken side's panels, top or rail (the
+  poles stay), as `cage_display` skips its `cage_clip_m`.
+- Not done here: FV's angle test (driven in steeper than 22.5°), the
+  flying pieces, the outside segments that stop the loser, the camera
+  turn and the replay.
+
+The test: Mahler's 868 KOs Honey at +x and breaks it, and she flies past
+the line. It is still broken in round 2, where she backs out through it
+and loses the match by ring out. A jab KO (kind 0) at the same wall
+breaks nothing, and the −x wall still holds. Honey's 606 and Sonic's 283
+(43 damage) break it on Mahler.
+
+### On the board (to do, with or after Western's break)
+
+FV-STAGES.md's "What the board needs" is the break itself. What this rule
+adds:
+
+1. **A match-long mask.** New RAM for `finish_wall_flag` (StF uses
+   0x574004 for `ring_tobitiri`) plus a broken-sides mask that
+   `round_start` (megamix.c) leaves alone and `load_stage` clears. FV's
+   clears (`SET_INT` 0xC800, 0x8688, 0xA088, 0xA9E0) aren't ported.
+   `cage_display`'s side skip and the shadow code's flag & 15 tests read
+   the mask, not the one side.
+2. **No wall on a broken side.** StF's `area_coli` walls the fighters in
+   at stage_x on all four sides. After it runs, the board clears the push
+   (+0x644 x or +0x64C z) toward any broken side for both fighters, as
+   FV's 0x28A74 does for the loser after the break. This is every round
+   now, not only the KO's.
+3. **The ring out.** `ring_out_step` takes a side mask: on VF2's stages
+   all four sides, on FV's the broken ones. FV's floor goes on outside
+   the cage at y 0, so there is no drop: the 18 frames after the root
+   crosses stage_x give w0 bit 5 as VF2's do, and "RING OUT" and the
+   round go as now. FV's outside segments (`finish_coli_hit`) would stop
+   a fighter at the scenery first. Stage 6 (the elevator) has none, so a
+   fighter there falls down the shaft.
+4. **Finish kinds for everyone.** The guests' converter keeps op 4's
+   byte +0xE. StF's own op 4 is 18 bytes and its byte +0xE isn't read as
+   a finish, so the kinds go into a table by motion (one byte each).
+   StF's fighters, Akira and Ryo get kinds there too: kind 3 for their
+   KO blows of 30 damage or more, as on the web, or hand-picked. The test
+   in 0x264E4 (+0x7D6 on a KO) reads the table.
+5. **The pieces** come as the arena does. A second break on another side
+   in a later round sets up that side's pieces again. FV only ever sets
+   up one side's.
+
+Mahler adds nothing of his own here: his kind-3 motions come with his
+setups, like everyone else's.
