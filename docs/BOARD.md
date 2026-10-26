@@ -247,12 +247,13 @@ same frame of the stance motion (278), all sixteen part positions in the rob
   Behind it is the record's `stage_bg_color` (+0x16, BGR555). StF's
   `scr_bg_int` passes it to `change_bg_color`, which writes it to pen 0x801
   and fills a tile layer with a solid tile of that pen, and to `bg_col_set`,
-  which writes it to pen 0 of palette banks 0..63. `m2_backdrop` does the
-  same on the board's own layer, so `load_stage` calls it with the record's
-  colour, and `bg_col_set` with it. The sky shows pen 0 where the backdrop
-  ring leaves gaps. The boot's `Scroll_Initialize` calls (the HUD's tiles
-  and colours, as MES_ROUND_INT loads them) put 0xB60A, a dark green, in pen
-  0; StF's `scr_bg_int` runs after them, so `main` calls `bg_col_set` again
+  which writes it to pen 0 of palette banks 0..63. `load_stage` calls
+  `bg_col_set` with the record's colour; the board needs no tile layer of
+  that pen, as pen 0 is what shows where nothing is drawn. The sky shows
+  pen 0 where the backdrop ring leaves gaps. The boot's `Scroll_Initialize`
+  calls (the HUD's tiles and colours, as MES_ROUND_INT loads them) put
+  0xB60A, a dark green, in pen 0; StF's `scr_bg_int` runs after them, so
+  `main` calls `bg_col_set` again
   after them. Without it South Island's sky showed (30, 82, 57) between the
   clouds until the setup menu picked a stage again. A palette colour shows each component through colorxlat row c at
   luma 0x40 (MAME's `palette_w`): StF's flat band (`chg_scr_color_req`);
@@ -475,7 +476,7 @@ with a heap after them.
   whose game is not StF's takes it (`char_game`, below).
 - **Thrown motions:** a throw's setup (op 5) gives its victim a motion, the
   one after the throw in VF2's numbering, usually. StF's fighters play those
-  too, as copies (847..878) scaled to them (×1.07 in height, `THROWN`).
+  too, as copies (848..879) scaled to them (×1.07 in height, `THROWN`).
 - **Remap:** `motion_remap` (a guest table of the board's own, a list by
   character) gives `set_motion` (`loc_1B044`, a hook the lift puts in) a motion
   to play in place of an id. StF's code still asks for its own ids at times
@@ -486,7 +487,12 @@ with a heap after them.
   jump to `cmd_native_tail`. VF2's 0x32 is dropped and 0x33 becomes 0x11.
   Op 0x15's script (what a throw runs once it lands, through 0x1228 into the
   command pointer 0x121C) is converted too: left at its VF2 address, it ran
-  StF's ROM as commands and the board stopped.
+  StF's ROM as commands and the board stopped. So is op 0x0E's script (a
+  table header's test, met inside a script: its u16 matched, go to +3):
+  one of his was left at VF2's 0x34E9E, in the board's own program, so a
+  move came out or not by what the build happened to put there (#1630; 30
+  units, 3 commits and VF2's motion 134 more). FV's converter
+  (`fv-moves.mjs`) does the same; Mahler's program has no such op.
 - **Records:** Knuckles' record and actions, with his parts and his actions in
   place of Knuckles'. Also his skeleton, his hand shapes, and a head record
   of one frame.
@@ -678,7 +684,7 @@ Acting on him now:
 - **Throw camera:** `cam_mode_10` looks the motion either fighter plays up
   in `word_6BE90` (16-byte records: a motion id, a frame window, two
   script pointers; 25 of StF's ids: 466, 167, 284…). His ids are 519 on and
-  the victims' copies 847..878, so his throws get no camera. Left as it
+  the victims' copies 848..879, so his throws get no camera. Left as it
   is: no camera script by motion is known in VF2's data (neither the
   audit nor the importer's reading of VF2 names one), so he has no value
   of the same meaning, and giving his throws StF's scripts would be a
@@ -957,9 +963,9 @@ setup. tools/ryo-guest.mjs builds him on top of what tools/vf2-guest.mjs
 put in for Akira, and import-assets runs it after Akira's.
 
 - **Moves.** His own moveset (#1608): `ownMoveset` (vf2-guest.mjs)
-  gives each of Akira's 328 motions an id of his own (879..1206, after
+  gives each of Akira's 329 motions an id of his own (880..1208, after
   Akira's thrown copies; `offset_list_motions` and `animation_related`
-  have room for 2048), on Akira's motion blocks. His command program (2362
+  have room for 2048), on Akira's motion blocks. His command program (2457
   bytes), actions (record +0xC), reaction lists and motion remap are
   emitted for those ids, and so are the 83 setups that name a motion (the
   rest are Akira's). A throw he lands plays his own copy of the victim's
@@ -971,7 +977,7 @@ put in for Akira, and import-assets runs it after Akira's.
 - **His own moves** (#1612, tools/shenmue-moves.mjs): on the ground, P, K,
   P+K and P+G are the web roster's (js/ryo.js `readMoves`), over that copy.
   - *Motions.* Each motion they play gets an id after the moveset's
-    (Ryo's 1207..1260): its Shenmue block converted to VF2's
+    (Ryo's 1209..1262): its Shenmue block converted to VF2's
     (docs/VF3-SHENMUE.md) at Akira's size (`scaleMotion`), and a setup.
     A strike's setup is the one of Akira's nearest it (the same level, a
     strike with an arm or a leg as his is, the nearest damage) with
@@ -1307,8 +1313,8 @@ for Ryo and then for him), on Akira's moves (`char_game` VF2).
 - **Seams.** 2460 words once, then 870 a frame, at `SEAM_POLY` (8 K words a
   player).
 - **Moves.** His own, as Ryo's (above): a copy of Akira's under ids
-  1261..1588, with his own program, actions, reactions, remap and setups,
-  and over it his Shenmue moves on P, K, P+K and P+G (1589..1616: 22
+  1263..1591, with his own program, actions, reactions, remap and setups,
+  and over it his Shenmue moves on P, K, P+K and P+G (1592..1619: 22
   strikes, 2 throws), built as Ryo's are. CHA_CHA_DROP1 has no attack
   record and stays out.
 - **Not his own.** His downed-opponent, crouching and jumping moves:
@@ -1370,7 +1376,7 @@ under the frames; he walks, strikes and takes hits.
 ### Hornet's moves: Fighters Megamix's
 
 `importFmMoves` takes the motions FM Hornet's program and tables reach and
-turns them into StF's (VF2's) for him alone: 126 motions as 1617..1742,
+turns them into StF's (VF2's) for him alone: 126 motions as 1620..1745,
 after Ryo's and Chai's own (61 from his bank, the rest FM's common one),
 260568 bytes of blocks and their setups at main_data 0x780000, his command
 program after them (2872 bytes from 700 ops: 84 moves, 10 throws), 28 of
@@ -1455,7 +1461,7 @@ this follows.
 ### Mahler's moves: Fighting Vipers'
 
 `importFvMoves` takes the motions FV Mahler's program and tables reach:
-156 motions as 1743..1898 (×K), plus 10 copies of what his throws give
+156 motions as 1746..1901 (×K), plus 10 copies of what his throws give
 their victim for StF's fighters, 417220 bytes of blocks and setups, his
 command program after them (2843 bytes, 555 units: 107 commits, 9
 natives), all 52 action slots and 17 of the 30 reaction kinds (FV's 22 at
@@ -1907,9 +1913,6 @@ held, and a change of stage or fighter shows at once.
   component 0, so the font's black outlines vanish; the setup writes 0x41
   there and the fight's start puts 0 back. m2-hle2 shows the window, the
   boxes and the outlines the same.
-- `m2_backdrop` (the stage's backdrop colour) takes pen 1, the font's
-  white, and fills layer 0 with its solid tile: a stage switch from the
-  setup keeps pen 1 and clears layer 0, as the boot does.
 - A second window at the top right (`poly_win_draw`) counts the last
   frame's polygons while the setup is up: each fighter's faces (by name),
   the stage's and the total, then StF's own count and limit. A face count
