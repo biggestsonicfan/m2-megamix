@@ -311,6 +311,11 @@ Elbow Slam's damage is **4**. It hasn't been checked on screen.
   …
   ```
 
+  From `0b` on these are not fields but the record's ops (`0b` is op 0xB),
+  then from `08 00 00 00` its events, `[u16 frame][type][arg][payload]`:
+  `09 00 04 05 ab 76 19 00` is frame 9's sound, SE 25 (docs/SHENMUE-SOUND.md,
+  Shenmue's punch scale).
+
 - **Why the second byte is damage** (kind, damage, then the next two bytes):
 
   | Move | Kind | Damage | Last two |
