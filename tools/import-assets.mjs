@@ -204,6 +204,23 @@ const SHADOW_BALL = 0x195;                /* rob_kage_disp_test: slot 0's while 
 const SHADOW_TOBI = 0x736;                /* tobi_kage_disp: a projectile's shadow */
 const SPIN_MODELS = 0x081138;             /* character_spin_mot_objects: the spin attack's two models, 0x20 bytes a character */
 const SPIN_SMOKE = [0x323, 0x324];        /* spin_smoke_cnt: a puff, 0x323 + its age / 25 (it goes at 32) */
+/* program ROM: ring_tobitiri's models, words: the ring's 16 turns
+ * (fat_ring_spin_animation), the boss robots' 5 drops in their place
+ * (non_ring_item_drops_when_hit) and the reflections' 16 on Aurora Icefield
+ * (thin_ring_spin_animation); down_star's star */
+const RING_MODELS = [[0x0ae314, 16], [0x0ae354, 5], [0x0ae368, 16]];
+const DOWN_STAR = 211;
+/* program ROM: the effect task's draws (efc_disp and the rest, #1625).
+ * collision_particle_effects: 11 pointers (0 unused) to patterns, each an
+ * f32 scale, u16 frames, u16 divisor, then frames / divisor u16 models
+ * (the model for a frame is frame / divisor); the u16 tables
+ * (address, count): spark_ka_pow's, the hyper sparkle's, the barrier's
+ * four and Metal Sonic's laser windup; then the models drawn by number:
+ * the chaos emeralds, the face marks (efc_face_opt_disp) and ko_disp's
+ * K and O (k_o_objects) */
+const EFFECT_PATTERNS = 0x032a30, EFFECT_PATTERN_COUNT = 11;
+const EFFECT_TABLES = [[0x0349b4, 16], [0x090dcc, 16], [0x090c30, 19], [0x090c56, 19], [0x090c7c, 16], [0x090c9c, 8], [0x090c20, 8]];
+const EFFECT_MODELS = [3772, 3774, 3778, 3780, 3782, 3784, 3786, 3788, 816, 817, 2297, 3009, 3011, 3012, 3014];
 const SET_FIGHTERS = 1;
 const MOTION_LIST = 0x06400004, MOTIONS = 519;
 const SCROLL_TABLE = 0x06480000;          /* _ScrollCG_Initialize / _ScrollColor_Initialize */
@@ -299,6 +316,14 @@ async function importStf(R) {
     for (const list of BOMB_MARKERS) for (let i = 0; i < 11; i++) model(program.u16(list + i * 2));
     model(SHADOW_BALL);
     for (const m of SPIN_SMOKE) model(m);
+    for (const [t, n] of RING_MODELS) for (let i = 0; i < n; i++) model(program.u32(t + i * 4));
+    model(DOWN_STAR);
+    for (let i = 1; i < EFFECT_PATTERN_COUNT; i++) {
+        const a = program.u32(EFFECT_PATTERNS + i * 4);
+        if (a) for (let k = 0; k < Math.ceil(program.u16(a + 4) / program.u16(a + 6)); k++) model(program.u16(a + 8 + k * 2));
+    }
+    for (const [t, n] of EFFECT_TABLES) for (let i = 0; i < n; i++) model(program.u16(t + i * 2));
+    for (const m of EFFECT_MODELS) model(m);
     /* rob_kage_disp_test draws slot 0's entry, model 0, while +0x2068 is
      * not 1, and set_obj stops at a model whose header is 0 */
     models.add(0);

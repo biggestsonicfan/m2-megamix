@@ -45,6 +45,8 @@
 #define ROB_CHAR          0x1B0u   /* u8 (1P CHAR / 2P CHAR): player 2's has its own models, character + 26 */
 #define ROB_CHAR_IS       0x1B1u   /* u8 the character it is */
 #define ROB_GXPOS         0x1F4u   /* f32, the root on the ground; gzpos +0x1FC */
+#define ROB_TRAIL         0x1004u  /* f32 x3 x8: the last 8 frames' ROB_GXPOS (GAME_DSP) */
+#define ROB_TRAIL_AT      0x1064u  /* u32: the next entry to write, 0..7 */
 #define ROB_GZPOS         0x1FCu
 #define ROB_OUT_ON        0x624u   /* a collision ball outside the ring touches the ground */
 #define ROB_HIT_COMBO     0x6F4u   /* u8, counted on the fighter hit (VF2 +0x6D8, FV +0x708) */
@@ -133,6 +135,9 @@
 #define G_MODE            0x50002Au  /* u8 mode; also_mode +0x2B */
 #define G_MODE_FLAG       0x50002Cu
 #define G_SUB_MODE        0x500030u  /* u8 _sub_mode; also_sub_mode +0x31 */
+#define SUB_FIGHT_DSP     9u         /* ROUND_STATE's: the fight */
+#define SUB_JUDGE_DSP     13u        /* the round's result shown */
+#define G_JUDGE           0x500050u  /* u8: 0 a knock-out, 2 the time ran out */
 #define G_GAMEPROGRAM     0x50004Cu
 #define G_ROUND_WINS0     0x50004Fu  /* u8 round wins, player 1 (p1_wins) */
 #define G_RING_OUT        0x500050u  /* u8, a ring out ended the round (VF2) */
