@@ -53,6 +53,7 @@ import * as FM from './fm-saturn.mjs';
 import { loadDaytona, hornetObjects, encodeObject } from './daytona-hornet.mjs';
 import { SCALE } from './vf2-guest.mjs';
 import { pointBox, fitBalls, seatGuest } from './ryo-guest.mjs';
+import { importFmMoves } from './fm-moves.mjs';
 
 /* StF's character 17: not one the code checks by number (docs/BOARD.md, The
  * guest: Shenmue's Chai), nor a bit of the opponent mask. */
@@ -332,13 +333,17 @@ export function importHornet(R, ctx, games, H, { byKey }, { chr: CHR_ = CHR } = 
     const { ballRec, moved } = fitBalls(ctx, vf2, partBox, k, alloc);
     report.push(`${moved} collision balls fitted to his parts`);
     const seamList = alloc(u32s([0]), 'seams');
-    const chars = seatGuest(R, ctx, { chr: CHR_, parts, skel, rigAt, ballRec, seamList, game: R.guest.games.VF2 }, alloc);
+    /* ---- his moves: FM's own (fm-moves.mjs) ---- */
+    const mv = importFmMoves(R, ctx, H.game, H.fighter, { who: Who });
+    report.push(...mv.report);
+    const chars = seatGuest(R, ctx, { chr: CHR_, parts, skel, rigAt, ballRec, seamList, game: R.guest.games.VF2,
+        moves: mv.moves, kinds: mv.kindsAt, remap: mv.remapAt, actions: mv.actionsAt }, alloc);
     report.push(`heap to ${hex(ctx.heapEnd())}`);
 
     const coverage = {
         chars, game: 'Fighters Megamix (Daytona USA\'s car)', name: Who, parts: pieces.length,
         polygons: pieces.reduce((n, q) => n + q.polys.length, 0), colours: cbOfWord.size, balls: moved,
-        moves: 'Akira\'s',
+        moves: mv.coverage,
     };
     return { report, coverage, pieces, parts };
 }

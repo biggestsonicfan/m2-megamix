@@ -851,6 +851,39 @@ export function readBank(buf) {
     return rows;
 }
 
+/* A motion's setup (its bank row's first word; 0x0601352C runs it through
+ * the op table at 0x06013530): a 12-byte head, ops of these lengths up to
+ * op 0 or 8 (a word each), and after 8 the play ops, each {u16 frame, u8 op,
+ * ...}, up to an op 0 (a word). Ops 0x19-0x1E are 2-6 and 0xC again. */
+export const SETUP_LEN = { 1: 4, 2: 8, 3: 16, 4: 12, 5: 8, 6: 8, 7: 4, 9: 16, 0xa: 8, 0xb: 12, 0xc: 4, 0xd: 4,
+    0xe: 16, 0xf: 8, 0x10: 8, 0x11: 8, 0x12: 8, 0x13: 8, 0x14: 4, 0x15: 8, 0x16: 4, 0x17: 4, 0x18: 16,
+    0x19: 8, 0x1a: 16, 0x1b: 12, 0x1c: 8, 0x1d: 8, 0x1e: 4, 0x1f: 4 };
+export const PLAY_LEN = { 1: 4, 2: 4, 3: 16, 4: 8, 5: 4, 6: 4, 8: 4, 9: 4, 0xa: 12, 0xb: 8, 0xd: 4, 0xe: 8,
+    0xf: 4, 0x10: 4, 0x11: 4, 0x12: 8, 0x13: 8, 0x16: 8, 0x18: 12, 0x19: 4, 0x1a: 4, 0x1b: 4, 0x1c: 8,
+    0x1d: 4, 0x1e: 4, 0x1f: 4, 0x20: 4, 0x21: 4, 0x22: 4, 0x23: 4, 0x24: 4, 0x25: 4, 0x26: 8, 0x27: 28 };
+/** A setup: { head, setup: [{op, b}], play: [{op, frame, b}], end (0 or 8) }. */
+export function readSetup(buf, at) {
+    const head = buf.subarray(at, at + 12), setup = [], play = [];
+    let p = at + 12, end;
+    for (;;) {
+        const op = buf[p];
+        if (op === 0 || op === 8) { end = op; p += 4; break; }
+        const n = SETUP_LEN[op];
+        if (!n) throw new Error(`setup op 0x${op.toString(16)} at 0x${p.toString(16)}`);
+        setup.push({ op, b: buf.subarray(p, p + n) });
+        p += n;
+    }
+    if (end === 8) for (;;) {
+        const op = buf[p + 2];
+        if (op === 0) { p += 4; break; }
+        const n = PLAY_LEN[op];
+        if (!n) throw new Error(`play op 0x${op.toString(16)} at 0x${p.toString(16)}`);
+        play.push({ op, frame: buf.readUInt16BE(p), b: buf.subarray(p, p + n) });
+        p += n;
+    }
+    return { head, setup, play, end };
+}
+
 /**
  * One motion, FM's own way. The block: u16 frames, s16 times and values
  * offsets (from the block), u16 size; 15 bytes of 2-bit channel types, the

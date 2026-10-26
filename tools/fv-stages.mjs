@@ -197,10 +197,11 @@ export const FV_STAGE_TOP = 4493;
  * set table copy, and the destination list it uses (VF2's is 9). */
 export const FV_SET0 = 20;
 const FV_DATA_INDEX = 10;
-/* where its pages go in main_data (importFvStages), and its skies after them */
+/* where its pages go in main_data (importFvStages), and its skies after them
+ * (up to Hornet's moves, fm-moves.mjs FM_MOTIONS_AT) */
 const FV_PAGES_AT = 0x600000, FV_PAGES_END = 0x700000;
 export const FV_SKY_AT = 0x02700000;
-const FV_SKY_END = 0x02800000;
+const FV_SKY_END = 0x02780000;
 /* The town's turn (fvstages.js, 0x1EF94): 10 a frame on the turning flag. */
 export const FV_TURN = 10;
 /* The Western bear (fvobjects.js kuma_dsp): it swings about x on its stand. */

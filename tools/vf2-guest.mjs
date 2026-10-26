@@ -29,14 +29,14 @@ import { vf2Effect } from './guest-sound.mjs';
 const MAIN_DATA = 0x02000000;
 export const CHR = 6;                    /* StF's Knuckles */
 const PLAYER2 = 26;
-const FIRST_MOTION = 519;                /* StF's own are 0..518 */
-const MOTION_ID = 0x1fff;
+export const FIRST_MOTION = 519;                /* StF's own are 0..518 */
+export const MOTION_ID = 0x1fff;
 /* main_data's room for the guests' motions of their own (reserveIds,
  * putMotion), below FV's stage pages (fv-stages.mjs FV_PAGES_AT) */
 const OWN_BLOCKS_AT = 0x450000, OWN_BLOCKS_END = 0x600000;
 /* StF's program ROM: calc_attack_flag's part masks, by attack id (rob+0x820). */
-const STRIKE_PARTS = 0x0ce020;
-const TRAIL_LEAD = 4;
+export const STRIKE_PARTS = 0x0ce020;
+export const TRAIL_LEAD = 4;
 
 /* VF2 (program 0x1D1FC: the command programs by character; main_data the
  * setups and the motion list; noclip games.js vf2) */
@@ -94,7 +94,7 @@ const OP_LENGTH = [
 
 /* Commit types (the word's top byte): VF2's -> StF's. The types StF does not
  * have play an action of his instead (type 0, the action's motion). */
-const COMMIT_TYPE = {
+export const COMMIT_TYPE = {
     0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 9: 6, 0xa: 7, 0xc: 8, 0xd: 9, 0xe: 0xa, 0xf: 0xb, 0x10: 0xc, 0x11: 0xd,
     0x15: 0x11, 0x16: 0x12, 0x17: 0x13, 0x18: 0x14, 0x19: 0x15, 0x1a: 0x16, 0x1b: 0x17, 0x1c: 0x18,
     0x1f: 0x19, 0x20: 0x1a,
@@ -104,7 +104,7 @@ const COMMIT_ACTION = { 7: 18, 8: 19, 0x12: 14, 0x13: 15, 0x1d: 16, 0x1e: 17 };
 /* StF's 52 action slots, each played with one of VF2's (its number) or a VF2
  * motion ({ motion }), matched by what the motion does: stance, crouch,
  * turns, steps, dashes, jumps, falls and getting up. StF's own flag bits stay. */
-const STF_ACTIONS = [
+export const STF_ACTIONS = [
     0, 1, 2, 5, 1, 8, 9, 14, 14, 15,                       /*  0 stance, crouch, steps */
     15, 21, 24, 20, 16, 22, 17, 20, 16, 21,                /* 10 walks, crouch dashes */
     16, 22, 17, 23, 17, 81, 82, 83, 28, 28,                /* 20 run, jumps */
@@ -197,7 +197,27 @@ const STF_FLAG_BITS = new Set([0, 1, 3, 4, 7, 8, 9, 10, 11, 13, 15, 23, 25, 29, 
 export const THROWN = [SCALE, 1.07, SCALE];
 /* Damage (setup op 4, a strike, and op 5, a throw: byte +3; play op 8: byte
  * +3) is out of VF2's 200 energy; StF's fighters have 140. */
-const DAMAGE = 140 / 200;
+export const DAMAGE = 140 / 200;
+
+/* A strike's afterimage (trailOf, below): attack id `part`'s parts
+ * (STRIKE_PARTS), the arms as they are and a leg's thigh or shin moved to
+ * its foot, from TRAIL_LEAD frames before the attack opens to the frame
+ * after it closes. */
+export function strikeTrail(program, part, open, close) {
+    const parts = program.u32(STRIKE_PARTS + part * 4);
+    let mask = parts & 0x1f8;
+    if (parts & 0x1c00) mask |= 1 << 12;
+    if (parts & 0xe000) mask |= 1 << 15;
+    if (!mask) return null;
+    return { mask, on: Math.max(1, open - TRAIL_LEAD), off: close + 1 };
+}
+/* [0x26|0x80][frame][mask -> +0xC60][step -> +0xC62][turn -> +0xA1E][spacing -> zanzou_ma],
+ * StF's usual step and spacing */
+export function trailOp(frame, mask) {
+    const b = new Uint8Array(4);
+    new DataView(b.buffer).setFloat32(0, 0.1, true);
+    return [0xa6, frame & 0xff, frame >> 8, mask & 0xff, mask >> 8, 0xfa, 0xff, 0, 0, ...b];
+}
 
 /* A mesh's extent: the geometrizer's walk (import-assets keepModel). */
 function meshLength(d, base) {
@@ -502,17 +522,8 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
     function trailOf(s) {
         const st = s.setup.find((x) => x.op === 4), win = s.setup.find((x) => x.op === 2);
         if (!st || !win) return null;
-        const parts = program.u32(STRIKE_PARTS + st.b[1] * 4);
-        let mask = parts & 0x1f8;
-        if (parts & 0x1c00) mask |= 1 << 12;
-        if (parts & 0xe000) mask |= 1 << 15;
-        if (!mask) return null;
-        const open = win.b[1] | (win.b[2] << 8), close = win.b[3] | (win.b[4] << 8);
-        return { mask, on: Math.max(1, open - TRAIL_LEAD), off: close + 1 };
+        return strikeTrail(program, st.b[1], win.b[1] | (win.b[2] << 8), win.b[3] | (win.b[4] << 8));
     }
-    /* [0x26|0x80][frame][mask -> +0xC60][step -> +0xC62][turn -> +0xA1E][spacing -> zanzou_ma],
-     * StF's usual step and spacing */
-    const trailOp = (frame, mask) => [0xa6, frame & 0xff, frame >> 8, mask & 0xff, mask >> 8, 0xfa, 0xff, 0, 0, ...f32(0.1)];
     function convertSetup(id, mid = idIn(newId), s = setups.get(id)) {
         const h = s.head;
         const out = [h[0], h[1], h[2], h[3], 0, 0, 0, 0, h[4], h[5], h[6], h[7], 0];
@@ -694,12 +705,14 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
      * last three. */
     const stfKinds = T.ptr_DA0B4.view.getUint32(CHR * 4, true);
     const knuxKinds = stfKinds;
-    const kindsOf = (mid, who = 'Akira') => alloc(u32s(reactions.map((r, k) => {
+    const kindListsOf = (mid, who = 'Akira') => reactions.map((r, k) => {
         const stfList = program.u32(stfKinds + k * 4);
         const tail = [41, 42, 43].map((i) => program.u32(stfList + i * 4));
         return alloc(u32s([...r.map(mid), mid(r[16]), ...tail]), `reactions ${k}`, 4, who);
-    })), 'reaction kinds', 4, who);
-    const kindsAt = kindsOf(mid);
+    });
+    const kindsOf = (mid, who = 'Akira') => alloc(u32s(kindListsOf(mid, who)), 'reaction kinds', 4, who);
+    const kinds = kindListsOf(mid);
+    const kindsAt = alloc(u32s(kinds), 'reaction kinds');
     T.ptr_DA0B4.view.setUint32(CHR * 4, kindsAt, true);
 
     /* motion_remap (set_motion): his motion for each StF one StF's code plays
@@ -1000,7 +1013,7 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
     };
     const ctx = {
         alloc, heapEnd: () => heap, u32s, u16s, grow, pack, freeTaken, polyEnd: poly, modelIds: new Set(modelId.values()),
-        recs, bones, rigBytes, balls, kindsAt, knuxKinds, ownAt, own, theirs, theirsAt, actions, actionsAt, newRoot, progAt,
+        recs, bones, rigBytes, balls, kinds, kindsAt, knuxKinds, ownAt, own, theirs, theirsAt, actions, actionsAt, newRoot, progAt,
         handsAt, mid, newId, setups, convertSetup, ownMoveset, reactions, damage, knuxActions,
         reserveIds, putMotion, theirCopy, vf2Frames, ownBlocksEnd: () => room,
         headOf: (p) => M((p ? A.p2 : A).parts[2].model),

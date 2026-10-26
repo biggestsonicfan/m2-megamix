@@ -378,8 +378,8 @@ both ways round:
   scaled as his body is.
 - Ryo and Chai: Shenmue's 13 SYD_MUNE hulls (MISC/COLD.BIN), each on its
   bone's slot, ends capped, at each one's own size.
-- Hornet: Daytona's car card (model 791) cut into a nose card on slot 1 and
-  a cabin card on slot 9.
+- Hornet: Daytona's car card (model 791) cut into a nose half on slot 1 and
+  a cabin half on slot 9, each stood up into a prism (#1610).
 
 The masks: `send_kage_ball_pntr` sends each slot's collision ball to the
 copro (0x306E0 + slot for player 1, 0x307E0 + slot for player 2), which
@@ -436,8 +436,12 @@ What the board will need, in StF's form, for a fighter from any game:
    renumbered as its other models are. Ryo's and Chai's: the 13 SYD_MUNE
    hulls as they are, one on each bone's slot (their ends capped). Hornet's: Daytona's
    791 cut at the body's cut (z = −0.46, with a row of points at x ±0.976)
-   into a nose card on slot 1 (16 broken) and a cabin card on slot 9 (24),
-   in those slots' frames as `hornetObjects` puts the nose and cabin. His
+   into a nose half on slot 1 and a cabin half on slot 9, each stood up into
+   a prism over the card (the nose to the cowl, 0.70 m; the cabin to the
+   roof, 1.16 m), in those slots' frames as `hornetObjects` puts the nose and
+   cabin. A flat card stood edge-on to the floor on FM's stance (0x11C, the
+   car on its tail), and op 0x74 flattened it into a strip hidden behind
+   the tyres; a solid's outline along the light is the car's in any pose. His
    other slots, the wheels included, get model 0. Every guest's cards take
    StF's shadow cards' header and colour; Daytona's colour means nothing in
    StF's palette.
@@ -457,8 +461,9 @@ What the board will need, in StF's form, for a fighter from any game:
 
 What the guests will look like against their own games: StF's op 0x74
 flattens along the stage's light, where Daytona flattens straight down
-onto the road. On the car pose the two match. On Hornet's stance (0x11C,
-the car on its tail), his cards will make a long slanting strip. Ryo's
+onto the road. On the car pose the two match closely. On Hornet's stance
+(0x11C, the car on its tail) his prisms cast a long shadow away from the
+light, as a standing car would. Ryo's
 and Chai's will be single, hard-edged shadows from one light, where
 Shenmue draws one for each scene light, half dark.
 

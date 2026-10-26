@@ -222,7 +222,28 @@ function audit(c, cov) {
 
 /* ---- what the import lost --------------------------------------------------- */
 
+/* a guest with his own game's moves (fm-moves.mjs) */
+function fmLost(m) {
+    const L = m.lost, out = [];
+    const list = (o) => Object.entries(o).map(([k, n]) => `${k} x${n}`).join(', ');
+    if (Object.keys(L.setupOps).length) out.push(`setup ops with no StF op, dropped: ${list(L.setupOps)}`);
+    if (L.playOps) out.push(`play ops (sounds, effects, flags), dropped: ${L.playOps}`);
+    if (L.freedAt) out.push(`moves with no frames (setup op 2), given op 2 at FM's free frame (op 0x12) or their last: ${L.freedAt}`);
+    if (L.endsClamped) out.push(`motions whose end frame (setup op 2) is past their last, ended at the last: ${L.endsClamped}`);
+    if (Object.keys(L.scriptOps).length) out.push(`command ops and flag tests with no StF one: ${list(L.scriptOps)}`);
+    if (L.strikeBytes) out.push(`strikes (setup op 4) with bytes StF has no field for: ${L.strikeBytes}`);
+    if (L.motionFlags) out.push(`motion ids whose flag bits (0xF000) are dropped: ${L.motionFlags}`);
+    if (L.throws) out.push(`throws, made to fail: ${L.throws}`);
+    if (L.escapes) out.push(`throw escape tests, made to fail: ${L.escapes}`);
+    if (L.followSwitch) out.push(`follow-up motion switches, made to fail: ${L.followSwitch}`);
+    if (L.button8) out.push(`kind 0x31 moves, made to fail: ${L.button8}`);
+    if (L.airChecks) out.push(`command op 0x32 as 0x05: ${L.airChecks}`);
+    out.push(`action slots his own: ${m.actionSlots} of 52; reaction kinds his own: ${m.reactionKinds} of 30 (the rest Akira's)`);
+    return out;
+}
+
 function lost(cov) {
+    if (!cov.lost) return typeof cov.moves === 'object' ? fmLost(cov.moves) : [`moves: ${cov.moves}`];
     const L = cov.lost, out = [];
     if (!L) return out;           /* a guest built on Akira's: he lost it */
     const ops = Object.entries(L.playOps);
@@ -291,7 +312,9 @@ if (JSON_OUT) {
         if (!g.lacks.length) console.log('    nothing (in the guest tables)');
         console.log('\n  StF\'s own ROM, by character (the audit):');
         for (const r of g.rom) console.log(`    ${r.what.padEnd(48)} ${r.status.padEnd(9)} ${r.note}`);
-        console.log(`\n  ${g.game}'s data, imported: ${g.counts.motions} motions (+${g.counts.thrownCopies} victim copies), ${g.counts.models} models, ${g.counts.commandUnits} command units, ${g.counts.balls} balls`);
+        if (typeof g.counts.moves === 'object') console.log(`\n  ${g.game}'s data, imported: ${g.counts.moves.motions} motions, ${g.counts.moves.scriptOps} command ops (${g.counts.moves.commits} moves), ${g.counts.parts} models, ${g.counts.balls} balls`);
+        else if (g.counts.moves) console.log(`\n  ${g.game}'s data, imported: ${g.counts.parts} models, ${g.counts.balls} balls`);
+        else console.log(`\n  ${g.game}'s data, imported: ${g.counts.motions} motions (+${g.counts.thrownCopies} victim copies), ${g.counts.models} models, ${g.counts.commandUnits} command units, ${g.counts.balls} balls`);
         console.log(`  lost on the way in:`);
         for (const l of g.lost) console.log(`    ${l}`);
         console.log();
