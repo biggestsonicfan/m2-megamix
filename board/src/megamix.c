@@ -350,15 +350,18 @@ static void snd_pump(void) {
  * does not have. A guest stage plays its own game's song, added to StF's
  * sound program's data by tools/guest-sound.mjs as a song of StF's: FV's
  * Western its western_song, StF's 26th (0xAE1019; the tool checks the
- * number). VF2's stages have none yet. */
+ * numbers), VF2's Tou-rin Lau's (VF2's 0xAD100B) and the Colosseum Akira's
+ * (0xAD1003), the 27th and 28th. */
 #define SND_RESET   0xA00001u
 #define SND_SET     0xA00003u
 #define SND_GONG    0xAE1302u
 #define SND_FV_WESTERN 0xAE1019u
+#define SND_VF2_TOURIN 0xAE101Au
+#define SND_VF2_COLOSSEUM 0xAE101Bu
 #define STF_STAGE_MUSIC ((const u32 *)0xDBFDCu)   /* STAGE_MUSIC_IN_ORDER, in the copied ROM */
 
 /* by stage (stage_name's order): 0 for StF's own, by its slot */
-static const u32 guest_music[] = { 0u, 0u, 0u, 0u, SND_FV_WESTERN };
+static const u32 guest_music[] = { 0u, 0u, SND_VF2_TOURIN, SND_VF2_COLOSSEUM, SND_FV_WESTERN };
 
 static void snd_round(u32 stage, const stage_t *st, u32 first) {
     snd_request_u(SND_SET);

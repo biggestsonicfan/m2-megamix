@@ -194,6 +194,7 @@ const OSAGE_SIZE = { 1: 0x24, 2: 0x40, 3: 0x0c, 4: 0x18, 5: 0x44 };   /* osage_d
 /* program ROM: off_64988, each character's shadow table (docs/SHADOWS.md):
  * sixteen 24-byte entries (slot, model, flags, offset), then three u16 models */
 const SHADOW_TABLES = 0x064988, SHADOW_ENTRIES = 16, SHADOW_ENTRY = 24;
+const VOICE_STF = 11, VOICE_PARENTS = 52; /* blank_per_character_audio_array's lists: StF's by parent 0..10, the board's 52 */
 const SHADOW_ROOM = 0x2a00;             /* StF's 0x2260 bytes of tables, and four guests' */
 const SHADOW_BALL = 0x195;                /* rob_kage_disp_test: slot 0's while +0x2068 is 1 */
 const SHADOW_TOBI = 0x736;                /* tobi_kage_disp: a projectile's shadow */
@@ -432,6 +433,18 @@ async function importStf(R) {
         srcs.forEach((a, k) => v.setUint32(k * 4, t.at + 0x10 + a - from, true));
         Object.assign(t, { bytes: b, view: v, lists: 0x10 });
     }
+    /* free room in the extra data ROM, from 0x100 */
+    const xtraRoom = (room, what) => {
+        const iv = xtra.kept.map(([a, b]) => [a, b]).sort((a, b) => a[0] - b[0]);
+        let off = 0x100;
+        for (const [a, b] of iv) {
+            if (b <= off) continue;
+            if (a >= off + room) break;
+            off = (b + 15) & ~15;
+        }
+        if (off + room > xtra.out.length) throw new Error(`${what}: no room in the extra data ROM`);
+        return off;
+    };
     /* off_64988 (SHADOW_TABLES) is a list by character of shadow tables:
      * StF's tables are copied into free room in the extra data ROM (main_data
      * has none to spare under the VF2 skies), each pointer moved onto its
@@ -441,14 +454,7 @@ async function importStf(R) {
         const srcs = Array.from({ length: 52 }, (_, c) => t.view.getUint32(c * 4, true));
         const from = Math.min(...srcs), n = Math.max(...srcs) - from + len;
         if (n > room) throw new Error('off_64988: StF\'s shadow tables do not fit SHADOW_ROOM');
-        const iv = xtra.kept.map(([a, b]) => [a, b]).sort((a, b) => a[0] - b[0]);
-        let off = 0x100;
-        for (const [a, b] of iv) {
-            if (b <= off) continue;
-            if (a >= off + room) break;
-            off = (b + 15) & ~15;
-        }
-        if (off + room > xtra.out.length) throw new Error('off_64988: no room in the extra data ROM');
+        const off = xtraRoom(room, 'off_64988');
         const b = new Uint8Array(room), v = new DataView(b.buffer);
         for (let i = 0; i < n; i += 4) v.setUint32(i, program.u32(from + i), true);
         srcs.forEach((a, c) => t.view.setUint32(c * 4, XTRA + off + a - from, true));
@@ -462,6 +468,36 @@ async function importStf(R) {
             return XTRA + off + free - ((table.length + 3) & ~3);
         };
         Object.assign(t, { shadowTable });
+    }
+    /* blank_per_character_audio_array is a list by play op 9's sound of
+     * lists by parent (rob+0x1B1) of sound codes, all zeros in StF: every
+     * sound's pointer moved onto one list of zeros long enough for the
+     * board's parents, in free room in the extra data ROM (a list of StF's
+     * that is not all zeros, a copy of its own); voice(parent, n, code) gives
+     * a guest one, on a list of the sound's own (tools/vf2-guest.mjs). */
+    {
+        const t = tables.blank_per_character_audio_array, n = t.len / 4, per = VOICE_PARENTS * 4;
+        const lists = n + 1, off = xtraRoom(lists * per, 'voice lists');
+        xtra.put(off, new Uint8Array(lists * per), 'voice lists');
+        const v = new DataView(xtra.out.buffer, xtra.out.byteOffset + off, lists * per);
+        let used = 1;
+        const own = (k) => {
+            const at = t.view.getUint32(k * 4, true) - XTRA - off;
+            if (at !== 0) return at;
+            t.view.setUint32(k * 4, XTRA + off + used * per, true);
+            return used++ * per;
+        };
+        for (let k = 0; k < n; k++) {
+            const src = t.view.getUint32(k * 4, true);
+            const codes = src ? Array.from({ length: VOICE_STF }, (_, i) => program.u32(src + 4 * i)) : [];
+            t.view.setUint32(k * 4, XTRA + off, true);
+            if (codes.some((c) => c)) { const at = own(k); codes.forEach((c, i) => v.setUint32(at + 4 * i, c, true)); }
+        }
+        const voice = (parent, k, code) => {
+            if (k >= n || parent >= VOICE_PARENTS) throw new Error(`voice ${k} of parent ${parent}: past the table`);
+            v.setUint32(own(k) + parent * 4, code, true);
+        };
+        Object.assign(t, { voice });
     }
     R.guest = { ...G, tables };
 

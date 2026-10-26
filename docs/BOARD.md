@@ -49,7 +49,7 @@ rows), all 519 motions (the lifted reaction code picks
 them from tables of its own), the HUD's scroll tiles and patterns, and from
 the coprocessor's data ROM the sine and cosine tables StF's coprocessor
 firmware (cpres1, which the SDK boots) reads. StF's sound program and samples
-are copied whole (see Sound); the billboard's program (`segabill`'s
+are copied with the guests' songs added (see Sound); the billboard's program (`segabill`'s
 epr-18022) is zeros: the board never reads it. Of 53 MB of data it keeps
 about 4 MB;
 `board/roms/assets.txt` lists every run it kept, by region, address and
@@ -801,22 +801,16 @@ Inert on the board, for later:
   drawn on the board and a guest motion starts one.
 - Sound: `blank_per_character_audio_array` (0xDB25C, 9517,
   `play_audio_per_character`) is a list of tables by the play op's byte 3,
-  each indexed by the parent (rob+0x1B1), so Akira (6) gets Knuckles'
-  voice codes (0xDB3D0); `dword_DB2A8` after it is by 1B1 too.
+  each indexed by the parent (rob+0x1B1); Akira's voices are in his slot
+  (6) now (see Akira's sounds), and Ryo, Chai and Hornet have none.
+  `dword_DB2A8` after it is by 1B1 too.
   `loc_2B33C` (14175) picks hit sounds by the attacker's parent (3, 11, 12,
   13: robot lists) or else by the drawn character (rob+0x1B0 × 12 into
   `dword_DB964` / `dword_DB6F4`), so Knuckles' again: the board plays StF's
   sounds now (see Sound), so Akira's punches land with Knuckles' hit
-  sounds. (StF's voice tables are all zeros: no StF fighter has a voice.)
-  VF2 has voice codes of its own (its damage
-  code plays one by rob+0x1B1 through 0x201E44C, see `damage_calculation`
-  above), but they are commands to VF2's sound program and samples, not
-  StF's; the same number sent to StF's sound program plays a different
-  sample, so it is not a value of the same meaning, and a mapping from
-  VF2's voices to StF's codes would be invented. Gating the lookups on
-  `char_game` would change the shared path; neither is done. It stays on
-  this list because the tables are by StF id. → Only once the board's sound
-  ROMs hold a guest's own samples, with codes to point at.
+  sounds, beside his moves' own (op 4 sends VF2's, as group 0x15). Gating `loc_2B33C` on `char_game` would change
+  the shared path; it is not done. It stays on this list because the
+  tables are by StF id. → Only if Knuckles' hit sounds on Akira's strikes are wrong by ear.
 - `sub_2C7E4` (15480), a projectile's hit: it picks the victim's reaction
   from StF's `uk_hit_motions` (0xDA0B4) by the projectile's kind byte
   (+0x7E of the object), crouch (0x1A4 bit 3), side and behind, not through
@@ -1658,7 +1652,8 @@ board) has the details and the check.
 ## Sound
 
 The sound board runs StF's own sound program (epr-19021, a 68000 driving the
-SCSP) on StF's samples, both copied whole by the import. The board sends it
+SCSP) on StF's samples, with the guests' songs added to its data (see
+Guests' music below). The board sends it
 StF's 24-bit codes, as StF does, through the i8251 at 0x9C0000, the high
 byte first:
 
@@ -1688,8 +1683,11 @@ byte first:
   again when the match is over, which stops the music (VIC_INT). Left out of
   `stage_bgm_select`: North Wind for Sonic against Knuckles (Knuckles' slot
   is Akira's) and South Island's music on stages 4 and 5 (not on the board).
-- VF2's and FV's stages have no StF music and play none; guests' fighters
-  make the sounds of the StF character whose slot they take.
+- A guest's stage plays its own game's song instead (`guest_music`, by
+  stage): Tou-rin VF2's Lau's song as 0xAE101A, the Colosseum Akira's as
+  0xAE101B, FV WESTERN its western_song as 0xAE1019. Akira makes VF2's
+  sounds and voices (group 0x15, below); the other guests make the sounds
+  of the StF character whose slot they take.
 
 Check: a write tap on 0x9C0000 in MAME (`sfight -rompath board/roms`, a fight
 started and P1 punching and kicking) logs 0xA00001 at frame 14, then
@@ -1697,12 +1695,121 @@ started and P1 punching and kicking) logs 0xA00001 at frame 14, then
 hit codes (0xAE1176, 0xAE110F, 0xAE1114, 0xAE1236, 0xAE1118); `-wavwrite`
 is silent in the setup and about 800 RMS from the fight's start on.
 
-Next: VF2's and FV's music, voices and hit sounds. FV's sound program is
-StF's driver (their first 32 KB are the same; VF2's is an older one), its
-song and tone data from about 0x8000 to 0x48000; 0x48000..0x7FFFF of StF's
-program ROM is free. All three games fill their 8 MB of samples, so a
-guest's samples go in where StF's songs and sounds the board never plays
-were, once the driver's song and tone tables are read.
+### Guests' music
+
+`tools/guest-sound.mjs` (run by the import) writes StF's sound program and
+samples with the guests' songs added. FV's sound program is StF's driver
+(their first 32 KB are the same), so FV's data reads as StF's does. The
+driver's root table, at 0x608000 in both, holds 11 longs:
+
+- [0] the sample directory: a word (its bytes - 1), then 16-byte entries
+  {start, bytes, loop, loop bytes}, 68000 addresses from 0x800000 (the
+  sample ROMs, concatenated). It is copied to RAM 0x5000, so 1024 entries
+  at most.
+- [1] the tones: a word (count - 1), then word offsets. A tone starting 0xFF
+  is by key ([FF][flag][low key][high key], then 12 bytes a key, the
+  sample word at +0, negative for none, by the key as it is). Any other is
+  a key map, 10-byte records (max key, the sample at +4) up to key 0x7F, or
+  0x80 for one 18-byte record, by the transposed key. The table is copied
+  to RAM 0x9000 (root[7] - root[1] bytes; 0x9000..0xFFFF is free, the
+  voices' 8 KB buffers start at 0x10000), and the program change at
+  0x603462 reads it in the ROM.
+- [3] the scenes: [volume][DSP][mixer][bank][?][channels - 1] (0xFF:
+  unchanged), then 16-byte channels [flags][MIDI channel][tone][volume].
+- [4] the sound effects' channels, [5] the mixer, [6] the DSP, [8] the
+  bank sets (set 0 is loaded into RAM 0x50000..0x6FFFF at the reset),
+  [10] the velocity curve.
+- [7] the requests: a word (groups - 1), word offsets to the groups, each a
+  word (n - 1) and word offsets, all from the table's start. Group 0x10 is
+  the songs (code 0xAE10nn): [00 00 00 00], then a playlist of longs, a
+  track's address, 0x80xxxxxx a command (a0 07 NN sets scene NN),
+  0xFFFFFFF1 then the address to go on from, 0xFFFFFFFF or 0xFFFFFFF2 the
+  end. A sound effect is 0x80 and its track inline. Tracks are MIDI with
+  running status, a delta (1 or 2 bytes) after each event unless its last
+  data byte has bit 7 set, FF 2F the end; they hold no addresses.
+
+The tool keeps StF's samples for the sound effects the board can send,
+bank set 0 and the songs of the board's StF stages (`KEEP_SONGS`, with
+their scenes' and commands' bank sets); the others point at 0x400 bytes of
+silence. The effects it can send (`stfSends`) are the codes StF's main
+program names (0x00AEggxx, gg 0x11..0x6F, as a long in epr-19001/19002)
+but for the sound test's list (`AUDIO_LIST`, 0xDC2C8, which names every
+one), and the ones `megamix.c` names: 99 of StF's effects, 91 samples. The
+guest's song goes in after StF's 25: its tones and samples renumbered after
+StF's (83 and 602), its scene after StF's 23, its tracks with their program
+changes renumbered, the new tables at 0x48500 (StF's program ends at
+0x48492, 0xFF after it), root[0], [1], [3] and [7] pointed at them. The tool
+checks the limits (128 tones, 1024 samples, 0x7000 bytes of tones, 8 MB of
+samples) and that the song's code is the one `megamix.c` sends.
+
+- FV's Western is FV's song 5 (its sound test's 0xAE1005, western_song):
+  scene 5 (12 channels, no DSP, mixer or bank change), tracks 0x61F100 and
+  0x61F600 (looping to the second), 11 tones, 36 samples (1.09 MB). On the
+  board it is 0xAE1019.
+- VF2's sound program (epr-17574) is an older driver: no root table (its
+  directory at 0x605B26, 650 20-byte entries with the envelope; key maps
+  at 0x6053AA, 6-byte records up to key 0x7F; kits at 0x6032C6, kits 0xF0
+  up 128 6-byte records by key; requests at 0x608E12), and its songs'
+  channels a fixed block of 20 records (preset 0 at 0x6030E6: 10 for the
+  music, then 10 for the effects, flags 0x81). A song is converted
+  (`Vf2Data.song`, `vf2Tone`, `vf2Scene`, `vf2Track`): each tone it plays a new
+  StF tone, its music records a scene, its tracks copied with their
+  program changes renumbered and CC 0x2A (VF2's 0..0x7F, StF's 0..7)
+  scaled.
+- Tou-rin plays VF2's 0x0B (Lau's): scene 24, 6 tracks, 7 tones, 38
+  samples; the Colosseum VF2's 0x03 (Akira's): scene 25, 6 tracks, 8 tones,
+  42 samples. On the board 0xAE101A and 0xAE101B.
+- The samples: StF's kept ones 2.26 MB, FV's 1.09 MB, VF2's 1.49 MB (77),
+  3.17 MB free. The new tables run 0x48500..0x584C0.
+- A scene's channels and the effects' (root[4]) share the driver's 20
+  channel records (RAM 0x4000): a scene load copies its own, clears up to
+  20 - effects, then the effects' records go last, so the tool checks
+  every scene's count plus the effects' is 20 at most. (VF2's preset read
+  on into preset 1 made 20 channels and dropped every effect.)
+
+### Akira's sounds
+
+VF2's moves send 9E kk vv (key kk of kit 0xF2, on MIDI channel 14, at
+velocity vv: keys 00 06 0D 10..16 18 1F 24, velocities 5F and 7F) through
+play op 4, and his voices AD 23 0n (key n of kit 0xFF, channel 11) and
+AD 24 0n (kit 0xFE, channel 10) through play op 9 and VF2's voice table
+(main_data 0x0201E44C: 19 lists by op 9's sound, by parent, Akira's
+first).
+
+On the board they are group 0x15 of the requests: 0xAE1500 + key index ×
+2 + velocity index for the moves (0x00..0x19), 0xAE151A..0xAE151E
+AD2300..04, 0xAE151F..0xAE1524 AD2400..05 (`vf2Effect`). Each is one note,
+`80 9E key vel 00 FF 2F 00`. StF's MIDI channels are all taken (a program
+change in an effect would cut StF's own on that channel), so Akira's
+sounds are one by-key tone (0x68) on a fourth effects' record for channel
+14 beside StF's own (kit 0x52): every record of a channel plays its notes.
+The tone holds only keys no kept effect plays on channel 14 (116..126, 0,
+1, 3..10, 12..14), and those keys are emptied in kit 0x52.
+
+- Op 4: `vf2-guest.mjs` rewrites the code (bytes 3..6) through `vf2Effect`
+  and keeps the op; a code with none would be dropped and counted in
+  guests.json's `lost.sounds` (none is).
+- Op 9: StF's `blank_per_character_audio_array` (0xDB25C, 19 lists, each
+  by parent) is all zeros. The lifted table is 19 pointers in main_data
+  (0x02E07140); the lists, 52 longs each, are in the extra data ROM: one
+  zero list every sound points at, and a list of its own for each sound a
+  guest has a voice for (Akira's 11: 1, 2, 3, 5, 6, 9, 10, 11, 12, 15, 16,
+  his code at slot 6).
+
+Check (MAME, the Colosseum started, the codes 0xAE1500..0xAE1524 written
+to the i8251 one byte every 3 frames, 50 frames apart, from frame 1700): a
+read tap on the sound 68000's 0xC922C8..0xCD4EDD (Akira's samples) sees
+nothing before and a different run of samples after each code, the two
+velocities of a key the same sample. As Akira, P1's punches send 0xAE150A
+and 0xAE150C. The Colosseum's song reads 0xB5xxxx..0xC6xxxx (VF2's tones),
+Tou-rin's too, and `-wavwrite` is about 1000 RMS; South Island sends only
+codes `stfSends` keeps.
+
+Check (MAME, a write tap on 0x9C0000, the setup menu driven to FV WESTERN
+and started): 0xA00003, 0xAE1019, 0xAE1302; `-wavwrite` about 600..900 RMS
+from the start on; the sound 68000 reads 0xE5xxxx..0xF6xxxx (FV's samples)
+while the song plays. Aurora Icefield still plays 0xAE1003 from StF's
+samples (0x80xxxx..0x85xxxx).
 
 ## Where it stands
 
