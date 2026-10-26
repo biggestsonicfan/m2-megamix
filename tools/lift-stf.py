@@ -69,6 +69,13 @@ import tempfile
 # clip_medama and its table by character (word_21734), into a shift of each
 # eye's texture points, which move_tpd_req queues and megamix.c eyes_frame
 # uploads; tpd_move_init empties the queue (main_loop's, once a frame).
+# The spin attack (Sonic's spindash; a play op of the motion, sub_81A48, sets
+# rob+0x2068): sub_81038 (a battle's start: each fighter's ball models and
+# pulse from character_spin_mot_objects), spin_attack_cnt (camera_init's,
+# after a spinning fighter's rob_disp: the ball's turn and pulse) and
+# spin_smoke_trg (a puff of smoke every third frame); the puffs' own steps
+# (sub_81CD8, sub_81D44, sub_81DB0) are what spin_smoke_cnt calls, which
+# megamix.c spin_frame draws as it does.
 ROOTS = ['set_motion', 'calc_rob_angle', 'calc_rob_angle_cont', 'calc_unit_mat', 'smooth_int', 'sub_7F0E8',
          'action_init', 'rob_action', 'sub_1D47C', 'coli_init', 'collision', 'get_game_info', 'cmd_native_tail',
          'cop_initialize_end2', '_Scroll_Initialize', 'energy_disp', 'barrier_left_disp', 'time_dsp',
@@ -76,7 +83,8 @@ ROOTS = ['set_motion', 'calc_rob_angle', 'calc_rob_angle_cont', 'calc_unit_mat',
          'stage_disp', 'make_lay_col_256_tbl', 'chg_scr_color_req', 'chg_pol_color_req', 'chg_pol_color_send',
          'sub_7B4', 'send_tex_col_stage', 'send_tex_col_skin', 'send_tex_col_part', 'sub_2435C',
          'set_display_type_crt', 'osage_init', 'sub_63AC4', 'rob_kage_disp_inside', 'rob_kage_disp_outside',
-         'snc_eye_thd_set', 'tpd_move_init']
+         'snc_eye_thd_set', 'tpd_move_init', 'sub_81038', 'spin_attack_cnt', 'spin_smoke_trg',
+         'sub_81CD8', 'sub_81D44', 'sub_81DB0']
 # Routines the board does not run (debug text, name plates, ring scatter,
 # Super Sonic's hair objects; the shadow mask balls, which read a table at
 # 0x4C84 and megamix.c's kage_balls sends): `ret`.

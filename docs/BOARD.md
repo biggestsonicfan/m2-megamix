@@ -222,6 +222,26 @@ same frame of the stance motion (278), all sixteen part positions in the rob
   The head's tilt was already in the lifted code: `calc_unit_1` eases the
   waist bend toward the enemy (+0xBE6) and tilts the head by it before it
   aims at +0xB0C.
+- Spin attack (Sonic's spindash: down, down + P; down + P; or back held,
+  then forward + K): a play op of the motion, `sub_81A48` (lifted), sets
+  rob+0x2068 to 1, clears the ball's angles and resets the smoke. While it
+  is 1, StF's `rob_disp_rdn_loop` draws none of the parts but slot 0 as the
+  ball: `spin_attack_cnt_nml_dsp`, or `_esp_dsp` for Espio (parent 7).
+  megamix.c `spin_ball` draws them the same way on slot 0's matrix (the
+  mirror too). After each fighter's display, `camera_init` runs
+  `spin_smoke_trg` every third frame (not under rob+0x804 bit 4) and
+  `spin_attack_cnt` (both lifted), and then `spin_smoke_cnt`, which
+  megamix.c `spin_frame` does: the 20 puffs at rob+0x21A0 (live mask
+  +0x2740) each take their step (`sub_81CD8`/`81D44`/`81DB0`, lifted),
+  move, and draw model 0x323 + age/25 facing the camera until age 32.
+  `sub_81038` loads each fighter's ball models (+0x2084), drop (+0x20EC)
+  and pulse from `character_spin_mot_objects` (0x81138, rows by rob+0x1B0);
+  `round_start` calls it, as StF does at battle start. The two models of
+  each row and the smoke's 0x323/0x324 are kept by `import-assets.mjs` and
+  their palettes loaded. Real StF and the board read the same models (385
+  and 196 for Sonic), drop 1.0, pulse and turn rate, and the snapshots
+  show the same ball and puffs. `hammered_cnt` (after `spin_smoke_cnt`) is
+  not done.
 - Sky and backdrop: the sky is the stage's backdrop ring (`doom_cnt`, the
   record's four models at +0xC0), which the baked draw list already holds.
   Behind it is the record's `stage_bg_color` (+0x16, BGR555). StF's
@@ -808,21 +828,14 @@ Hard-coded characters, by id:
 Inert on the board, for later:
 - `character_spin_mot_objects` (0x81138, `sub_81038` 24842): 0x20-byte rows
   by the drawn character (rob+0x1B0, no mod 26), the spin attack's two
-  models (the "spindash" non-ball and ball; Akira's rows 6 and 32 are
-  Knuckles', 360/359), a float and two float triples, which `sub_81038`
-  puts in rob+0x2084, 0x2086, 0x20EC and 0x2088+0x30/0x3C for both
-  fighters. In StF they are drawn by `rob_disp`'s `spin_attack_cnt_nml_dsp`
-  / `_esp_dsp` while rob+0x2068 is 1 (set by `sub_81A48`, a motion op).
-  On the board it is inert for Akira: `sub_81038` is lifted only for the
-  Super Sonic change (9295), which never runs with him in the fight (see
-  the 9283 entry), and neither spin display routine is lifted, so nothing
-  reads those fields. Left as it is, because VF2 has no spin attack:
-  nothing in VF2's program uses rob+0x2068, 0x2080..0x2088 or 0x20EC, so
-  there is no VF2 model pair or constant of the same meaning to give him a
-  row from. A row of his own would be invented, and skipping the routine
-  for non-StF would change the shared path; neither is done. It stays on
-  this list because the rows are by StF id. → Only if spin attacks are
-  drawn on the board and a guest motion starts one.
+  models, drop and pulse (see Spin attack). `round_start` runs `sub_81038`
+  for both fighters, so Akira gets his rows (6 and 32), which are
+  Knuckles' (360/359). Nothing draws them for him: the ball is drawn only
+  while rob+0x2068 is 1, which only `sub_81A48`, a play op of StF's
+  motions, sets. Left as it is, because VF2 has no spin attack: nothing in
+  VF2's program uses rob+0x2068, 0x2080..0x2088 or 0x20EC, so there is no
+  VF2 model pair of the same meaning to give him. It stays on this list
+  because the rows are by StF id. → Only if a guest motion starts a spin.
 - Sound: `blank_per_character_audio_array` (0xDB25C, 9517,
   `play_audio_per_character`) is a list of tables by the play op's byte 3,
   each indexed by the parent (rob+0x1B1); Akira's voices are in his slot

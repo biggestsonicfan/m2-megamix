@@ -202,6 +202,8 @@ const VOICE_STF = 11, VOICE_PARENTS = 52; /* blank_per_character_audio_array's l
 const SHADOW_ROOM = 0x2a00;             /* StF's 0x2260 bytes of tables, and four guests' */
 const SHADOW_BALL = 0x195;                /* rob_kage_disp_test: slot 0's while +0x2068 is 1 */
 const SHADOW_TOBI = 0x736;                /* tobi_kage_disp: a projectile's shadow */
+const SPIN_MODELS = 0x081138;             /* character_spin_mot_objects: the spin attack's two models, 0x20 bytes a character */
+const SPIN_SMOKE = [0x323, 0x324];        /* spin_smoke_cnt: a puff, 0x323 + its age / 25 (it goes at 32) */
 const SET_FIGHTERS = 1;
 const MOTION_LIST = 0x06400004, MOTIONS = 519;
 const SCROLL_TABLE = 0x06480000;          /* _ScrollCG_Initialize / _ScrollColor_Initialize */
@@ -274,6 +276,9 @@ async function importStf(R) {
             if (!OSAGE_SIZE[t]) throw new Error(`osage record type ${t} at 0x${a.toString(16)}`);
             if (t === 5) model(program.u32(a + 0x1c));
         }
+        /* the spin attack's ball and its blur (sub_81038), which rob_disp
+         * draws in place of the body while +0x2068 is 1 */
+        for (let i = 0; i < 2; i++) model(program.u16(SPIN_MODELS + ch * 0x20 + i * 2));
         /* the shadows: the table's parts, and the tail's three (the extra
          * part at +0x78A, or the two at +0x7A2 on flag bit 27) */
         const shadow = program.u32(SHADOW_TABLES + ch * 4);
@@ -293,6 +298,7 @@ async function importStf(R) {
     }
     for (const list of BOMB_MARKERS) for (let i = 0; i < 11; i++) model(program.u16(list + i * 2));
     model(SHADOW_BALL);
+    for (const m of SPIN_SMOKE) model(m);
     /* rob_kage_disp_test draws slot 0's entry, model 0, while +0x2068 is
      * not 1, and set_obj stops at a model whose header is 0 */
     models.add(0);

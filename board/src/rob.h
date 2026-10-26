@@ -63,6 +63,14 @@
 #define ROB_DENTED_CNT    0x219Cu  /* the countdown camera_init runs down; swings them while >= 0 */
 #define ROB_EYE_MODEL     0x2050u  /* u32 x2, the face's eyes (player_head_change_2; 0: none) */
 #define ROB_EYE_TPD       0x2058u  /* u32 x2, each eye's moved texture points (snc_eye_thd_set) */
+#define ROB_SPIN          0x2068u  /* u32, 1 while the spin attack's ball stands in for the body (sub_81A48) */
+#define ROB_SPIN_DRAWN    0x2074u  /* f32 x3, the ball's scale as last drawn */
+#define ROB_SPIN_ANG      0x2080u  /* u16 x2, the ball's turn on even frames, and on odd */
+#define ROB_SPIN_MODEL    0x2084u  /* u16 x2, its models on even frames, and on odd (sub_81038) */
+#define ROB_SPIN_PULSE    0x20ACu  /* f32 x3, the pulse added to its scale (rob+0x2088 +0x24, spin_attack_cnt) */
+#define ROB_SPIN_DROP     0x20ECu  /* f32, how far below the root the ball and the smoke sit */
+#define ROB_SMOKE         0x21A0u  /* the spin's smoke: 20 puffs of 0x48 bytes (spin_smoke_trg) */
+#define ROB_SMOKE_LIVE    0x2740u  /* u32, a bit for each live puff */
 #define ROB_Y_SCALE       0x27C0u  /* f32 rob_disp's y scale */
 
 /* ROB_FLAG's bits (FV and StF name them from one table, StF 0x44608) */
@@ -114,6 +122,12 @@
 
 /* ---- the fight's globals: the same addresses in VF2, FV and StF to 0x5000A0 ---- */
 #define G_FRAME_COUNTER   0x500020u  /* StF's 60 Hz loop's count */
+#define SMOKE_COUNT       0x00u    /* a puff: s32 its age in frames (it goes at 32), */
+#define SMOKE_STEP        0x04u    /* its step (sub_81CD8 ...: the pull and the scale, on g3), */
+#define SMOKE_POS         0x08u    /* f32 x3 its place, from the root (+0x1F4), */
+#define SMOKE_VEL         0x14u    /* f32 x3, */
+#define SMOKE_ACC         0x20u    /* f32 x3, */
+#define SMOKE_SCALE       0x2Cu    /* f32 x3, */
 #define G_GAME_TIMER      0x500028u  /* s16: time << 6 at a round's start, one off a frame */
 #define G_MODE            0x50002Au  /* u8 mode; also_mode +0x2B */
 #define G_MODE_FLAG       0x50002Cu

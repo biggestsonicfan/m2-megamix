@@ -3,9 +3,12 @@
 #   void stf_call(void (*fn)(void), void *rob, void *enemy, u32 arg);
 #   void stf_task(void (*fn)(void), void *task, void *rob, void *enemy);
 #   void stf_call_g01(void (*fn)(void), u32 g0, u32 g1);
+#   void stf_call_g3(void (*fn)(void), void *rob, void *g3);
 #
 # stf_call_g01 calls a routine that takes two arguments (g0, g1), as
 # send_tex_col_skin's player and character.
+# stf_call_g3 calls a routine that works on a record at g3, as the spin
+# smoke's steps (spin_smoke_cnt's callx) a puff.
 # stf_task runs one of StF's tasks (event_loop's call): g13 its block (a
 # fighter's task block is its rob), g7 and g8 the fighters.
 #
@@ -19,6 +22,19 @@
                 .globl  _stf_call
                 .globl  _stf_task
                 .globl  _stf_call_g01
+                .globl  _stf_call_g3
+_stf_call_g3:
+                mov     g8, r4
+                mov     g9, r5
+                mov     g10, r6
+                mov     g11, r7
+                mov     g12, r8
+                mov     g13, r9
+                mov     g0, r10
+                mov     g1, g7
+                mov     g2, g3
+                mov     0, g0
+                b       stf_go
 _stf_call_g01:
                 mov     g8, r4
                 mov     g9, r5

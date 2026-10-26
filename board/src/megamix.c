@@ -681,6 +681,9 @@ static void round_start(fighter_t fs[2]) {
     RW(stf_tobi, TASK_FLAG) = TASK_ALIVE;
     RW(stf_tobi, TASK_SIZE) = sizeof stf_tobi;
     for (i = 0; i < 2u; i++) rob_start(i);
+    /* the spin attack's models, pulse and drop for both (sub_81038, as
+     * StF's battle modes run it before a round) */
+    stf_call(stf_sub_81038, robs[0], robs[1], 0u);
     stf_task(stf_cam_mode_9, stf_cam, robs[0], robs[1]);
     GAME_TIMER = (short)(round_time << 6);
     /* stage_x (0x50A00C), the half side of the square area_coli walls the
@@ -870,6 +873,43 @@ static u32 seams_build(u32 p, u32 *at, const u32 **out) {
     return in;
 }
 
+/* The spin attack (Sonic's spindash): while ROB_SPIN is 1, rob_disp_rdn_loop
+ * draws no part but slot 0, and that as the ball, on slot 0's matrix after
+ * the (1, y, 1) scale. spin_attack_cnt_nml_dsp (0x81848): turned a quarter
+ * back about x, scaled by player_model_y_scale plus the pulse (ROB_SPIN_PULSE,
+ * kept in ROB_SPIN_DRAWN), then on even frames turned by the first angle
+ * and a half turn about y and drawn as the first model, on odd frames turned
+ * by the second (four times the first) and drawn as the second.
+ * Espio's (character 7, spin_attack_cnt_esp_dsp, 0x81914) leans by the
+ * pulse instead: its x and z times 0x509508 (init_floats' 65536 / 2 pi) are
+ * angles, about z, then x, then down by ROB_SPIN_DROP and turned about y. */
+#define SPIN_RAD 10430.378f
+static int spin_round(float x) { return (int)(x < 0.0f ? x - 0.5f : x + 0.5f); }
+static void spin_ball(u32 *r) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    u32 odd = RAM32(G_FRAME_COUNTER) & 1u, model = RH(r, ROB_SPIN_MODEL + odd * 2u), i;
+    const float *g = (const float *)((u8 *)r + ROB_SPIN_PULSE);
+    float *d = (float *)((u8 *)r + ROB_SPIN_DRAWN), ys = *(const float *)stf_ram(G_MODEL_SCALE);
+    int ang = (short)RH(r, ROB_SPIN_ANG + odd * 2u);
+    if (RB(r, ROB_CHAR_IS) % 26u == 7u) {
+        int ax = spin_round(SPIN_RAD * g[0]), az = spin_round(SPIN_RAD * g[2]);
+        *cf = COP_COSSCALE; *cf = (u32)az; *cf = 0x3FC00000u; d[0] = m2_cop_gf();
+        d[1] = ys;
+        *cf = COP_COSSCALE; *cf = (u32)ax; *cf = 0x3FC00000u; d[2] = m2_cop_gf();
+        *cf = COP_ANG_Z; *cf = (u32)az;
+        *cf = COP_ANG_X; *cf = (u32)ax;
+        *cf = COP_SET_POS; *cf = 0u; *cf = RW(r, ROB_SPIN_DROP) | 0x80000000u; *cf = 0u;
+        *cf = COP_ANG_Y; *cf = (u32)ang;
+    } else {
+        for (i = 0; i < 3u; i++) d[i] = ys + g[i];
+        *cf = COP_ANG_X; *cf = 0xFFFFE000u;
+        *cf = COP_SCALE; for (i = 0; i < 3u; i++) *cf = m2_obj_fb(d[i]);
+        *cf = COP_ANG_X; *cf = (u32)ang;
+        if (!odd) { *cf = COP_ANG_Y; *cf = 0x8000u; }
+    }
+    if (model) submit_cur(model);
+}
+
 /* mirror: the fighter's reflection in Aurora Icefield's ice, as
  * rob_disp_mir (0x6428C) draws it: the parts, under the camera scaled by
  * (1, -1, 1), which turns them over the floor's y = 0 (mirror_draw). */
@@ -888,6 +928,14 @@ static void draw_fighter(const fighter_t *f, u32 p, u32 mirror) {
     for (i = 0; i < 9; i++) *cf = m2_obj_fb(cam_l.r[i]);
     for (i = 0; i < 3; i++) *cf = m2_obj_fb(cam_l.t[i]);
     if (mirror) { *cf = COP_SCALE; *cf = 0x3F800000u; *cf = 0xBF800000u; *cf = 0x3F800000u; }
+    if (RW(r, ROB_SPIN) == 1u) {
+        *cf = COP_PUSH;
+        *cf = COP_SCALE; *cf = 0x3F800000u; *cf = RW(r, ROB_Y_SCALE); *cf = 0x3F800000u;
+        *cf = COP_PART; *cf = p; *cf = 0u;
+        spin_ball(r);
+        *cf = COP_POP;
+        return;
+    }
     /* slot 0 has no model: StF's records leave it 0, and its command
      * interpreter keeps bytes there (+0x40..0x43 of g13, the rob), so a
      * guest's slot 0 (Akira's 0x13AE) turns into an empty StF entry (0xAE),
@@ -918,6 +966,50 @@ static void draw_fighter(const fighter_t *f, u32 p, u32 mirror) {
         *cf = COP_POP;
     }
     if (!mirror) osage_splice(p);
+}
+
+/* What camera_init does after a fighter's rob_disp while he spins: a puff
+ * of smoke every third frame (spin_smoke_trg; not while the motion's kind
+ * has bit 4) and the ball's turn and pulse (spin_attack_cnt); then, spinning
+ * or not, spin_smoke_cnt, here: under the unscaled camera, down by
+ * ROB_SPIN_DROP, each live puff younger than 32 frames takes its step (the
+ * routine in SMOKE_STEP, on g3), its speed and place, and is drawn at its
+ * place, faced to the camera and scaled, as model 0x323 + age / 25. */
+#define COP_FACE COP_CMD(0x10)
+extern void stf_call_g3(void (*fn)(void), void *rob, void *g3);
+static void spin_frame(u32 p) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    u32 *r = robs[p], live, i, k;
+    if (RW(r, ROB_SPIN)) {
+        if (!(RW(r, ROB_MOTD_KIND) & 0x10u) && RAM32(G_FRAME_COUNTER) % 3u == 0u)
+            stf_call(stf_spin_smoke_trg, r, robs[p ^ 1u], 0u);
+        stf_call(stf_spin_attack_cnt, r, robs[p ^ 1u], 0u);
+    }
+    if ((live = RW(r, ROB_SMOKE_LIVE)) == 0u) return;
+    *cf = COP_WMATRIX;
+    for (k = 0; k < 9; k++) *cf = m2_obj_fb(cam_l.r[k]);
+    for (k = 0; k < 3; k++) *cf = m2_obj_fb(cam_l.t[k]);
+    *cf = COP_SET_POS; *cf = 0x80000000u; *cf = RW(r, ROB_SPIN_DROP) ^ 0x80000000u; *cf = 0x80000000u;
+    for (i = 0; i < 20u; i++) {
+        u8 *q = (u8 *)r + ROB_SMOKE + i * 0x48u;
+        float *pos = (float *)(q + SMOKE_POS), *vel = (float *)(q + SMOKE_VEL), *acc = (float *)(q + SMOKE_ACC);
+        u32 model;
+        if (!(live & (1u << i))) continue;
+        live &= ~(1u << i);
+        if ((int)RW(q, SMOKE_COUNT) >= 32) continue;
+        live |= 1u << i;
+        stf_call_g3((void (*)(void))RW(q, SMOKE_STEP), r, q);
+        for (k = 0; k < 3u; k++) { vel[k] += acc[k]; pos[k] += vel[k]; }
+        model = 0x323u + RW(q, SMOKE_COUNT) / 25u;
+        *cf = COP_PUSH;
+        *cf = COP_SET_POS; for (k = 0; k < 3u; k++) *cf = RW(q, SMOKE_POS + k * 4u);
+        *cf = COP_FACE;
+        *cf = COP_SCALE; for (k = 0; k < 3u; k++) *cf = RW(q, SMOKE_SCALE + k * 4u);
+        submit_cur(model);
+        *cf = COP_POP;
+        RW(q, SMOKE_COUNT)++;
+    }
+    RW(r, ROB_SMOKE_LIVE) = live;
 }
 
 /* The afterimages: the coprocessor's ring of 128 copies, which
@@ -964,7 +1056,6 @@ static void zanzou_draw(u32 pn[3]) {
  * (bomb_fuse) carried through the bomb's place, turn and scale (op 0x29),
  * faced to the camera, scaled by its own scale. Each object's faces count
  * toward its thrower. rob.h names the fields (TOBI_). */
-#define COP_FACE COP_CMD(0x10)
 static const u16 bomb_ring[11] = { 2204, 2204, 2204, 2205, 2205, 2205, 2205, 2203, 2203, 2203, 2203 };
 static const u16 bomb_mark[11] = { 2200, 2200, 2200, 2202, 2202, 2202, 2202, 2201, 2201, 2201, 2201 };
 
@@ -1507,19 +1598,26 @@ static void kage_palettes(u32 c) {
     for (i = 0; i < 3u; i++) if ((m = *(const u16 *)(t + 16u * 24u + i * 2u)) != 0u) m2_load_model_palette(m);
 }
 
+#define STF_SPIN_MOT 0x81138u            /* character_spin_mot_objects, 0x20 bytes a drawn character */
 static void load_palettes(void) {
-    u32 a, i, p;
+    u32 a, i, p, m;
     for (a = 0; a < POSE_ANIMS; a++)
         for (p = 0; p < 2u; p++) {
             const u32 *parts = *(const u32 *const *)stf_char(pose_anims[a].chr + p * 26u);
             for (i = 0; i < 16u; i++) if (parts[i]) m2_load_model_palette(parts[i]);
             kage_palettes(pose_anims[a].chr + p * 26u);
+            /* the spin attack's ball and blur (character_spin_mot_objects) */
+            for (i = 0; i < 2u; i++)
+                if ((m = *(const u16 *)(STF_SPIN_MOT + (pose_anims[a].chr + p * 26u) * 0x20u + i * 2u)) != 0u)
+                    m2_load_model_palette(m);
             if (char_game(pose_anims[a].chr) != GAME_STF) continue;
             for (i = 0; i < pose_anims[a].nparts; i++)
                 m2_load_model_palette(p ? pose_anims[a].parts[i].p2 : pose_anims[a].parts[i].model);
         }
     m2_load_model_palette(0x195u);  /* rob_kage_disp_test's slot 0 ball */
     m2_load_model_palette(0x736u);  /* tobi_kage_disp: a projectile's shadow */
+    m2_load_model_palette(0x323u);  /* spin_smoke_cnt's puffs, young and old */
+    m2_load_model_palette(0x324u);
 }
 
 /* Each player's fighter's part and skin rows. */
@@ -1930,7 +2028,7 @@ int main(void) {
          * it and the reflections, as StF draws them (camera_init's
          * set_window(win_down) before rob_disp) and FV over its cage */
         m2_geo_fifo_window_full();
-        for (i = 0; i < 2u; i++) { polys = 0u; draw_fighter(&fs[i], i, 0u); kage_outside(i); pn[1u + i] += polys; }
+        for (i = 0; i < 2u; i++) { polys = 0u; draw_fighter(&fs[i], i, 0u); spin_frame(i); kage_outside(i); pn[1u + i] += polys; }
         zanzou_draw(pn);
         tobi_draw(pn);
         if (in_menu) poly_win_draw(pn);
