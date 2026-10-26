@@ -354,6 +354,15 @@ same frame of the stance motion (278), all sixteen part positions in the rob
   its coefficient from `flt_90BA0`. `m2_obj_frame_setup` fills all 32 with one
   value, so `send_materials` follows it. Without them the palms and the
   waterfall draw white.
+- Moving draws: `tools/bake-board.mjs` bakes each StF draw at frame 0, so a
+  draw that moves carries how. South Island's four palms and their shadow
+  swap models by frame: model `anim[((frame >> 1) + phase) & 31]`, from
+  StF's tables (palms 522..552, phases 0, 8, 16 and 24; the shadow
+  1558..1589). The importer keeps every model in those tables. South
+  Island's sky turns 2 units a frame, and Aurora's diamonds 0x100 units
+  a frame. `draw_stage` gives each its frame-0 matrix times
+  `ang_y(spin × frame)`, and the bake checks that this matches StF's ops
+  at later frames.
 - Camera scale: after the camera's turn and
   its translate by the stage position, StF's `camera_init` sends the
   coprocessor scale op `0x3800707` with 1.6, 1.6, 1.6 (`0x3FCCCCCD` × 3),
