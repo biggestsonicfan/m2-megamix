@@ -1407,8 +1407,16 @@ this follows.
   polygons; heap to 0x2F2A21C. His moves are in main_data
   0x991340..0x9FB6D4. The VF2 and FV stage ids moved down 64 to make room.
 - **Not yet his.** His sway chain (one tail of six, models 1507-1512, FV's
-  0x63E34) isn't copied into `osage_per_character`; his record's weight,
-  ranges and jump are still Akira's.
+  0x63E34) isn't copied into `osage_per_character`; his record's weight
+  and ranges are still Akira's.
+- **Jump.** FV's, at his size. FV's exec_action is StF's (F 0x134F0 reads
+  record +0x34 as StF reads +0x20; F 0x1435C lands as StF does), so his
+  record +0x20 gets FV's block: 46 and 24 frames, reach 0.05, 0.05, 0.09,
+  0.09 × K. `lift-stf.py` gives an FV fighter FV's gravity (0.00522 × K,
+  where StF's is 0.0252) and FV's landing band (±0.4 and 0.8 × K). MAME:
+  airborne 24 frames (32 before, Akira's), 0.77 over the middle of his
+  takeoff and landing heights (2.4 before) as FV's arc × K, 0.102 a frame
+  forward; Akira's and Sonic's are as before.
 
 ### Mahler's moves: Fighting Vipers'
 

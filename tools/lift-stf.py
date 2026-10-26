@@ -201,23 +201,42 @@ INSERT_LIFTED = {
 # the ones a guest's throw gives its victim.
 # ACT_RC_JUMP's takeoff: a VF2 fighter jumps under VF2's gravity in StF's
 # units (0x3B32674F * SCALE = 0x3BB4D327; StF's 0x50A000 is 9.27x VF2's, not
-# SCALE). Gravity each frame is 0x50A000 - rob+0x5CC, so 0x5CC takes the
-# difference; the next set_motion (landing, a hit) clears it.
+# SCALE), an FV one under FV's (0x3BAB1F2D, 0.00522, F 0x7284) at his size
+# (* K, mahler-guest.mjs: 0x3C2EE9B2). Gravity each frame is 0x50A000 -
+# rob+0x5CC, so 0x5CC takes the difference; the next set_motion (landing, a
+# hit) clears it.
 # ACT_RC_JUMP's landing, r5 the jump's reach (r8 the wall ahead, r9 the
 # opponent): a VF2 fighter's as VF2's exec_action (V 0x15444) clamps it, short
 # of the wall by 0.6 and outside the opponent's +-0.9, in StF's units (* SCALE:
-# 0x3F9BAF44, 0x3FE986E6), where StF has no wall and +-0.4.
+# 0x3F9BAF44, 0x3FE986E6), where StF has no wall and +-0.4. FV's exec_action
+# (F 0x1435C) is StF's, in FV's units: an FV fighter's +-0.4 and 0.8 are * K
+# (0x3F515653, 0x3FD15653).
 INSERT = {
     'loc_13F18': ['ldob    0x1B1(g7), r3', 'ldob    guest_char_game[r3], r3',
+                  'cmpobe  GAME_FV, r3, loc_13F18_fv',
                   'cmpobne GAME_VF2, r3, loc_13F18_own', 'lda     0x3F9BAF44, r13',
                   'subr    r13, r8, r3', 'cmpible r5, r3, loc_13F18_wall', 'mov     r3, r5',
                   'loc_13F18_wall:', 'lda     0x3FE986E6, r4', 'addr    r4, r9, r3',
                   'cmpibge r5, r3, loc_13F98', 'subr    r4, r9, r3',
                   'cmpible r5, r3, loc_13F98', 'mov     r3, r5', 'b       loc_13F98',
+                  'loc_13F18_fv:', 'ld      0x19C(g7), r15', 'bbs     0x15, r15, loc_13F98',
+                  'lda     0x3F515653, r4', 'addr    r4, r9, r3', 'cmpibge r5, r3, loc_13F18_fv_near',
+                  'subr    r4, r9, r3', 'cmpible r5, r3, loc_13F18_fv_near', 'mov     r3, r5',
+                  'b       loc_13F98',
+                  'loc_13F18_fv_near:', 'lda     0x3FD15653, r4', 'ld      0x5F4(g7), r3',
+                  'cmpr    r4, r3', 'bl      loc_13F98', 'ld      0x710(g8), r3',
+                  'lda     0x3FACCCCD, r4', 'cmpr    r4, r3', 'bg      loc_13F98',
+                  'lda     0x3F515653, r4', 'bbs     0x1F, r9, loc_13F18_fv_left',
+                  'subr    r4, r9, r3', 'cmpr    r5, r3', 'bl      loc_13F98', 'mov     r3, r5',
+                  'b       loc_13F98',
+                  'loc_13F18_fv_left:', 'addr    r4, r9, r3', 'cmpr    r5, r3', 'bg      loc_13F98',
+                  'mov     r3, r5', 'b       loc_13F98',
                   'loc_13F18_own:'],
     'loc_13E2C': ['ldob    0x1B1(g7), r3', 'ldob    guest_char_game[r3], r3',
-                  'cmpobne GAME_VF2, r3, loc_13E2C_own', 'ld      stf_ram_50A000+0x0, r3',
-                  'lda     0x3BB4D327, r4', 'subr    r4, r3, r3', 'st      r3, 0x5CC(g7)',
+                  'lda     0x3BB4D327, r4', 'cmpobe  GAME_VF2, r3, loc_13E2C_guest',
+                  'lda     0x3C2EE9B2, r4', 'cmpobne GAME_FV, r3, loc_13E2C_own',
+                  'loc_13E2C_guest:', 'ld      stf_ram_50A000+0x0, r3',
+                  'subr    r4, r3, r3', 'st      r3, 0x5CC(g7)',
                   'loc_13E2C_own:'],
     'loc_1B044': ['ldob    0x1B1(g7), r4', 'ld      guest_motion_remap[r4*4], r4',
                   'cmpobe  0, r4, loc_1B044_own', 'lda     0x1FFF, r5', 'and     r5, g0, r6',

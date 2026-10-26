@@ -314,16 +314,18 @@ export function fitBalls(ctx, vf2, partBox, k, alloc) {
  * player 2's p2Parts, where they are models of their own) and
  * his entries in the guest tables, for StF character chr and its player 2:
  * Akira's moves, actions, reactions and remap (ctx), unless moves, actions,
- * kinds or remap name his own (ctx.ownMoveset); his skeleton, pose bones,
+ * kinds or remap name his own (ctx.ownMoveset), and his jump block (record
+ * +0x20) if jump names one; his skeleton, pose bones,
  * balls, seams, afterimage, hands, head and game. Returns the two
  * characters. */
-export function seatGuest(R, ctx, { chr: CHR, parts, skel, rigAt, ballRec, seamList, game, moves = ctx.newRoot, actions = ctx.actionsAt, kinds = ctx.kindsAt, remap = ctx.ownAt, p2Parts = parts }, alloc) {
+export function seatGuest(R, ctx, { chr: CHR, parts, skel, rigAt, ballRec, seamList, game, moves = ctx.newRoot, actions = ctx.actionsAt, kinds = ctx.kindsAt, remap = ctx.ownAt, p2Parts = parts, jump }, alloc) {
     const T = R.guest.tables;
     const { u32s, u16s } = ctx;
     const lists = [parts, p2Parts].map((l, p) => (p && l === parts ? null : alloc(u32s([...l, ...l]), p ? 'parts P2' : 'parts')));
     ctx.recs.forEach((src, p) => {
         const rec = Uint8Array.from(src), rv = new DataView(rec.buffer), list = lists[p] ?? lists[0];
         rv.setUint32(0, list, true); rv.setUint32(4, skel, true); rv.setUint32(8, list, true); rv.setUint32(0xc, actions, true);
+        if (jump) rv.setUint32(0x20, jump, true);
         T.CHAR_PARTS.view.setUint32((CHR + p * PLAYER2) * 4, alloc(rec, `record ${p ? 'P2' : 'P1'}`), true);
     });
     T.MOVESET_ARRAY.view.setUint32(CHR * 4, moves, true);
