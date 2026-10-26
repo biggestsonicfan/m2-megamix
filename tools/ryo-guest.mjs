@@ -5,6 +5,10 @@
  * player 2) and runs StF's own fight code with Akira's moves, motions,
  * actions and reactions: his own are VF3-style Shenmue motions that the
  * board cannot play yet. What is his own:
+ *   - his moveset: a copy of Akira's under motion ids of his own
+ *     (vf2-guest.mjs ownMoveset), each id on Akira's block, with his own
+ *     setups, command program, actions, reactions and remap on them, so
+ *     that each can be made his without touching Akira's (or Chai's);
  *   - his model, cut into StF parts: YKB_B, the one Shenmue draws his fight
  *     afterimage with (each scene's MAPINFO.BIN: Fight, Blur 'YKB_B.MT5';
  *     288 triangles, a node on each of the fifteen slots), or with
@@ -307,16 +311,17 @@ export function fitBalls(ctx, vf2, partBox, k, alloc) {
 
 /* His records (Akira's, with his parts, 16 model ids, and his skeleton) and
  * his entries in the guest tables, for StF character chr and its player 2:
- * Akira's moves, reactions and remap (ctx), unless moves, kinds or remap
- * name his own; his skeleton, pose bones, balls, seams, afterimage, hands,
- * head and game. Returns the two characters. */
-export function seatGuest(R, ctx, { chr: CHR, parts, skel, rigAt, ballRec, seamList, game, moves = ctx.newRoot, kinds = ctx.kindsAt, remap = ctx.ownAt }, alloc) {
+ * Akira's moves, actions, reactions and remap (ctx), unless moves, actions,
+ * kinds or remap name his own (ctx.ownMoveset); his skeleton, pose bones,
+ * balls, seams, afterimage, hands, head and game. Returns the two
+ * characters. */
+export function seatGuest(R, ctx, { chr: CHR, parts, skel, rigAt, ballRec, seamList, game, moves = ctx.newRoot, actions = ctx.actionsAt, kinds = ctx.kindsAt, remap = ctx.ownAt }, alloc) {
     const T = R.guest.tables;
     const { u32s, u16s } = ctx;
     const list = alloc(u32s([...parts, ...parts]), 'parts');
     ctx.recs.forEach((src, p) => {
         const rec = Uint8Array.from(src), rv = new DataView(rec.buffer);
-        rv.setUint32(0, list, true); rv.setUint32(4, skel, true); rv.setUint32(8, list, true);
+        rv.setUint32(0, list, true); rv.setUint32(4, skel, true); rv.setUint32(8, list, true); rv.setUint32(0xc, actions, true);
         T.CHAR_PARTS.view.setUint32((CHR + p * PLAYER2) * 4, alloc(rec, `record ${p ? 'P2' : 'P1'}`), true);
     });
     T.MOVESET_ARRAY.view.setUint32(CHR * 4, moves, true);
@@ -626,13 +631,20 @@ export function importShenmue(R, ctx, games, { tiles, byTex }, { name: who = 'RY
     /* ---- records and the guest tables ---- */
     const parts = new Array(16).fill(0);
     for (const [s, id] of partModel) parts[s] = id;
-    const chars = seatGuest(R, ctx, { chr: CHR, parts, skel, rigAt, ballRec, seamList, game: R.guest.games.VF2 }, alloc);
+    /* ---- his moveset: Akira's, under ids of his own ---- */
+    const ms = ctx.ownMoveset(Who);
+    report.push(`moveset: Akira's ${ms.ids.size} motions as his own ${ms.first}..${ms.first + ms.ids.size - 1} (${ms.setups} setups naming them, ${ms.setupBytes} bytes; the rest Akira's); command program ${hex(ms.progAt)}, ${ms.progLength} bytes`);
+
+    const chars = seatGuest(R, ctx, {
+        chr: CHR, parts, skel, rigAt, ballRec, seamList, game: R.guest.games.VF2,
+        moves: ms.root, actions: ms.actions, kinds: ms.kinds, remap: ms.remap,
+    }, alloc);
     report.push(`heap to ${hex(ctx.heapEnd())}`);
 
     const coverage = {
         chars, game: 'Shenmue', name: Who, parts: order.length,
         triangles: faces.length, colours: cbOf.size, balls: moved,
-        moves: 'Akira\'s (his own motions are not on the board yet)',
+        moves: `Akira's, under his own ids ${ms.first}..${ms.first + ms.ids.size - 1} (his own motions are not on the board yet)`,
     };
     return { report, coverage, meshes, partModel, scale: k };
 }
