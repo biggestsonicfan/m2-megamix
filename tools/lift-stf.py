@@ -76,6 +76,11 @@ import tempfile
 # spin_smoke_trg (a puff of smoke every third frame); the puffs' own steps
 # (sub_81CD8, sub_81D44, sub_81DB0) are what spin_smoke_cnt calls, which
 # megamix.c spin_frame draws as it does.
+# The replay of a move (FV's REP_WAZA, which StF kept the code of and never
+# starts; megamix.c rep_start): rec_disp (the record task: both fighters'
+# frame into the ring, once a frame) and sub_3900C (the play task's start:
+# the effects put by, the first frame loaded, then replay_waza_disp, a
+# frame a frame, and put_last_replay back to the live frame at the end).
 ROOTS = ['set_motion', 'calc_rob_angle', 'calc_rob_angle_cont', 'calc_unit_mat', 'smooth_int', 'sub_7F0E8',
          'action_init', 'rob_action', 'sub_1D47C', 'coli_init', 'collision', 'get_game_info', 'cmd_native_tail',
          'cop_initialize_end2', '_Scroll_Initialize', 'energy_disp', 'barrier_left_disp_init',
@@ -87,7 +92,8 @@ ROOTS = ['set_motion', 'calc_rob_angle', 'calc_rob_angle_cont', 'calc_unit_mat',
          'snc_eye_thd_set', 'tpd_move_init', 'sub_81038', 'spin_attack_cnt', 'spin_smoke_trg',
          'sub_81CD8', 'sub_81D44', 'sub_81DB0', 'ring_tobitiri_init', 'ring_tobitiri',
          'efc_disp', 'efc_face_opt_disp', 'guard_attack_effect_disp', 'kira_kira_disp',
-         'guard_barrier_effect_disp', 'laser_effect_disp', 'fa_effect', 'ko_disp']
+         'guard_barrier_effect_disp', 'laser_effect_disp', 'fa_effect', 'ko_disp',
+         'rec_disp', 'sub_3900C']
 # Routines the board does not run (debug text, name plates,
 # Super Sonic's hair objects; the shadow mask balls, which read a table at
 # 0x4C84 and megamix.c's kage_balls sends): `ret`.
@@ -146,8 +152,11 @@ RAM_PAD = 0x400                          # room past the highest address a block
 # ramp (0x546008, 0x120 bytes a row, rows 0..27) and the backup RAM's copy
 # (add_BACKUP_RAM_TO_RAM, 0x599000, which megamix.c points it at), and the
 # scattered rings (ring_tobitiri_set: 24 records of 44 bytes from 0x574010,
-# then its counts at 0x574B10).
-RAM_SPANS = [(0x520000, 0x520FC8), (0x546000, 0x547F88), (0x599000, 0x59C400), (0x574000, 0x574B20)]
+# then its counts at 0x574B10); the replay's: rec_disp's ring (240 frames of
+# 0x88 bytes from 0x535000) and the effect task's copy while a replay plays
+# (sub_3A200, 0xC80 bytes at 0x570000).
+RAM_SPANS = [(0x520000, 0x520FC8), (0x546000, 0x547F88), (0x599000, 0x59C400), (0x574000, 0x574B20),
+             (0x535000, 0x535000 + 240 * 0x88), (0x570000, 0x570C80)]
 # The per-character tables a guest fighter (a character of another game in a
 # StF character's place) needs entries of its own in: the routines read them
 # at fixed addresses in the data ROM instead (guest_<name>), where
@@ -240,8 +249,10 @@ INSERT_LIFTED = {
 # slot 0), with no pieces: a clean hit (+0x26C bit 1 or 4) from a move with
 # kind2 bit 5, on a defender without +0x7EC bit 5, in the half the attack's
 # class (byte_2CA3C: 0 upper, 1 lower) picks, once the half's sum and its
-# last are at the limit: that half's broken bit (+0x7F0 bit 2 or 3), both
-# broken the flags' bit 28. The match's winning blow (+0x914) is StF's own.
+# last are at the limit and the half is whole: that half's broken bit
+# (+0x7F0 bit 2 or 3) and the attacker's kind2 bit 6 (a break dealt: FV's
+# replay, megamix.c rep_watch); both broken the flags' bit 28. The match's
+# winning blow (+0x914) is StF's own.
 # ring_tobitiri_set (a hit's rings, damage_calculation's): only StF's own
 # fighters carry rings; a guest (char_game not 0) drops none.
 INSERT = {
@@ -254,7 +265,9 @@ INSERT = {
                   'ld      0xAF0(g8)[r5*4], r13', 'ld      0x1F74(g8)[r5*4], r12',
                   'cmpobl  r12, r13, loc_2BBDC_own', 'ld      0x1F7C(g8)[r5*4], r12',
                   'cmpobl  r12, r13, loc_2BBDC_own', 'ld      0x7F0(g8), r15', 'addo    2, r5, r5',
-                  'setbit  r5, r15, r15', 'st      r15, 0x7F0(g8)', 'and     0xC, r15, r15',
+                  'bbs     r5, r15, loc_2BBDC_own', 'setbit  r5, r15, r15', 'st      r15, 0x7F0(g8)',
+                  'ld      0x70C(g7), r14', 'setbit  6, r14, r14', 'st      r14, 0x70C(g7)',
+                  'and     0xC, r15, r15',
                   'cmpobne 0xC, r15, loc_2BBDC_own', 'ld      0x0(g8), r15',
                   'setbit  0x1C, r15, r15', 'st      r15, 0x0(g8)',
                   'loc_2BBDC_own:'],

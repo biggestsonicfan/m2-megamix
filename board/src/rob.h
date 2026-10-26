@@ -48,6 +48,7 @@
 #define ROB_TRAIL         0x1004u  /* f32 x3 x8: the last 8 frames' ROB_GXPOS (GAME_DSP) */
 #define ROB_TRAIL_AT      0x1064u  /* u32: the next entry to write, 0..7 */
 #define ROB_GZPOS         0x1FCu
+#define ROB_KIND2         0x70Cu   /* u32 the motion's kind2: bit 5 breaks armour, bit 6 a break it dealt, bit 10 */
 #define ROB_OUT_ON        0x624u   /* a collision ball outside the ring touches the ground */
 #define ROB_HIT_COMBO     0x6F4u   /* u8, counted on the fighter hit (VF2 +0x6D8, FV +0x708) */
 #define ROB_ARMOUR        0x7F0u   /* u32 parts_flag, FV's armour: ARMOUR_ bits */
@@ -191,6 +192,12 @@
 #define G_LIST_BLOCKS     0x501800u  /* the list blocks' layer table: 43 words, layer n's at +4 + 8 n */
 #define G_KAGE_SLIDE_X    0x501990u  /* f32 the shadows' slide along the light; z +0x994 */
 #define G_KAGE_SLIDE_Z    0x501994u
+#define G_REP_MARK0       0x50039Cu  /* FV's replay: the ring's place at P1's breaking move's start */
+#define G_REP_FLAG        0x5003A0u  /* u8: bits 0, 1 a break pending (P1, P2); bit 2 P2's replay */
+#define G_REP_PASSES      0x5003A1u  /* u8 the passes left */
+#define G_REP_MARK1       0x50044Cu  /* P2's mark */
+#define G_REP_TIME        0x500460u  /* s16 x2 the clock at each one's mark */
+#define G_SOUNDS          0x50406Au  /* u8 check_same_sound's sounds this frame (the recorder's), four at most */
 #define G_DEBUG_FLAG      0x508000u
 #define G_MODEL_SCALE     0x509518u  /* f32 x3 player_model_y_scale, _horiz_scale... */
 #define G_POL_COLOR_REQ   0x546000u  /* chg_pol_color_req's rows still to send */

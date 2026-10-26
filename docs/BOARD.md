@@ -1743,10 +1743,33 @@ sets up what StF's game loop would have set up around it.
   tiles and colours, in board blocks 126 and 127) at the top corners;
   each half green, FV's green blink once damaged, its red one once
   broken, as FV's `energy_disp` (0x346A8) colours them.
+- Armour break replay: FV's, which StF kept as REP_WAZA (sub_mode 22).
+  The recorder `rec_disp` (fight_step's last task) puts both fighters'
+  frame, with the frame's sounds (`check_same_sound`'s, 0x50406A from 0
+  each frame), in a ring of 240 at 0x535000. A break sets the attacker's
+  kind2 bit 6 (the break test in `lift-stf.py`); FV's FIGHT_DSP (0xD5FC)
+  marks the ring and the clock when a kind2-bit-5 move starts, and once
+  that move ends with a break dealt, replays it twice: `sub_3900C` from
+  the mark, `replay_waza_disp` a frame a frame (sounds again),
+  `put_last_replay` and the effects back at the end; the clock back to
+  the mark's each pass. StF's `set_mot_dat` re-marks (0x50039C, 0x50044C)
+  and clears the pending bits (0x5003A0) at every motion's start in
+  FIGHT_DSP, so the board keeps its own and writes them at each pass,
+  with both sub_mode bytes 22 meanwhile. The camera is FV's (modes 0x11,
+  0x12, 0x13; StF's 0xF/0x10 follow the round's winner instead): a view
+  from FV's two tables of eight (0x06CEC8E4, 0x06CEC944, `rep_view` in
+  `poses.h`), picked at random, the next one for the second pass; turned
+  (atan2 of the view, plus FV's g3 0x513830's low half, the same in every
+  replay in MAME) and raised to look at the point between the fighters
+  (or the breaker's, kind2 bit 10), then sliding after it at a distance
+  of 0.717 × theirs + 2.0 (FV units), on the coprocessor's own ops. The
+  HUD: the window mask shows tile layer 1, blank, over the whole screen
+  (FV's over its top 96 lines; StF's barrier boxes are at the bottom).
 - Camera: StF's own. `camera_work` runs the camera object (`fa_camera`,
   0x500814) by its mode byte (+0x40) through `cam_mode_list`. In a round
   mode 9 places the camera and sets mode 10, the in-fight follow; 11, 12,
-  25, 35 and 4 are round ends and replays, which the board does not run.
+  25, 35 and 4 are round ends and replays, which the board does not run
+  (the armour break's replay runs FV's camera instead, above).
   `round_start` runs `cam_mode_9` as a task (g13 the camera, g7/g8 the
   robs) after `rob_start`; `fight_step` runs `cam_mode_10` once a frame.
   Mode 10 also plays the special moves' camera scripts (`word_6BE90`, a
@@ -2131,7 +2154,7 @@ Known gaps:
 - Eggman's head (model 793) takes its texture from StF's texture set 7,
   which the board does not load (it loads set 1 and the stage's), so it
   does not show.
-- The camera's round-end and replay modes are not run.
+- The camera's round-end and StF's own replay modes are not run.
 
 ## Plan
 

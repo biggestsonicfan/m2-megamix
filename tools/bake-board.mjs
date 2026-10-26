@@ -447,6 +447,21 @@ stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
     out.push(`static const u16 armour_whole = 0x${snap(31 << 5).toString(16)}, armour_green[6] = {${u16s(blink(0x345c8))}}, armour_red[6] = {${u16s(blink(0x345d4))}};`);
     console.log('armour figures: tiles', first.map((f, k) => `${f}+${count[k]}`).join(', '));
 }
+/* Fighting Vipers' replay camera (megamix.c rep_cam): where it looks from in
+ * each pass of a replay, one of eight (FV's camera modes 0x11 and 0x12 read
+ * them at 0x06CEC8E4 and 0x06CEC944: x, y, z from the point it looks at),
+ * in FV's units times FV_SCALE, the board's. */
+{
+    const fv = games.fv.rom;
+    const views = [0x06cec8e4, 0x06cec944].map((at) => Array.from({ length: 24 }, (_, i) => {
+        const r = resolveData(fv, at + 4 * i);
+        if (!r) throw new Error(`FV replay views: 0x${(at + 4 * i).toString(16)}`);
+        return r.view.getFloat32(r.off, true) * FV_SCALE;
+    }));
+    out.push('/* Fighting Vipers\' replay views (tools/bake-board.mjs): x, y, z, two passes of eight */');
+    out.push(`static const float rep_view[2][8][3] = {${views.map((v) =>
+        `{${Array.from({ length: 8 }, (_, i) => `{${v.slice(3 * i, 3 * i + 3).map(f32).join(', ')}}`).join(', ')}}`).join(', ')}};`);
+}
 out.push(`#define STAGES ${stages.length}`);
 out.push(`static const stage_t stages[STAGES] = {\n    ${stages.join(',\n    ')}\n};\n`);
 out.push('#endif');
