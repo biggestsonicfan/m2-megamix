@@ -85,6 +85,7 @@
 
 /* ---- the camera (fa_camera; CAMERA, CAMERA_INFO) ---- */
 #define CAMERA_FLAG       TASK_FLAG   /* the CAMERA_ROBn_DISP bits */
+#define CAMERA_CNT        0x006u   /* u16 frames, one up a frame (camera_init's end); a throw's camera script runs on it */
 #define CAMERA_XPOS       0x018u   /* f32; ypos +0x01C, zpos +0x020, in the fighters' units */
 #define CAMERA_XANG       0x024u   /* u16 pitch */
 #define CAMERA_YANG       0x026u   /* u16 heading */

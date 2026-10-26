@@ -1721,7 +1721,15 @@ sets up what StF's game loop would have set up around it.
   Mode 10 also plays the special moves' camera scripts (`word_6BE90`, a
   table of self-pointers the lifter relocates, `SELF_REL`; its step
   handlers are the ROM jump tables `off_9C83C`/`off_9C848`, lifted as code,
-  `ROM_CODE_TABLES`). `camera_stf` then builds StF's `camera_control`
+  `ROM_CODE_TABLES`). A script steps on the camera's frame count (+6):
+  it starts at the motion's first frame in the window (`sub_6BA84` zeroes
+  the count), and `sub_6BA98` moves to the next key when the count reaches
+  the key's frame, interpolating by its own step (+0x214) between. StF's
+  `camera_init` adds one to the count at its end each frame; the board has
+  its own `camera_init`, so `fight_step` adds it after `cam_mode_10`.
+  Without it the count stayed 0, no key ended, and the step ran on past the
+  key's length: the throws' cameras (Sonic's 280/281, Eggman's 36…) flew
+  off into the sky, hundreds of units away. `camera_stf` then builds StF's `camera_control`
   matrix: identity, `ang_z`, `ang_x`, `ang_y` by the negated +0x28, +0x24,
   +0x26, and `camera_place` at the position (+0x18..+0x20). That position
   is the eye in fighter units, and it is passed as it is: StF translates
