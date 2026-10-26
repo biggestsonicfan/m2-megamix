@@ -1,9 +1,10 @@
 /*
- * Fighting Vipers' Honey, Tokio and Bahn, measured for the board: what of
- * theirs StF's code would read, as tools/vf2-guest.mjs puts Akira's in, and
- * what of it fits beside Akira and Ryo (docs/FV-GUESTS.md).
+ * Fighting Vipers' Honey, Tokio and Bahn, and Mahler (and B.M.), measured
+ * for the board: what of theirs StF's code would read, as tools/vf2-guest.mjs
+ * puts Akira's in, and what of it fits beside Akira and Ryo
+ * (docs/FV-GUESTS.md, docs/FV-MAHLER.md).
  *
- *   node tools/fv-guest-survey.mjs [--json]
+ *   node tools/fv-guest-survey.mjs [--char 8 | --char 2,3,4,8,9] [--json]
  *
  * It reads fvipers.zip and sfight.zip from $ROMS_DIR and changes nothing. For
  * each fighter it walks what vf2-guest walks for Akira, on FV's tables
@@ -19,7 +20,9 @@
  *     records' parts, the midriff, the hands (0x640EBF4, four shapes a
  *     hand) and the heads his face op picks (0x640D31C)), and apart, what
  *     only FV's armour code would (broken parts, bounces, hips, flying
- *     pieces and the debris flipbook);
+ *     pieces and the debris flipbook), and the shoulder pads and skirt
+ *     apart (kata_pat_disp, kosi_mino_disp: FV's code too);
+ *   - his sway chains and shadow table (by record), and his carried item;
  *   - his textures: his tiles (each record's set and the next, as the board
  *     loads them) on the 32-pixel grid, in cells, as tools/pack-akira.mjs
  *     counts them.
@@ -29,13 +32,18 @@ import { loadRomSet, readModelEntry, meshOffsetOf } from '../vendor/noclip/js/ro
 import { readFighters } from '../vendor/noclip/js/vf2fighters.js';
 import { resolveData } from '../vendor/noclip/js/motion.js';
 import { decodeModel } from '../vendor/noclip/js/model.js';
+import { readOsage } from '../vendor/noclip/js/osage.js';
+import { readShadows } from '../vendor/noclip/js/fightershadow.js';
 
 const ROMS = process.env.ROMS_DIR || `${process.env.HOME}/build/mameroms`;
 const JSON_OUT = process.argv.includes('--json');
 const load = async (zip) => { const b = readFileSync(`${ROMS}/${zip}.zip`); return loadRomSet([b.buffer.slice(b.byteOffset, b.byteOffset + b.length)], () => {}); };
 const fv = await load('fvipers'), stf = await load('sfight');
 
-export const FIGHTERS = [{ char: 2, name: 'Honey' }, { char: 3, name: 'Tokio' }, { char: 4, name: 'Bahn' }];
+export const FIGHTERS = [{ char: 2, name: 'Honey' }, { char: 3, name: 'Tokio' }, { char: 4, name: 'Bahn' }, { char: 8, name: 'Mahler' }, { char: 9, name: 'B.M.' }];
+/* --char 8 (or 2,3,4): only those; by default the three of #1579. */
+const CHAR_ARG = process.argv[process.argv.indexOf('--char') + 1];
+const CHOSEN = process.argv.includes('--char') ? CHAR_ARG.split(',').map(Number) : [2, 3, 4];
 const MOTION_ID = 0x1fff;
 /* FV (noclip games.js fvipers rig) */
 const COMMANDS = 0x1ebe0;
@@ -109,6 +117,11 @@ function readSetup(id) {
     }
     return { rec, setup, play, bytes: p - rec };
 }
+
+/* The finish kind (the attacker's +0x874): byte +0xE of setup op 4. A KO by
+ * a kind-3 blow breaks the cage (docs/FV-STAGES.md, Cage break). */
+const FINISH_AT = 0xe;
+const finishOf = (s) => { const o = s.setup.find((x) => x.op === 4); return o ? d8(o.at + FINISH_AT) : 0; };
 
 /* The motions a setup hands over to (op 1, op 0x13's two, op 0xA's switch,
  * the play ops' switches) and a throw's victim (op 5). */
@@ -255,6 +268,8 @@ function tileCells(models) {
 /* ---- one fighter ------------------------------------------------------------ */
 
 const bodies = readFighters(fv);
+const shadows = readShadows(fv);
+const ITEM_AT = 0x2c;                                  /* record +0x2C: the carried item's records (noclip fvitem.js) */
 
 function survey({ char, name }) {
     const A = bodies[char];
@@ -296,11 +311,15 @@ function survey({ char, name }) {
     const ids = [...setups.keys()].sort((a, b) => a - b);
     const setupOps = {}, playOps = {}, faceArgs = new Set();
     let setupBytes = 0, blockBytes = 0;
+    const motionBytes = {}, finishes = {};
     for (const id of ids) {
         const s = setups.get(id);
         setupBytes += s.bytes;
         blockBytes += blockLength(id);
+        motionBytes[id] = s.bytes + blockLength(id);
         for (const { op } of s.setup) tally(setupOps, op);
+        const k = finishOf(s);
+        if (k) (finishes[k] ??= []).push(id);
         for (const { op, at } of s.play) { tally(playOps, op); if (op === FACE_OP) faceArgs.add(d8(at + 3)); }
     }
     const playDiffer = Object.keys(playOps).map(Number).filter((op) => PLAY[op] !== STF_PLAY[op])
@@ -312,7 +331,7 @@ function survey({ char, name }) {
      * heads and midriff), then what only FV's own armour code would (the
      * broken parts and flying pieces, the chest's bounce, the hips by motion
      * and in the air, the debris flipbook, the pads and skirt) */
-    const core = new Set(), armour = new Set();
+    const core = new Set(), armour = new Set(), pads = new Set();
     for (const body of [A, A.p2]) {
         for (const p of body.parts) if (p.model > 0) core.add(p.model);
         if (body.midriff) core.add(body.midriff.model);
@@ -323,7 +342,7 @@ function survey({ char, name }) {
             if (pair) { const m = (d16(pair) << 16) >> 16; if (m > 0) core.add(m); }
         }
         modelsIn(body.armour, armour);
-        modelsIn(body.extras, armour);
+        for (const e of body.extras ?? []) if (e.model > 0) pads.add(e.model);
         if (body.midriff?.broken) armour.add(body.midriff.broken.model);
         for (const arg of faceArgs) {
             const pair = d32(d32(FACE + arg * 4) + body.index * 4);
@@ -331,26 +350,51 @@ function survey({ char, name }) {
         }
     }
     const valid = (s) => [...s].filter((m) => m < fv.game.modelTable.count && readModelEntry(fv, m)).sort((a, b) => a - b);
-    const coreList = valid(core), armourList = valid(armour).filter((m) => !core.has(m));
+    const coreList = valid(core), padList = valid(pads).filter((m) => !core.has(m));
+    const armourList = valid(armour).filter((m) => !core.has(m) && !pads.has(m));
+
+    /* the sway chains (osage_dsp's stream, by record: player 2's own), the
+     * floor shadow's table (by record) and the carried item */
+    const chains = [A, A.p2].map((body) => {
+        const o = readOsage(fv, body.index);
+        return o ? { record: body.index, chains: o.chains.length, segments: o.chains.map((c) => c.segments.length),
+            models: [...new Set(o.chains.flatMap((c) => c.segments.map((g) => g.model)))] } : { record: body.index, chains: 0 };
+    });
+    const shadowModels = [...new Set([A, A.p2].flatMap((b) => shadows.tables[b.index].map((e) => e.model)).filter((m) => m > 0))].sort((a, b) => a - b);
     const meshes = (list) => list.reduce((n, m) => { try { return n + meshLength(m); } catch { return n; } }, 0);
 
     return {
         name, char, record: hex(A.root), p2Record: hex(A.p2.root),
         texSets: [A.texSet, A.texSet + 1, A.p2.texSet, A.p2.texSet + 1],
-        weight: d32(A.root + 0x1c),
+        weight: (() => { const r = res(A.root + 0x1c); return r.view.getFloat32(r.off, true); })(),
         actions: A.actions.length,
         program: { root: hex(p32(COMMANDS + char * 4)), units: prog.units, bytes: prog.bytes, commits: prog.commits.length,
             natives: prog.natives.length, nativesUnread: nativeIds.filter((x) => x === null).length, commitTypes, ops: prog.ops },
         reactionsEmpty: kind0,
         motions: ids.length, thrownCopies: thrown.size, setupBytes, blockBytes,
         setupOps, playOps, playDiffer, setupDiffer,
-        models: { core: coreList.length, armour: armourList.length },
-        meshBytes: { core: meshes(coreList), armour: meshes(armourList) },
-        textures: { core: tileCells(coreList), all: tileCells([...coreList, ...armourList]) },
+        models: { core: coreList.length, pads: padList.length, armour: armourList.length },
+        meshBytes: { core: meshes(coreList), pads: meshes(padList), armour: meshes(armourList) },
+        textures: { core: tileCells(coreList), pads: tileCells([...coreList, ...padList]), all: tileCells([...coreList, ...padList, ...armourList]) },
+        padModels: padList, osage: chains, shadowModels, item: d32(A.root + ITEM_AT) ? hex(d32(A.root + ITEM_AT)) : null,
+        p2SameRecord: A.root === A.p2.root,
+        finishes,
+        motionIds: [...new Set([...ids, ...thrown])].sort((a, b) => a - b), motionBytes,
     };
 }
 
-const out = FIGHTERS.map(survey);
+const out = FIGHTERS.filter((f) => CHOSEN.includes(f.char)).map(survey);
+/* the motion ids each shares with the others surveyed: what one copy of a
+ * shared motion would save */
+for (const f of out) {
+    const mine = new Set(f.motionIds);
+    /* the heap his motions add over those of the fighters before him, if
+     * each motion's setup and block is kept once for all */
+    const before = new Set(out.slice(0, out.indexOf(f)).flatMap((g) => g.motionIds));
+    const added = Object.entries(f.motionBytes).filter(([id]) => !before.has(+id));
+    f.addedOverBefore = { motions: added.length, bytes: added.reduce((n, [, b]) => n + b, 0) };
+    f.shared = Object.fromEntries(out.filter((g) => g !== f).map((g) => [g.name, g.motionIds.filter((x) => mine.has(x)).length]));
+}
 const total = {
     motionIds: out.reduce((n, f) => n + f.motions + f.thrownCopies, 0),
     heap: out.reduce((n, f) => n + f.blockBytes + f.setupBytes + f.program.bytes, 0),
@@ -370,9 +414,13 @@ if (JSON_OUT) {
         console.log(`  motions ${f.motions} (+${f.thrownCopies} his throws give), setups ${f.setupBytes} bytes, blocks ${f.blockBytes} bytes`);
         console.log(`    play ops whose length differs from StF's: ${f.playDiffer.map((d) => `${d.op} FV ${d.fv}/StF ${d.stf} x${d.uses}`).join('; ') || 'none'}`);
         console.log(`    setup ops whose length differs: ${f.setupDiffer.map((d) => `${d.op} FV ${d.fv}/StF ${d.stf} x${d.uses}`).join('; ') || 'none'}`);
-        console.log(`  models ${f.models.core} (meshes ${f.meshBytes.core} bytes), and ${f.models.armour} more for FV's armour (${f.meshBytes.armour} bytes)`);
+        console.log(`  models ${f.models.core} (meshes ${f.meshBytes.core} bytes), ${f.models.pads} pads and skirt (${f.meshBytes.pads} bytes: ${f.padModels.join(' ') || 'none'}), and ${f.models.armour} more for FV's armour (${f.meshBytes.armour} bytes)`);
+        console.log(`  player 2 ${f.p2SameRecord ? 'is player 1\'s record again' : 'has a record of its own'}; sway chains ${f.osage.map((o) => `record ${o.record}: ${o.chains ? `${o.chains} of ${o.segments.join('+')} (models ${o.models.join(' ')})` : 'none'}`).join(', ')}`);
+        console.log(`  shadow models ${f.shadowModels.join(' ')}; carried item ${f.item ?? 'none'}; motions shared with ${Object.entries(f.shared).map(([k, v]) => `${k} ${v}`).join(', ') || 'none surveyed'}`);
+        console.log(`  finish kinds: ${Object.entries(f.finishes).map(([k, v]) => `${k} x${v.length}${k === '3' ? ` (cage break: ${v.join(' ')})` : ''}`).join(', ') || 'none'}`);
+        if (out.indexOf(f)) console.log(`    over the fighters above, kept once: ${f.addedOverBefore.motions} motions of his own, ${f.addedOverBefore.bytes} heap bytes`);
         for (const [k, t] of Object.entries(f.textures)) console.log(`  textures, ${k}: ${t.tiles} tiles, ${t.cells} cells of 32x32 (${Object.entries(t.sizes).map(([s, n]) => `${s} x${n}`).join(', ')})`);
     }
-    console.log(`all three, without armour: ${total.motionIds} motion ids, ${total.heap} heap bytes, ${total.meshes} mesh bytes, ${total.cells} texture cells (the largest two in one fight ${total.pairCells})`);
+    console.log(`${out.length === 3 ? 'all three' : `the ${out.length}`}, without armour: ${total.motionIds} motion ids, ${total.heap} heap bytes, ${total.meshes} mesh bytes, ${total.cells} texture cells (the largest two in one fight ${total.pairCells})`);
     for (const [k, r] of Object.entries(ROOM)) console.log(`  room, ${k}: ${r.motionIds} motion ids, ${r.heap} heap bytes, ${r.meshes} mesh bytes, ${r.cells} cells${k === 'stf' ? ' for every guest at once' : ' a fight, for both fighters and what they share'}`);
 }

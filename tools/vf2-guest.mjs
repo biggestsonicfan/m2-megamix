@@ -227,7 +227,9 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
     /* What of VF2's is dropped or changed on the way in, for
      * tools/grade-guest.mjs (import-assets writes it to guests.json). */
     const lost = { playOps: {}, flagBits: {}, sounds: {}, strikeBytes: 0, op6Bytes: 0, op2bBytes: 0 };
-    const tally = (o, k) => { o[k] = (o[k] ?? 0) + 1; };
+    /* quiet: a guest's copy of his setups (ownMoveset) loses what his did */
+    let quiet = false;
+    const tally = (o, k) => { if (!quiet) o[k] = (o[k] ?? 0) + 1; };
 
     /* His voices: op 9's sound n plays the code of his parent's slot in
      * list n (StF's own lists are empty) */
@@ -383,13 +385,15 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
     }
     const ids = [...setups.keys()].sort((a, b) => a - b);
     const newId = new Map(ids.map((id, i) => [id, FIRST_MOTION + i]));
-    const mid = (id) => {
+    /* an id in a VF2 word (its flag bits kept) under the ids `map` gives */
+    const idIn = (map) => (id) => {
         if (id === 0xffff) return id;
         const m = id & MOTION_ID;
         if (!m) return id;
-        if (!newId.has(m)) throw new Error(`motion ${m} has no new id`);
-        return (id & ~MOTION_ID) | newId.get(m);
+        if (!map.has(m)) throw new Error(`motion ${m} has no new id`);
+        return (id & ~MOTION_ID) | map.get(m);
     };
+    const mid = idIn(newId);
     report.push(`${ids.length} motions, ${FIRST_MOTION}..${FIRST_MOTION + ids.length - 1}`);
 
     /* The motions his throws give their victim (setup op 5's: the throw's
@@ -506,7 +510,7 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
     /* [0x26|0x80][frame][mask -> +0xC60][step -> +0xC62][turn -> +0xA1E][spacing -> zanzou_ma],
      * StF's usual step and spacing */
     const trailOp = (frame, mask) => [0xa6, frame & 0xff, frame >> 8, mask & 0xff, mask >> 8, 0xfa, 0xff, 0, 0, ...f32(0.1)];
-    function convertSetup(id) {
+    function convertSetup(id, mid = idIn(newId)) {
         const s = setups.get(id);
         const h = s.head;
         const out = [h[0], h[1], h[2], h[3], 0, 0, 0, 0, h[4], h[5], h[6], h[7], 0];
@@ -517,11 +521,11 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
         for (const { op, b } of s.setup) {
             let o;
             switch (op) {
-            case 4: o = [4, b[1], b[2], damage(b[3]), 0, ...b.subarray(8, 17), ...f32(2.0)]; if (b.subarray(4, 8).some((x) => x)) lost.strikeBytes++; break;
+            case 4: o = [4, b[1], b[2], damage(b[3]), 0, ...b.subarray(8, 17), ...f32(2.0)]; if (b.subarray(4, 8).some((x) => x)) lost.strikeBytes += !quiet; break;
             case 5: o = [...b, 0, 0, 0, 0]; put16(o, 1, mid(b[1] | (b[2] << 8))); o[3] = damage(b[3]); break;
             /* Op 3's float at +7 is 0x81C, the height a jump lands at: VF2's units. */
             case 3: o = [...b]; o.splice(7, 4, ...f32(new DataView(b.buffer, b.byteOffset + 7, 4).getFloat32(0, true) * SCALE)); break;
-            case 6: o = [7, b[3], b[4]]; if (b[1] || b[2]) lost.op6Bytes++; break;
+            case 6: o = [7, b[3], b[4]]; if (b[1] || b[2]) lost.op6Bytes += !quiet; break;
             case 0xc: o = [0xc, 0, b[1], b[2]]; break;
             case 1: o = [...b]; put16(o, 1, mid(b[1] | (b[2] << 8))); break;
             case 0xa: o = [...b]; put16(o, 4, mid(b[4] | (b[5] << 8))); break;
@@ -531,7 +535,7 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
             out.push(...o);
         }
         const trail = trailOf(s);
-        if (trail) trails++;
+        if (trail) trails += !quiet;
         out.push(trail ? 8 : s.end);
         if (s.end === 8 || trail) {
             const at = (o) => o[1] | (o[2] << 8);
@@ -570,7 +574,7 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
 
     /* ---- motions and setups into the heap, the two tables by new id ---- */
     const motions = T.offset_list_motions, setupT = T.animation_related;
-    const top = FIRST_MOTION + ids.length + thrownIds.length;
+    let top = FIRST_MOTION + ids.length + thrownIds.length;
     for (const t of [motions, setupT]) {
         if (top * 4 > t.room) throw new Error(`${t.name ?? 'motion table'}: ${top} ids do not fit`);
         grow(t, top * 4);
@@ -590,87 +594,97 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
     report.push(`motion blocks ${motionBytes} bytes; ${trails} strikes trail`);
     report.push(`damage x140/200: ${[...damages].sort((a, b) => a[0] - b[0]).map(([v, d]) => `${v}->${d}`).join(', ')}`);
 
-    /* ---- the command program, converted ---- */
+    /* ---- the command program, converted ----
+     * at the heap's next word, its motion ids under mid (a guest's own moveset
+     * has its own: ownMoveset); where it went and its root's new address */
     const order = [...units.keys()].sort((a, b) => a - b);
-    const progAt = (heap + 3) & ~3;
-    const where = new Map();
-    {
-        let at = progAt;
+    let dropped = 0;
+    function emitProgram(mid, who = 'Akira') {
+        const progAt = (heap + 3) & ~3;
+        const where = new Map();
+        {
+            let at = progAt;
+            for (const a of order) {
+                const u = units.get(a);
+                where.set(a, at);
+                if (u.kind === 'header') at += 7;
+                else if (u.kind === 'end') at += 1;
+                else if (u.op === 0x32) at += 0;
+                else if (u.op === 0x05) at += 9;
+                else if (u.op === 0x13) at = ((at + 5 + 3) & ~3) + 12;
+                else at += u.len;
+            }
+        }
+        const prog = [];
+        const here = () => progAt + prog.length;
+        /* an empty table is its end alone */
+        const whereOf = (t) => where.get(t) ?? where.get(t - 0.5);
+        const reloc = (o, b) => {
+            const t = (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
+            const n = whereOf(t);
+            if (n === undefined) throw new Error(`command program: ${hex(t)} is not a unit`);
+            b[o] = n & 0xff; b[o + 1] = (n >> 8) & 0xff; b[o + 2] = (n >> 16) & 0xff; b[o + 3] = n >>> 24;
+        };
+        const vword = (w) => [w & 0xff, (w >> 8) & 0xff, (w >> 16) & 0xff, w >>> 24];
         for (const a of order) {
             const u = units.get(a);
-            where.set(a, at);
-            if (u.kind === 'header') at += 7;
-            else if (u.kind === 'end') at += 1;
-            else if (u.op === 0x32) at += 0;
-            else if (u.op === 0x05) at += 9;
-            else if (u.op === 0x13) at = ((at + 5 + 3) & ~3) + 12;
-            else at += u.len;
+            if (here() !== where.get(a)) throw new Error(`command program out of step at ${hex(a)}`);
+            if (u.kind === 'end') { prog.push(0); continue; }
+            const b = Uint8Array.from(vf2.maincpu.subarray(a, a + (u.kind === 'header' ? 7 : u.len)));
+            if (u.kind === 'header') {
+                const t = p32(a + 3);
+                const n = where.get(t);
+                if (n === undefined) throw new Error(`table ${hex(a)}: ${hex(t)}`);
+                prog.push(...b.subarray(0, 3), ...vword(n));
+                continue;
+            }
+            switch (u.op) {
+            case 0x05: case 0x06: {
+                const w = commitWord(a), type = w >>> 24;
+                let nw;
+                if (COMMIT_ACTION[type] !== undefined) nw = mid(A.actions[COMMIT_ACTION[type]]);
+                else if (COMMIT_TYPE[type] !== undefined) nw = (COMMIT_TYPE[type] << 24) | mid(w & 0xffffff);
+                else throw new Error(`commit type ${hex(type)} at ${hex(a)}`);
+                prog.push(u.op, ...vword(nw >>> 0));
+                if (u.op === 0x05) prog.push(0, 0, 0, 0);
+                break;
+            }
+            case 0x13: {
+                reloc(1, b);
+                prog.push(...b.subarray(0, 5));
+                while (here() & 3) prog.push(0);
+                prog.push(...vword(0x8c800000 | mid(u.g0)), ...vword(0x84003000), ...vword(R.guest.nativeTail));
+                break;
+            }
+            case 0x32: dropped += !quiet; break;
+            case 0x33: reloc(1, b); prog.push(0x11, ...b.subarray(1, 5)); break;
+            default:
+                if (u.op === 0x2b && b[2]) { lost.op2bBytes += !quiet; b[2] = 0; }
+                if ([0x0d, 0x0f, 0x27, 0x11].includes(u.op)) reloc(1, b);
+                if (u.op === 0x28) for (const o of [1, 5, 9]) reloc(o, b);
+                if (u.op === 0x15 && p32(a + 5)) reloc(5, b);
+                prog.push(...b);
+            }
         }
+        if (alloc(Uint8Array.from(prog), 'command program', 4, who) !== progAt) throw new Error('command program moved');
+        return { progAt, root: whereOf(root), length: prog.length };
     }
-    const prog = [];
-    const here = () => progAt + prog.length;
-    /* an empty table is its end alone */
-    const whereOf = (t) => where.get(t) ?? where.get(t - 0.5);
-    const reloc = (o, b) => {
-        const t = (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
-        const n = whereOf(t);
-        if (n === undefined) throw new Error(`command program: ${hex(t)} is not a unit`);
-        b[o] = n & 0xff; b[o + 1] = (n >> 8) & 0xff; b[o + 2] = (n >> 16) & 0xff; b[o + 3] = n >>> 24;
-    };
-    const vword = (w) => [w & 0xff, (w >> 8) & 0xff, (w >> 16) & 0xff, w >>> 24];
-    let dropped = 0;
-    for (const a of order) {
-        const u = units.get(a);
-        if (here() !== where.get(a)) throw new Error(`command program out of step at ${hex(a)}`);
-        if (u.kind === 'end') { prog.push(0); continue; }
-        const b = Uint8Array.from(vf2.maincpu.subarray(a, a + (u.kind === 'header' ? 7 : u.len)));
-        if (u.kind === 'header') {
-            const t = p32(a + 3);
-            const n = where.get(t);
-            if (n === undefined) throw new Error(`table ${hex(a)}: ${hex(t)}`);
-            prog.push(...b.subarray(0, 3), ...vword(n));
-            continue;
-        }
-        switch (u.op) {
-        case 0x05: case 0x06: {
-            const w = commitWord(a), type = w >>> 24;
-            let nw;
-            if (COMMIT_ACTION[type] !== undefined) nw = mid(A.actions[COMMIT_ACTION[type]]);
-            else if (COMMIT_TYPE[type] !== undefined) nw = (COMMIT_TYPE[type] << 24) | mid(w & 0xffffff);
-            else throw new Error(`commit type ${hex(type)} at ${hex(a)}`);
-            prog.push(u.op, ...vword(nw >>> 0));
-            if (u.op === 0x05) prog.push(0, 0, 0, 0);
-            break;
-        }
-        case 0x13: {
-            reloc(1, b);
-            prog.push(...b.subarray(0, 5));
-            while (here() & 3) prog.push(0);
-            prog.push(...vword(0x8c800000 | mid(u.g0)), ...vword(0x84003000), ...vword(R.guest.nativeTail));
-            break;
-        }
-        case 0x32: dropped++; break;
-        case 0x33: reloc(1, b); prog.push(0x11, ...b.subarray(1, 5)); break;
-        default:
-            if (u.op === 0x2b && b[2]) { lost.op2bBytes++; b[2] = 0; }
-            if ([0x0d, 0x0f, 0x27, 0x11].includes(u.op)) reloc(1, b);
-            if (u.op === 0x28) for (const o of [1, 5, 9]) reloc(o, b);
-            if (u.op === 0x15 && p32(a + 5)) reloc(5, b);
-            prog.push(...b);
-        }
-    }
-    if (alloc(Uint8Array.from(prog), 'command program') !== progAt) throw new Error('command program moved');
-    const newRoot = whereOf(root);
+    const { progAt, root: newRoot, length: progLength } = emitProgram(mid);
     T.MOVESET_ARRAY.view.setUint32(CHR * 4, newRoot, true);
-    report.push(`command program ${hex(progAt)}, ${prog.length} bytes (${units.size} units, ${commits.length} commits, ${natives.length} natives, ${dropped} op 0x32 dropped)`);
+    report.push(`command program ${hex(progAt)}, ${progLength} bytes (${units.size} units, ${commits.length} commits, ${natives.length} natives, ${dropped} op 0x32 dropped)`);
 
     /* ---- actions, records, skeleton, hands, head ---- */
     const knux = program.u32(T.CHAR_PARTS.src + CHR * 4);
     const knuxActions = program.u32(knux + 0xc);
     const recs = [];
-    const actions = [];
-    for (let i = 0; i < 52; i++) actions.push(program.u16(knuxActions + i * 2));
-    STF_ACTIONS.forEach((x, s) => { actions[s] = (actions[s] & ~MOTION_ID) | mid(actionMotion(x)); });
+    /* his 52 action slots (Knuckles' flag bits), the motions under mid */
+    const actionsOf = (mid) => {
+        const out = [];
+        for (let i = 0; i < 52; i++) out.push(program.u16(knuxActions + i * 2));
+        STF_ACTIONS.forEach((x, s) => { out[s] = (out[s] & ~MOTION_ID) | mid(actionMotion(x)); });
+        return out;
+    };
+    const actions = actionsOf(mid);
     const actionsAt = alloc(u16s(actions), 'actions');
 
     /* ptr_DA0B4[character] (sub_2B94C): his 30 lists, each VF2's 40, then
@@ -678,27 +692,35 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
      * last three. */
     const stfKinds = T.ptr_DA0B4.view.getUint32(CHR * 4, true);
     const knuxKinds = stfKinds;
-    const kinds = reactions.map((r, k) => {
+    const kindsOf = (mid, who = 'Akira') => alloc(u32s(reactions.map((r, k) => {
         const stfList = program.u32(stfKinds + k * 4);
         const tail = [41, 42, 43].map((i) => program.u32(stfList + i * 4));
-        return alloc(u32s([...r.map(mid), mid(r[16]), ...tail]), `reactions ${k}`);
-    });
-    const kindsAt = alloc(u32s(kinds), 'reaction kinds');
+        return alloc(u32s([...r.map(mid), mid(r[16]), ...tail]), `reactions ${k}`, 4, who);
+    })), 'reaction kinds', 4, who);
+    const kindsAt = kindsOf(mid);
     T.ptr_DA0B4.view.setUint32(CHR * 4, kindsAt, true);
 
     /* motion_remap (set_motion): his motion for each StF one StF's code plays
      * him by number: its action slots' and reactions' (by place), and the
      * knock-downs sub_2B94C's callers put in (225, 262, 270, 334). StF's
-     * fighters play the copies of what his throws give their victim. */
-    const own = new Array(top).fill(0);
-    const stfId = (x) => x & MOTION_ID, put = (from, to) => { if (from && from < FIRST_MOTION && !own[from]) own[from] = stfId(to); };
-    for (const x of [225, 262, 270, 334]) put(x, mid(0x2ce));
-    STF_ACTIONS.forEach((x, s) => put(stfId(program.u16(knuxActions + s * 2)), mid(actionMotion(x))));
-    reactions.forEach((r, k) => {
-        const stfList = program.u32(stfKinds + k * 4);
-        for (let i = 0; i < 41; i++) put(stfId(program.u32(stfList + i * 4)), mid(i < 40 ? r[i] : r[16]));
-    });
-    const theirs = new Array(top).fill(0);
+     * fighters play the copies of what his throws give their victim. A list
+     * covers every id the motion tables have room for (set_motion reads it by
+     * the id it plays, and a guest's own moveset adds ids after his). */
+    const IDS = motions.room / 4;
+    const stfId = (x) => x & MOTION_ID;
+    const remapOf = (mid) => {
+        const out = new Array(IDS).fill(0);
+        const put = (from, to) => { if (from && from < FIRST_MOTION && !out[from]) out[from] = stfId(to); };
+        for (const x of [225, 262, 270, 334]) put(x, mid(0x2ce));
+        STF_ACTIONS.forEach((x, s) => put(stfId(program.u16(knuxActions + s * 2)), mid(actionMotion(x))));
+        reactions.forEach((r, k) => {
+            const stfList = program.u32(stfKinds + k * 4);
+            for (let i = 0; i < 41; i++) put(stfId(program.u32(stfList + i * 4)), mid(i < 40 ? r[i] : r[16]));
+        });
+        return out;
+    };
+    const own = remapOf(mid);
+    const theirs = new Array(IDS).fill(0);
     for (const [id, c] of copyId) theirs[newId.get(id)] = c;
     const ownAt = alloc(u16s(own), 'motion remap'), theirsAt = alloc(u16s(theirs), 'StF fighters\' motion remap');
     for (let c = 0; c < PLAYER2; c++) T.motion_remap.view.setUint32(c * 4, c === CHR ? ownAt : theirsAt, true);
@@ -885,6 +907,47 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
     /* char_game: the game he comes from, for the code that branches on it. */
     for (const c of [CHR, CHR + PLAYER2]) T.char_game.bytes[c] = R.guest.games.VF2;
 
+    /* ---- a guest's own moveset ----
+     * A guest built on his (tools/ryo-guest.mjs) gets its own copy of all of
+     * his that names a motion, so that a step can give it a move, a block or a
+     * setup of its own without touching his. Each of his motions gets an id of
+     * the guest's own, from `top` on: the block is his (the same pointer), the
+     * setup his converted again, with the guest's ids in it. Then his command
+     * program, actions, reactions and remap, on those ids. StF's fighters play
+     * the copies of his thrown motions for the guest's throws too (theirs).
+     * Returns the program's root, the actions, the reaction kinds and the
+     * remap (seatGuest's moves, actions, kinds and remap), and his ids against
+     * the guest's (VF2 id -> its StF id). */
+    function ownMoveset(who) {
+        const first = top, own = new Map(ids.map((id, i) => [id, first + i]));
+        top += ids.length;
+        if (top * 4 > motions.room) throw new Error(`${who}'s moveset: ${top} motion ids do not fit (${motions.room / 4})`);
+        for (const t of [motions, setupT]) grow(t, top * 4);
+        const gid = idIn(own);
+        const at = (t, i) => t.view.getUint32(i * 4, true);
+        let prog, setups = 0, setupBytes = 0;
+        quiet = true;
+        try {
+            /* a setup that names no motion is his byte for byte, and points at his */
+            for (const id of ids) {
+                const b = convertSetup(id, gid), his = convertSetup(id);
+                const same = b.length === his.length && b.every((x, i) => x === his[i]);
+                motions.view.setUint32(own.get(id) * 4, at(motions, newId.get(id)), true);
+                setupT.view.setUint32(own.get(id) * 4, same ? at(setupT, newId.get(id)) : alloc(b, `setup ${id}`, 1, who), true);
+                if (!same) { setups++; setupBytes += b.length; }
+            }
+            prog = emitProgram(gid, who);
+        } finally { quiet = false; }
+        for (const [id, c] of copyId) theirs[own.get(id)] = c;
+        main.put(theirsAt - MAIN_DATA, u16s(theirs), 'StF fighters\' motion remap');
+        return {
+            first, ids: own, setups, setupBytes, root: prog.root, progAt: prog.progAt, progLength: prog.length,
+            actions: alloc(u16s(actionsOf(gid)), 'actions', 4, who),
+            kinds: kindsOf(gid, who),
+            remap: alloc(u16s(remapOf(gid)), 'motion remap', 4, who),
+        };
+    }
+
     report.push(`heap ${hex(R.guest.heap)}..${hex(heap)}`);
     const coverage = {
         chars: [CHR, CHR + PLAYER2], game: 'VF2', name: 'Akira',
@@ -902,7 +965,7 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
     const ctx = {
         alloc, heapEnd: () => heap, u32s, u16s, grow, pack, freeTaken, polyEnd: poly, modelIds: new Set(modelId.values()),
         recs, bones, rigBytes, balls, kindsAt, knuxKinds, ownAt, own, theirs, theirsAt, actions, actionsAt, newRoot, progAt,
-        handsAt, top, mid, newId, setups, convertSetup, reactions, damage, knuxActions,
+        handsAt, mid, newId, setups, convertSetup, ownMoveset, reactions, damage, knuxActions,
         headOf: (p) => M((p ? A.p2 : A).parts[2].model),
     };
     return { report, coverage, modelId, newId, parts: A.parts.map((x) => M(x.model)), p2: A.p2.parts.map((x) => M(x.model)), ctx };

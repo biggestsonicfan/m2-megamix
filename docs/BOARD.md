@@ -914,10 +914,22 @@ Ryo Hazuki (the Shenmue beta's, js/ryo.js) is StF character 1
 setup. tools/ryo-guest.mjs builds him on top of what tools/vf2-guest.mjs
 put in for Akira, and import-assets runs it after Akira's.
 
-- **Moves.** Akira's: his command program, actions, reactions, motion remap
-  and setups, so he plays as a VF2 fighter (`char_game` VF2). His own
-  motions are VF3-style Shenmue ones the board cannot play yet
-  (docs/VF3-SHENMUE.md).
+- **Moves.** His own moveset, a copy of Akira's for now (#1608), so he
+  plays as a VF2 fighter (`char_game` VF2). `ownMoveset` (vf2-guest.mjs)
+  gives each of Akira's 328 motions an id of his own (879..1206, after
+  Akira's thrown copies; Chai's 1207..1534; `offset_list_motions` and
+  `animation_related` have room for 2048), on Akira's motion blocks. His
+  command program (2362 bytes), actions (record +0xC), reaction lists and
+  motion remap are emitted for those ids, and so are the 83 setups that
+  name a motion (3979 bytes; the rest are Akira's). A throw he lands plays
+  his own copy of the victim's motion, one landed on him Akira's. So his
+  moves can now change without touching Akira's. His own motions are
+  VF3-style Shenmue ones the board cannot play yet (docs/VF3-SHENMUE.md).
+  The heap grew past the VF2 skies' old place, so `VF2_SKY_AT` moved to
+  0x2FA0000.
+  Check: MAME, the same inputs on the old and the new ROMs, Ryo vs Akira,
+  Chai vs Ryo, Akira vs Chai: the same energies every 300 frames to the KO,
+  Ryo's motion ids Akira's + 360, Chai's + 688.
 - **Model.** YKB_B (#1556), the model Shenmue draws his fight afterimage
   with: each scene's MAPINFO.BIN gives every fighter a Fight block, and
   Ryo's (AKIR) names `Blur` 'YKB_B.MT5' (the others their own _B: KOK_B,
@@ -1217,8 +1229,10 @@ for Ryo and then for him), on Akira's moves (`char_game` VF2).
   `ctx.modelIds`); heap to 0x2F1D1FC. Ryo's ROM bytes are as before.
 - **Seams.** 2460 words once, then 870 a frame, at `SEAM_POLY` (8 K words a
   player).
-- **Not his own.** His moves: Akira's, as Ryo's. His Shenmue moveset is the
-  web roster's (docs/CHAI.md).
+- **Moves.** His own, as Ryo's (above): a copy of Akira's under ids
+  1207..1534, with his own program, actions, reactions, remap and setups.
+- **Not his own.** What his moves do: Akira's, as Ryo's. His Shenmue
+  moveset is the web roster's (docs/CHAI.md).
 
 Check: MAME, Chai vs Ryo on South Island and Honey vs Chai in the
 Colosseum: setup reads SHENMUE:CHAI and the polygon window 306 for him; he
@@ -1344,7 +1358,7 @@ the data ROMs, and `bake-board.mjs` bakes their records into `poses.h`.
 - Skies: VF2 scrolls a panorama on tile map 2, split with map 3 (0x2000 in
   its vscroll), for Tou-rin's day sky and the Colosseum's storm (record
   0x2502C + stage * 32: rows, row offset, the scroll CG). `vf2SkyPlan` bakes
-  each one into main_data at `VF2_SKY_AT` (0x2F80000): its characters (blocks
+  each one into main_data at `VF2_SKY_AT` (0x2FA0000): its characters (blocks
   StF's fight CG uses are moved to free ones), its palette snapped to the
   board's colorxlat column, and a 512-cell-wide map. `sky_frame` does what
   VF2's 0x24F78 and its stages' +4 routines do: the camera's heading and

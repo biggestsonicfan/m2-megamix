@@ -144,8 +144,9 @@ const STORM_PAL = [
  * rows, u32 width), one a column pair from map row 8, on and off. */
 export const BOLT = { on: 0x2aa8346, off: 0x2aa85e6, step: 0x54, pairs: 8, col: 24, row: 8, rows: 18 };
 const SKY_FREE_BLOCKS = [...Array.from({ length: 44 }, (_, i) => 40 + i), ...Array.from({ length: 21 }, (_, i) => 107 + i)];
-/* The skies' place in main_data: free room above the guests' heap. */
-export const VF2_SKY_AT = 0x02f80000;
+/* The skies' place in main_data: free room above the guests' heap (366 KB
+ * of skies in 384; the heap below runs up to it, its end checked on import). */
+export const VF2_SKY_AT = 0x02fa0000;
 const SKY_END = 0x03000000;
 const gamma = (i) => Math.trunc(Math.max(((i - 64) * 255) / 191, 0));
 const lumaCol = (cx, p) => Array.from({ length: 32 }, (_, r) => cx[p * 0x4000 + r * 0x200 + 0x80]);

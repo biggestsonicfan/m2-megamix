@@ -151,6 +151,7 @@ function frame() {
     const cpu = [menu.p1cpu, menu.p2cpu];
     const pads = fight.players.map((p, i) => (cpu[i] ? cpuPad(fight, p, random, screenRight) : padOf(i)));
     stepFight(fight, pads, screenRight);
+    renderer.showCage(fight.broken);
     screenRight = renderer.follow(fight.players);
 }
 
