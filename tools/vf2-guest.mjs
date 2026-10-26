@@ -31,6 +31,9 @@ export const CHR = 6;                    /* StF's Knuckles */
 const PLAYER2 = 26;
 const FIRST_MOTION = 519;                /* StF's own are 0..518 */
 const MOTION_ID = 0x1fff;
+/* main_data's room for the guests' motions of their own (reserveIds,
+ * putMotion), below FV's stage pages (fv-stages.mjs FV_PAGES_AT) */
+const OWN_BLOCKS_AT = 0x450000, OWN_BLOCKS_END = 0x600000;
 /* StF's program ROM: calc_attack_flag's part masks, by attack id (rob+0x820). */
 const STRIKE_PARTS = 0x0ce020;
 const TRAIL_LEAD = 4;
@@ -176,7 +179,7 @@ function scaleMesh(b) {
  * those are angles the pose code holds, not points (object 17, the pelvis's
  * roll, is (0, 0, 16384.0), a quarter turn, in all but two of VF2's motions;
  * scaled, it rolled his pelvis half a turn and his stance came apart). */
-function scaleMotion(b, k = [SCALE, SCALE, SCALE]) {
+export function scaleMotion(b, k = [SCALE, SCALE, SCALE]) {
     const c = motionChannels(b, 0);
     for (let i = 36; i < 60; i++) {
         const t = c.types[i];
@@ -191,7 +194,7 @@ function scaleMotion(b, k = [SCALE, SCALE, SCALE]) {
  * VF2's 1.0). */
 /* The bits of a rob's flags StF's own play op 5 sets. */
 const STF_FLAG_BITS = new Set([0, 1, 3, 4, 7, 8, 9, 10, 11, 13, 15, 23, 25, 29, 30]);
-const THROWN = [SCALE, 1.07, SCALE];
+export const THROWN = [SCALE, 1.07, SCALE];
 /* Damage (setup op 4, a strike, and op 5, a throw: byte +3; play op 8: byte
  * +3) is out of VF2's 200 energy; StF's fighters have 140. */
 const DAMAGE = 140 / 200;
@@ -510,8 +513,7 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
     /* [0x26|0x80][frame][mask -> +0xC60][step -> +0xC62][turn -> +0xA1E][spacing -> zanzou_ma],
      * StF's usual step and spacing */
     const trailOp = (frame, mask) => [0xa6, frame & 0xff, frame >> 8, mask & 0xff, mask >> 8, 0xfa, 0xff, 0, 0, ...f32(0.1)];
-    function convertSetup(id, mid = idIn(newId)) {
-        const s = setups.get(id);
+    function convertSetup(id, mid = idIn(newId), s = setups.get(id)) {
         const h = s.head;
         const out = [h[0], h[1], h[2], h[3], 0, 0, 0, 0, h[4], h[5], h[6], h[7], 0];
         /* VF2's set_mot_dat patches two of his setups in code (V 0x1A26C, 0x1A97C):
@@ -948,6 +950,40 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
         };
     }
 
+    /* ---- a guest's motions of its own (tools/shenmue-moves.mjs) ----
+     * n ids after all so far (both tables grown to them), a block and setup
+     * put in under one, the copy StF's fighters play of one a guest's throw
+     * gives its victim, and a VF2 motion's frames. The heap is full up to
+     * VF2's skies, so the blocks go in main_data's room below FV's stage
+     * pages (fv-stages.mjs FV_PAGES_AT): StF's data there is nothing the
+     * board keeps, so nothing reads it. */
+    function reserveIds(n, who) {
+        const first = top;
+        top += n;
+        if (top * 4 > motions.room) throw new Error(`${who}'s motions: ${top} motion ids do not fit (${motions.room / 4})`);
+        for (const t of [motions, setupT]) grow(t, top * 4);
+        return first;
+    }
+    let room = OWN_BLOCKS_AT;
+    const roomAlloc = (b, label, who) => {
+        for (;;) {
+            room = (room + 3) & ~3;
+            const hit = main.kept.find(([x, y]) => x < room + b.length && room < y);
+            if (!hit) break;
+            room = hit[1];
+        }
+        if (room + b.length > OWN_BLOCKS_END) throw new Error(`${who}'s ${label}: no room below 0x${OWN_BLOCKS_END.toString(16)}`);
+        main.put(room, b, `${who} ${label}`);
+        room += b.length;
+        return MAIN_DATA + room - b.length;
+    };
+    const putMotion = (id, block, setup, who, label) => {
+        motions.view.setUint32(id * 4, roomAlloc(block, `motion ${label}`, who), true);
+        setupT.view.setUint32(id * 4, alloc(setup, `setup ${label}`, 1, who), true);
+    };
+    const theirCopy = (id, copy) => { theirs[id] = copy; main.put(theirsAt - MAIN_DATA, u16s(theirs), 'StF fighters\' motion remap'); };
+    const vf2Frames = (id) => { const r = resolveData(vf2, d32(VF2_MOTIONS + id * 4)); return r.view.getUint16(r.off, true); };
+
     report.push(`heap ${hex(R.guest.heap)}..${hex(heap)}`);
     const coverage = {
         chars: [CHR, CHR + PLAYER2], game: 'VF2', name: 'Akira',
@@ -966,6 +1002,7 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
         alloc, heapEnd: () => heap, u32s, u16s, grow, pack, freeTaken, polyEnd: poly, modelIds: new Set(modelId.values()),
         recs, bones, rigBytes, balls, kindsAt, knuxKinds, ownAt, own, theirs, theirsAt, actions, actionsAt, newRoot, progAt,
         handsAt, mid, newId, setups, convertSetup, ownMoveset, reactions, damage, knuxActions,
+        reserveIds, putMotion, theirCopy, vf2Frames, ownBlocksEnd: () => room,
         headOf: (p) => M((p ? A.p2 : A).parts[2].model),
     };
     return { report, coverage, modelId, newId, parts: A.parts.map((x) => M(x.model)), p2: A.p2.parts.map((x) => M(x.model)), ctx };

@@ -914,22 +914,57 @@ Ryo Hazuki (the Shenmue beta's, js/ryo.js) is StF character 1
 setup. tools/ryo-guest.mjs builds him on top of what tools/vf2-guest.mjs
 put in for Akira, and import-assets runs it after Akira's.
 
-- **Moves.** His own moveset, a copy of Akira's for now (#1608), so he
-  plays as a VF2 fighter (`char_game` VF2). `ownMoveset` (vf2-guest.mjs)
+- **Moves.** His own moveset (#1608): `ownMoveset` (vf2-guest.mjs)
   gives each of Akira's 328 motions an id of his own (879..1206, after
-  Akira's thrown copies; Chai's 1207..1534; `offset_list_motions` and
-  `animation_related` have room for 2048), on Akira's motion blocks. His
-  command program (2362 bytes), actions (record +0xC), reaction lists and
-  motion remap are emitted for those ids, and so are the 83 setups that
-  name a motion (3979 bytes; the rest are Akira's). A throw he lands plays
-  his own copy of the victim's motion, one landed on him Akira's. So his
-  moves can now change without touching Akira's. His own motions are
-  VF3-style Shenmue ones the board cannot play yet (docs/VF3-SHENMUE.md).
-  The heap grew past the VF2 skies' old place, so `VF2_SKY_AT` moved to
-  0x2FA0000.
+  Akira's thrown copies; `offset_list_motions` and `animation_related`
+  have room for 2048), on Akira's motion blocks. His command program (2362
+  bytes), actions (record +0xC), reaction lists and motion remap are
+  emitted for those ids, and so are the 83 setups that name a motion (the
+  rest are Akira's). A throw he lands plays his own copy of the victim's
+  motion, one landed on him Akira's. The heap grew past the VF2 skies' old
+  place, so `VF2_SKY_AT` moved to 0x2FA0000.
   Check: MAME, the same inputs on the old and the new ROMs, Ryo vs Akira,
   Chai vs Ryo, Akira vs Chai: the same energies every 300 frames to the KO,
   Ryo's motion ids Akira's + 360, Chai's + 688.
+- **His own moves** (#1612, tools/shenmue-moves.mjs): on the ground, P, K,
+  P+K and P+G are the web roster's (js/ryo.js `readMoves`), over that copy.
+  - *Motions.* Each motion they play gets an id after the moveset's
+    (Ryo's 1207..1260): its Shenmue block converted to VF2's
+    (docs/VF3-SHENMUE.md) at Akira's size (`scaleMotion`), and a setup.
+    A strike's setup is the one of Akira's nearest it (the same level, a
+    strike with an arm or a leg as his is, the nearest damage) with
+    Shenmue's timing as op 2, Shenmue's level and damage in op 4 (×2,
+    then ×140/200 as Akira's), and the attack id of the limb that is
+    furthest forward at the hit frame (the button's limbs first): 5 or 6
+    for an arm, 9 or 10 for a leg. Its play ops (fists, sounds, voices)
+    are moved from the template's frames to the move's. A throw's setup is
+    Akira's throw nearest its length, its victim a motion of the guest's
+    own (with the victim template's setup), and the copy StF's fighters
+    play at their size (`THROWN`), as Akira's.
+  - *Room.* The heap is full up to the skies, so the blocks go in
+    main_data from 0x450000, below FV's stage pages (StF's data there is
+    nothing the board keeps): Ryo's and Chai's to 0x4BA4A4. Setups and
+    scripts stay in the heap.
+  - *Scripts.* His root's headers for the four buttons point at scripts
+    of his own. Each hands a downed opponent (Akira's script after its
+    alt2 and en_set 0) and the stick held down (`bit 4`) to Akira's script
+    for that button, then tries the web roster's moves in its order: its
+    direction tests (newest first, `64` forward, `128` back, `0`
+    neutral) as `exact` tests, a throw with Akira's guards (en_flag 8,
+    state 8 clear), the plain move last (the web's tables hold it among
+    the stick's: Ryo's back moves follow his plain P). P+G that matches no throw is his
+    P. A string's next move is a table of his own (setpc), its scripts
+    waiting for the cancel frame (`12 0a 08 00`) as Akira's do.
+  - *Not his yet:* his downed-opponent, crouching, running and jumping
+    moves (Akira's), a throw's own follow-up (NGS_HED_2, NGS_SP2/SP3),
+    and the throw escapes.
+  Check: MAME, the setup menu's RYO and CHAI as 1P (2P as set), each input
+  from kamae (P, P,P, P,K, 6P, 4P, 6,6P, K, K,K, 6K, 4K, P+K, 6P+K, 4P+K,
+  2P, 2K, 6,6P+G): Ryo's play his own ids (P 1213, P,P 1214, 6P 1210, 4P
+  1233, 6,6P 1209, K,K 1226, 6K 1237, 4K 1242, P+K 1251, 6P+K 1249, 4P+K
+  1254), 2P and 2K Akira's, and 6,6P+G throws (1245, 2P in 1260, his
+  copy of the victim's motion); Chai's likewise (4P 1596, 4K 1607, the
+  throw 1612). The strikes take energy.
 - **Model.** YKB_B (#1556), the model Shenmue draws his fight afterimage
   with: each scene's MAPINFO.BIN gives every fighter a Fight block, and
   Ryo's (AKIR) names `Blur` 'YKB_B.MT5' (the others their own _B: KOK_B,
@@ -1230,9 +1265,12 @@ for Ryo and then for him), on Akira's moves (`char_game` VF2).
 - **Seams.** 2460 words once, then 870 a frame, at `SEAM_POLY` (8 K words a
   player).
 - **Moves.** His own, as Ryo's (above): a copy of Akira's under ids
-  1207..1534, with his own program, actions, reactions, remap and setups.
-- **Not his own.** What his moves do: Akira's, as Ryo's. His Shenmue
-  moveset is the web roster's (docs/CHAI.md).
+  1261..1588, with his own program, actions, reactions, remap and setups,
+  and over it his Shenmue moves on P, K, P+K and P+G (1589..1616: 22
+  strikes, 2 throws), built as Ryo's are. CHA_CHA_DROP1 has no attack
+  record and stays out.
+- **Not his own.** His downed-opponent, crouching and jumping moves:
+  Akira's, as Ryo's.
 
 Check: MAME, Chai vs Ryo on South Island and Honey vs Chai in the
 Colosseum: setup reads SHENMUE:CHAI and the polygon window 306 for him; he
