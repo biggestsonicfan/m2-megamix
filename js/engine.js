@@ -144,6 +144,7 @@ export function createFight(f1, f2, stageGame, { rounds = 2 } = {}) {
         message: 'ROUND 1',
         winner: null,
         events: [],
+        broken: new Set(),          /* the cage's broken sides, for the match (wallSide) */
     };
     for (const p of fight.players) poseNow(fight, p);
     return fight;
@@ -156,6 +157,7 @@ function resetRound(fight) {
         p.energy = ENERGY;
         p.ref = null;
         p.follow = 0; p.press = null; p.hist = []; p.combo = 0;
+        p.finished = false;
         setAct(p, 'stance');
     });
     fight.timer = ROUND_TIME;
@@ -180,9 +182,10 @@ export function stepFight(fight, pads, screenRight = [1, 0]) {
     if (live) {
         for (const [p, o] of [[a, b], [b, a]]) strike(fight, p, o);
         separate(fight, a, b);
-        for (const p of fight.players) bound(fight, p);
         fight.timer--;
     }
+    /* the walls hold after a KO too: that is when a finish breaks one */
+    if (live || fight.phase === 'ko') for (const p of fight.players) bound(fight, p, live);
     referee(fight);
 }
 
@@ -434,6 +437,7 @@ function strike(fight, p, o) {
     p.combo = (fight.tick - (p.comboAt ?? -99) < 60) ? p.combo + 1 : 1;
     p.comboAt = fight.tick;
     o.knocked = o.energy <= 0 || damage >= 40;
+    if (o.energy <= 0 && finishes(p, a)) o.finished = true;
     react(fight, o, how, o.knocked ? 'down' : counter ? 'counter' : 'hit');
     fight.events.push({ kind: 'hit', side: p.side, damage, counter, level: a.level });
 }
@@ -461,20 +465,58 @@ function separate(fight, a, b) {
     b.pos[0] += nx * push; b.pos[2] += nz * push;
 }
 
-/* VF2's ring: out past its edge. FV's and StF's cages: a wall. */
-function bound(fight, p) {
+/*
+ * The cage break (FV's, docs/FV-STAGES.md): a KO by a blow of finish kind 3
+ * that drives the loser into a wall breaks that side, and the loser goes on
+ * through it. FV mends the cage at the next round (SET_INT clears
+ * finish_wall_flag). Here a broken side stays broken for the match, and a
+ * fighter past its line is out, as at VF2's ring edge; the other sides stay
+ * walls. FV also wants the loser reacting and driven in steeper than 22.5
+ * degrees, which this engine (no velocities) leaves out.
+ *
+ * Here: VF2's, StF's and Shenmue's motions have no finish kinds, so their
+ * KO blows of FINISH_DAMAGE or more count as kind 3: a third or so of each
+ * of their movesets, about the share of FV's own (24 to 100 damage).
+ */
+const FINISH_CAGE = 3, FINISH_DAMAGE = 30;
+function finishes(p, a) {
+    return p.fighter.game === 'fv' ? a.finish === FINISH_CAGE : a.damage >= FINISH_DAMAGE;
+}
+
+/* The side of the square a point is past or nearest: FV's numbering
+ * (finish_wall_calc_pos) 0 +z, 1 -x, 2 -z, 3 +x. */
+export function wallSide(x, z) {
+    return Math.abs(x) > Math.abs(z) ? (x > 0 ? 3 : 1) : (z > 0 ? 0 : 2);
+}
+const SIDE_AXIS = [[2, 1], [0, -1], [2, -1], [0, 1]];   /* side: [axis, sign] */
+
+/* VF2's ring: out past its edge. FV's and StF's cages: a wall, but for
+ * the sides of FV's that are broken. */
+function bound(fight, p, live) {
     const A = fight.arena, at = bodyPoint(p);
+    const out = () => {
+        if (live && p.state !== ST.NAGERARE && !p.ringOut) { p.ringOut = true; p.energy = 0; fight.events.push({ kind: 'ringout', side: p.side }); }
+    };
     if (A.ringOut) {
-        if (Math.abs(at[0]) > A.half || Math.abs(at[2]) > A.half) {
-            if (p.state !== ST.NAGERARE && !p.ringOut) { p.ringOut = true; p.energy = 0; fight.events.push({ kind: 'ringout', side: p.side }); }
-        }
+        if (Math.abs(at[0]) > A.half || Math.abs(at[2]) > A.half) out();
         return;
     }
     const lim = A.half - BODY_RADIUS * sizeOf(p);
-    for (const k of [0, 2]) {
-        if (at[k] > lim) p.pos[k] -= at[k] - lim;
-        if (at[k] < -lim) p.pos[k] += -lim - at[k];
-    }
+    SIDE_AXIS.forEach(([k, sign], side) => {
+        const over = at[k] * sign - lim;
+        if (over <= 0) return;
+        if (fight.broken.has(side)) {
+            if (at[k] * sign > A.half) out();
+            return;
+        }
+        if (A.cage && p.finished) {
+            fight.broken.add(side);
+            p.finished = false;
+            fight.events.push({ kind: 'cagebreak', side: p.side, wall: side });
+            return;
+        }
+        p.pos[k] -= over * sign;
+    });
 }
 
 /* ---- rounds -------------------------------------------------------------- */

@@ -41,11 +41,12 @@ export const RYO = { game: 'shenmue', index: 0, name: 'RYO' };
 export const CHAI = { game: 'shenmue', index: 1, name: 'CHAI' };
 
 /* The arenas, as the fight code bounds them: VF2's ring is 16 square and a
- * fighter past its edge is out; FV's and StF's cages are walls. StF's stages
+ * fighter past its edge is out; FV's and StF's cages are walls, and FV's
+ * breaks (js/engine.js, the cage break). StF's stages
  * are drawn at 1/1.6 (their ops carry a 1.6 scale the fighters do not). */
 export const ARENA = {
     vf2: { half: 8, ringOut: true, scale: 1 },
-    fv: { half: 6, ringOut: false, scale: 1 },
+    fv: { half: 6, ringOut: false, cage: true, scale: 1 },
     stf: { half: 5, ringOut: false, scale: 1 / 1.6 },
 };
 
