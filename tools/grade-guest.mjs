@@ -224,6 +224,7 @@ function audit(c, cov) {
 
 function lost(cov) {
     const L = cov.lost, out = [];
+    if (!L) return out;           /* a guest built on Akira's: he lost it */
     const ops = Object.entries(L.playOps);
     if (ops.length) out.push(`play ops with no StF op, dropped: ${ops.map(([o, n]) => `${o} x${n}`).join(', ')}`);
     const bits = Object.entries(L.flagBits);
