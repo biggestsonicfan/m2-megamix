@@ -198,6 +198,10 @@ export const THROWN = [SCALE, 1.07, SCALE];
 /* Damage (setup op 4, a strike, and op 5, a throw: byte +3; play op 8: byte
  * +3) is out of VF2's 200 energy; StF's fighters have 140. */
 export const DAMAGE = 140 / 200;
+/* Fighting Vipers' armour: a strike this strong (the board's damage) breaks
+ * a damaged piece for a fighter whose game has no armour (setup head byte 4
+ * bit 5, kind2's; StF's own get it in tools/lift-stf.py, ARMOUR_BREAK) */
+export const ARMOUR_BREAK = 30;
 
 /* A strike's afterimage (trailOf, below): attack id `part`'s parts
  * (STRIKE_PARTS), the arms as they are and a leg's thigh or shin moved to
@@ -347,6 +351,8 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
                 const len = OP_LENGTH[op];
                 units.set(a, { kind: 'op', op, len });
                 if (op === 0x0d) todo.push([p32(a + 1), 'table']);
+                /* a header's test in a script: the u16 at +1 matched, its script at +3 */
+                if (op === 0x0e) todo.push([p32(a + 3), 'script']);
                 if (op === 0x0f || op === 0x27 || op === 0x32 || op === 0x33) todo.push([p32(a + 1), 'script']);
                 /* a throw's follow-up: the script it runs once it lands (0x1228) */
                 if (op === 0x15 && p32(a + 5)) todo.push([p32(a + 5), 'script']);
@@ -532,6 +538,10 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
          * motion 40 sets bit 7 of the kind word (0x804), and 578 flips bit 15 of
          * op 0xB's word (0x844). StF's has no such patches: put them in the data. */
         if (id === 40) out[0] |= 0x80;
+        /* VF2 has no armour: a strike of ARMOUR_BREAK or more (the board's
+         * damage) breaks a damaged piece, as StF's own (tools/lift-stf.py) */
+        const strike = s.setup.find((x) => x.op === 4);
+        if (strike && damage(strike.b[3]) >= ARMOUR_BREAK) out[4] |= 0x20;
         for (const { op, b } of s.setup) {
             let o;
             switch (op) {
@@ -675,6 +685,7 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
             default:
                 if (u.op === 0x2b && b[2]) { lost.op2bBytes += !quiet; b[2] = 0; }
                 if ([0x0d, 0x0f, 0x27, 0x11].includes(u.op)) reloc(1, b);
+                if (u.op === 0x0e) reloc(3, b);
                 if (u.op === 0x28) for (const o of [1, 5, 9]) reloc(o, b);
                 if (u.op === 0x15 && p32(a + 5)) reloc(5, b);
                 prog.push(...b);

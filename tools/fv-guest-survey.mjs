@@ -177,6 +177,8 @@ function walkProgram(root) {
             units.set(a, { kind: 'op', op, len });
             tally(ops, hex(op));
             if (op === 0x0d) todo.push([p32(a + 1), 'table']);
+            /* a header's test in a script: the u16 at +1 matched, its script at +3 */
+            if (op === 0x0e) todo.push([p32(a + 3), 'script']);
             if (op === 0x0f || op === 0x27) todo.push([p32(a + 1), 'script']);
             if (op === 0x15 && p32(a + 5)) todo.push([p32(a + 5), 'script']);
             if (op === 0x28) { for (const o of [1, 5, 9]) todo.push([p32(a + o), 'script']); break; }

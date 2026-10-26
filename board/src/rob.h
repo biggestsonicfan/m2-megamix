@@ -45,24 +45,28 @@
 #define ROB_CHAR          0x1B0u   /* u8 (1P CHAR / 2P CHAR): player 2's has its own models, character + 26 */
 #define ROB_CHAR_IS       0x1B1u   /* u8 the character it is */
 #define ROB_GXPOS         0x1F4u   /* f32, the root on the ground; gzpos +0x1FC */
-#define ROB_TRAIL         0x1004u  /* f32 x3 x8: the last 8 frames' ROB_GXPOS (GAME_DSP) */
-#define ROB_TRAIL_AT      0x1064u  /* u32: the next entry to write, 0..7 */
 #define ROB_GZPOS         0x1FCu
 #define ROB_OUT_ON        0x624u   /* a collision ball outside the ring touches the ground */
 #define ROB_HIT_COMBO     0x6F4u   /* u8, counted on the fighter hit (VF2 +0x6D8, FV +0x708) */
+#define ROB_KIND2         0x70Cu   /* u32 mot_kind2: the MK2_ bits */
+#define ROB_ARMOUR        0x7F0u   /* u32 parts_flag, FV's armour: ARMOUR_ bits */
 #define ROB_MOTD_LENG     0x800u   /* the motion's setup record from here: its length */
 #define ROB_MOTD_NEXT     0x802u   /* the next motion */
 #define ROB_MOTD_KIND     0x804u   /* u32, the mot_kind bits */
 #define ROB_MOTD_MAIN     0x808u   /* u16 hit frame; follow1 +0x80A cancel, follow2 +0x80C end */
 #define ROB_SKELTON_TYPE  0x84Cu   /* u8; 0xFF so the first set_motion copies the rig in */
+#define ROB_ARMOUR_LIMIT  0xAF0u   /* u32 x2: the damage that damages the upper piece, and the lower */
 #define ROB_MOT_REC       0xBD8u   /* the motion record (0x800 bytes) */
+#define ROB_TRAIL         0x1004u  /* f32 x3 x8: the last 8 frames' ROB_GXPOS (GAME_DSP) */
+#define ROB_TRAIL_AT      0x1064u  /* u32: the next entry to write, 0..7 */
 #define ROB_PAD           0x1200u  /* u8 this frame's pad; the input ring (write_pnt) follows */
 #define ROB_CONTROL       0x1208u  /* control_init's bits: 1 << 3 the pad drives it */
 #define ROB_PC_COMMAND    0x1218u  /* the command (move matcher) table in use */
 #define ROB_BALLS         0x1D00u  /* the collision balls' records, nine pointers */
+#define ROB_PART_DAMAGE   0x1F00u  /* u16 x16, the damage each part has taken (damage_unit) */
+#define ROB_ARMOUR_DAMAGE 0x1F74u  /* u32 x4: parts 0..8's sum (upper), 9..15's (lower), then the last ones */
 #define ROB_DENT_SCALE    0x1F88u  /* the dent pendulums: three unit scales, and three at +0x1FEC */
 #define ROB_DENT_SCALE2   0x1FECu
-#define ROB_DENTED_CNT    0x219Cu  /* the countdown camera_init runs down; swings them while >= 0 */
 #define ROB_EYE_MODEL     0x2050u  /* u32 x2, the face's eyes (player_head_change_2; 0: none) */
 #define ROB_EYE_TPD       0x2058u  /* u32 x2, each eye's moved texture points (snc_eye_thd_set) */
 #define ROB_SPIN          0x2068u  /* u32, 1 while the spin attack's ball stands in for the body (sub_81A48) */
@@ -71,7 +75,15 @@
 #define ROB_SPIN_MODEL    0x2084u  /* u16 x2, its models on even frames, and on odd (sub_81038) */
 #define ROB_SPIN_PULSE    0x20ACu  /* f32 x3, the pulse added to its scale (rob+0x2088 +0x24, spin_attack_cnt) */
 #define ROB_SPIN_DROP     0x20ECu  /* f32, how far below the root the ball and the smoke sit */
+#define ROB_DENTED_CNT    0x219Cu  /* the countdown camera_init runs down; swings them while >= 0 */
 #define ROB_SMOKE         0x21A0u  /* the spin's smoke: 20 puffs of 0x48 bytes (spin_smoke_trg) */
+#define SMOKE_SIZE        0x48u
+#define SMOKE_COUNT       0x00u    /* a puff: s32 its age in frames (it goes at 32), */
+#define SMOKE_STEP        0x04u    /* its step (sub_81CD8 ...: the pull and the scale, on g3), */
+#define SMOKE_POS         0x08u    /* f32 x3 its place, from the root (+0x1F4), */
+#define SMOKE_VEL         0x14u    /* f32 x3, */
+#define SMOKE_ACC         0x20u    /* f32 x3, */
+#define SMOKE_SCALE       0x2Cu    /* f32 x3, */
 #define ROB_SMOKE_LIVE    0x2740u  /* u32, a bit for each live puff */
 #define ROB_Y_SCALE       0x27C0u  /* f32 rob_disp's y scale */
 
@@ -84,6 +96,24 @@
 #define ROB_F_LAND           (1u << 13)
 #define ROB_F_NO_EYES        (1u << 20)  /* no eye tracking (camera_init), eyes drawn as they are (rob_disp) */
 #define ROB_F_SMOOTH_SWITCH  (1u << 26)
+#define ROB_F_NAKED          (1u << 28)  /* both armour pieces broken (damage_unit) */
+
+/* ROB_MOT_KIND's and ROB_MOTD_KIND's bits (mot_kind's table, StF 0x44294) */
+#define MK_AIR               (1u << 4)
+#define MK_MOVE              (1u << 5)
+#define MK_DOWN              (1u << 14)
+#define MK_DOWN_POSE         (1u << 16)
+
+/* ROB_KIND2's bits (mot_kind2's) */
+#define MK2_REPLAY           (1u << 5)   /* the move breaks armour, and FV replays it */
+#define MK2_REPLAY_INIT      (1u << 6)   /* a break it dealt (damage_unit; lift-stf.py) */
+#define MK2_PIKA             (1u << 10)  /* the replay looks at the breaker */
+
+/* ROB_ARMOUR's bits */
+#define ARMOUR_UP_DAMAGED    (1u << 0)
+#define ARMOUR_DOWN_DAMAGED  (1u << 1)
+#define ARMOUR_UP_BROKEN     (1u << 2)
+#define ARMOUR_DOWN_BROKEN   (1u << 3)
 
 /* ---- the camera (fa_camera; CAMERA, CAMERA_INFO) ---- */
 #define CAMERA_FLAG       TASK_FLAG   /* the CAMERA_ROBn_DISP bits */
@@ -94,6 +124,7 @@
 #define CAMERA_ZANG       0x028u   /* u16 roll */
 #define CAMERA_ROB0_DISP  (1u << 1)
 #define CAMERA_ROB1_DISP  (1u << 2)
+#define CAMERA_F_REPLAY   (7u << 27)  /* left set by StF's replay; the fight's camera has them clear */
 
 /* ---- a projectile (fa_tobi's thirty objects, 0x100 bytes from +0x200) ---- */
 #define TOBI_OBJ          0x200u
@@ -119,28 +150,24 @@
 #define TOBI_F_HIDDEN     (1u << 9)
 #define TOBI_BOMB         2u
 
+/* ---- the replay record (fa_record) ---- */
+#define REC_NEXT          0x06Cu   /* u32 the ring's next frame (rec_disp writes it) */
+
 /* ---- the HUD's task (fa_game_disp) ---- */
 #define DISP_LAMP0        0x064u   /* u8 x10, player 1's round lamps; player 2's at +0x06E */
 #define DISP_LAMP1        0x06Eu
 
 /* ---- the fight's globals: the same addresses in VF2, FV and StF to 0x5000A0 ---- */
 #define G_FRAME_COUNTER   0x500020u  /* StF's 60 Hz loop's count */
-#define SMOKE_COUNT       0x00u    /* a puff: s32 its age in frames (it goes at 32), */
-#define SMOKE_STEP        0x04u    /* its step (sub_81CD8 ...: the pull and the scale, on g3), */
-#define SMOKE_POS         0x08u    /* f32 x3 its place, from the root (+0x1F4), */
-#define SMOKE_VEL         0x14u    /* f32 x3, */
-#define SMOKE_ACC         0x20u    /* f32 x3, */
-#define SMOKE_SCALE       0x2Cu    /* f32 x3, */
 #define G_GAME_TIMER      0x500028u  /* s16: time << 6 at a round's start, one off a frame */
 #define G_MODE            0x50002Au  /* u8 mode; also_mode +0x2B */
 #define G_MODE_FLAG       0x50002Cu
 #define G_SUB_MODE        0x500030u  /* u8 _sub_mode; also_sub_mode +0x31 */
 #define SUB_FIGHT_DSP     9u         /* ROUND_STATE's: the fight */
 #define SUB_JUDGE_DSP     13u        /* the round's result shown */
-#define G_JUDGE           0x500050u  /* u8: 0 a knock-out, 2 the time ran out */
 #define G_GAMEPROGRAM     0x50004Cu
 #define G_ROUND_WINS0     0x50004Fu  /* u8 round wins, player 1 (p1_wins) */
-#define G_RING_OUT        0x500050u  /* u8, a ring out ended the round (VF2) */
+#define G_JUDGE           0x500050u  /* u8: 0 a knock-out, 2 the time ran out or a ring out (VF2's) */
 #define G_ROUND_WINS1     0x500051u  /* player 2 */
 #define G_WINS_NEEDED     0x500052u  /* u8 num_rounds_to_win */
 #define G_STAGE_ID        0x500054u
@@ -180,6 +207,12 @@
 #define G_LIST_BLOCKS     0x501800u  /* the list blocks' layer table: 43 words, layer n's at +4 + 8 n */
 #define G_KAGE_SLIDE_X    0x501990u  /* f32 the shadows' slide along the light; z +0x994 */
 #define G_KAGE_SLIDE_Z    0x501994u
+#define G_REP_MARK0       0x50039Cu  /* FV's replay: the ring's place at P1's breaking move's start */
+#define G_REP_FLAG        0x5003A0u  /* u8: bits 0, 1 a break pending (P1, P2); bit 2 P2's replay */
+#define G_REP_PASSES      0x5003A1u  /* u8 the passes left */
+#define G_REP_MARK1       0x50044Cu  /* P2's mark */
+#define G_REP_TIME        0x500460u  /* s16 x2 the clock at each one's mark */
+#define G_SOUNDS          0x50406Au  /* u8 check_same_sound's sounds this frame (the recorder's), four at most */
 #define G_DEBUG_FLAG      0x508000u
 #define G_MODEL_SCALE     0x509518u  /* f32 x3 player_model_y_scale, _horiz_scale... */
 #define G_POL_COLOR_REQ   0x546000u  /* chg_pol_color_req's rows still to send */

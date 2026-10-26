@@ -555,15 +555,23 @@ async function importStf(R) {
      * words. Only the lifted HUD code draws them (stf_motion.s), by these
      * numbers: energy_disp's bars 2 and 3; win_lamp_int's lamps 10 and 18;
      * time_dsp's 14 to 16; barrier_left_disp's 118 to 120 and the barrier
-     * breaking frames (seven a side, tables in the program ROM); and
-     * win_lamp_dsp's stars, sixteen frames in each of four tables. */
-    const ids = new Set([2, 3, 10, 18, 14, 15, 16, 118, 119, 120]);
+     * breaking frames (seven a side, tables in the program ROM);
+     * barrier_left_disp_init's box (barrier_waku_disp's ends 122 and 307,
+     * its top and bottom the first words of 308 and 121, all it reads of
+     * them) and its BARRIER, 117; and win_lamp_dsp's stars, sixteen frames
+     * in each of four tables. */
+    const ids = new Set([2, 3, 10, 18, 14, 15, 16, 117, 118, 119, 120, 122, 307]);
     for (const t of [0x0aeb88, 0x0aeba4]) for (let i = 0; i < 7; i++) ids.add(program.u32(t + i * 4));
     for (let k = 0; k < 4; k++) { const t = program.u32(0x0f1bb4 + k * 4); for (let i = 0; i < 16; i++) ids.add(program.u32(t + i * 4)); }
     for (const i of [...ids].sort((a, b) => a - b)) {
         const e = PATTERN_TABLE + i * 4, a = u32At(e);
         keepAt(e, 4, `pattern ${i}`);
         keepAt(a, 12 + u32At(a + 4) * u32At(a + 8) * 2, `pattern ${i}`);
+    }
+    for (const i of [121, 308]) {
+        const e = PATTERN_TABLE + i * 4;
+        keepAt(e, 4, `pattern ${i}`);
+        keepAt(u32At(e), 14, `pattern ${i}'s first word`);
     }
 }
 
