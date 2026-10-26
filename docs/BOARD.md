@@ -1883,8 +1883,9 @@ byte first:
 - A guest's stage plays its own game's song instead (`guest_music`, by
   stage): Tou-rin VF2's Lau's song as 0xAE101A, the Colosseum Akira's as
   0xAE101B, FV WESTERN its western_song as 0xAE1019. Akira makes VF2's
-  sounds and voices (group 0x15, below); the other guests make the sounds
-  of the StF character whose slot they take.
+  sounds and voices (group 0x15, below), Ryo and Chai their moves'
+  Shenmue sounds (group 0x16, below); the hits' and guards' sounds, and the
+  other guests', are the StF character's whose slot they take.
 
 Check: a write tap on 0x9C0000 in MAME (`sfight -rompath board/roms`, a fight
 started and P1 punching and kicking) logs 0xA00001 at frame 14, then
@@ -2007,6 +2008,23 @@ and started): 0xA00003, 0xAE1019, 0xAE1302; `-wavwrite` about 600..900 RMS
 from the start on; the sound 68000 reads 0xE5xxxx..0xF6xxxx (FV's samples)
 while the song plays. Aurora Icefield still plays 0xAE1003 from StF's
 samples (0x80xxxx..0x85xxxx).
+
+### Ryo's and Chai's sounds
+
+Each Shenmue move names its own sound in its record (a type-4 event, slot
+`ab 76` and an SE of the battle pack, at a frame: Shenmue's punch scale,
+docs/SHENMUE-SOUND.md). `shenmue-moves.mjs` sends it as play op 4 of
+0xAE1600 + SE at that frame, in place of the Akira template's sounds (a
+move with none keeps them). `guest-sound.mjs` makes group 0x16 of the SEs
+sent: entry nn plays one note on Akira's tone 0x68 (channel 14), on keys
+after his, each SE's sample from Shenmue's BATTLE_1.SND as 8-bit PCM (12
+SEs, 0.11 MB; their keys emptied in kit 0x52 too). `vf2Effect` passes
+0xAE16nn through, so `lost.sounds` stays empty.
+
+Check (shared MAME, Ryo against Chai set in the menu, a write tap on
+0x9C0000): P1's punches send 0xAE1619 (SE 25) and the kicks 0xAE161A (SE
+26); a read tap on the sound 68000's 0xCD4EDC..0xCF00EB (Shenmue's samples)
+sees each one's sample read the frame after its code.
 
 ## Where it stands
 

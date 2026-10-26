@@ -31,6 +31,7 @@
 import { shenmueFighter } from '../js/ryo.js';
 import { sampleMotion } from '../vendor/noclip/js/motion.js';
 import { scaleMotion, THROWN } from './vf2-guest.mjs';
+import { shenmueEffect } from './guest-sound.mjs';
 
 const MAIN_DATA = 0x02000000;
 const P = 1, K = 2, G = 4;
@@ -115,6 +116,29 @@ export function shenmueMoves(R, ctx, games, { name, who, ms }) {
     };
     reach(f.moves.root, [P, K, P | K, P | G]);
 
+    /* ---- sounds: Shenmue's own (its punch scale, docs/SHENMUE-SOUND.md) ----
+     * A motion's sound events as op 4 at their frames, each its effect in
+     * the guest group (guest-sound.mjs shenmueEffect); null when the record
+     * has none of the battle pack's, and the template's sounds stay. */
+    const effects = new Set();
+    let ownSounds = 0, theirSounds = 0;
+    const soundsOf = (id) => {
+        const out = [];
+        for (const x of f.sounds(id)) {
+            const c = shenmueEffect(x.slot, x.se);
+            if (c == null) continue;
+            effects.add(x.se);
+            out.push({ op: 4, b: Uint8Array.of(4, x.frame & 0xff, x.frame >> 8, c & 0xff, (c >> 8) & 0xff, (c >> 16) & 0xff, c >>> 24) });
+        }
+        if (out.length) ownSounds++; else theirSounds++;
+        return out.length ? out : null;
+    };
+    const frameOf = (o) => o.b[1] | (o.b[2] << 8);
+    const withSounds = (id, play) => {
+        const own = soundsOf(id);
+        return (own ? [...play.filter((o) => o.op !== 4), ...own] : play).sort((a, b) => frameOf(a) - frameOf(b));
+    };
+
     /* ---- templates: Akira's (VF2) setups ---- */
     const parts = (id) => R.program.u32(STRIKE_PARTS + id * 4);
     const strikes = [], throws = [];
@@ -171,11 +195,11 @@ export function shenmueMoves(R, ctx, games, { name, who, ms }) {
                     setup.push({ op: 4, b });
                 } else setup.push(o);
             }
-            const play = tpl.play.filter((o) => STRIKE_PLAY.has(o.op)).map((o) => {
+            const play = withSounds(id, tpl.play.filter((o) => STRIKE_PLAY.has(o.op)).map((o) => {
                 const b = Uint8Array.from(o.b), at = retime(b[1] | (b[2] << 8), from, to);
                 b[1] = at & 0xff; b[2] = at >> 8;
                 return { op: o.op, b };
-            }).sort((a, b) => (a.b[1] | (a.b[2] << 8)) - (b.b[1] | (b.b[2] << 8)));
+            }));
             s = { head: tpl.head, setup, play, end: play.length ? 8 : 0 };
             strikeCount++;
         } else {
@@ -189,11 +213,11 @@ export function shenmueMoves(R, ctx, games, { name, who, ms }) {
                 victimTemplate.set(x.a.victim, { id: (o.b[1] | (o.b[2] << 8)) & 0x1fff, hit, cancel });
                 return { op: 5, b };
             });
-            const play = tpl.play.filter((o) => o.op === 4).map((o) => {
+            const play = withSounds(id, tpl.play.filter((o) => o.op === 4).map((o) => {
                 const b = Uint8Array.from(o.b), at = retime(b[1] | (b[2] << 8), from, to);
                 b[1] = at & 0xff; b[2] = at >> 8;
                 return { op: o.op, b };
-            });
+            }));
             s = { head: tpl.head, setup, play, end: play.length ? 8 : 0 };
             const v = victimId.get(x.a.victim);
             mid = (y) => ((y & 0x1fff) === VICTIM ? (y & ~0x1fff) | v : gid(y));
@@ -205,11 +229,11 @@ export function shenmueMoves(R, ctx, games, { name, who, ms }) {
     for (const id of victims) {
         const m = f.motion(id), vt = victimTemplate.get(id), tpl = ctx.setups.get(vt.id);
         const from = [1, ctx.vf2Frames(vt.id)], to = [1, m.frames];
-        const play = tpl.play.map((o) => {
+        const play = withSounds(id, tpl.play.map((o) => {
             const b = Uint8Array.from(o.b), at = retime(b[1] | (b[2] << 8), from, to);
             b[1] = at & 0xff; b[2] = at >> 8;
             return { op: o.op, b };
-        });
+        }));
         const setup = tpl.setup.filter((o) => o.op !== 2);
         const b = ctx.convertSetup(-1, gid, { head: tpl.head, setup, play, end: tpl.end });
         const own = victimId.get(id), copy = own + 1;
@@ -304,6 +328,7 @@ export function shenmueMoves(R, ctx, games, { name, who, ms }) {
     report.push(`own moves: ${strikeCount} strikes, ${throwCount} throws, ${victims.length} victims' motions (and StF's fighters' copies) as ${first}..${first + moves.length + 2 * victims.length - 1}; ` +
         `limbs ${limbs.join('/')} (left/right arm, left/right leg); ${skipped.size ? `skipped ${[...skipped].map((id) => f.motion(id)?.name ?? id).join(', ')}; ` : ''}` +
         `blocks to 0x${(MAIN_DATA + ctx.ownBlocksEnd()).toString(16).toUpperCase()}; scripts for ${keys.map(spell).join(', ')} and ${tables.size} string tables at ${'0x' + base.toString(16).toUpperCase()}, ${prog.length} bytes, ${committed} commits`);
+    report.push(`sounds: Shenmue's own on ${ownSounds} motions, effects ${[...effects].sort((a, b) => a - b).join(', ') || 'none'}; Akira's on ${theirSounds}`);
     const names = [...moves.map(([, x]) => x.m.name), ...victims.flatMap((id) => [f.motion(id).name, `${f.motion(id).name} (StF's fighters)`])];
-    return { report, first, names, count: moves.length + 2 * victims.length, strikes: strikeCount, throws: throwCount, victims: victims.length, tables: tables.size, keys: keys.map(spell) };
+    return { report, first, names, count: moves.length + 2 * victims.length, strikes: strikeCount, throws: throwCount, victims: victims.length, tables: tables.size, keys: keys.map(spell), effects };
 }

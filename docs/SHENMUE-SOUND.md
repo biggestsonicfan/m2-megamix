@@ -2,8 +2,9 @@
 
 The goal: Ryo and Chai should hit with Shenmue's own hit sounds, on Shenmue's
 own scale of strengths, and talk to each other when they meet. On the board they
-make the sounds of the StF characters whose slots they take (Ryo Tails', slot 1;
-Chai's blows the robots' lists, slot 12; docs/BOARD.md, Sound). This page is what
+make their moves' own Shenmue sounds (On the board, below); their hits and
+guards still sound as the StF characters' whose slots they take (Ryo Tails',
+slot 1; Chai the robots' lists, slot 12; docs/BOARD.md, Sound). This page is what
 the discs hold toward that, and what the board will need. `tools/shenmue-sound.py`
 reads it all.
 
@@ -12,7 +13,8 @@ reads it all.
   and `BATTLE_2.SND` (DTPK), in AICA ADPCM. BATTLE_1's tones 0..37 are the hits
   and swings, 38..69 shouts at 14 kHz.
 - Each motion names its own strike sound in MOTION.BIN: SE 25 light, 26 middle,
-  28 heavy, 27 throws (Shenmue's punch scale, below). This beta's code skips it.
+  28 heavy, 27 throws (Shenmue's punch scale, below). This beta's code skips it;
+  the board plays it (group 0x16).
 - The scenes' lines are `SCENE/0n/STREAM/<scene>.AFS` (SPSD clips, AICA ADPCM at
   14000 Hz, with the subtitles) and `<scene>.IDX` (the clips' names).
 - Ryo and Chai talk to each other in five scenes on discs 2 and 3. `BANTER` in the
@@ -63,11 +65,12 @@ Little-endian. "DTPK", then at 0x20 eight u32s, the sections' offsets:
   and at +10 a coarse tune (s8, semitones) and +11 a fine one (1/64 semitone)
   from 44100 Hz. −12 is 22050 Hz; the shouts' −20 +8 is 13991 Hz, the clips'
   14000.
-- **Effects:** u32 1, two u32s, u32 count (69, 43), then u32 offsets from the
+- **Effects:** u32 1, two u32s, u32 count − 1 (69 in BATTLE_1: 70 effects,
+  the last, SE 69, a shout MOTION.BIN plays), then u32 offsets from the
   section to byte strings: `c0 df NN VV 80 ff` plays NN at velocity VV, and
-  `c0 a0 00 80 ff` is an empty slot. NN counts the effects that are not empty
-  (0..56 in BATTLE_1), so it is not the tone's index (70 tones); which tones an
-  NN plays is not decoded.
+  `c0 a0 00 80 ff` is an empty slot. NN is a tone's index (its byte 0, not its
+  place in the list: the tones skip the empty effects), so SE 25's `c0 df 11`
+  plays tone 17.
 
 BATTLE_1 (scenes 01 and 03; disc 1's SCENE/01 copy is 309480 bytes, the
 others 284444) and BATTLE_2 share their first 23 tones (the same samples, the
@@ -129,16 +132,38 @@ strikes and being hit. Trimmed of the silence around them:
 
 Only when Ryo faces Chai: against anyone else they say nothing new.
 
-## On the board (not done yet)
+## On the board
 
-What the next step needs, from docs/BOARD.md (Sound, Akira's sounds):
+**The moves' sounds (done):** each of Ryo's and Chai's moves sends the sound
+its own Shenmue record names, at the frame it names (Shenmue's punch scale,
+below), as Shenmue would have played it:
 
-- **The data:** a new request group in `tools/guest-sound.mjs`, as VF2's are
-  group 0x15: 0xAE16xx for the hits (a by-key tone on an effects channel, one
-  note an effect) and 0xAE17xx for the lines and shouts. The samples converted
-  to PCM at their own rates (the SCSP's pitch plays them). 3.17 MB of the sample
-  ROMs is free: the lines are 887 KB as 8-bit PCM, BATTLE_1's tones about
-  1 MB as 8-bit.
+- `js/ryo.js` `readSounds` reads a record's type-4 events (slot, SE, the
+  frame as 2f + 1, as the record's timing); the fighter's `sounds(id)`.
+- `tools/shenmue-moves.mjs` turns each battle-pack one (slot 0xAB76) into a
+  play op 4 of code 0xAE1600 + SE, in place of the Akira template's op 4s;
+  a move whose record has none keeps the template's (3 of Chai's). Slot 3
+  (`ab 03 58`, 10 events) and slot 7 (Ryo's voices) are left out.
+- `tools/guest-sound.mjs` puts the SEs the moves send into a request group of
+  their own, 0x16 (as VF2's are 0x15): entry nn plays one note on channel 14
+  of Akira's by-key tone 0x68, on the keys after his, each key the SE's
+  tone's sample decoded from BATTLE_1 (disc 3's SCENE/03) and stored as 8-bit
+  PCM at the octave of 44100 Hz at or above its rate (the record's pitch byte
+  from there, as StF's: high nibble the octave, low the semitone). Today: 12
+  SEs (0 4 9 17 23 25 26 27 28 38 39 42), 12 samples, 0.11 MB.
+- The hits' and guards' sounds (`loc_2B33C`, by the attacker's slot) are
+  still StF's (Ryo Tails', Chai the robots'), and so are the victims' (a
+  throw's victim plays the template's sounds unless its record has its own).
+
+Check (shared MAME, `sfight -rompath board/roms`, Ryo against Chai set in the
+menu, P1 punching and kicking): a write tap on 0x9C0000 logs 0xAE1619 (SE
+25) for each punch and 0xAE161A (SE 26) for each kick, and a read tap on the
+sound 68000's 0xCD4EDC..0xCF00EB (Shenmue's samples) sees the punch's
+sample read (0xCE2608..0xCE3608) the frame after its code, the kick's
+(0xCE34F8..0xCE46F8) after its.
+
+**Still to do:**
+
 - **Long lines:** a SCSP slot's loop end is 16 bits, 65535 samples: 4.7 s at
   14000 Hz. Seven of BANTER's lines are longer (chai_not_going, chai_dream,
   chai_stronger, chai_great, chai_interrupted, chai_ticket 4.9): they need two
@@ -148,13 +173,14 @@ What the next step needs, from docs/BOARD.md (Sound, Akira's sounds):
   (rob+0x1B0 × 12 into `dword_DB6F4`, 13 rows of `sd_punch_m/j/k`, then
   `dword_DB964`, 19 rows of `sd_punch_a/b/c`). A row is 4 groups of 3
   strengths; Sonic's last group is `sd_WB02_24_01`, Knuckles' first two
-  `sd_WB04_82_04`. Shenmue's scale goes into rows of their own for slots 1 and
-  12 (and the robot lists' 12 out of the way), at Shenmue's strengths (below).
-- **The lines:** `snd_round` in megamix.c sends the round's sounds; the intro
-  exchange would go after the gong when the two fighters are Ryo and Chai
-  (a line's length in frames before the reply), the others at JUDGE_INT
-  and VIC_INT, `down` from the knockdown, `shout` from Chai's play op as
-  Akira's voices are sent (op 9).
+  `sd_WB04_82_04`. Shenmue makes no sound of its own on a hit (the move's
+  sound marks the blow, landing or not), so these could go quiet for Ryo and
+  Chai, or keep StF's.
+- **The lines:** 0xAE17xx for the lines and shouts. `snd_round` in megamix.c
+  sends the round's sounds; the intro exchange would go after the gong when
+  the two fighters are Ryo and Chai (a line's length in frames before the
+  reply), the others at JUDGE_INT and VIC_INT, `down` from the knockdown,
+  `shout` from Chai's play op as Akira's voices are sent (op 9).
 
 ## Shenmue's punch scale
 
@@ -199,6 +225,6 @@ each motion's record names its own, at the frame it strikes.
   thugs SE 50..63, others slot 9's (`…09A9`), from the table at 0x0C2A0B40.
   BATTLE_2 has no SE past 43, so none of these: a fight with fewer voices.
 
-On the board: Ryo's and Chai's rows of the StF table get SE 25 for the light
-strength, SE 26 the middle, SE 28 the heavy, SE 27 for throws (and their slams
-from the move's own event).
+On the board each move sends its own record's events (On the board, above),
+so the scale comes with them: SE 25 on the light strikes, 26 the middle, 28
+the heavy, 27 and the slams on the throws.

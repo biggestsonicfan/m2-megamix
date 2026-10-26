@@ -64,9 +64,9 @@ def dtpk(d):
         coarse, fine = struct.unpack_from('<bB', r, 10)
         tones.append(dict(index=r[0], sample=r[2], coarse=coarse, fine=fine,
                           rate=round(44100 * 2 ** ((coarse + fine / 64) / 12))))
-    # effects: u32 1, two u32s, u32 count, then offsets (from the section) to byte strings:
-    # c0 df NN VV 80 ff plays NN at velocity VV; c0 a0 00 80 ff is an empty slot
-    n = struct.unpack_from('<I', d, sec[3] + 12)[0]
+    # effects: u32 1, two u32s, u32 count - 1, then offsets (from the section) to byte strings:
+    # c0 df NN VV 80 ff plays NN (the tone whose index is NN) at velocity VV; c0 a0 00 80 ff is an empty slot
+    n = struct.unpack_from('<I', d, sec[3] + 12)[0] + 1
     offs = struct.unpack_from('<%dI' % n, d, sec[3] + 16)
     effects = []
     for i, o in enumerate(offs):

@@ -45,7 +45,7 @@ import { CHR as MAHLER_CHR, mahlerTiles, importMahler } from './mahler-guest.mjs
 import { importVf2Stages, VF2_SET0 } from './vf2-stages.mjs';
 import { importFvStages } from './fv-stages.mjs';
 import { importGuestShadows } from './guest-shadows.mjs';
-import { guestSound, STF_FILES } from './guest-sound.mjs';
+import { guestSound, STF_FILES, SHENMUE_PACK } from './guest-sound.mjs';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const ROMS = process.env.ROMS_DIR || `${process.env.HOME}/build/mameroms`;
@@ -636,8 +636,11 @@ mkdirSync(dir, { recursive: true });
 const data = [R.main, R.xtra, R.copro, R.polygons, R.textures];
 for (const r of data) for (const [f, d] of Object.entries(r.files())) writeFileSync(`${dir}/${f}`, d);
 /* the sound board's: StF's 68000 program with FV's songs added to its data,
- * and the samples that data plays (tools/guest-sound.mjs) */
-const snd = await guestSound(files);
+ * and the samples that data plays (tools/guest-sound.mjs), with the
+ * Shenmue effects Ryo's and Chai's moves send */
+const shPack = shenmueFile(SHENMUE_PACK);
+const shEffects = new Set(shenmue.flatMap((r) => [...r.effects]));
+const snd = await guestSound(files, shPack && { pack: new Uint8Array(shPack), effects: shEffects });
 for (const line of snd.report) console.log(`Sound: ${line}`);
 writeFileSync(`${dir}/${STF_FILES.prog}`, snd.prog);
 for (const [f, d] of Object.entries(snd.samples)) writeFileSync(`${dir}/${f}`, d);

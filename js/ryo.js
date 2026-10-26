@@ -301,6 +301,24 @@ export function readRecord(file, index) {
     return out;
 }
 
+/* A record's sounds (docs/SHENMUE-SOUND.md, Shenmue's punch scale): its
+ * type-4 events, `[u16 frame][04][05][u32 code]`, the code's bytes the slot
+ * (ab 76, the battle pack) and the SE, up to the next record. Each as
+ * {frame: the board's 60 fps frame (as readRecord's timing), slot, se}. */
+export function readSounds(file, index) {
+    const m = file?.motions[index];
+    if (!m?.setup) return [];
+    const v = file.v;
+    file.setupEnds ??= new Map(file.motions.map((x) => x.setup).filter(Boolean).sort((a, b) => a - b).map((s, i, a) => [s, a[i + 1] ?? v.byteLength]));
+    const end = Math.min(file.setupEnds.get(m.setup), v.byteLength), out = [];
+    for (let at = m.setup + 12; at + 8 <= end; at++) {
+        if (v.getUint8(at + 2) !== 4 || v.getUint8(at + 3) !== 5 || v.getUint8(at + 7) !== 0 || v.getUint8(at + 4) < 0xA0) continue;
+        out.push({ frame: 2 * v.getUint16(at, true) + 1, slot: v.getUint16(at + 4), se: v.getUint8(at + 6) });
+        at += 7;
+    }
+    return out;
+}
+
 /* Shenmue's damage is on a scale not measured (docs/SHENMUE-FIGHT.md,
  * "Damage"): the jab 3, the kicks 14-15. Here it is doubled, which puts
  * Ryo's jab and kicks beside Akira's. A throw does what VF2's do. */
@@ -365,6 +383,7 @@ export function shenmueFighter(games, entry) {
         motion,
         act: (a) => (a in acts ? ref(acts[a]) : akira.act(a)),
         timing(id) { return record(id & MOTION_ID)?.timing ?? null; },
+        sounds(id) { const at = locate(game, char, id & MOTION_ID); return at ? readSounds(at.file, at.index) : []; },
         attack(id) {
             const r = record(id & MOTION_ID);
             if (!r?.kind) return null;

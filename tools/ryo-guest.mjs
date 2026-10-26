@@ -655,6 +655,6 @@ export function importShenmue(R, ctx, games, { tiles, byTex }, { name: who = 'RY
         ownMotions: { first: own.first, names: own.names },
         moves: `his own on P, K, P+K and P+G (${own.strikes} strikes, ${own.throws} throws, ${own.tables} string tables, ids ${own.first}..${own.first + own.count - 1}); the rest Akira's, under his own ids ${ms.first}..${ms.first + ms.ids.size - 1}`,
     };
-    return { report, coverage, meshes, partModel, scale: k };
+    return { report, coverage, meshes, partModel, scale: k, effects: own.effects };
 }
 export const importRyo = (R, ctx, games, tex) => importShenmue(R, ctx, games, tex, { name: 'RYO', chr: CHR });
