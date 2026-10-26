@@ -50,7 +50,7 @@ const FIGHTER = 8, SETS = [17, 18];
 /* His size: StF's Knuckles over FV's fighters (docs/FV-GUESTS.md, scale). */
 export const K = 2.676 / 1.309;
 /* FV's record: +4 the skeleton, +0x24 the midriff; the hand list */
-const SKELETON = 4, SKELETON_BYTES = 15 * 12, MIDRIFF_AT = 0x24;
+const SKELETON = 4, SKELETON_BYTES = 15 * 12, MIDRIFF_AT = 0x24, JUMP = 0x34;
 const HANDS = 0x0640ebf4, SHAPES = 4;
 const MIDRIFF = { model: 8, ring: 0x70, ringPoints: 8, count: 0xd0, links: 0xd4, link: 10, first: 8 };
 const POLY_RUN_END = 0xec2578 + 0x13da88;
@@ -74,10 +74,12 @@ function mahlerModels(fv) {
     const res = (a) => resolveData(fv, a);
     const d32 = (a) => { const r = res(a); return r.view.getUint32(r.off, true); };
     const d16 = (a) => { const r = res(a); return r.view.getInt16(r.off, true); };
+    const d8 = (a) => { const r = res(a); return r.view.getUint8(r.off); };
+    const f32 = (a) => { const r = res(a); return r.view.getFloat32(r.off, true); };
     const midriffAt = d32(A.root + MIDRIFF_AT);
     const handList = d32(HANDS + A.index * 4);
     const hands = [0, 1].map((h) => Array.from({ length: SHAPES }, (_, i) => d16(handList + (h * SHAPES + i) * 2)));
-    return { A, d32, res, midriffAt, midriff: d32(midriffAt + MIDRIFF.model), hands };
+    return { A, d32, d8, f32, res, midriffAt, midriff: d32(midriffAt + MIDRIFF.model), hands };
 }
 
 /** His tiles, for pack-akira's `extra`: FV's tiles that overlap made one,
@@ -347,8 +349,16 @@ export function importMahler(R, ctx, games, { byKey }, { chr: CHR_ = CHR } = {})
         handShape: (s) => { shapes[s] = (shapes[s] ?? 0) + 1; return s < SHAPES ? s : 0; },
     });
     report.push(...mv.report, `hand shapes his op 0x12 picks: ${JSON.stringify(shapes)}`);
+    /* His jump block (record +0x20): FV's record +0x34 is StF's +0x20, read
+     * the same way (F 0x134F0): the frames, the second on action bit 18 (46,
+     * 24), then the reach a frame by jump kind (0.05, 0.05, 0.09, 0.09), at
+     * his size. FV's gravity, at his size too, is lift-stf.py's. */
+    const jumpAt = M.d32(A.root + JUMP), jump = new Uint8Array(0x14), jv = new DataView(jump.buffer);
+    jump[0] = M.d8(jumpAt); jump[1] = M.d8(jumpAt + 1);
+    for (let i = 4; i < 0x14; i += 4) jv.setFloat32(i, M.f32(jumpAt + i) * k, true);
+    report.push(`jump: ${jump[0]}, ${jump[1]} frames, reach ${[4, 8, 12, 16].map((i) => jv.getFloat32(i, true).toFixed(3)).join(' ')}`);
     const chars = seatGuest(R, ctx, { chr: CHR_, parts, p2Parts, skel, rigAt, ballRec, seamList, game: R.guest.games.FV,
-        moves: mv.moves, kinds: mv.kindsAt, remap: mv.remapAt, actions: mv.actionsAt }, alloc);
+        jump: alloc(jump, 'jump', 4), moves: mv.moves, kinds: mv.kindsAt, remap: mv.remapAt, actions: mv.actionsAt }, alloc);
     /* his hands (FV's four shapes a hand, the first again past them) and midriff, by player */
     chars.forEach((c, p) => {
         const hands = M.hands.flatMap((l) => Array.from({ length: 16 }, (_, i) => modelOf(l[i < SHAPES ? i : 0], p)));

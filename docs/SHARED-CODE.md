@@ -219,7 +219,9 @@ Branches on `char_game` (the shared code differs):
   falls under VF2's gravity × SCALE; and `convertSetup` scales op 3's
   landing height (0x81C). Akira's jump on the board: 32 frames, peak 2.916
   at frame 25 (VF2 1.4386 × SCALE), forward to the band's edge; MAME and
-  m2-hle2 agree.
+  m2-hle2 agree. FV's exec_action is StF's code with FV's numbers
+  (gravity 0.00522, the block at record +0x34, ±0.4): an FV guest gets
+  them × K (`lift-stf.py`, `mahler-guest.mjs`; BOARD.md, Mahler).
 - **B10 Get-ups.** `exec_action` RISE: VF2 picks among 46 (actions 31..80)
   by wall and ring-edge tests, StF's slots hold 11. His whole 84-entry
   action list as a guest table, and branches at S 0x14D68 and `loc_14DC4`.
