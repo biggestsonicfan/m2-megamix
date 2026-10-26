@@ -247,12 +247,13 @@ same frame of the stance motion (278), all sixteen part positions in the rob
   Behind it is the record's `stage_bg_color` (+0x16, BGR555). StF's
   `scr_bg_int` passes it to `change_bg_color`, which writes it to pen 0x801
   and fills a tile layer with a solid tile of that pen, and to `bg_col_set`,
-  which writes it to pen 0 of palette banks 0..63. `m2_backdrop` does the
-  same on the board's own layer, so `load_stage` calls it with the record's
-  colour, and `bg_col_set` with it. The sky shows pen 0 where the backdrop
-  ring leaves gaps. The boot's `Scroll_Initialize` calls (the HUD's tiles
-  and colours, as MES_ROUND_INT loads them) put 0xB60A, a dark green, in pen
-  0; StF's `scr_bg_int` runs after them, so `main` calls `bg_col_set` again
+  which writes it to pen 0 of palette banks 0..63. `load_stage` calls
+  `bg_col_set` with the record's colour; the board needs no tile layer of
+  that pen, as pen 0 is what shows where nothing is drawn. The sky shows
+  pen 0 where the backdrop ring leaves gaps. The boot's `Scroll_Initialize`
+  calls (the HUD's tiles and colours, as MES_ROUND_INT loads them) put
+  0xB60A, a dark green, in pen 0; StF's `scr_bg_int` runs after them, so
+  `main` calls `bg_col_set` again
   after them. Without it South Island's sky showed (30, 82, 57) between the
   clouds until the setup menu picked a stage again. A palette colour shows each component through colorxlat row c at
   luma 0x40 (MAME's `palette_w`): StF's flat band (`chg_scr_color_req`);
@@ -1907,9 +1908,6 @@ held, and a change of stage or fighter shows at once.
   component 0, so the font's black outlines vanish; the setup writes 0x41
   there and the fight's start puts 0 back. m2-hle2 shows the window, the
   boxes and the outlines the same.
-- `m2_backdrop` (the stage's backdrop colour) takes pen 1, the font's
-  white, and fills layer 0 with its solid tile: a stage switch from the
-  setup keeps pen 1 and clears layer 0, as the boot does.
 - A second window at the top right (`poly_win_draw`) counts the last
   frame's polygons while the setup is up: each fighter's faces (by name),
   the stage's and the total, then StF's own count and limit. A face count
