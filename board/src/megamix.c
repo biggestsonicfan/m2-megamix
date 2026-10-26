@@ -638,6 +638,11 @@ static void fight_step(const u32 pad[2]) {
     stf_task((void (*)(void))RW(stf_coli, TASK_FN), stf_coli, robs[0], robs[1]);
     stf_task(stf_get_game_info, stf_enemy[0], robs[0], robs[1]);
     stf_task(stf_cam_mode_10, stf_cam, robs[0], robs[1]);
+    /* the camera's frame count, which StF's camera_init (os display) moves
+     * on each frame: a throw's camera script (sub_6BA98) steps to its next
+     * key when the count reaches the key's frame; left still, every key ran
+     * past its end and the camera flew off */
+    RH(stf_cam, CAMERA_CNT)++;
     /* the projectile task (fa_tobi's sub_89FB8): sub_8A29C steps each live
      * object (Eggman's bombs: fly, burst, the hit test whose hit the next
      * frame's collision task deals); sub_8A2E4 is left out (it tells StF's
