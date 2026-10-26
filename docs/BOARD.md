@@ -249,7 +249,12 @@ same frame of the stance motion (278), all sixteen part positions in the rob
   and fills a tile layer with a solid tile of that pen, and to `bg_col_set`,
   which writes it to pen 0 of palette banks 0..63. `m2_backdrop` does the
   same on the board's own layer, so `load_stage` calls it with the record's
-  colour. A palette colour shows each component through colorxlat row c at
+  colour, and `bg_col_set` with it. The sky shows pen 0 where the backdrop
+  ring leaves gaps. The boot's `Scroll_Initialize` calls (the HUD's tiles
+  and colours, as MES_ROUND_INT loads them) put 0xB60A, a dark green, in pen
+  0; StF's `scr_bg_int` runs after them, so `main` calls `bg_col_set` again
+  after them. Without it South Island's sky showed (30, 82, 57) between the
+  clouds until the setup menu picked a stage again. A palette colour shows each component through colorxlat row c at
   luma 0x40 (MAME's `palette_w`): StF's flat band (`chg_scr_color_req`);
   the SDK's ramp would show it far too bright.
   Real StF and board snapshots show the same pixels: (0, 0, 188) on South
