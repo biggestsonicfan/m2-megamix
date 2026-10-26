@@ -147,6 +147,9 @@ function boardTables() {
      * FV's (fvstageN_draws, set FV_SET0) tools/fv-stages.mjs's */
     for (const m of h.matchAll(/stage_draw_t (?!vf2|fv)\w+\[\d+\] = \{([^;]*)\};/g))
         for (const d of m[1].matchAll(/^\s*\{(\d+), \{/gm)) models.add(+d[1]);
+    /* and the models StF's swaying draws swap in (stageN_animK, by frame) */
+    for (const m of h.matchAll(/u16 stage\d+_anim\d+\[\d+\] = \{([^}]*)\}/g))
+        for (const d of m[1].split(',')) models.add(+d);
     for (const m of h.matchAll(/\{"[^"]+ stance", (\d+), \d+, \w+_parts/g)) chars.add(+m[1]);
     const stages = h.match(/stage_t stages\[STAGES\] = \{([^;]*)\};/)[1];
     for (const m of stages.matchAll(/\{"([^"]+)", (\d+), \d+, \w+, \{[^}]*\}, \w+, \w+, [-\d.]+f, -?\d+, -?\d+, \d+, \{[^}]*\}, \{(\d+), (\d+),/g)) {

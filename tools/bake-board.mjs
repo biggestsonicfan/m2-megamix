@@ -166,7 +166,12 @@ const scale = [k, 0, 0, 0, 0, k, 0, 0, 0, 0, k, 0, 0, 0, 0, 1];
  * turns with the town, is cage side 1-4 (drawn while the camera is inside
  * it), is the bear on its pendulum, opens a new window (and a stage that
  * opens any puts the fighters in one more, as FV does). */
-out.push('typedef struct { u32 model; float m[12]; float x0, x1; u8 turn, side, swing, win; } stage_draw_t;');
+/* anim, shift, phase, mask: a StF draw that swaps its model (South Island's
+ * palms and their shadow): model anim[((frame >> shift) + phase) & mask].
+ * spin: a StF draw that turns about its own y, m * ang_y(spin * frame)
+ * (South Island's sky, Aurora's diamonds). */
+out.push('typedef struct { u32 model; float m[12]; float x0, x1; u8 turn, side, swing, win;');
+out.push('                 const u16 *anim; u8 shift, phase, mask; u16 spin; } stage_draw_t;');
 /* bg: the record's stage_bg_color (+0x16, BGR555), which StF's scr_bg_int
  * puts behind the 3D layer (change_bg_color, bg_col_set).
  * bright, vx, vy: stage_bright (+0x04) and stage_vecter_x/y (+0x08, +0x0A),
@@ -230,19 +235,44 @@ function cagePanels(flags) {
     return n;
 }
 const cageEnds = (n) => Array.from({ length: n + 1 }, (_, i) => stf.rom.mainCpuView.getFloat32(CAGE_X[n] + i * 4, true));
+/* A draw whose ops move with the frame turns about its own y at a steady
+ * rate: frame f's matrix is frame 0's times ang_y(spin * f), spin in 1/65536
+ * turns (the scales under the turn are even, so it commutes with them). */
+function spinOf(st, e) {
+    const at = (f) => composeOps(opsAt(e, f));
+    const d = at(1).map((v, i) => v - at(0)[i]);
+    const spin = Math.round((Math.atan2(at(1)[8] * at(0)[0] - at(1)[0] * at(0)[8], at(1)[0] * at(0)[0] + at(1)[8] * at(0)[8]) / (2 * Math.PI)) * 65536) & 0xffff;
+    for (const f of [1, 100, 3000]) {
+        const a = (spin * f * 2 * Math.PI) / 65536, c = Math.cos(a), s = Math.sin(a);
+        const want = mul(at(0), [c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 0, 1]), got = at(f);
+        if (got.some((v, i) => Math.abs(v - want[i]) > 1e-3 * (1 + Math.abs(v))))
+            throw new Error(`${st.name}: model ${e.model} moves other than by a turn about its y (${d.map((v) => v.toFixed(3))})`);
+    }
+    return spin;
+}
 const stages = [];
 stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
     const list = buildStageDisplayList(st, frames).filter((e) => !e.extra && !e.points);
-    out.push(`static const stage_draw_t stage${n}_draws[${list.length}] = {`);
     /* cage_display's panels come wall by wall, each wall's in table order. */
     const np = cagePanels(st.flags), ends = cageEnds(np);
     const walls = list.filter((e) => e.layer === 'cage').length;
     if (walls && walls !== 4 * np) throw new Error(`${st.name}: ${walls} cage panels, not 4 walls of ${np}`);
     let panel = 0;
+    const tables = [], rows = [];
     for (const e of list) {
         const x = e.layer === 'cage' ? ends.slice(panel % np, panel++ % np + 2) : [0, 0];
-        out.push(`  {${e.model}, {${boardOf(mul(scale, composeOps(opsAt(e, 0)))).map(f32).join(',')}}, ${x.map(f32).join(', ')}},`);
+        let tail = '';
+        if (e.anim) {
+            const t = e.anim.frames, mask = t.length - 1;
+            if (e.anim.index || t.length & mask) throw new Error(`${st.name}: model ${e.model}'s frames are not a table of 2^n`);
+            let k = tables.indexOf(t);
+            if (k < 0) { k = tables.length; tables.push(t); }
+            tail = `, 0, 0, 0, 0, stage${n}_anim${k}, ${e.anim.shift}, ${e.anim.phase}, ${mask}, 0`;
+        } else if (typeof e.ops === 'function') tail = `, 0, 0, 0, 0, 0, 0, 0, 0, ${spinOf(st, e)}`;
+        rows.push(`  {${e.model}, {${boardOf(mul(scale, composeOps(opsAt(e, 0)))).map(f32).join(',')}}, ${x.map(f32).join(', ')}${tail}},`);
     }
+    tables.forEach((t, k) => out.push(`static const u16 stage${n}_anim${k}[${t.length}] = {${t.join(',')}};`));
+    out.push(`static const stage_draw_t stage${n}_draws[${list.length}] = {`, ...rows);
     out.push('};');
     /* set_material's 32 slots: sub_29110 picks the table by stage slot (prog 0x909E0). */
     const cv = stf.rom.mainCpuView, mt = cv.getUint32(0x909e0 + st.slot * 4, true);

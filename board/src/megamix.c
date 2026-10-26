@@ -1136,6 +1136,19 @@ static void mat_ang_x(mat_t *m, u32 a) {
     for (i = 0; i < 3; i++) m->t[i] = m2_cop_gf();
 }
 
+/* m = m * ang_y(a), on the coprocessor */
+static void mat_ang_y(mat_t *m, u32 a) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    int i;
+    *cf = COP_WMATRIX;
+    for (i = 0; i < 9; i++) *cf = m2_obj_fb(m->r[i]);
+    for (i = 0; i < 3; i++) *cf = m2_obj_fb(m->t[i]);
+    *cf = COP_ANG_Y; *cf = a & 0xFFFFu;
+    *cf = COP_RMATRIX;
+    for (i = 0; i < 9; i++) m->r[i] = m2_cop_gf();
+    for (i = 0; i < 3; i++) m->t[i] = m2_cop_gf();
+}
+
 static void draw_stage(const stage_t *st) {
     mat_t m, ct;
     u32 i, model, x0, x1;
@@ -1157,10 +1170,14 @@ static void draw_stage(const stage_t *st) {
         mat_mul(&m, st->draws[i].turn ? &ct : &cam, st->draws[i].m);
         if (st->draws[i].side && !fv_side_in(&m)) continue;
         if (st->draws[i].swing) mat_ang_x(&m, (u32)-(kuma_p >> 16));
+        /* StF's sky and Aurora's diamonds turn, a steady step a frame */
+        if (st->draws[i].spin) mat_ang_y(&m, st->draws[i].spin * frame_counter);
         x0 = m2_obj_fb(st->draws[i].x0); x1 = m2_obj_fb(st->draws[i].x1);
         if (x0 != x1 && cage_clip(&m, x0, x1)) continue;
         model = st->draws[i].model;
         if (st->lit && storm_lit(st)) model = st->lit[i];
+        /* South Island's palms and their shadow sway: a model from a table by frame */
+        if (st->draws[i].anim) model = st->draws[i].anim[((frame_counter >> st->draws[i].shift) + st->draws[i].phase) & st->draws[i].mask];
         if (st->wind && i == st->wind_at) model = st->wind[(frame_counter >> st->wind_shift) & 255u];
         if (model == 0u) continue;       /* VF2's: nothing in this look or frame */
         if (st->tpd.kind != 0u && model == st->tpd.model) submit_mat_ov(model, &m, st->tpd.kind == 1u ? 0u : 1u, TPD_ADDR);
@@ -1392,7 +1409,7 @@ static void sky_storm_frame(const stage_t *st) {
  * StF's loader does), its colour bases, its rows of colorxlat and their
  * cycling curve, its backdrop colour and its light. */
 static void load_stage(const stage_t *st) {
-    u32 i;
+    u32 i, j;
     cur_stage = st;
     kuma_p = kuma_v = 0; kuma_at = frame_counter;
     tex_load_set(st->texset);
@@ -1403,6 +1420,8 @@ static void load_stage(const stage_t *st) {
     kage_stage(st);
     for (i = 0; i < st->ndraws; i++) {
         if (st->draws[i].model) m2_load_model_palette(st->draws[i].model);
+        if (st->draws[i].anim)
+            for (j = 0; j <= st->draws[i].mask; j++) m2_load_model_palette(st->draws[i].anim[j]);
         if (st->lit && st->lit[i]) m2_load_model_palette(st->lit[i]);
     }
     if (st->wind) for (i = 0; i < 256u; i++) if (st->wind[i]) m2_load_model_palette(st->wind[i]);
