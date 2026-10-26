@@ -617,8 +617,8 @@ const mahler = importMahler(R, akira.ctx, NG, maTex, { chr: MAHLER_CHR });
 for (const line of mahler.report) console.log(`Mahler: ${line}`);
 /* each guest's own shadows (tools/guest-shadows.mjs) */
 const cold = shenmueFile('MISC/COLD.BIN');
-const shadows = importGuestShadows(R, akira.ctx, { vf2: NG.vf2.rom, stf: NG.stf.rom, daytona: HO.rom, cold: cold && new Uint8Array(cold) }, {
-    akira: { chr: AKIRA_CHR }, hornet: { chr: HORNET_CHR }, mahler: { chr: MAHLER_CHR, pieces: mahler.pieces },
+const shadows = importGuestShadows(R, akira.ctx, { vf2: NG.vf2.rom, stf: NG.stf.rom, cold: cold && new Uint8Array(cold) }, {
+    akira: { chr: AKIRA_CHR }, hornet: { chr: HORNET_CHR, pieces: hornet.pieces }, mahler: { chr: MAHLER_CHR, pieces: mahler.pieces },
     shenmue: SHENMUE.map((g, i) => ({ name: g.name[0] + g.name.slice(1).toLowerCase(), chr: g.chr, scale: shenmue[i].scale })),
 });
 for (const line of shadows.report) console.log(`Shadows: ${line}`);

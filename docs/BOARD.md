@@ -1389,7 +1389,7 @@ the 52 action slots and 19 of the 30 reaction kinds his own (FM's table at
 
 Check: MAME (scripted bout, Hornet vs Honey): his stance is 1639 (FM 0x11C);
 punch, kick, the down and back moves and his reactions to Honey's strikes
-all return to it; his shadow, two prisms (docs/SHADOWS.md), falls whole on
+all return to it; his shadow, a hull a piece (docs/SHADOWS.md), falls whole on
 the stance, mid-flip and on the car pose.
 
 ## The guest: Fighting Vipers' Mahler
@@ -1429,7 +1429,7 @@ this follows.
   hull of each part's farthest points along 26 directions (the chest with
   its pads, the hands), 26 to 48 triangles each (docs/SHADOWS.md). FV's
   own table (0x60BC8: two crossed cards a part) draws as thin broken
-  strips on StF's op 0x74, as Akira's VF2 one does.
+  strips on StF's op 0x74, as Akira's VF2 one did; he has hulls too.
 - **Room.** Models 4908..4947 (19 a player), shadows 4878..4892; meshes
   0xF4F888..0xF62280; headers and texture points 0x7D4F90..0x7E34B0; 1807
   polygons; heap to 0x2F2A21C. His moves are in main_data
