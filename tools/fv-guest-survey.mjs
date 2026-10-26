@@ -118,6 +118,11 @@ function readSetup(id) {
     return { rec, setup, play, bytes: p - rec };
 }
 
+/* The finish kind (the attacker's +0x874): byte +0xE of setup op 4. A KO by
+ * a kind-3 blow breaks the cage (docs/FV-STAGES.md, Cage break). */
+const FINISH_AT = 0xe;
+const finishOf = (s) => { const o = s.setup.find((x) => x.op === 4); return o ? d8(o.at + FINISH_AT) : 0; };
+
 /* The motions a setup hands over to (op 1, op 0x13's two, op 0xA's switch,
  * the play ops' switches) and a throw's victim (op 5). */
 function referenced(s) {
@@ -306,13 +311,15 @@ function survey({ char, name }) {
     const ids = [...setups.keys()].sort((a, b) => a - b);
     const setupOps = {}, playOps = {}, faceArgs = new Set();
     let setupBytes = 0, blockBytes = 0;
-    const motionBytes = {};
+    const motionBytes = {}, finishes = {};
     for (const id of ids) {
         const s = setups.get(id);
         setupBytes += s.bytes;
         blockBytes += blockLength(id);
         motionBytes[id] = s.bytes + blockLength(id);
         for (const { op } of s.setup) tally(setupOps, op);
+        const k = finishOf(s);
+        if (k) (finishes[k] ??= []).push(id);
         for (const { op, at } of s.play) { tally(playOps, op); if (op === FACE_OP) faceArgs.add(d8(at + 3)); }
     }
     const playDiffer = Object.keys(playOps).map(Number).filter((op) => PLAY[op] !== STF_PLAY[op])
@@ -371,6 +378,7 @@ function survey({ char, name }) {
         textures: { core: tileCells(coreList), pads: tileCells([...coreList, ...padList]), all: tileCells([...coreList, ...padList, ...armourList]) },
         padModels: padList, osage: chains, shadowModels, item: d32(A.root + ITEM_AT) ? hex(d32(A.root + ITEM_AT)) : null,
         p2SameRecord: A.root === A.p2.root,
+        finishes,
         motionIds: [...new Set([...ids, ...thrown])].sort((a, b) => a - b), motionBytes,
     };
 }
@@ -409,6 +417,7 @@ if (JSON_OUT) {
         console.log(`  models ${f.models.core} (meshes ${f.meshBytes.core} bytes), ${f.models.pads} pads and skirt (${f.meshBytes.pads} bytes: ${f.padModels.join(' ') || 'none'}), and ${f.models.armour} more for FV's armour (${f.meshBytes.armour} bytes)`);
         console.log(`  player 2 ${f.p2SameRecord ? 'is player 1\'s record again' : 'has a record of its own'}; sway chains ${f.osage.map((o) => `record ${o.record}: ${o.chains ? `${o.chains} of ${o.segments.join('+')} (models ${o.models.join(' ')})` : 'none'}`).join(', ')}`);
         console.log(`  shadow models ${f.shadowModels.join(' ')}; carried item ${f.item ?? 'none'}; motions shared with ${Object.entries(f.shared).map(([k, v]) => `${k} ${v}`).join(', ') || 'none surveyed'}`);
+        console.log(`  finish kinds: ${Object.entries(f.finishes).map(([k, v]) => `${k} x${v.length}${k === '3' ? ` (cage break: ${v.join(' ')})` : ''}`).join(', ') || 'none'}`);
         if (out.indexOf(f)) console.log(`    over the fighters above, kept once: ${f.addedOverBefore.motions} motions of his own, ${f.addedOverBefore.bytes} heap bytes`);
         for (const [k, t] of Object.entries(f.textures)) console.log(`  textures, ${k}: ${t.tiles} tiles, ${t.cells} cells of 32x32 (${Object.entries(t.sizes).map(([s, n]) => `${s} x${n}`).join(', ')})`);
     }

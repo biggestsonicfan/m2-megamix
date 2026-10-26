@@ -10,13 +10,13 @@ const games = await loadNodeGames();
 let seed = 12345;
 const rng = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 2 ** 32);
 const FRAMES = Number(process.env.FRAMES ?? 3600);
-const total = { hit: 0, guard: 0, throw: 0, move: 0, ringout: 0, rounds: 0 };
+const total = { hit: 0, guard: 0, throw: 0, move: 0, ringout: 0, cagebreak: 0, rounds: 0 };
 const arenas = ['vf2', 'fv', 'stf'];
 let n = 0;
 for (let i = 0; i < ROSTER.length; i++) {
     for (let j = 0; j < ROSTER.length; j++) {
         const fight = createFight(makeFighter(games, ROSTER[i]), makeFighter(games, ROSTER[j]), arenas[n++ % 3]);
-        const seen = { hit: 0, guard: 0, throw: 0, move: 0, ringout: 0 };
+        const seen = { hit: 0, guard: 0, throw: 0, move: 0, ringout: 0, cagebreak: 0 };
         let rounds = 0;
         for (let t = 0; t < FRAMES && fight.phase !== 'over'; t++) {
             const before = fight.round;

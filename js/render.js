@@ -20,7 +20,7 @@ import { decodeModel } from '../vendor/noclip/js/model.js';
 import { readFrameTables, buildFlatDisplayList, buildStageDisplayList, opsAt } from '../vendor/noclip/js/display.js';
 import { buildPlacementDisplayList } from '../vendor/noclip/js/placements.js';
 import { ARENA } from './games.js';
-import { bodyPoint } from './engine.js';
+import { bodyPoint, wallSide } from './engine.js';
 
 const dataTexture = (data, w, h) => {
     const t = new THREE.DataTexture(data, w, h, THREE.RedFormat);
@@ -164,6 +164,8 @@ export class Renderer {
                 : buildStageDisplayList(stage, (rom.megamixFrames ??= readFrameTables(rom)));
         const cache = new Map();
         const m = new THREE.Matrix4();
+        const cage = [[], [], [], []];      /* the cage's meshes by side (wallSide), for a break */
+        const c = new THREE.Vector3();
         for (const entry of list) {
             if (entry.extra) continue;
             const key = entry.points ? `${entry.model}:${entry.points.key}` : entry.model;
@@ -179,13 +181,24 @@ export class Renderer {
             mesh.matrixAutoUpdate = false;
             mesh.matrix.copy(composeOps(m, opsAt(entry, 0)));
             mesh.frustumCulled = false;
+            if (entry.layer === 'cage' && ARENA[game.key].cage) {
+                geom.computeBoundingBox();
+                geom.boundingBox.getCenter(c).applyMatrix4(mesh.matrix);
+                cage[wallSide(c.x, c.z)].push(mesh);
+            }
             group.add(mesh);
         }
         this.scene.add(group);
         const bg555 = rom.game.stageTable.backdrop ?? stage.bgColor555;
         const rgb = bg555 != null ? palette555ToRGB(cxlatData, bg555) : [0, 0, 0];
         this.scene.background = new THREE.Color(...rgb);
-        this.stage = { group, mats: [mat, back], game, stage };
+        this.stage = { group, mats: [mat, back], game, stage, cage };
+    }
+
+    /* A broken side of FV's cage is not drawn (cage_display skips its
+     * cage_clip_m): the fight's broken sides. */
+    showCage(broken) {
+        this.stage?.cage.forEach((meshes, side) => { for (const mesh of meshes) mesh.visible = !broken.has(side); });
     }
 
     /* ---- the fighters ---- */
