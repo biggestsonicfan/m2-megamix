@@ -1,7 +1,7 @@
 /*
  * The board's sound ROMs: StF's sound program (epr-19021) with Fighting
- * Vipers' and Virtua Fighter 2's songs and VF2's Akira's sounds added to its
- * data, and a sample ROM holding only what that data plays (docs/BOARD.md,
+ * Vipers' and Virtua Fighter 2's songs, VF2's Akira's sounds and Shenmue's
+ * Ryo's and Chai's added to its data, and a sample ROM holding only what that data plays (docs/BOARD.md,
  * Sound).
  *
  * StF's sound program and FV's (epr-18628) are one driver: their first 32 KB,
@@ -63,6 +63,11 @@
  * his tone holds only keys no kept request plays there, those keys emptied in
  * kit 0x52.
  *
+ * Ryo's and Chai's (SHENMUE_EFFECTS, group 0x16: shenmueEffect): the SEs of
+ * Shenmue's battle pack (BATTLE_1.SND, DTPK) their moves send, entry nn SE
+ * nn, each one note on the same tone's keys after Akira's, its sample
+ * decoded from AICA ADPCM to 8-bit PCM (docs/SHENMUE-SOUND.md).
+ *
  * Samples: the board's ROM is 8 MB, which StF's own fill. It keeps the samples
  * of StF's sound effects the board can send (sends: every code StF's program
  * or the board's names, but for the sound test's list, AUDIO_LIST, which
@@ -96,9 +101,11 @@ const VF2_SE_KEYS = [0x00, 0x06, 0x0D, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16,
 const VF2_SE_VELS = [0x5F, 0x7F];
 const VF2_SE_KIT = 0xF2;
 const VF2_VOICES = [{ group: 0x23, kit: 0xFF, n: 5, vel: 0x78 }, { group: 0x24, kit: 0xFE, n: 6, vel: 0x7F }];
-/* the StF code of a VF2 sound code Akira's moves send; null: none */
+/* the StF code of a VF2 sound code Akira's moves send (group 0x16's, a
+ * Shenmue guest's, as it is); null: none */
 export function vf2Effect(code) {
     let i = -1;
+    if (code >>> 8 === (0xAE00 | SHENMUE_EFFECTS)) return code;
     if (code >>> 16 === 0x9E) {
         const k = VF2_SE_KEYS.indexOf((code >> 8) & 0xFF), v = VF2_SE_VELS.indexOf(code & 0xFF);
         if (k >= 0 && v >= 0) i = k * VF2_SE_VELS.length + v;
@@ -110,6 +117,78 @@ export function vf2Effect(code) {
         }
     }
     return i < 0 ? null : 0xAE0000 | (VF2_EFFECTS << 8) | i;
+}
+
+/* Ryo's and Chai's sounds, group 0x16: Shenmue's battle pack's effects
+ * (docs/SHENMUE-SOUND.md), 0xAE1600 + the SE of Shenmue's code ab76 nn (slot
+ * 6, the battle pack). The ones the guests' moves send go in. */
+export const SHENMUE_EFFECTS = 0x16;
+export const SHENMUE_PACK = 'SCENE/03/SOUND/BATTLE_1.SND';
+const SHENMUE_SLOT = 0xAB76;
+/* the StF code of Shenmue's sound (slot, SE); null: none */
+export function shenmueEffect(slot, se) {
+    return slot === SHENMUE_SLOT && se < 0x100 ? 0xAE0000 | (SHENMUE_EFFECTS << 8) | se : null;
+}
+
+/* A DTPK sound pack (little-endian; tools/shenmue-sound.py dtpk): its
+ * effects (the note and velocity each plays, null an empty slot), its tones
+ * by note (the sample, the tune from 44100 Hz in semitones) and its samples
+ * as 16-bit PCM. */
+class Dtpk {
+    constructor(d) {
+        this.d = d;
+        this.v = new DataView(d.buffer, d.byteOffset, d.byteLength);
+        if (String.fromCharCode(...d.subarray(0, 4)) !== 'DTPK') throw new Error('not a DTPK sound pack');
+        this.sec = Array.from({ length: 8 }, (_, i) => this.u32(0x20 + 4 * i));
+    }
+    u32(o) { return this.v.getUint32(o, true); }
+    effects() {
+        const s = this.sec[3], n = this.u32(s + 12) + 1;   /* count - 1 */
+        return Array.from({ length: n }, (_, i) => {
+            const o = s + this.u32(s + 16 + 4 * i);
+            return this.d[o + 1] === 0xDF ? { note: this.d[o + 2], vel: this.d[o + 3] } : null;
+        });
+    }
+    tones() {
+        const s = this.sec[4], out = new Map();
+        for (let i = 0; i <= this.d[s + 0x10]; i++) {
+            const r = s + 0x50 + 0x40 * i;
+            out.set(this.d[r], { sample: this.d[r + 2], tune: this.v.getInt8(r + 10) + this.d[r + 11] / 64 });
+        }
+        return out;
+    }
+    pcm(i) {
+        const e = this.sec[7] + 4 + 16 * i, w = this.u32(e), bytes = this.u32(e + 12);
+        if (w >>> 24 !== 3) throw new Error(`DTPK sample ${i}: format ${w >>> 24}, not ADPCM`);
+        return adpcm(this.d.subarray(w & 0xFFFFFF, (w & 0xFFFFFF) + bytes));
+    }
+}
+/* Yamaha's ADPCM as the AICA plays it, the low nibble first */
+const ADPCM_STEP = [230, 230, 230, 230, 307, 409, 512, 614];
+function adpcm(b) {
+    const out = new Int16Array(b.length * 2);
+    let h = 0, st = 127, j = 0;
+    for (const byte of b) for (const n of [byte & 15, byte >> 4]) {
+        const d = ((2 * (n & 7) + 1) * st) >> 3;
+        h = Math.max(-32768, Math.min(32767, n & 8 ? h - d : h + d));
+        st = Math.max(127, Math.min(24576, (st * ADPCM_STEP[n & 7]) >> 8));
+        out[j++] = h;
+    }
+    return out;
+}
+/* A Shenmue sample as StF's driver plays it: 8-bit signed PCM, resampled to
+ * the first rate of 44100 Hz's octaves at or above its own, and the by-key
+ * record's pitch byte for it (octave << 4 | semitone: 0xF0 22050 Hz; M2MidiDec) */
+function scspSample(pcm, rate) {
+    const oct = Math.max(-7, Math.min(0, Math.ceil(Math.log2(rate / 44100) - 1e-9)));
+    const to = 44100 * 2 ** oct, n = Math.max(2, Math.floor(pcm.length * to / rate)) & ~1;
+    const out = new Uint8Array(n);
+    for (let i = 0; i < n; i++) {
+        const x = i * rate / to, a = Math.min(Math.floor(x), pcm.length - 1), f = x - a;
+        const y = pcm[a] * (1 - f) + pcm[Math.min(a + 1, pcm.length - 1)] * f;
+        out[i] = Math.max(-128, Math.min(127, Math.round(y / 256))) & 0xFF;
+    }
+    return { bytes: out, pitch: (oct & 15) << 4 };
 }
 
 const PROG = 0x600000, SAMPLES = 0x800000, SAMPLE_BYTES = 0x800000;
@@ -511,10 +590,11 @@ const toneChange = (D, at, ch) => D.track(at).ev.some((ev) => ev.st === (0xC0 | 
 /*
  * Build the board's sound program and samples from StF's (prog, the four
  * sample ROMs as they are in the zip, main: its main program, boardSrc:
- * megamix.c), FV's and VF2's. Returns the files, in the zip's byte order,
+ * megamix.c), FV's and VF2's, and Shenmue's battle pack (shenmue: {pack, the
+ * SEs to add, null all}, or none). Returns the files, in the zip's byte order,
  * the codes of the added songs, and a report.
  */
-export function buildGuestSound(stfFiles, fvFiles, vf2Files) {
+export function buildGuestSound(stfFiles, fvFiles, vf2Files, shenmue = null) {
     const S = new SoundData(swap16(stfFiles.prog), swap16(cat(stfFiles.samples)));
     const F = new SoundData(swap16(fvFiles.prog), swap16(cat(fvFiles.samples)));
     const V = new Vf2Data(swap16(vf2Files.prog), swap16(cat(vf2Files.samples)));
@@ -610,19 +690,42 @@ export function buildGuestSound(stfFiles, fvFiles, vf2Files) {
         }
         a.stfKey = akiraKey.get(id);
     }
-    const taken = [...akiraKey.values()].filter((k) => kitSample(k) >= 0);
     const akiraRecs = [];
     for (const [id, k] of akiraKey) {
         const t = V.tone(id >> 8), r = t.keys[id & 0xFF], s = V.sample(t, r);
         if (s < 0) throw new Error(`VF2 kit 0x${(id >> 8).toString(16)} key 0x${(id & 0xFF).toString(16)}: no sample`);
         akiraRecs.push([k, kitRecord(V, r.at, vSample(s), vDir[s].env, 0x10)]);
     }
+    /* Ryo's and Chai's: the pack's effects they send (all of them without a
+     * list), a key of channel 14 after Akira's by the pack's note, in his
+     * tone; their samples after VF2's */
+    const shEffects = [], shKey = new Map(), shSamples = [];
+    if (shenmue) {
+        const D = new Dtpk(shenmue.pack), fx = D.effects(), tones = D.tones();
+        const want = shenmue.effects ? [...new Set(shenmue.effects)].sort((a, b) => a - b) : fx.flatMap((e, i) => (e ? [i] : []));
+        for (const se of want) {
+            const e = fx[se], t = e && tones.get(e.note);
+            if (!t) throw new Error(`Shenmue's SE ${se}: no tone in ${SHENMUE_PACK}`);
+            if (!shKey.has(e.note)) {
+                const i = akiraKey.size + shKey.size;
+                if (i >= free.length) throw new Error(`Ryo's and Chai's sounds: ${free.length} free keys on channel ${SE_CH}`);
+                const x = scspSample(D.pcm(t.sample), 44100 * 2 ** (t.tune / 12));
+                if (x.bytes.length > 0xFFFF) throw new Error(`Shenmue's SE ${se}: ${x.bytes.length} samples, past a slot's 16-bit end`);
+                const n = sDir.length + newSamples.length + vNewSamples.length + shSamples.length;
+                shSamples.push(x.bytes);
+                shKey.set(e.note, free[i]);
+                akiraRecs.push([free[i], [n >> 8, n & 0xFF, x.pitch, 0, 0x60, 0, 0x10, 0, 0x00, 0x1F, 0x00, 0x1F]]);
+            }
+            shEffects.push({ se, key: shKey.get(e.note), vel: e.vel });
+        }
+    }
     const akiraTone = sTones + newTones.length;
     newTones.push({ raw: byKeyTone(0xFF, akiraRecs) });
-    report.push(`Akira's sounds: tone 0x${akiraTone.toString(16)} on channel ${SE_CH}, keys ${[...akiraKey.values()].join(' ')}${taken.length ? ` (kit 0x52's ${taken.join(' ')}: no effect the board sends plays them)` : ''}`);
+    const guestKeys = [...akiraKey.values(), ...shKey.values()], taken = guestKeys.filter((k) => kitSample(k) >= 0);
+    report.push(`Akira's sounds: tone 0x${akiraTone.toString(16)} on channel ${SE_CH}, keys ${[...akiraKey.values()].join(' ')}${shKey.size ? `, Ryo's and Chai's ${[...shKey.values()].join(' ')}` : ''}${taken.length ? ` (kit 0x52's ${taken.join(' ')}: no effect the board sends plays them)` : ''}`);
 
     if (sTones + newTones.length > 0x80) throw new Error(`${sTones + newTones.length} tones: a tone number is 7 bits`);
-    const nSamples = sDir.length + newSamples.length + vNewSamples.length;
+    const nSamples = sDir.length + newSamples.length + vNewSamples.length + shSamples.length;
     if (nSamples > DIR_MAX) throw new Error(`${nSamples} samples: the directory's RAM holds ${DIR_MAX}`);
 
     /* the sample ROM: StF's kept samples, then FV's; the rest silent */
@@ -646,8 +749,11 @@ export function buildGuestSound(stfFiles, fvFiles, vf2Files) {
     for (const s of newSamples) dirOut.push(place(F.s, fDir[s]));
     const fvBytes = at - stfBytes;
     for (const s of vNewSamples) dirOut.push(place(V.s, vDir[s]));
+    const vf2Bytes = at - stfBytes - fvBytes;
+    const shAt = SAMPLES + at;
+    for (const b of shSamples) dirOut.push(place(b, { start: SAMPLES, bytes: b.length, loop: SAMPLES, loopBytes: 0 }));
     const mb = (n) => (n / 1048576).toFixed(2);
-    report.push(`samples: StF's ${mb(stfBytes)} MB, FV's ${mb(fvBytes)} MB (${newSamples.length}), VF2's ${mb(at - stfBytes - fvBytes)} MB (${vNewSamples.length}), ${mb(SAMPLE_BYTES - at)} MB free`);
+    report.push(`samples: StF's ${mb(stfBytes)} MB, FV's ${mb(fvBytes)} MB (${newSamples.length}), VF2's ${mb(vf2Bytes)} MB (${vNewSamples.length}), Shenmue's ${mb(at - stfBytes - fvBytes - vf2Bytes)} MB (${shSamples.length}${shSamples.length ? `, 0x${shAt.toString(16)}..0x${(SAMPLES + at - 1).toString(16)}` : ''}), ${mb(SAMPLE_BYTES - at)} MB free`);
 
     /* the program ROM: the new tables and tracks after StF's data */
     const prog = S.p.slice();
@@ -735,7 +841,7 @@ export function buildGuestSound(stfFiles, fvFiles, vf2Files) {
     for (let i = 0; i < sTones; i++) out.set16(toneOffs + 2 * i, sTn.offs[i] + PROG + shift - toneAt);
     /* StF's tones, kit 0x52 without the keys Akira's take */
     const body = S.p.slice(bodyAt, bodyEnd);
-    for (const k of akiraKey.values()) {
+    for (const k of guestKeys) {
         const r = kit.keys.find((x) => x.key === k);
         if (r) body.set(NO_KEY.slice(0, 2), r.at - bodyAt);
     }
@@ -768,14 +874,15 @@ export function buildGuestSound(stfFiles, fvFiles, vf2Files) {
     const reqAt = out.here;
     const groups = Object.keys(sReq.groups).map(Number).sort((a, b) => a - b);
     if (groups[groups.length - 1] !== VF2_EFFECTS - 1) throw new Error(`StF's requests end at group 0x${groups[groups.length - 1].toString(16)}`);
-    const allGroups = [...groups, VF2_EFFECTS];
+    const allGroups = [...groups, VF2_EFFECTS, ...(shEffects.length ? [SHENMUE_EFFECTS] : [])];
+    const shCount = shEffects.length ? Math.max(...shEffects.map((e) => e.se)) + 1 : 0;
     out.u16(allGroups.length - 1);
     const gOffs = out.here;
     for (const g of allGroups) out.u16(0);
     const lists = new Map();
     for (const g of allGroups) {
         out.set16(gOffs + 2 * (g - 0x10), out.here - reqAt);
-        const n = g === VF2_EFFECTS ? akira.length : sReq.groups[g].length + (g === 0x10 ? added.length + vSongs.length : 0);
+        const n = g === VF2_EFFECTS ? akira.length : g === SHENMUE_EFFECTS ? shCount : sReq.groups[g].length + (g === 0x10 ? added.length + vSongs.length : 0);
         out.u16(n - 1);
         lists.set(g, out.here);
         for (let i = 0; i < n; i++) out.u16(0);
@@ -835,6 +942,14 @@ export function buildGuestSound(stfFiles, fvFiles, vf2Files) {
         out.set16(lists.get(VF2_EFFECTS) + 2 * i, out.here - reqAt);
         out.bytes([0x80, 0x90 | SE_CH, a.stfKey, a.vel, 0x00, 0xFF, 0x2F, 0x00]);
     });
+    /* Ryo's and Chai's: entry nn Shenmue's SE nn, one note on channel 14;
+     * an SE they do not send a note of velocity 0 (nothing) */
+    for (let se = 0; se < shCount; se++) {
+        const e = shEffects.find((x) => x.se === se);
+        out.set16(lists.get(SHENMUE_EFFECTS) + 2 * se, out.here - reqAt);
+        out.bytes([0x80, 0x90 | SE_CH, e ? e.key : shEffects[0].key, e ? e.vel : 0, 0x00, 0xFF, 0x2F, 0x00]);
+    }
+    if (shEffects.length) report.push(`Ryo's and Chai's sounds: group 0x${SHENMUE_EFFECTS.toString(16)}, Shenmue's SE ${shEffects.map((e) => e.se).join(' ')} (0xAE16nn), ${shKey.size} samples`);
     out.align(4);
     if (out.here - reqAt > 0x10000) throw new Error('requests: over 64 KB, past a word offset');
     const end = out.here;
@@ -869,18 +984,21 @@ function interleave(a, b) {
     return o;
 }
 
-/* from StF's files as import-assets.mjs has them (by name), FV's and VF2's from their zips */
-export async function guestSound(stfByName) {
+/* from StF's files as import-assets.mjs has them (by name), FV's and VF2's
+ * from their zips, and Shenmue's ({pack, effects}, as buildGuestSound) */
+export async function guestSound(stfByName, shenmue = null) {
     const stf = stfByName
         ? { prog: new Uint8Array(stfByName[STF_FILES.prog]), samples: STF_FILES.samples.map((n) => new Uint8Array(stfByName[n])),
             main: STF_MAIN.map((n) => new Uint8Array(stfByName[n])) }
         : await readSet({ ...STF_FILES, main: STF_MAIN });
     const boardSrc = readFileSync(new URL('../board/src/megamix.c', import.meta.url), 'utf8');
     return buildGuestSound({ ...stf, main: interleave(...stf.main), boardSrc, names: STF_FILES.samples },
-        await readSet(FV_FILES), await readSet(VF2_FILES));
+        await readSet(FV_FILES), await readSet(VF2_FILES), shenmue);
 }
 
 if (process.argv[1] === new URL(import.meta.url).pathname) {
-    const r = await guestSound();
+    const { shenmueFile } = await import('../tests/node-roms.mjs');
+    const pack = shenmueFile(SHENMUE_PACK);
+    const r = await guestSound(null, pack && { pack: new Uint8Array(pack), effects: null });
     for (const line of r.report) console.log(line);
 }
