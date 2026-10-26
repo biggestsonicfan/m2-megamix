@@ -11,8 +11,9 @@
  *     SLOT_BONES), its open ends capped, Z mirrored to the board's, at each
  *     one's own size (importShenmue's `scale`).
  *   - Hornet (17): Daytona's model 791, the card under the player's car, cut
- *     at the body's cut (CUT_Z) into a nose card on slot 1 and a cabin card
- *     on slot 9, in those slots' frames as hornetObjects puts the body.
+ *     at the body's cut (CUT_Z) into a nose half on slot 1 and a cabin half
+ *     on slot 9, each stood up into a prism, in those slots' frames as
+ *     hornetObjects puts the body.
  *
  * Every face goes in twice, once each way round: StF's shadow models are
  * solids whose faces turned to the light draw (op 0x74 flattens them), and
@@ -41,6 +42,9 @@ const CARD_UV = [0, 0, 0, 0x1ff, 0x1ff, 0x1ff, 0, 0, 0, 0, 0, 0, 0, 0];
 const MVSD_AT = 0x21b880, MVSD_MAGIC = 0x4d565344;   /* 'MVSD' */
 /* the board's guests (import-assets: vf2-guest, ryo-guest, hornet-guest) */
 const PLAYER2 = 26;
+/* Hornet's shadow prisms' heights over card 791 (y = 0, the floor): the cowl
+ * (daytona-hornet COWL_Y) and the roof (Daytona's body is 1.16 m high) */
+const NOSE_H = 0.70, ROOF_H = 1.16;
 
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
@@ -227,9 +231,20 @@ export function importGuestShadows(R, ctx, { vf2, stf, daytona, cold }, guests) 
             });
             return out.length >= 3 ? [{ ...q, quad: false, p: out }] : [];
         });
-        const entries = [[1, true], [9, false]].map(([slot, front]) => {
-            const placed = mapPolys(cut(front), bodyMap(slot, MODEL_UNITS));
-            const t = placed.flatMap((q) => fan(q.p)).map((f) => f.map((p) => p.map((x) => x * SCALE)));
+        /* each half stood up into a prism, the nose to the cowl and the cabin
+         * to the roof: a flat card on FM's stance (the car on its tail) is
+         * edge-on to the floor, and op 0x74 flattens it into a strip */
+        const prism = (h) => (q) => {
+            const top = q.p.map(([x, , z]) => [x, h, z]);
+            return [...fan(q.p), ...fan(top), ...q.p.flatMap((a, i) => {
+                const j = (i + 1) % q.p.length;
+                return [[a, q.p[j], top[j]], [a, top[j], top[i]]];
+            })];
+        };
+        const entries = [[1, true, NOSE_H], [9, false, ROOF_H]].map(([slot, front, h]) => {
+            const solid = cut(front).flatMap(prism(h)).map((p) => ({ quad: false, normal: [0, 1, 0], p }));
+            const placed = mapPolys(solid, bodyMap(slot, MODEL_UNITS));
+            const t = placed.map((q) => q.p.map((p) => p.map((x) => x * SCALE)));
             return { slot, model: newModel(t, `Hornet shadow ${slot}`), flags: 0, offset: [0, 0, 0] };
         });
         seat('Hornet', guests.hornet.chr, entries);

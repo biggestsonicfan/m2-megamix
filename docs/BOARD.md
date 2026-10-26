@@ -1280,8 +1280,9 @@ walks, strikes and takes hits on either side.
 
 Hornet (Daytona USA's car #41, as Fighters Megamix had him) is StF
 character 17 (43 for player 2), picked as HORNET in the setup (#1592), the
-name line DAYTONA. He is built by tools/hornet-guest.mjs `importHornet` on
-Akira's moves (`char_game` VF2), after Ryo and Chai.
+name line DAYTONA. He is built by tools/hornet-guest.mjs `importHornet`
+(`char_game` VF2, as Akira), after Ryo and Chai, on FM Hornet's own moves
+(tools/fm-moves.mjs, #1610).
 
 - **Slot.** 17 is no number StF's code checks and no bit of the opponent
   mask (above, The guest: Shenmue's Chai).
@@ -1313,16 +1314,46 @@ Akira's moves (`char_game` VF2), after Ryo and Chai.
   texel 15 (luma 42). StF's ramps are steeper: the darkest texels (the
   tyres) come out a little darker than Daytona's.
 - **Room.** Models 4948..4953; meshes 0xF41990..0xF4F888; headers and
-  texture points 0x7CCCE0..0x7D4F90; 1368 polygons; heap to 0x2F1D84C.
+  texture points 0x7CCCE0..0x7D4F90; 1368 polygons; heap to 0x2F292CC. His
+  moves are in main_data 0x780000..0x800000 (FV's skies end there now).
 - **Menu.** The setup window is 28 wide from column 16 (was 26 from 18) to
   fit HORNET:DAYTONA.
-- **Not his own.** His moves: Akira's. FM's motions, turned into VF2's, come
-  later.
+- **Moves.** FM Hornet's (tools/fm-moves.mjs `importFmMoves`), below.
 
 Check: MAME, Hornet vs Honey on South Island: setup reads DAYTONA:HORNET;
 the car stands on its rear wheels, logos, the 41 and the Gaffey panel the
 right way round and coloured as Daytona's, the windows grey-blue cloud
 under the frames; he walks, strikes and takes hits.
+
+### Hornet's moves: Fighters Megamix's
+
+`importFmMoves` takes the motions FM Hornet's program and tables reach and
+turns them into StF's (VF2's) for him alone: 126 motions as 1617..1742,
+after Ryo's and Chai's own (61 from his bank, the rest FM's common one),
+260568 bytes of blocks and their setups at main_data 0x780000, his command
+program after them (2872 bytes from 700 ops: 84 moves, 10 throws), 28 of
+the 52 action slots and 19 of the 30 reaction kinds his own (FM's table at
+0x06062A84, `FM_KIND`); the rest stay Akira's. Damage is FM's × 140/200.
+
+- **Setups.** FM's ops 1 to 4 are StF's; the others are dropped. FM's op 2
+  ends can run past the motion (kick 0x10D: end 56 of 46 frames). StF's
+  frame stops at the last one, so they are clamped to its length, or the
+  fighter stands frozen.
+- **Committed motions with no op 2.** FM frees them for the program with op
+  0x12 (u16 +6, the frame: 0x06011C98 sets byte +2 bit 6 once frame 0x52
+  passes it). StF has no such op, and without an op 2 it holds the last
+  frame (next 0) for good: 0x656, from down and a punch, stood ~690 frames.
+  Such a motion gets an op 2 with hit, cancel and end at op 0x12's frame, or
+  the motion's last.
+- **Lost.** His 10 throws, FM's escape tests (ops 0x43..0x48, 73 of them),
+  its follow-switches (0x4A, 0x4E) and button 8's commits have no StF
+  counterpart and fail; air checks (0x32) commit as plain ones.
+  `node tools/grade-guest.mjs` lists what each guest loses.
+
+Check: MAME (scripted bout, Hornet vs Honey): his stance is 1639 (FM 0x11C);
+punch, kick, the down and back moves and his reactions to Honey's strikes
+all return to it; his shadow, two prisms (docs/SHADOWS.md), falls whole on
+the stance, mid-flip and on the car pose.
 
 ## VF2's stages: Tou-rin and the Colosseum
 

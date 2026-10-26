@@ -1479,7 +1479,7 @@ static u16 menu_val[M_ITEMS] = { 0, 30, 2, 0, 0, 1, 140, 5 };
 static const char *const fighter_name[POSE_ANIMS] = { "SONIC", "HONEY", "EGGMAN", "AKIRA", "RYO", "CHAI", "HORNET" };
 /* The game a fighter's name line shows where it is not the one its code
  * runs as: Ryo and Chai (Shenmue's) and Hornet (Daytona USA's car, as Fighters
- * Megamix had him) fight on Akira's moves, as VF2's. */
+ * Megamix had him) run as VF2's Akira does, on moves turned into VF2's. */
 static const char *const fighter_from[POSE_ANIMS] = { 0, 0, 0, 0, "SHENMUE", "SHENMUE", "DAYTONA" };
 static const char *const stage_name[STAGES] = { "SOUTH_ISLAND", "AURORA_ICEFIELD", "VF2 TOU-RIN", "VF2 COLOSSEUM", "FV WESTERN" };
 static u32 menu_cur;
