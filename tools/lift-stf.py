@@ -64,13 +64,19 @@ import tempfile
 # op 0x75), rob_kage_disp_inside (after the stage: the near mask, and the
 # projectiles' shadows) and rob_kage_disp_outside (after each fighter: the
 # far mask), both through rob_kage_disp_test's op 0x74 and set_obj.
+# The eyes: snc_eye_thd_set (camera_init's, a fighter at a time) turns the
+# other fighter's head (or the camera) into the head's frame and, through
+# clip_medama and its table by character (word_21734), into a shift of each
+# eye's texture points, which move_tpd_req queues and megamix.c eyes_frame
+# uploads; tpd_move_init empties the queue (main_loop's, once a frame).
 ROOTS = ['set_motion', 'calc_rob_angle', 'calc_rob_angle_cont', 'calc_unit_mat', 'smooth_int', 'sub_7F0E8',
          'action_init', 'rob_action', 'sub_1D47C', 'coli_init', 'collision', 'get_game_info', 'cmd_native_tail',
          'cop_initialize_end2', '_Scroll_Initialize', 'energy_disp', 'barrier_left_disp', 'time_dsp',
          'win_lamp_dsp', 'win_lamp_int', 'cam_mode_9', 'cam_mode_10', 'zanzou_control', 'sub_8A29C',
          'stage_disp', 'make_lay_col_256_tbl', 'chg_scr_color_req', 'chg_pol_color_req', 'chg_pol_color_send',
          'sub_7B4', 'send_tex_col_stage', 'send_tex_col_skin', 'send_tex_col_part', 'sub_2435C',
-         'set_display_type_crt', 'osage_init', 'sub_63AC4', 'rob_kage_disp_inside', 'rob_kage_disp_outside']
+         'set_display_type_crt', 'osage_init', 'sub_63AC4', 'rob_kage_disp_inside', 'rob_kage_disp_outside',
+         'snc_eye_thd_set', 'tpd_move_init']
 # Routines the board does not run (debug text, name plates, ring scatter,
 # Super Sonic's hair objects; the shadow mask balls, which read a table at
 # 0x4C84 and megamix.c's kage_balls sends): `ret`.

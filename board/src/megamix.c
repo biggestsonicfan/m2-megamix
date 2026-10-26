@@ -740,8 +740,10 @@ static u32 pad_bits(const m2_player_t *p) {
 
 /* rob_disp: under the unscaled camera, each of the sixteen parts with a model, from
  * its slot (op 0x37 multiplies the slot into the current matrix) after a
- * scale of (1, y, 1); then the eyes, on the head's slot (rob_disp_rdn_loop's
- * set_obj_tpd, whose texture points are the eye models' own). */
+ * scale of (1, y, 1); then the eyes, on the head's slot: rob_disp_rdn_loop
+ * draws the face's two (ROB_EYE_MODEL) with set_obj_tpd, on the texture
+ * points snc_eye_thd_set moved (ROB_EYE_TPD), or with set_obj, their own
+ * points, while ROB_F_NO_EYES is set or in motion 0x134. */
 #define COP_PART COP_CMD(0x37)
 
 /* A slot's matrix (op 0x37 on the identity), read back. */
@@ -874,13 +876,14 @@ static u32 seams_build(u32 p, u32 *at, const u32 **out) {
 static void draw_fighter(const fighter_t *f, u32 p, u32 mirror) {
     volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
     const pose_anim_t *a = f->anim;
-    u32 *r = robs[p], i, model, head = 0u;
+    u32 *r = robs[p], i, model, tpd;
     u32 mid = midriff_build(p), seam_at[SEAMS_MAX], s;
     const u32 *seams;
     u32 nseams = seams_build(p, seam_at, &seams);
-    /* the eyes are StF's (a second head model); another game's fighter has
+    /* the eyes are StF's (two models on the head); another game's fighter has
      * them in his head */
-    u32 n = char_game(a->chr) == GAME_STF ? 16u + a->nparts : 16u;
+    u32 n = char_game(a->chr) == GAME_STF ? 18u : 16u;
+    u32 still = (RW(r, ROB_FLAG) & ROB_F_NO_EYES) || RH(r, ROB_MOT_NUM) == 0x134u;
     *cf = COP_WMATRIX;
     for (i = 0; i < 9; i++) *cf = m2_obj_fb(cam_l.r[i]);
     for (i = 0; i < 3; i++) *cf = m2_obj_fb(cam_l.t[i]);
@@ -891,11 +894,11 @@ static void draw_fighter(const fighter_t *f, u32 p, u32 mirror) {
      * an object at polygon RAM 0, where the midriff is */
     for (i = 1; i < n; i++) {
         u32 slot, seamed = 0u;
+        tpd = 0u;
         if (i < 16u) { slot = i; model = RW(r, ROB_PARTS + i * 4u); }
-        else {                           /* the eyes: a second model on the head's slot */
-            const pose_part_t *pt = &a->parts[i - 16u];
-            if (pt->slot != 2u || !head++) continue;
-            slot = 2u; model = p ? pt->p2 : pt->model;
+        else {                           /* the eyes, on the head's slot */
+            slot = 2u; model = RW(r, ROB_EYE_MODEL + (i - 16u) * 4u);
+            if (!still) tpd = RW(r, ROB_EYE_TPD + (i - 16u) * 4u);
         }
         /* a slot whose faces are all in seams (YKB_B's thighs and shins,
          * welded whole to the joint above) has no model, only its seams */
@@ -905,7 +908,7 @@ static void draw_fighter(const fighter_t *f, u32 p, u32 mirror) {
         *cf = COP_PUSH;
         *cf = COP_SCALE; *cf = 0x3F800000u; *cf = RW(r, ROB_Y_SCALE); *cf = 0x3F800000u;
         *cf = COP_PART; *cf = p; *cf = slot * 12u;
-        if (model) submit_cur(model);
+        if (model) submit_cur_ov(model, 0u, tpd);
         if (slot == 9u && i < 16u && mid) poly_draw(mid, MID_POLY(p) + 4u);
         if (i < 16u)
             for (s = 0; s < nseams; s++) {
@@ -1059,6 +1062,43 @@ static void move_tpd_send(const tpd_t *t) {
         for (i = 0; i < t->n; i++, v += 4) {
             *fifo = (u16)v[0]; *fifo = luma; *fifo = (u16)v[2]; *fifo = (u16)v[3];
         }
+    }
+}
+
+/* The eyes, as camera_init moves them: move_tpd_req's queue emptied
+ * (tpd_move_init), then snc_eye_thd_set for each fighter whose ROB_F_NO_EYES
+ * is clear (g13 the camera, which it looks at in some modes), and
+ * move_tpd_send's upload of what it queued: each eye's texture points (a
+ * count, then (v, u) pairs) plus its shift (tpd_move), from
+ * GEO_PROGRAM_START + 0x1000 on. The stage's block (move_tpd_send above)
+ * is first there, as send_st01_sea_thd queues it first, so the eyes start
+ * after its words. Run after the fighters are stepped: it reads the head's
+ * slot (calc_unit_mat's) and the other fighter's head (+0x20C). */
+static void eyes_frame(const tpd_t *st) {
+    volatile u32 *fifo = (volatile u32 *)M2_GEOFIFO_ADDR;
+    const u8 *q = (const u8 *)stf_ram(G_TPD_QUEUE);
+    u32 p, n, at = 0u;
+    stf_call(stf_tpd_move_init, robs[0], robs[1], 0u);
+    if (st->kind != 0u) RAM32(G_TPD_WORDS) = at = st->words;
+    for (p = 0; p < 2u; p++) {
+        u32 c = RB(robs[p], ROB_CHAR), from = RAM32(G_TPD_COUNT), e;
+        if (RW(robs[p], ROB_FLAG) & ROB_F_NO_EYES) continue;
+        stf_task(stf_snc_eye_thd_set, stf_cam, robs[p], robs[p ^ 1u]);
+        /* Honey (15, player 2's 41): clip_medama's table puts her pupils
+         * off her eyes, so Sega's console build of StF zeroes her shifts
+         * (its emulator's hooks at snc_eye_thd_set+0x148 and +0x188,
+         * m2-hle2's sfight_console.h): her eyes are drawn still */
+        if (c == 15u || c == 41u)
+            for (e = from; e < RAM32(G_TPD_COUNT); e++) RW(q, e * 16u + 8u) = 0u;
+    }
+    for (n = RAM32(G_TPD_COUNT); n--; q += 16) {
+        const short *v = (const short *)RW(q, 4u);
+        int dv = (short)RH(q, 8u), du = (short)RH(q, 10u);
+        u32 words = ((const u16 *)v)[1], i, k = ((const u16 *)v)[0];
+        if (!v || RH(q, 0u) != 0u) break;              /* tpd_move only: the eyes' kind */
+        *fifo = GEO_OP_TEXDATA; *fifo = GEO_TEXRAM_BIT | (0x5000u + at); *fifo = words;
+        for (i = 0, v += 2; i < k; i++, v += 2) { *fifo = (u32)(v[0] + dv); *fifo = (u32)(v[1] + du); }
+        at += words;
     }
 }
 
@@ -1880,6 +1920,7 @@ int main(void) {
               }
           } }
         if (!in_menu) hud_draw();
+        eyes_frame(&stages[stage].tpd);
         osage_step();
         kage_light(&stages[stage]);
         kage_inside(&stages[stage]);

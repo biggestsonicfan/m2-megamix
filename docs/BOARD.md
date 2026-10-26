@@ -200,13 +200,28 @@ same frame of the stance motion (278), all sixteen part positions in the rob
 - Eyes: Sonic's and Honey's eyes are two models drawn on the head's matrix.
   StF's `rob_disp_rdn_loop` (Sega's C in `m2-hle2/vendor/gems-c`) draws them
   right after the head with `set_obj_tpd`, on the same matrix, with no turn
-  or offset of their own. The texture points it passes come from the face
-  record (`0xC533C` table, +0x10 and +0x14). For Sonic (eyes 217, 218; player 2's
-  665, 666) and Honey (3520, 3521; 2735, 2736) those points are the same,
-  byte for byte, as the eye models' own, so drawing the models as they are
-  is what StF draws. A MAME snapshot of board Sonic in stance beside real StF's
-  Sonic at round start shows the same eyes: a white patch over the face
-  with the pupil at its front edge.
+  or offset of their own. `player_head_change_2` puts the face record's
+  eye models and texture points (`0xC533C` table, +0x10 and +0x14) in the
+  rob (+0x2050, +0x2A80). Each frame `snc_eye_thd_set` (lifted; camera_init
+  calls it for each fighter without flag bit 20) turns the other fighter's
+  head into the head's frame, and `clip_medama` with its table by character
+  (`word_21734`) makes it a shift of each eye's texture points.
+  `move_tpd_req` queues the shifts (0x5019B0) and returns where the moved
+  points will be in texture RAM (+0x2058); megamix.c `eyes_frame` runs
+  `tpd_move_init` and `snc_eye_thd_set` for both fighters and uploads the
+  queue after the stage's own tpd block, as `move_tpd_send` does, and
+  `draw_fighter` draws the eye models on those points (on their own points
+  under flag bit 20 or motion 0x134, as StF does). The board's shifts and
+  addresses match real StF's (Sonic in stance: 3589,4143 and 3904,4112 on
+  0x805030 and 0x805134 at South Island), and Sonic's pupils follow
+  player 2 through a jump.
+  Honey's eyes are left still, as m2-hle2's console profile
+  (`sfight_console.h`) leaves them: her table row shifts her points off
+  the texture (-28000, 6401) and her pupils vanish, so `eyes_frame` zeroes
+  her shifts after `snc_eye_thd_set`.
+  The head's tilt was already in the lifted code: `calc_unit_1` eases the
+  waist bend toward the enemy (+0xBE6) and tilts the head by it before it
+  aims at +0xB0C.
 - Sky and backdrop: the sky is the stage's backdrop ring (`doom_cnt`, the
   record's four models at +0xC0), which the baked draw list already holds.
   Behind it is the record's `stage_bg_color` (+0x16, BGR555). StF's
