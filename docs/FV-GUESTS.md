@@ -15,6 +15,9 @@ places:
 
       node tools/fv-guest-survey.mjs [--json]
 
+Mahler (pin #1613) has a file of his own, docs/FV-MAHLER.md: what he needs
+beyond the three (`--char 8`).
+
 None of the three is imported on the board yet. Within StF's own ROMs,
 motion ids and meshes fit, the guest heap fits two of them, and the
 texture pages fit none. At the sizes a Model 2B game can have, with
