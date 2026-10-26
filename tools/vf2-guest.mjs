@@ -480,6 +480,7 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
     report.push(`colorbases ${[...cbMap].map(([a, b]) => `${a}->${b}`).join(', ') || 'all the same'}`);
     main.put(pack.PAGE0, pack.md.subarray(pack.PAGE0, pack.MD_END), 'Akira texture pages');
     if (pack.SHARED_END > pack.SHARED0) main.put(pack.SHARED0, pack.md.subarray(pack.SHARED0, pack.SHARED_END), 'shared set 1 pages');
+    if (pack.SHARED_MORE_END > pack.SHARED_MORE) main.put(pack.SHARED_MORE, pack.md.subarray(pack.SHARED_MORE, pack.SHARED_MORE_END), 'shared set 1 pages, more');
     main.put(pack.HDR_SETS, pack.md.subarray(pack.HDR_SETS, pack.HDR_SETS + 4), 'Akira texture set table');
     textures.put(pack.TEX0, pack.tx.subarray(pack.TEX0, pack.at), 'Akira materials and UVs');
     let poly = POLY_RUN;

@@ -191,8 +191,8 @@ export function totals(plan, models) {
 /* The arenas the board has: Western. */
 export const FV_BOARD_SLOTS = [0];
 /* The board's model ids for them, from here down, below VF2's stages
- * (vf2-stages.mjs VF2_STAGE_TOP, 4899 down). */
-export const FV_STAGE_TOP = 4493;
+ * (vf2-stages.mjs VF2_STAGE_TOP, 4835 down). */
+export const FV_STAGE_TOP = 4429;
 /* The board's texture set for them, after VF2's 18 and 19 in pack-akira's
  * set table copy, and the destination list it uses (VF2's is 9). */
 export const FV_SET0 = 20;

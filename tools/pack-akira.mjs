@@ -49,10 +49,12 @@ const PAGES = [3, 12, 15, 16, 18, 19, 21];
 /* Set 1 pages a fight draws only a corner of (16 or 20 of their 64 cells;
  * docs/STF-BOARD-AKIRA.md). Extras that do not fit in the seven go into their
  * free cells, around the kept ones (keptCells). */
-const SHARED = [6, 11, 13, 14, 20, 17];
+const SHARED = [6, 11, 13, 14, 20, 17, 0, 1, 8, 9, 10, 23];
 const slotOf = (i) => (i < 16 ? { x: (i >> 2) * 256, y: (i & 3) * 256 }
     : { x: 1024 + ((i - 16) >> 1) * 256, y: ((i - 16) & 1) * 256 });
 const PAGE_RUN = 0xD6F1AE, PAGE_RUN_LEN = 0x290E52;      /* main_data, 0xFF */
+const SHARED_LIMIT = 0xE00000;                           /* the guest tables */
+const SHARED_MORE = 0x110000, SHARED_MORE_LIMIT = 0x300000;
 const TEX_RUN = 0x78BDB8, TEX_RUN_LEN = 0x74248;         /* textures, 0xFF */
 const LEVELS = 5;                                        /* a raw page writes 0-4 */
 const PAGE_BYTES = 16 + [...Array(LEVELS)].reduce((n, _, L) => n + (256 >> L) ** 2 / 2, 0);
@@ -157,12 +159,15 @@ const clusters = [...groups.values()].map((members) => {
 });
 const tileCount = clusters.reduce((n, c) => n + c.cells.length, 0);
 clusters.sort((a, b) => b.cells.length - a.cells.length || b.ch * b.cw - a.ch * a.cw || a.y - b.y || a.x - b.x);
-/* The extra tiles after his, largest first, each a cluster of its own. */
+/* The extra tiles after his, largest first, each a cluster of its own: the
+ * whole rectangle, or the cells it names (`t.cells`, [x, y] in 32s); by
+ * `t.order` first, so a later guest's tiles leave the earlier ones where
+ * they were. */
 const extras = extra.map((t, i) => {
-    const cw = t.w / 32, ch = t.h / 32, cells = [];
-    for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) cells.push([x, y]);
+    const cw = t.w / 32, ch = t.h / 32, cells = t.cells ?? [];
+    if (!t.cells) for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) cells.push([x, y]);
     return { i, t, members: [], cells, cw, ch };
-}).sort((a, b) => b.cells.length - a.cells.length || a.i - b.i);
+}).sort((a, b) => (a.t.order ?? 0) - (b.t.order ?? 0) || b.cells.length - a.cells.length || a.i - b.i);
 
 /* The seven pages first, then the shared ones with their kept cells taken. */
 const ALL = [...PAGES, ...SHARED];
@@ -233,10 +238,10 @@ for (const c of clusters) {
         }
     }
 }
-for (const { t } of extras) {
+for (const { t, cells } of extras) {
     for (let L = 0; L < LEVELS; L++) {
-        const o = levelOrigin(t.at.x, t.at.y + SHEET_H, L), w = t.w >> L;
-        for (let j = 0; j < t.h >> L; j++) for (let i = 0; i < w; i++) setNib(want, o.x + i, o.y + j, t.levels[L][j * w + i]);
+        const o = levelOrigin(t.at.x, t.at.y + SHEET_H, L), w = t.w >> L, c = 32 >> L;
+        for (const [cx, cy] of cells) for (let j = cy * c; j < (cy + 1) * c; j++) for (let i = cx * c; i < (cx + 1) * c; i++) setNib(want, o.x + i, o.y + j, t.levels[L][j * w + i]);
     }
 }
 function pageBytes(page) {
@@ -285,13 +290,18 @@ const MD_END = TABLE_COPY + SETS * 4;
  * tools/vf2-stages.mjs extends past SETS), so the seven pages and the copies
  * stay where they were without them: SHARED0..SHARED_END. */
 const SHARED0 = (TABLE_COPY + 0x400 + 15) & ~15;
+/* As many as fit before the guest tables (SHARED_LIMIT, board/src/stf_motion.h
+ * STF_GUEST_CHAR_PARTS); the rest in main_data's room at SHARED_MORE (StF's
+ * data there is nothing the board keeps). */
+const SHARED_FIT = Math.floor((SHARED_LIMIT - SHARED0) / PAGE_BYTES);
 SHARED_USED.forEach((p, i) => {
-    pageAt[p] = SHARED0 + i * PAGE_BYTES;
+    pageAt[p] = i < SHARED_FIT ? SHARED0 + i * PAGE_BYTES : SHARED_MORE + (i - SHARED_FIT) * PAGE_BYTES;
     md.set(pageBytes(p), pageAt[p]);
     mdv.setUint32(LIST_COPY + 4 + p * 4, MAIN_DATA_BASE + pageAt[p], true);
 });
-const SHARED_END = SHARED0 + SHARED_USED.length * PAGE_BYTES;
-if (SHARED_END > PAGE_RUN + PAGE_RUN_LEN) throw new Error('main_data run too small');
+const SHARED_END = SHARED0 + Math.min(SHARED_USED.length, SHARED_FIT) * PAGE_BYTES;
+const SHARED_MORE_END = SHARED_MORE + Math.max(0, SHARED_USED.length - SHARED_FIT) * PAGE_BYTES;
+if (SHARED_MORE_END > SHARED_MORE_LIMIT) throw new Error('main_data room for the shared pages too small');
 
 /* ---- 4. Material and UV copies in the textures region -------------------- */
 
@@ -332,9 +342,9 @@ Object.defineProperty(patched, 'mainDataView', { value: mdv });
 Object.defineProperty(patched, 'textures', { value: tx });
 const problems = [];
 
-/* Only the runs changed, and in main_data TEX_HEADER+0x0C. */
-const diffOutside = (a, b, lo, hi, skip = -1) => { for (let i = 0; i < a.length; i++) if ((i < lo || i >= hi) && (i < skip || i >= skip + 4) && a[i] !== b[i]) return i; return -1; };
-let d = diffOutside(stf.mainData, md, PAGE_RUN, PAGE_RUN + PAGE_RUN_LEN, HDR_SETS);
+/* Only the runs changed (and the shared pages' room), and in main_data TEX_HEADER+0x0C. */
+const diffOutside = (a, b, lo, hi, skip = -1, more = [0, 0]) => { for (let i = 0; i < a.length; i++) if ((i < lo || i >= hi) && (i < skip || i >= skip + 4) && (i < more[0] || i >= more[1]) && a[i] !== b[i]) return i; return -1; };
+let d = diffOutside(stf.mainData, md, PAGE_RUN, PAGE_RUN + PAGE_RUN_LEN, HDR_SETS, [SHARED_MORE, SHARED_MORE_END]);
 if (d >= 0) problems.push(`main_data changed outside the run at ${hex(d)}`);
 d = diffOutside(stf.textures, tx, TEX_RUN, TEX_RUN + TEX_RUN_LEN);
 if (d >= 0) problems.push(`textures changed outside the run at ${hex(d)}`);
@@ -405,7 +415,7 @@ for (const c of copies) {
 }
 
     return { tiles, tileCount, clusters, moved, used, pages: OURS, keptIn, pageAt, PAGE0, LIST_COPY, TABLE_COPY, SET_TABLE, HDR_SETS, MD_END,
-        SHARED0, SHARED_END, md, tx, at, copies, deep, faces, problems, TEX0: (TEX_RUN + 15) & ~15 };
+        SHARED0, SHARED_END, SHARED_MORE, SHARED_MORE_END, md, tx, at, copies, deep, faces, problems, TEX0: (TEX_RUN + 15) & ~15 };
 }
 
 /* ---- Report --------------------------------------------------------------- */

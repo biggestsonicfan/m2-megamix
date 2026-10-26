@@ -7,8 +7,11 @@ The owner asked for FV's Mahler (pin #1613). As with Honey, Tokio and Bahn
   `{ game: 'fv', index: 8, name: 'MAHLER' }`, `?p1=5`. `node
   tests/fighters.test.mjs` poses and moves him with the others (212 root
   entries, 181 strikes, 8 throws).
-- **The board** (docs/BOARD.md). He isn't imported yet. This file lists
-  what his import takes beyond the trio's. All of FV-GUESTS.md ("FV's
+- **The board** (docs/BOARD.md, "The guest: Fighting Vipers' Mahler",
+  #1616). He is StF character 18, on his own moves, with his pads on his
+  chest, his player 2 the same as player 1 and a shadow of his own parts' hulls; his sway
+  chain isn't ported yet. This file lists what his import takes beyond
+  the trio's. All of FV-GUESTS.md ("FV's
   tables", "The formats against StF's", "Room", "What importing one
   takes") applies to him unchanged. Its survey covers him now:
 

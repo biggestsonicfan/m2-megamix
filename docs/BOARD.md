@@ -1355,6 +1355,75 @@ punch, kick, the down and back moves and his reactions to Honey's strikes
 all return to it; his shadow, two prisms (docs/SHADOWS.md), falls whole on
 the stance, mid-flip and on the car pose.
 
+## The guest: Fighting Vipers' Mahler
+
+Mahler (FV character 8) is StF character 18 (44 for player 2), picked as
+MAHLER in the setup (#1616), the name line FV. He is built by
+tools/mahler-guest.mjs `importMahler` (`char_game` FV), after Hornet, on
+his own FV moves (tools/fv-moves.mjs). docs/FV-MAHLER.md has the survey
+this follows.
+
+- **Slot.** 18 is no number StF's code checks and no bit of the opponent
+  mask, as Hornet's 17.
+- **Model.** FV's parts polygon for polygon (`readObject`, `encodeObject`),
+  ×2.044 (`K`, StF's Knuckles over FV's fighters). His four shoulder pads
+  (FV's `kata_pat_disp`, 0x32A90) are placed as FV places them at rest and
+  merged into the chest model, so they stay on his chest; FV swings them
+  with the upper arms, which the board doesn't. His midriff (the guest
+  table `midriff`), hands (FV's four shapes a hand) and head are FV's.
+  Skeleton and pose bones are FV's record's; collision balls are Akira's
+  fitted to his parts.
+- **Player 2.** FV's record 21 is record 8, so FV draws both players the
+  same. On the board player 2 has model ids of his own (`seatGuest`
+  `p2Parts`): the same meshes under headers whose colorbases name the
+  player 2 rows (7..13, 30/31), which `bake-board.mjs` fills from FV's
+  player 2 upload, the same colours. Both players look alike.
+- **Textures.** FV's tiles from sets 17 and 18 (all on sheet 1), overlapping
+  ones as one, with the mip levels FV's sheet holds, packed with Akira's.
+  Only the cells a tile covers are written (`pack-akira.mjs` `cells`), and
+  he takes six more shared set 1 pages (0, 1, 8, 9, 10, 23). The pages that
+  don't fit below the guest tables (0xE00000) go to main_data 0x110000
+  (`SHARED_MORE`, up to 0x300000).
+- **Colour.** FV's colorbase words as they are: StF's lumaram is FV's for
+  lumabases 0-3, the ramp rows he uses (15-27 under luma 48) are nearly
+  FV's, and the rows FV fills per fighter (0..6, 28/29) are uploaded from
+  FV's data (`bake-board.mjs` GUESTS). 13 words as StF colorbases, 6 new.
+- **Shadow.** A low solid a part, as StF's own tables have: the convex
+  hull of each part's farthest points along 26 directions (the chest with
+  its pads, the hands), 26 to 48 triangles each (docs/SHADOWS.md). FV's
+  own table (0x60BC8: two crossed cards a part) draws as thin broken
+  strips on StF's op 0x74, as Akira's VF2 one does.
+- **Room.** Models 4908..4947 (19 a player), shadows 4878..4892; meshes
+  0xF4F888..0xF62280; headers and texture points 0x7D4F90..0x7E34B0; 1807
+  polygons; heap to 0x2F2A21C. His moves are in main_data
+  0x991340..0x9FB6D4. The VF2 and FV stage ids moved down 64 to make room.
+- **Not yet his.** His sway chain (one tail of six, models 1507-1512, FV's
+  0x63E34) isn't copied into `osage_per_character`; his record's weight,
+  ranges and jump are still Akira's.
+
+### Mahler's moves: Fighting Vipers'
+
+`importFvMoves` takes the motions FV Mahler's program and tables reach:
+156 motions as 1743..1898 (×K), plus 10 copies of what his throws give
+their victim for StF's fighters, 417220 bytes of blocks and setups, his
+command program after them (2843 bytes, 555 units: 107 commits, 9
+natives), all 52 action slots and 17 of the 30 reaction kinds (FV's 22 at
+0x0641F834 through `FV_KIND`); the rest stay Akira's. Damage is FV's ×
+140/200; 59 strikes trail.
+
+- **Setups.** FV's ops are StF's but op 4: its five effect bytes go and
+  StF's float (2.0) comes in. The head loses +4..+7 (FV's 0x860). Op 3's
+  landing height is scaled.
+- **Commits.** Types StF has none of play the FV action that does the same
+  (`COMMIT_ACTION`): 4 of 107.
+- **Lost.** FV's effect and armour play ops, its sounds and the flag bits
+  StF never sets. `node tools/grade-guest.mjs` lists them.
+
+Check: MAME (shared build), Mahler against Mahler on South Island: setup
+reads FV:MAHLER for both; both look the same, the pads on the chest; he
+punches, kicks, knocks the other down, and casts a whole shadow standing
+and lying, there and on the Colosseum and Western.
+
 ## VF2's stages: Tou-rin and the Colosseum
 
 `tools/vf2-stages.mjs` brings VF2's stage slots 0 and 1 (Tou-rin, the
@@ -1362,7 +1431,7 @@ Colosseum) onto the board as setup stages 2 and 3. `vf2StagePlan` reads
 each stage's draws (noclip's `vf2.js`); `importVf2Stages` writes them into
 the data ROMs, and `bake-board.mjs` bakes their records into `poses.h`.
 
-- Models: 406 VF2 models, as board ids 4899 down to 4494 (`VF2_STAGE_TOP`;
+- Models: 406 VF2 models, as board ids 4835 down to 4430 (`VF2_STAGE_TOP`;
   import-assets checks each table entry is free). Points are scaled by
   `SCALE` (2.02688, VF2 to StF units), as Akira's are; the draw matrices'
   translations are scaled by the same factor (`VF2_SCALE`).
@@ -1472,7 +1541,7 @@ the board as setup stage 4, "FV WESTERN". `fvBoardPlan` orders its draws
 writes them into the data ROMs, and `bake-board.mjs` bakes the record
 (`fvstage0_*` in `poses.h`). docs/FV-STAGES.md has FV's side of it.
 
-- Models: 47 FV models as board ids 4493 down to 4447 (`FV_STAGE_TOP`). The
+- Models: 47 FV models as board ids 4429 down to 4383 (`FV_STAGE_TOP`). The
   cage break's piece (0xA90) is left out until the break is ported. Points
   and the draws' translations are scaled by FV_SCALE (2.676 / 1.309), then
   StF's 1/1.6.

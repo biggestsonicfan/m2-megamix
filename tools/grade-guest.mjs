@@ -242,8 +242,24 @@ function fmLost(m) {
     return out;
 }
 
+/* a guest with FV's moves (fv-moves.mjs) */
+function fvLost(m) {
+    const L = m.lost, out = [];
+    const list = (o) => Object.entries(o).map(([k, n]) => `${k} x${n}`).join(', ');
+    if (Object.keys(L.playOps).length) out.push(`play ops with no StF op, dropped: ${list(L.playOps)}`);
+    if (L.sounds) out.push(`sounds (play op 4), dropped: ${L.sounds}`);
+    if (Object.keys(L.flagBits).length) out.push(`play op 5 flag bits StF never sets, dropped: ${list(L.flagBits)}`);
+    if (L.strikeBytes) out.push(`strikes (setup op 4) whose effect bytes 0xF..0x12 are dropped: ${L.strikeBytes}`);
+    if (L.head860) out.push(`setup heads whose bytes 4..7 are dropped: ${L.head860}`);
+    if (L.nativeTails) out.push(`natives whose tail is not FV's plain return: ${L.nativeTails}`);
+    if (m.commitsAsAction) out.push(`commits of a type StF lacks, played as an action: ${m.commitsAsAction} of ${m.commits}`);
+    out.push(`action slots his own: ${m.actionSlots} of 52; reaction kinds his own: ${m.reactionKinds} of 30 (the rest Akira's)`);
+    return out;
+}
+
 function lost(cov) {
-    if (!cov.lost) return typeof cov.moves === 'object' ? fmLost(cov.moves) : [`moves: ${cov.moves}`];
+    if (!cov.lost) return typeof cov.moves !== 'object' ? [`moves: ${cov.moves}`]
+        : 'head860' in cov.moves.lost ? fvLost(cov.moves) : fmLost(cov.moves);
     const L = cov.lost, out = [];
     if (!L) return out;           /* a guest built on Akira's: he lost it */
     const ops = Object.entries(L.playOps);
@@ -312,7 +328,8 @@ if (JSON_OUT) {
         if (!g.lacks.length) console.log('    nothing (in the guest tables)');
         console.log('\n  StF\'s own ROM, by character (the audit):');
         for (const r of g.rom) console.log(`    ${r.what.padEnd(48)} ${r.status.padEnd(9)} ${r.note}`);
-        if (typeof g.counts.moves === 'object') console.log(`\n  ${g.game}'s data, imported: ${g.counts.moves.motions} motions, ${g.counts.moves.scriptOps} command ops (${g.counts.moves.commits} moves), ${g.counts.parts} models, ${g.counts.balls} balls`);
+        if (typeof g.counts.moves === 'object' && 'commandUnits' in g.counts.moves) console.log(`\n  ${g.game}'s data, imported: ${g.counts.moves.motions} motions (+${g.counts.moves.thrownCopies} victim copies), ${g.counts.moves.commandUnits} command units (${g.counts.moves.commits} moves), ${g.counts.models} models, ${g.counts.balls} balls`);
+        else if (typeof g.counts.moves === 'object') console.log(`\n  ${g.game}'s data, imported: ${g.counts.moves.motions} motions, ${g.counts.moves.scriptOps} command ops (${g.counts.moves.commits} moves), ${g.counts.parts} models, ${g.counts.balls} balls`);
         else if (g.counts.moves) console.log(`\n  ${g.game}'s data, imported: ${g.counts.parts} models, ${g.counts.balls} balls`);
         else console.log(`\n  ${g.game}'s data, imported: ${g.counts.motions} motions (+${g.counts.thrownCopies} victim copies), ${g.counts.models} models, ${g.counts.commandUnits} command units, ${g.counts.balls} balls`);
         console.log(`  lost on the way in:`);

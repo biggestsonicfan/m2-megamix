@@ -66,7 +66,7 @@ struct dump, F2 pauses and F3 steps one frame.
 - `docs/STRUCTURES.md` lists the shared structures and where each game keeps them.
 - `docs/DEBUG-MODE.md` reads the three games' debug mode: how to turn it on, and every field its menus name, by offset in each game.
 - `docs/FV-GUESTS.md` measures what Fighting Vipers' Honey, Tokio and Bahn need as board guests, and what room is left in StF's ROMs and at Model 2B's sizes (`tools/fv-guest-survey.mjs`, `tools/model2-rom-limits.py`).
-- `docs/FV-MAHLER.md` does the same for Mahler: one record for both players, his shoulder pads and sway chain, the 171 motions he shares with B.M. (`tools/fv-guest-survey.mjs --char 8`), and the cage break that stays broken.
+- `docs/FV-MAHLER.md` does the same for Mahler: one record for both players, his shoulder pads and sway chain, the 171 motions he shares with B.M. (`tools/fv-guest-survey.mjs --char 8`), and the cage break that stays broken. On the board he is guest 18 (`tools/mahler-guest.mjs`, his moves by `tools/fv-moves.mjs`; docs/BOARD.md).
 - `docs/SHADOWS.md` is how each game casts the fighters' shadows, StF's way as the parent; `tools/shadow-data.mjs` reads every fighter's table in StF's form.
 - `docs/SHARED-CODE.md` audits the i960 functions StF and VF2 share: which are one code, and what a VF2 fighter still needs (guest data or a branch on `char_game`); `tools/shared-fns.py` compares them.
 - `docs/FM-SATURN.md` covers Fighters Megamix's (Saturn) fighter data and motions; `tools/fm-saturn.mjs` reads them off the disc and converts them to VF2 motion blocks (Hornet's to start with); `tools/daytona-hornet.mjs` finds Daytona USA's Hornet in the Model 2 set and cuts it where FM cuts its Hornet.

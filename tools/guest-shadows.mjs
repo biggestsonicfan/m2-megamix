@@ -14,6 +14,10 @@
  *     at the body's cut (CUT_Z) into a nose half on slot 1 and a cabin half
  *     on slot 9, each stood up into a prism, in those slots' frames as
  *     hornetObjects puts the body.
+ *   - Mahler (18): a low solid a part, as StF's own tables have: the convex
+ *     hull of each of his parts (the chest with its pads, the hands), at his
+ *     size, on its slot. FV's own cards (0x60BC8, two crossed quads a part)
+ *     draw as thin strips on StF's op 0x74.
  *
  * Every face goes in twice, once each way round: StF's shadow models are
  * solids whose faces turned to the light draw (op 0x74 flattens them), and
@@ -79,6 +83,43 @@ const bothWays = (tris) => tris.filter((t) => Math.hypot(...cross(sub(t[1], t[0]
 /* A polygon (its points in order) as a fan of triangles. */
 const fan = (p) => p.slice(2).map((_, i) => [p[0], p[i + 1], p[i + 2]]);
 
+/* The convex hull of points, as triangles wound outward (incremental: a
+ * tetrahedron, then each point outside takes the faces it sees and closes
+ * the hole from their horizon). */
+export function convexHull(pts) {
+    const P = [...new Map(pts.map((p) => [p.map((x) => x.toFixed(5)).join(), p])).values()];
+    const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    const eps = 1e-7;
+    /* a first tetrahedron: far apart along x, then off that line, then off that plane */
+    let [i0, i1] = [0, 0];
+    P.forEach((p, i) => { if (p[0] < P[i0][0]) i0 = i; if (p[0] > P[i1][0]) i1 = i; });
+    const d01 = sub(P[i1], P[i0]);
+    let i2 = -1, best = eps;
+    P.forEach((p, i) => { const a = Math.hypot(...cross(d01, sub(p, P[i0]))); if (a > best) { best = a; i2 = i; } });
+    if (i2 < 0) return [];
+    const n012 = cross(d01, sub(P[i2], P[i0]));
+    let i3 = -1; best = eps;
+    P.forEach((p, i) => { const a = Math.abs(dot(n012, sub(p, P[i0]))); if (a > best) { best = a; i3 = i; } });
+    if (i3 < 0) return [];
+    const face = (a, b, c) => { const n = cross(sub(P[b], P[a]), sub(P[c], P[a])); return { v: [a, b, c], n, d: dot(n, P[a]) }; };
+    let faces = dot(n012, sub(P[i3], P[i0])) > 0
+        ? [face(i0, i2, i1), face(i0, i1, i3), face(i1, i2, i3), face(i2, i0, i3)]
+        : [face(i0, i1, i2), face(i0, i3, i1), face(i1, i3, i2), face(i2, i3, i0)];
+    P.forEach((p, i) => {
+        if (i === i0 || i === i1 || i === i2 || i === i3) return;
+        const seen = faces.filter((f) => dot(f.n, p) - f.d > eps * Math.hypot(...f.n));
+        if (!seen.length) return;
+        const edges = new Map();
+        for (const f of seen) for (let c = 0; c < 3; c++) {
+            const a = f.v[c], b = f.v[(c + 1) % 3];
+            if (edges.has(`${b},${a}`)) edges.delete(`${b},${a}`); else edges.set(`${a},${b}`, [a, b]);
+        }
+        faces = faces.filter((f) => !seen.includes(f));
+        for (const [a, b] of edges.values()) faces.push(face(a, b, i));
+    });
+    return faces.map((f) => f.v.map((j) => P[j]));
+}
+
 /* ---- Shenmue's SYD_MUNE --------------------------------------------------- */
 
 /* The hulls: { bone, points, tris } each, in its bone's frame at Shenmue's
@@ -131,7 +172,9 @@ export function readHulls(cold) {
  * off_64988 has shadowTable); ctx: Akira's import's (its model ids, the end of
  * the polygons and textures it and the guests after him used); vf2, stf,
  * daytona: the ROM sets; cold: Shenmue's MISC/COLD.BIN, or null; guests:
- * { akira: { chr }, shenmue: [{ name, chr, scale }], hornet: { chr } }.
+ * { akira: { chr }, shenmue: [{ name, chr, scale }], hornet: { chr },
+ * mahler: { chr, pieces } } (pieces: importMahler's, slot and polygons at
+ * his size).
  */
 export function importGuestShadows(R, ctx, { vf2, stf, daytona, cold }, guests) {
     const { main, polygons, textures } = R;
@@ -185,18 +228,32 @@ export function importGuestShadows(R, ctx, { vf2, stf, daytona, cold }, guests) 
         report.push(`${who}: table ${hex(at)} for ${chr} and ${chr + PLAYER2}, ${drawn.length} parts, models ${drawn.map((e) => e.model).join(' ')}`);
     };
 
-    /* Akira: VF2's table, each card ×SCALE as his parts are */
-    if (guests.akira) {
-        const own = guestTable('vf2', readShadows(vf2).tables[0]).entries.filter((e) => e.model);
+    /* Akira: VF2's table, each card at the size his parts are */
+    const ownTable = (who, game, rom, fighter, k, chr) => {
+        const own = guestTable(game, readShadows(rom).tables[fighter]).entries.filter((e) => e.model);
         const ids = new Map();
         const entries = own.map((e) => {
             if (!ids.has(e.model)) {
-                const tris = readObject(vf2, e.model).flatMap((q) => fan(q.quad ? q.p : q.p.slice(0, 3))).map((t) => t.map((p) => p.map((x) => x * SCALE)));
-                ids.set(e.model, newModel(tris, `Akira shadow ${e.model}`));
+                const tris = readObject(rom, e.model).flatMap((q) => fan(q.quad ? q.p : q.p.slice(0, 3))).map((t) => t.map((p) => p.map((x) => x * k)));
+                ids.set(e.model, newModel(tris, `${who} shadow ${e.model}`));
             }
-            return { ...e, model: ids.get(e.model), offset: e.offset.map((x) => x * SCALE) };
+            return { ...e, model: ids.get(e.model), offset: e.offset.map((x) => x * k) };
         });
-        seat('Akira', guests.akira.chr, entries);
+        seat(who, chr, entries);
+    };
+    if (guests.akira) ownTable('Akira', 'vf2', vf2, 0, SCALE, guests.akira.chr);
+    /* Mahler: each slotted part's hull, low: its farthest points along 26
+     * directions (the cube's faces, edges and corners) */
+    if (guests.mahler) {
+        const dirs = [];
+        for (const a of [-1, 0, 1]) for (const b of [-1, 0, 1]) for (const c of [-1, 0, 1]) if (a || b || c) dirs.push([a, b, c]);
+        const extremes = (pts) => dirs.map((d) => pts.reduce((m, p) => (p[0] * d[0] + p[1] * d[1] + p[2] * d[2] > m[0] * d[0] + m[1] * d[1] + m[2] * d[2] ? p : m)));
+        const entries = guests.mahler.pieces.filter((q) => q.slot !== undefined).map((q) => {
+            const tris = convexHull(extremes(q.polys.flatMap((x) => x.p)));
+            return { slot: q.slot, model: newModel(tris, `Mahler shadow ${q.slot}`), flags: 0, offset: [0, 0, 0], tris: tris.length };
+        });
+        seat('Mahler', guests.mahler.chr, entries);
+        report.push(`Mahler: hulls of ${entries.map((e) => `${e.slot}:${e.tris}`).join(' ')} triangles`);
     }
 
     /* Ryo and Chai: a hull a bone, Z mirrored, at the guest's size; the

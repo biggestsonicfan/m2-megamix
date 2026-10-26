@@ -380,6 +380,11 @@ both ways round:
   bone's slot, ends capped, at each one's own size.
 - Hornet: Daytona's car card (model 791) cut into a nose half on slot 1 and
   a cabin half on slot 9, each stood up into a prism (#1610).
+- Mahler: a low solid a part, as StF's tables have: the convex hull of
+  each part's farthest points along 26 directions (the chest with its pads,
+  the hands; `convexHull`), 26 to 48 triangles each, flags 0 (#1616). FV's
+  own table (0x60BC8) is two crossed cards a part, which op 0x74 flattens
+  into thin broken strips (Akira's VF2 cards do the same).
 
 The masks: `send_kage_ball_pntr` sends each slot's collision ball to the
 copro (0x306E0 + slot for player 1, 0x307E0 + slot for player 2), which
@@ -414,7 +419,7 @@ table models, the ball (0x195) and the projectile shadow (0x736).
 Checked in MAME (`sfight`, the shared build) and m2-hle2, Sonic against
 Honey: shadows on South Island, Tou-rin, the Colosseum and Western, none
 on Aurora; on South Island they look as real StF's do (black, cast away
-from the light). Akira, Ryo, Chai and Hornet each cast their own, whole,
+from the light). Akira, Ryo, Chai, Hornet and Mahler each cast their own, whole,
 on South Island and Tou-rin; on Western they turn with the light. On
 Aurora, Sonic, Honey (and her ponytail) and Akira are mirrored, dimmed,
 under their feet (m2-hle2 too, Akira against Honey), and nothing clips
