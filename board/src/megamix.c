@@ -18,6 +18,7 @@
 #include "stf_tex_codec.h"   /* the SDK's, with room for StF's stage sets */
 #include "poses.h"
 #include "stf_motion.h"
+#include "rob.h"
 
 #define FOCUS 280.0f
 
@@ -178,19 +179,10 @@ static void stage_light(const stage_t *st) {
  *
  * A fighter is StF's rob: its 0x3400-byte block, which StF's motion code
  * (stf_motion.s) reads and writes through g7, the other fighter's through g8.
- * The fields the board sets, at StF's own offsets:
- *   0x000  flags (w0): bit 31 plays a motion, bit 7 once the first frame is
- *          done, bit 1 player 2; 0x84000080 / 0x84000082 in a real fight
- *   0x004  player (0, 1), the coprocessor's slot bank
- *   0x018  position (x, y, z); 0x026 yaw (forward is (cos, -sin) in x, z)
- *   0x1A8  motion, 0x1AA its frame (coma), 0x800 its length, 0x802 the next
- *   0x1B0  character (player 2: its own models, character + 26), 0x1B1 the
- *          character it is; 0x190 its record, 0x1A0 the record's motions
- *          (as action_init sets them)
- *   0x040  the sixteen part models (calc_rob_angle_int fills them)
- *   0x84C  skeleton kind; 0xFF so the first set_motion copies the rig in
- *   0xBD8  the motion record (0x800 bytes, StF's at 0x520000 + 0x7C8 p)
- *   0x27C0 rob_disp's y scale (1.0)
+ * rob.h names its fields, by the names StF's debug mode gives them. A real
+ * fight's flag word is 0x84000080 (player 2: 0x84000082): the task runs,
+ * smooth_switch, init_end, and disp_left_look for player 2. The motion
+ * record is StF's at 0x520000 + 0x7C8 p; the board has its own.
  */
 #define ROB_SIZE  0x3400u
 #define MOT_SIZE  0x800u
@@ -276,8 +268,8 @@ static void stf_globals(void) {
     stf_set(0x500034u, 0x200u);
     stf_set(0x500068u, 0x8400442Cu);     /* not_scr_bg_move */
     stf_set(0x500090u, 0x1Eu);           /* replay_countdown (0x500092) 0 */
-    stf_set(0x500804u, (u32)robs[0]);    /* fa_rob0 */
-    stf_set(0x500808u, (u32)robs[1]);    /* fa_rob1 */
+    stf_set(G_FA_ROB0, (u32)robs[0]);
+    stf_set(G_FA_ROB1, (u32)robs[1]);
     stf_set(0x50016Cu, (u32)stf_ram(0x599000u));   /* add_BACKUP_RAM_TO_RAM: StF's copy of the backup RAM */
     stf_set(0x500828u, (u32)stf_coli);   /* mod_fa_coli */
     stf_set(0x500834u, (u32)stf_disp);   /* mod_fa_game_disp */
@@ -288,14 +280,14 @@ static void stf_globals(void) {
     stf_set(0x500864u, (u32)stf_osage[1]); /* mod_fa_osage0_2 */
     stf_set(0x501018u, 5000u);           /* POLYGON_LIMIT, as change_scene sets it */
     stf_set(0x5008A4u, (u32)stf_tobi);   /* mod_fa_tobi */
-    stf_set(0x500814u, (u32)stf_cam);    /* fa_camera */
+    stf_set(G_FA_CAMERA, (u32)stf_cam);
     stf_set(0x500854u, (u32)stf_rec);    /* mod_fa_record */
     stf_set(0x500870u, (u32)stf_obj0);   /* mod_fa_obj0 */
-    stf_set(0x508000u, 0x18A00u);        /* debug_flag */
+    stf_set(G_DEBUG_FLAG, 0x18A00u);
     stf_set(0x509518u, 0x3F800000u);     /* player_model_y_scale 1, 1, 1 */
     stf_set(0x50951Cu, 0x3F800000u);
     stf_set(0x509520u, 0x3F800000u);
-    stf_set(0x50A000u, 0x3CCE9ED5u);
+    stf_set(G_GRAVITY, 0x3CCE9ED5u);
 }
 
 /* ---- sound ----------------------------------------------------------------
@@ -347,15 +339,28 @@ static void snd_pump(void) {
  * match is over (VIC_INT's 0xA00001). stage_bgm_select's 2-player cases are
  * left out: North Wind is for Sonic against Knuckles, whose slot is Akira's
  * on the board, and South Island's music for stages 4 and 5, which the board
- * does not have. A guest stage has no StF music, and plays none. */
+ * does not have. A guest stage plays its own game's song, added to StF's
+ * sound program's data by tools/guest-sound.mjs as a song of StF's: FV's
+ * Western its western_song, StF's 26th (0xAE1019; the tool checks the
+ * numbers), VF2's Tou-rin Lau's (VF2's 0xAD100B) and the Colosseum Akira's
+ * (0xAD1003), the 27th and 28th. */
 #define SND_RESET   0xA00001u
 #define SND_SET     0xA00003u
 #define SND_GONG    0xAE1302u
+#define SND_FV_WESTERN 0xAE1019u
+#define SND_VF2_TOURIN 0xAE101Au
+#define SND_VF2_COLOSSEUM 0xAE101Bu
 #define STF_STAGE_MUSIC ((const u32 *)0xDBFDCu)   /* STAGE_MUSIC_IN_ORDER, in the copied ROM */
 
-static void snd_round(const stage_t *st, u32 first) {
+/* by stage (stage_name's order): 0 for StF's own, by its slot */
+static const u32 guest_music[] = { 0u, 0u, SND_VF2_TOURIN, SND_VF2_COLOSSEUM, SND_FV_WESTERN };
+
+static void snd_round(u32 stage, const stage_t *st, u32 first) {
     snd_request_u(SND_SET);
-    if (first && st->slot != 0xFFFFu) snd_request_u(STF_STAGE_MUSIC[st->slot & 15u]);
+    if (first) {
+        if (st->slot != 0xFFFFu) snd_request_u(STF_STAGE_MUSIC[st->slot & 15u]);
+        else if (guest_music[stage]) snd_request_u(guest_music[stage]);
+    }
     snd_request_u(SND_GONG);
 }
 
@@ -387,29 +392,29 @@ static void rob_init(u32 p, const fighter_t *f) {
     for (i = 0; i < ROB_SIZE / 4; i++) r[i] = 0u;
     for (i = 0; i < MOT_SIZE / 4; i++) mots[p][i] = 0u;
     x.f = f->x;
-    RW(r, 0x000) = p ? 0x84000082u : 0x84000080u;
-    RB(r, 0x004) = (u8)p;
-    RW(r, 0x008) = ROB_SIZE;             /* the task block's size */
-    RW(r, 0x00C) = (u32)stf_action_init; /* its task: action_init, then rob_action */
-    RW(r, 0x1208) = 1u << 3;             /* control_init: the pad drives it */
-    RW(r, 0x018) = x.u;
-    RH(r, 0x026) = f->yaw;
-    RB(r, 0x1B0) = (u8)(f->anim->chr + (p ? 26u : 0u));
-    RB(r, 0x1B1) = (u8)f->anim->chr;
-    RW(r, 0x190) = (u32)stf_char(RB(r, 0x1B0));
-    RW(r, 0x1A0) = stf_char(RB(r, 0x1B0))[3];
-    for (i = 0; i < 9u; i++) RW(r, 0x1D00 + 4u * i) = (u32)stf_ram(rob_balls[p][i]);
-    RB(r, 0x84C) = 0xFFu;
-    RW(r, 0xBD8) = (u32)mots[p];
-    RW(r, 0x27C0) = 0x3F800000u;
+    RW(r, ROB_FLAG) = p ? 0x84000082u : 0x84000080u;
+    RB(r, ROB_IDNM) = (u8)p;
+    RW(r, ROB_TASK_SIZE) = ROB_SIZE;
+    RW(r, ROB_TASK) = (u32)stf_action_init;
+    RW(r, ROB_CONTROL) = 1u << 3;        /* control_init: the pad drives it */
+    RW(r, ROB_XPOS) = x.u;
+    RH(r, ROB_YANG) = f->yaw;
+    RB(r, ROB_CHAR) = (u8)(f->anim->chr + (p ? 26u : 0u));
+    RB(r, ROB_CHAR_IS) = (u8)f->anim->chr;
+    RW(r, ROB_CHAR_REC) = (u32)stf_char(RB(r, ROB_CHAR));
+    RW(r, ROB_CHAR_MOTS) = stf_char(RB(r, ROB_CHAR))[3];
+    for (i = 0; i < 9u; i++) RW(r, ROB_BALLS + 4u * i) = (u32)stf_ram(rob_balls[p][i]);
+    RB(r, ROB_SKELTON_TYPE) = 0xFFu;
+    RW(r, ROB_MOT_REC) = (u32)mots[p];
+    RW(r, ROB_Y_SCALE) = 0x3F800000u;
     /* The dent pendulums, as the round's start sets them (sub_89BF8 with
      * zero angles): unit scale, then the countdown camera_init runs down
      * each frame; dented_cnt only swings them while it is not negative. */
     for (i = 0; i < 3u; i++) {
-        RW(r, 0x1F88 + 4u * i) = 0x3F800000u;
-        RW(r, 0x1FEC + 4u * i) = 0x3F800000u;
+        RW(r, ROB_DENT_SCALE + 4u * i) = 0x3F800000u;
+        RW(r, ROB_DENT_SCALE2 + 4u * i) = 0x3F800000u;
     }
-    RW(r, 0x219C) = 0u;
+    RW(r, ROB_DENTED_CNT) = 0u;
 }
 
 /* The ball each shadow slot's mask tests, for each fighter, to the
@@ -425,7 +430,7 @@ static void kage_balls(void) {
     volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
     u32 p, i;
     for (p = 0; p < 2u; p++) {
-        const u8 *b = char_game(RB(robs[p], 0x1B1)) == GAME_STF ? kage_ball_stf : kage_ball_vf2;
+        const u8 *b = char_game(RB(robs[p], ROB_CHAR_IS)) == GAME_STF ? kage_ball_stf : kage_ball_vf2;
         for (i = 0; i < 16u; i++) {
             *cf = 0x9801313u; *cf = 0x9801313u; *cf = 0x9801313u; (void)*cf;
             *cf = 0x24804949u; *cf = (p ? 0x307E0u : 0x306E0u) + i; *cf = b[i];
@@ -440,12 +445,12 @@ static void kage_balls(void) {
  * chains start over, as a round's start starts them: the task is
  * osage_init again. */
 static void rob_start(u32 p) {
-    u32 w0[2] = { RW(robs[0], 0), RW(robs[1], 0) }, i;
+    u32 w0[2] = { RW(robs[0], ROB_FLAG), RW(robs[1], ROB_FLAG) }, i;
     stf_call(stf_cop_initialize_end2, robs[0], robs[1], 0u);
     kage_balls();
-    RW(robs[0], 0) = w0[0]; RW(robs[1], 0) = w0[1];
+    RW(robs[0], ROB_FLAG) = w0[0]; RW(robs[1], ROB_FLAG) = w0[1];
     stf_call(stf_sub_7F0E8, robs[0], robs[1], 0u);
-    stf_task((void (*)(void))RW(robs[p], 0xC), robs[p], robs[p], robs[p ^ 1u]);
+    stf_task((void (*)(void))RW(robs[p], ROB_TASK), robs[p], robs[p], robs[p ^ 1u]);
     for (i = 0; i < sizeof stf_osage[p] / 4; i++) stf_osage[p][i] = 0u;
     RW(stf_osage[p], 0x000) = 0x80000000u;
     RB(stf_osage[p], 0x004) = (u8)p;
@@ -589,17 +594,17 @@ static void kage_outside(u32 p) {
  * 4, down 0x10, up 0x20, right 0x40, left 0x80. */
 static void fight_step(const u32 pad[2]) {
     u32 p;
-    short *timer = (short *)stf_ram(0x500028u);
+    short *timer = (short *)stf_ram(G_GAME_TIMER);
     if (*timer > 0) (*timer)--;
     stf_set(0x500700u, pad[0] << 8 | pad[1] << 16);  /* INTERUPT_FLAGS_HELD */
-    for (p = 0; p < 2u; p++) RW(robs[p], 0x219C)--;  /* camera_init's sub_7F5CC */
+    for (p = 0; p < 2u; p++) RW(robs[p], ROB_DENTED_CNT)--;  /* camera_init's sub_7F5CC */
     for (p = 0; p < 2u; p++) {
-        RB(robs[p], 0x1200) = (u8)pad[p];
+        RB(robs[p], ROB_PAD) = (u8)pad[p];
         /* g13 the rob too: the command interpreter keeps its base there */
         stf_task(stf_sub_1D47C, robs[p], robs[p], robs[p ^ 1u]);
     }
     for (p = 0; p < 2u; p++)
-        stf_task((void (*)(void))RW(robs[p], 0xC), robs[p], robs[p], robs[p ^ 1u]);
+        stf_task((void (*)(void))RW(robs[p], ROB_TASK), robs[p], robs[p], robs[p ^ 1u]);
     stf_task((void (*)(void))RW(stf_coli, 0xC), stf_coli, robs[0], robs[1]);
     stf_task(stf_get_game_info, stf_ctl[0], robs[0], robs[1]);
     stf_task(stf_cam_mode_10, stf_cam, robs[0], robs[1]);
@@ -647,12 +652,12 @@ static void round_start(fighter_t fs[2]) {
     RW(stf_tobi, 0x008) = sizeof stf_tobi;
     for (i = 0; i < 2u; i++) rob_start(i);
     stf_task(stf_cam_mode_9, stf_cam, robs[0], robs[1]);
-    *(short *)stf_ram(0x500028u) = (short)(round_time << 6);
+    *(short *)stf_ram(G_GAME_TIMER) = (short)(round_time << 6);
     /* stage_x (0x50A00C), the half side of the square area_coli walls the
      * fighters in: StF's cage at 8.0; VF2's ring has no walls, so out of
      * reach (100.0), and the ring out (ring_out_step) at the ring's edge;
      * FV's cage at its own size (FV's 6.0, scaled) */
-    stf_set(0x50A00Cu, cur_stage && m2_obj_fb(cur_stage->ring) ? 0x42C80000u :
+    stf_set(G_STAGE_X, cur_stage && m2_obj_fb(cur_stage->ring) ? 0x42C80000u :
                        cur_stage && m2_obj_fb(cur_stage->wall) ? m2_obj_fb(cur_stage->wall) : 0x41000000u);
     rout[0] = rout[1] = ring_out = 0u;
     rout_vy[0] = rout_vy[1] = 0u;
@@ -736,7 +741,7 @@ extern void carry(const mat_t *h, const mat_t *c, const float (*in)[3], float (*
 #define MID_POLY(p) ((p) << 8)
 static u32 midriff_build(u32 p) {
     volatile u32 *fifo = (volatile u32 *)M2_GEOFIFO_ADDR;
-    const u32 *mid = *(const u32 *const *)(STF_GUEST_midriff + RB(robs[p], 0x1B0) * 4u);
+    const u32 *mid = *(const u32 *const *)(STF_GUEST_midriff + RB(robs[p], ROB_CHAR) * 4u);
     const float (*ring)[3];
     const u32 *w;
     const u8 *idx;
@@ -797,7 +802,7 @@ static mat_t seam_m[16];
 static float seam_c[SEAM_PTS][3];
 static u32 seams_build(u32 p, u32 *at, const u32 **out) {
     volatile u32 *fifo = (volatile u32 *)M2_GEOFIFO_ADDR;
-    const u32 *list = *(const u32 *const *)(STF_GUEST_seams + RB(robs[p], 0x1B0) * 4u);
+    const u32 *list = *(const u32 *const *)(STF_GUEST_seams + RB(robs[p], ROB_CHAR) * 4u);
     u32 have = 0;
     u32 addr = SEAM_POLY(p), s, n, in;
     if (list != seam_list[p]) { seam_list[p] = list; seams_in[p] = 0; }
@@ -856,7 +861,7 @@ static void draw_fighter(const fighter_t *f, u32 p, u32 mirror) {
      * an object at polygon RAM 0, where the midriff is */
     for (i = 1; i < n; i++) {
         u32 slot, seamed = 0u;
-        if (i < 16u) { slot = i; model = RW(r, 0x40 + i * 4u); }
+        if (i < 16u) { slot = i; model = RW(r, ROB_PARTS + i * 4u); }
         else {                           /* the eyes: a second model on the head's slot */
             const pose_part_t *pt = &a->parts[i - 16u];
             if (pt->slot != 2u || !head++) continue;
@@ -868,7 +873,7 @@ static void draw_fighter(const fighter_t *f, u32 p, u32 mirror) {
             for (s = 0; s < nseams; s++) if ((((const u32 *)seams[1u + s])[1] & 0xFFu) == slot) seamed = 1u;
         if (model == 0u && !seamed) continue;
         *cf = COP_PUSH;
-        *cf = COP_SCALE; *cf = 0x3F800000u; *cf = RW(r, 0x27C0); *cf = 0x3F800000u;
+        *cf = COP_SCALE; *cf = 0x3F800000u; *cf = RW(r, ROB_Y_SCALE); *cf = 0x3F800000u;
         *cf = COP_PART; *cf = p; *cf = slot * 12u;
         if (model) submit_cur(model);
         if (slot == 9u && i < 16u && mid) poly_draw(mid, MID_POLY(p) + 4u);
@@ -1190,7 +1195,7 @@ extern void stf_call_g01(void (*fn)(void), u32 g0, u32 g1);
 static void stage_colors(const stage_t *st) {
     u32 i;
     if (st->slot != 0xFFFFu) {
-        *(u8 *)stf_ram(0x500064u) = (u8)st->slot;          /* stage_num */
+        *(u8 *)stf_ram(G_STAGE) = (u8)st->slot;
         stf_call(stf_stage_disp, robs[0], robs[1], 0u);
     } else
         for (i = 0; i < 3u; i++) *(u8 *)stf_ram(0x5000E0u + i) = st->tint[i];
@@ -1207,8 +1212,8 @@ static void stage_colors(const stage_t *st) {
  * a guest's own (seven part rows, over StF's fixed rows 5, 6, 12, 13). */
 static void fighter_colors(u32 p, const pose_anim_t *a) {
     if (a->cx[0].rows) { cx_put(&a->cx[p * 2u]); cx_put(&a->cx[p * 2u + 1u]); return; }
-    stf_call_g01(stf_send_tex_col_skin, p, RB(robs[p], 0x1B0));
-    stf_call_g01(stf_send_tex_col_part, p, RB(robs[p], 0x1B0));
+    stf_call_g01(stf_send_tex_col_skin, p, RB(robs[p], ROB_CHAR));
+    stf_call_g01(stf_send_tex_col_part, p, RB(robs[p], ROB_CHAR));
 }
 
 /* send_beta_data: an uncompressed page, every level's texels already in
@@ -1648,20 +1653,20 @@ static u32 f_add(u32 a, u32 b) {
 
 static void ring_out_step(const stage_t *st) {
     u32 p, ring = m2_obj_fb(st->ring), ground = m2_obj_fb(-0.5f * VF2_SCALE);
-    u32 g = *(u32 *)stf_ram(0x50A000u) ^ 0x80000000u;   /* -gravity */
+    u32 g = *(u32 *)stf_ram(G_GRAVITY) ^ 0x80000000u;   /* -gravity */
     if (ring == 0u) return;
     for (p = 0; p < 2u; p++) {
         u32 *r = robs[p], y;
         if (!rout[p]) {
-            if ((RF(r, 0x1F4) & 0x7FFFFFFFu) < ring && (RF(r, 0x1FC) & 0x7FFFFFFFu) < ring) continue;
+            if ((RF(r, ROB_GXPOS) & 0x7FFFFFFFu) < ring && (RF(r, ROB_GZPOS) & 0x7FFFFFFFu) < ring) continue;
             rout_vy[p] = 0u;
         }
         rout_vy[p] = f_add(rout_vy[p], g);
-        y = f_add(RF(r, 0x1C), rout_vy[p]);
-        RF(r, 0x1C) = f_key(y) < f_key(ground) ? ground : y;
+        y = f_add(RF(r, ROB_YPOS), rout_vy[p]);
+        RF(r, ROB_YPOS) = f_key(y) < f_key(ground) ? ground : y;
         if (++rout[p] == RING_OUT_FRAMES) {
-            if ((short)RH(robs[0], 0x1AC) > 0 && (short)RH(robs[1], 0x1AC) > 0) ring_out = 1u;
-            RW(r, 0) |= 0x20u;
+            if ((short)RH(robs[0], ROB_ENERGY) > 0 && (short)RH(robs[1], ROB_ENERGY) > 0) ring_out = 1u;
+            RW(r, ROB_FLAG) |= ROB_F_LOST;
         }
     }
 }
@@ -1745,18 +1750,18 @@ int main(void) {
             }
             if (c == M_START) {
                 round_time = menu_val[M_TIME];
-                stf_set(0x5000A0u, menu_val[M_ENERGY]);          /* energy_max */
-                stf_set(0x50A424u, menu_val[M_BARRIER]);         /* barrier_default_num */
-                *(u8 *)stf_ram(0x500052u) = (u8)menu_val[M_ROUND];
-                *(u8 *)stf_ram(0x50004Fu) = *(u8 *)stf_ram(0x500051u) = 0u;
+                stf_set(G_ENERGY_MAX, menu_val[M_ENERGY]);
+                stf_set(G_BARRIER_DEFAULT, menu_val[M_BARRIER]);
+                *(u8 *)stf_ram(G_WINS_NEEDED) = (u8)menu_val[M_ROUND];
+                *(u8 *)stf_ram(G_ROUND_WINS0) = *(u8 *)stf_ram(G_ROUND_WINS1) = 0u;
                 menu_clear();
                 round_start(fs);
-                snd_round(&stages[stage], 1u);
+                snd_round(stage, &stages[stage], 1u);
                 over = 0u;
                 in_menu = 0u;
             } else {
                 menu_draw();
-                *(short *)stf_ram(0x500028u) = (short)(round_time << 6);
+                *(short *)stf_ram(G_GAME_TIMER) = (short)(round_time << 6);
             }
         } else {
             pad[0] = pad_bits(&p[0]); pad[1] = pad_bits(&p[1]);
@@ -1785,10 +1790,10 @@ int main(void) {
           if (n == 0u) n = 1u;
           step = frame_counter;
           while (n--) {
-              short clock = *(short *)stf_ram(0x500028u);
+              short clock = *(short *)stf_ram(G_GAME_TIMER);
               fight_step(pad);
               if (in_menu) continue;
-              if (over) *(short *)stf_ram(0x500028u) = clock;  /* the clock stops once the round is decided */
+              if (over) *(short *)stf_ram(G_GAME_TIMER) = clock;  /* the clock stops once the round is decided */
               if (!over && !quit) ring_out_step(&stages[stage]);
               /* a knock-out (a fighter's w0 bit 5) or the clock's end: the
                * next round three seconds later, or the setup once a
@@ -1797,31 +1802,31 @@ int main(void) {
                   if (quit || !--over) {
                       u32 won = menu_val[M_ROUND];
                       if (ring_out) ring_msg(0u);
-                      if (quit || *(u8 *)stf_ram(0x50004Fu) >= won ||
-                          *(u8 *)stf_ram(0x500051u) >= won) {
+                      if (quit || *(u8 *)stf_ram(G_ROUND_WINS0) >= won ||
+                          *(u8 *)stf_ram(G_ROUND_WINS1) >= won) {
                           in_menu = 1u;
                           for (i = 0; i < 64u * 64u; i++) M2_TILE_FG[i] = 0x20u;
                           menu_mask(1u);
-                          *(u8 *)stf_ram(0x50004Fu) = *(u8 *)stf_ram(0x500051u) = 0u;
+                          *(u8 *)stf_ram(G_ROUND_WINS0) = *(u8 *)stf_ram(G_ROUND_WINS1) = 0u;
                           round_start(fs);
                           snd_request_u(SND_RESET);
                           over = quit = 0u;
                           break;
                       }
                       round_start(fs);
-                      snd_round(&stages[stage], 0u);
+                      snd_round(stage, &stages[stage], 0u);
                       over = 0u;
                   }
               }
-              else if (((RW(robs[0], 0) | RW(robs[1], 0)) & 0x20u) ||
-                       *(short *)stf_ram(0x500028u) <= 0) {
+              else if (((RW(robs[0], ROB_FLAG) | RW(robs[1], ROB_FLAG)) & ROB_F_LOST) ||
+                       *(short *)stf_ram(G_GAME_TIMER) <= 0) {
                   /* the round, as VF2's JUDGE_DSP_INT gives it: to the one
                    * whose bit 5 is clear (a knock-out, a ring out), else to
                    * the one with more energy left */
-                  short e0 = (short)RH(robs[0], 0x1AC), e1 = (short)RH(robs[1], 0x1AC);
-                  u32 l0 = RW(robs[0], 0) & 0x20u, l1 = RW(robs[1], 0) & 0x20u;
-                  if (l0 != l1) (*(u8 *)stf_ram(l0 ? 0x500051u : 0x50004Fu))++;
-                  else if (e0 != e1) (*(u8 *)stf_ram(e0 > e1 ? 0x50004Fu : 0x500051u))++;
+                  short e0 = (short)RH(robs[0], ROB_ENERGY), e1 = (short)RH(robs[1], ROB_ENERGY);
+                  u32 l0 = RW(robs[0], ROB_FLAG) & ROB_F_LOST, l1 = RW(robs[1], ROB_FLAG) & ROB_F_LOST;
+                  if (l0 != l1) (*(u8 *)stf_ram(l0 ? G_ROUND_WINS1 : G_ROUND_WINS0))++;
+                  else if (e0 != e1) (*(u8 *)stf_ram(e0 > e1 ? G_ROUND_WINS0 : G_ROUND_WINS1))++;
                   if (ring_out) ring_msg(1u);
                   snd_request_u(SND_GONG);
                   over = 180u;

@@ -56,6 +56,8 @@ numbers:
 ## The player struct
 
 `js/engine.js` `makePlayer` keeps the fields a fighter's work area holds.
+The board's C code reaches StF's rob and the fight's globals through
+`board/src/rob.h`, which names them the same way.
 The names are the ones each game's debug menu prints beside the field
 (ROBn_INFO, read in `docs/DEBUG-MODE.md`, which lists all of them). The
 main ones, most of which the F1 dump shows:

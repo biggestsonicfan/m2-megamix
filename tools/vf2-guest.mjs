@@ -24,6 +24,7 @@ import { readFighters } from '../vendor/noclip/js/vf2fighters.js';
 import { resolveData } from '../vendor/noclip/js/motion.js';
 import { readModelEntry, meshOffsetOf } from '../vendor/noclip/js/romset.js';
 import { packAkira } from './pack-akira.mjs';
+import { vf2Effect } from './guest-sound.mjs';
 
 const MAIN_DATA = 0x02000000;
 export const CHR = 6;                    /* StF's Knuckles */
@@ -71,10 +72,13 @@ const POLY_RUN = 0xec2578, POLY_RUN_END = 0xec2578 + 0x13da88;
  * unless `stf`), or nothing. `motion`: where a motion id is. */
 const PLAY = [0, 3, 3, 13, 7, 4, 4, 4, 4, 4, 9, 7, 4, 4, 7, 3, 4, 4, 7, 5, 7, 4, 5, 6];
 const PLAY_TO = {
-    0x04: null, 0x09: null, 0x10: null, 0x11: null, 0x14: null,
+    0x10: null, 0x11: null, 0x14: null,
     0x12: 'hand', 0x13: 0x12, 0x15: 0x14, 0x16: 0x15, 0x17: 0x16,
 };
 const PLAY_MOTION = { 0x0a: 5, 0x0b: 5, 0x17: 4 };
+/* VF2's voices by op 9's sound (main_data, StF's layout: a list by parent
+ * for each, Akira's first) and how many there are */
+const VF2_VOICES = 0x0201e44c, VOICE_SOUNDS = 19;
 
 /* Command program op lengths (VF2's; noclip moves.js OP_LENGTH with VF2's
  * own 5, 0x32 and 0x33). */
@@ -222,10 +226,23 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
     const report = [];
     /* What of VF2's is dropped or changed on the way in, for
      * tools/grade-guest.mjs (import-assets writes it to guests.json). */
-    const lost = { playOps: {}, flagBits: {}, strikeBytes: 0, op6Bytes: 0, op2bBytes: 0 };
+    const lost = { playOps: {}, flagBits: {}, sounds: {}, strikeBytes: 0, op6Bytes: 0, op2bBytes: 0 };
     /* quiet: a guest's copy of his setups (ownMoveset) loses what his did */
     let quiet = false;
     const tally = (o, k) => { if (!quiet) o[k] = (o[k] ?? 0) + 1; };
+
+    /* His voices: op 9's sound n plays the code of his parent's slot in
+     * list n (StF's own lists are empty) */
+    const voices = [];
+    for (let n = 0; n < VOICE_SOUNDS; n++) {
+        const list = d32(VF2_VOICES + 4 * n), code = list ? d32(list) : 0;
+        if (!code) continue;
+        const c = vf2Effect(code);
+        if (c === null) { tally(lost.sounds, hex(code)); continue; }
+        T.blank_per_character_audio_array.voice(CHR, n, c);
+        voices.push(n);
+    }
+    report.push(`voices: op 9's sounds ${voices.join(', ') || 'none'}`);
 
     /* The heap: main_data from STF_GUEST_HEAP up. */
     let heap = R.guest.heap;
@@ -537,6 +554,13 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
                 }
                 const o = [...b];
                 o[0] = to | (b[0] & 0x80);
+                /* Op 4 sends a sound code: VF2's become Akira's on the board
+                 * (guest-sound.mjs, group 0x15) */
+                if (op === 4) {
+                    const code = b[3] | (b[4] << 8) | (b[5] << 16) | (b[6] << 24), c = vf2Effect(code);
+                    if (c === null) { tally(lost.sounds, hex(code)); continue; }
+                    o.splice(3, 4, c & 0xFF, (c >> 8) & 0xFF, (c >> 16) & 0xFF, c >>> 24);
+                }
                 if (PLAY_MOTION[op]) put16(o, PLAY_MOTION[op], mid(b[PLAY_MOTION[op]] | (b[PLAY_MOTION[op] + 1] << 8)));
                 /* Op 8 (damage) takes byte +3 off the rob's energy, VF2's 200 as above. */
                 if (op === 8) o[3] = damage(b[3]);

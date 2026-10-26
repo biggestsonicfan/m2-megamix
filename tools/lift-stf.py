@@ -161,6 +161,11 @@ GUEST_BASE = 0x02E00000
 # off_64988: a pointer by character to its shadow table (rob_kage_disp_test,
 # 16 entries of 24 bytes and a tail; docs/SHADOWS.md); StF's tables are
 # copied into free room in the extra data ROM, the guests' own after them.
+# blank_per_character_audio_array: a list by play op 9's sound (19) of lists
+# by parent (rob+0x1B1; StF's are 11 long) of sound codes (0: none, as for
+# every StF fighter); the lists go in the extra data ROM, 52 long (a guest's
+# slot past 10 reads its own entry, not the next list's), a guest's voices in
+# them.
 GUESTS = [('CHAR_PARTS', 0x100, 52 * 4), ('SKELETON_TYPE_DATA', 0x400, 4 * 4),
           ('MOVESET_ARRAY', 0x100, 24 * 4), ('player_hand_animations', 0x100, 52 * 4),
           ('player_foot_animation', 0x100, 52 * 4), ('player_body_animation', 0x100, 52 * 4),
@@ -169,7 +174,7 @@ GUESTS = [('CHAR_PARTS', 0x100, 52 * 4), ('SKELETON_TYPE_DATA', 0x400, 4 * 4),
           ('motion_remap', 0x80, 26 * 4), ('char_game', 0x40, 52),
           ('rob_coli_ball_types', 0x400, 4 * 4), ('midriff', 0x100, 52 * 4),
           ('off_C2058', 0x400, 4 * 4), ('seams', 0x100, 52 * 4), ('off_B540C', 0x400, 4 * 4),
-          ('off_64988', 0x100, 52 * 4)]
+          ('off_64988', 0x100, 52 * 4), ('blank_per_character_audio_array', 0x80, 19 * 4)]
 GAMES = [('STF', 0), ('VF2', 1), ('FV', 2)]      # char_game's values (GAME_<name>)
 # Data blocks no lifted code names but StF's ROM tables point at: lifted, and
 # the code that loads such a pointer is given the board's copy

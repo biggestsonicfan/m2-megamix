@@ -569,7 +569,7 @@ StF labels are from rom_code1.asm (ACTUAL_MOVES, line 28271). VF2 addresses are 
      - StF has no wall clamp and uses a ±0.4 band, skipped on 19c bit 21.
      - StF also has an extra rule at 0x13f40 (0x5f4 < 0.8 and the opponent's 0x710 > 1.35).
    - (c) Target jump (19c bit 20): StF reads 0x6c8 and adds 0x8000 to the angle when 5b8 bit 0; VF2 reads 0x698 with no flip.
-   - (c) Sound ids: StF 0xae1100/0xae1101 vs VF2 0x9e0e5f/0x9e0d5f. The board needs the guest's sound mapping here, if sounds are carried over at all.
+   - (c) Sound ids: StF 0xae1100/0xae1101 vs VF2 0x9e0e5f/0x9e0d5f. The board's op 4 now sends Akira's own (group 0x15, BOARD.md: Akira's sounds).
    - Board: done in #1556 (B9): 0.05×SCALE in the guest's +0x20 block, VF2's ±0.9 band and wall clamp in a branch at loc_13F18. The bounce depends on [0x500828]+0x164; reading it during a board match would settle that.
 5. **TA_GUARD**, a→7 (VF2 0x14e78, 32 instructions / StF 0x1390c, 13 instructions). Everything here is VF2-only (b):
    - If the opponent's 0x6b4 bit 0 (StF 0x6d4) is set, calls 0x1b694 (= sub_1CED4) and clears 1a4 bit 0.
@@ -694,14 +694,14 @@ StF addresses are from rom_code1.asm (Sega's labels where it has them). VF2 addr
   - 0x1 -> 1: SAME.
   - 0x2 -> 2: commit type 13<<24 in VF2 vs 9<<24 in StF (c). The converter already maps it. Nothing.
   - 0x3 -> 3: same, apart from VF2's slow mode and a gated id 0x324 (r6=0x421c0000 at low energy). It calls VF2 0x18b14 vs StF 0x197c8 (names not checked). Nothing.
-  - 0x4 (sound): dropped, x148. Harmless (BOARD.md: sound stubs).
+  - 0x4 (sound): kept, x148, its VF2 code rewritten to Akira's group 0x15 (BOARD.md: Akira's sounds).
   - 0x5/0x6/0x7: SAME (the converter filters op 5's flag bits; see BOARD.md).
   - 0x8 -> 8 (damage):
     - VF2 scales by the opponent's 0x69c, has a gated id 0xf9 -> 20, calls ketchup 0x18ac8 and stores 0x1e20(g8).
     - StF uses the raw damage, adds into 0x5de/0xa28 and stores 0x1f70(g8). It makes no ketchup call. (c)+(a).
     - Akira uses it 4 times, in motions 16 (twice, 10) and 44 (15, 25).
     - Done (D5): the converter now applies its x0.7 damage scale here too, as in setup ops 4/5 (10, 10 -> 7, 7; 15, 25 -> 11, 18). The blood (ketchup) splash is still lost; probably cosmetic.
-  - 0x9 (voice): dropped, x25. Harmless.
+  - 0x9 (voice): kept, x25: StF's op 9 reads `blank_per_character_audio_array`, which now holds Akira's voices (BOARD.md: Akira's sounds).
   - 0xa -> 0xa (input-match branch):
     - VF2 exits early when 0x50002c==8 and 0x500034==0x20 (a mode; unknown). Ids 0x485/0x486 force r10=1 (not Akira's). The direction mirroring is inline.
     - StF calls 0x1caf4 and has an r6==1 energy test.
