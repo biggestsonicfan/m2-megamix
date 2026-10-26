@@ -64,6 +64,7 @@ His stance, walks, dashes and guards are his own (0x800, 0x801, 0x83B,
 ## Not Shenmue's own
 
 - On the board (docs/BOARD.md, The guest: Shenmue's Chai) he is StF
-  character 12 with CHA_B, on a moveset of his own that is still a copy of
-  Akira's, as Ryo's is. His Shenmue moveset is the web roster's.
+  character 12 with CHA_B. His standing P, K, P+K and P+G moves are this
+  moveset (tools/shenmue-moves.mjs, #1612); the rest of his moveset is a
+  copy of Akira's, as Ryo's is.
 - The state-gated moves are left out (Tenshin and the rest above).

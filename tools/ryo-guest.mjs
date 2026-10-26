@@ -36,6 +36,7 @@
  * (rows 0..27, lumabase 0) and are lit as Akira's are.
  */
 import { decodeModel } from '../vendor/noclip/js/model.js';
+import { shenmueMoves } from './shenmue-moves.mjs';
 import { readFighters } from '../vendor/noclip/js/vf2fighters.js';
 import { buildColorxlat, buildLumaram } from '../vendor/noclip/js/colors.js';
 import { restMatrices, mul4, invRigid } from '../js/shenmue.js';
@@ -634,6 +635,9 @@ export function importShenmue(R, ctx, games, { tiles, byTex }, { name: who = 'RY
     /* ---- his moveset: Akira's, under ids of his own ---- */
     const ms = ctx.ownMoveset(Who);
     report.push(`moveset: Akira's ${ms.ids.size} motions as his own ${ms.first}..${ms.first + ms.ids.size - 1} (${ms.setups} setups naming them, ${ms.setupBytes} bytes; the rest Akira's); command program ${hex(ms.progAt)}, ${ms.progLength} bytes`);
+    /* ---- his own moves over it (tools/shenmue-moves.mjs) ---- */
+    const own = shenmueMoves(R, ctx, games, { name: who, who: Who, ms });
+    report.push(...own.report);
 
     const chars = seatGuest(R, ctx, {
         chr: CHR, parts, skel, rigAt, ballRec, seamList, game: R.guest.games.VF2,
@@ -644,7 +648,8 @@ export function importShenmue(R, ctx, games, { tiles, byTex }, { name: who = 'RY
     const coverage = {
         chars, game: 'Shenmue', name: Who, parts: order.length,
         triangles: faces.length, colours: cbOf.size, balls: moved,
-        moves: `Akira's, under his own ids ${ms.first}..${ms.first + ms.ids.size - 1} (his own motions are not on the board yet)`,
+        ownMotions: { first: own.first, names: own.names },
+        moves: `his own on P, K, P+K and P+G (${own.strikes} strikes, ${own.throws} throws, ${own.tables} string tables, ids ${own.first}..${own.first + own.count - 1}); the rest Akira's, under his own ids ${ms.first}..${ms.first + ms.ids.size - 1}`,
     };
     return { report, coverage, meshes, partModel, scale: k };
 }
