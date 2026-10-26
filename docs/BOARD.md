@@ -1776,6 +1776,46 @@ sets up what StF's game loop would have set up around it.
   is StF's `tobi_disp` and `tdl_bakudan`: the bomb, its fuse, its landing
   marker and the burst. Check: MAME, Eggman's forward+punch takes Honey
   from 140 to 120; with her guard held it takes nothing.
+- Effects (#1625): StF's own, lifted. `round_start` starts the effect
+  task as `fa_effect` does (`stf_effect`, 0xC80 bytes: `efc_ram_init`,
+  then `efc_cont`, which `fight_step` runs each frame after the collision
+  task) and clears the scattered rings (`ring_tobitiri_init`).
+  `effects_draw` runs `camera_init`'s draws in its order, on the camera
+  block: `efc_disp` (hit sparks, the dust of a fall; its list blocks,
+  layers 9 and 13, spliced after), `efc_face_opt_disp` (the marks over a
+  head), `guard_attack_effect_disp`, `ring_tobitiri` (the rings a hit
+  knocks out, and the stars over a stunned fighter), `kira_kira_disp`
+  (hyper mode's sparkles), `guard_barrier_effect_disp` (the barrier's
+  shield, and its pieces when the last one breaks), `laser_effect_disp`
+  (Metal Sonic's laser charge: lifted, though the roster has no Metal
+  Sonic yet) and `ko_disp`.
+  - Rings drop only from StF's fighters: `ring_tobitiri_set` returns for a
+    guest (`char_game` not STF). As in StF, Eggman drops rings; the parts
+    in their place are the boss robots' (characters 0xB, 0xD).
+  - `smoke_pattern_put` is left out: StF never sets its pointers
+    (0x500890), so it draws nothing there.
+  - `sub_5ACF0` (models 4 to 6) is left out too: it draws only when the
+    camera's +0xB0 is 1, which only the debug menu's CAMERA_POSITION test
+    sets; `camera_init` clears it, so a fight never shows it.
+  - The sparkles sit on GAME_DSP's trail, which `fight_step` keeps:
+    each fighter's +0x1F4 for the last 8 frames at +0x1004 (next entry
+    +0x1064).
+  - The round's end sets StF's judging state: also_sub_mode (0x500031)
+    JUDGE_DSP (13), and 0x500050 0 for a knock-out, 2 for time up or a
+    ring out. `ko_disp` draws the K.O. while they say a knock-out, growing
+    to 3.54 and turning (game_disp +0x94, +0x98); `attack_hit` and
+    `damage_unit` stop. _sub_mode (0x500030) stays 9, so the camera keeps
+    following. `round_start` puts them back to 9 and 0.
+  - The effect models are in the data ROM: `import-assets.mjs` keeps
+    `collision_particle_effects`' patterns (frames / divisor models each),
+    the sparkle, barrier, break and laser tables, the emeralds, the face
+    marks and the K and O.
+  - Check (MAME, Honey on Sonic): a punch makes the yellow star spark
+    (2635 → 2907) and two rings; a knock-out shows the yellow K.O. turning,
+    and the dust where he lands; with time up there's no K.O.; forced
+    hyper (w0 bit 18, +0xC7C) shows sparkles trailing her; forced +0x1A4
+    bit 13 the blue shield; +0xC70 0 and +0xC6C 18 the pieces and NO
+    BARRIER!.
 - Characters: rob+0x1B0 is the character drawn (the alternates are +26),
   rob+0x1B1 the parent. `ADV_CPU_BATTLE_INT` sets 1B1 = 1B0 - 0x1A, and a
   real P2 Honey alternate has 1B0 0x24, 1B1 0x0A.

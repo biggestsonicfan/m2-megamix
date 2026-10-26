@@ -84,12 +84,14 @@ ROOTS = ['set_motion', 'calc_rob_angle', 'calc_rob_angle_cont', 'calc_unit_mat',
          'sub_7B4', 'send_tex_col_stage', 'send_tex_col_skin', 'send_tex_col_part', 'sub_2435C',
          'set_display_type_crt', 'osage_init', 'sub_63AC4', 'rob_kage_disp_inside', 'rob_kage_disp_outside',
          'snc_eye_thd_set', 'tpd_move_init', 'sub_81038', 'spin_attack_cnt', 'spin_smoke_trg',
-         'sub_81CD8', 'sub_81D44', 'sub_81DB0']
-# Routines the board does not run (debug text, name plates, ring scatter,
+         'sub_81CD8', 'sub_81D44', 'sub_81DB0', 'ring_tobitiri_init', 'ring_tobitiri',
+         'efc_disp', 'efc_face_opt_disp', 'guard_attack_effect_disp', 'kira_kira_disp',
+         'guard_barrier_effect_disp', 'laser_effect_disp', 'fa_effect', 'ko_disp']
+# Routines the board does not run (debug text, name plates,
 # Super Sonic's hair objects; the shadow mask balls, which read a table at
 # 0x4C84 and megamix.c's kage_balls sends): `ret`.
 STUBS = ['print_mes', 'print_mes_ex', 'print_hex_w', 'debug_disp_hex', 'dsp_pattern_right',
-         'char_nameplate_dsp', 'ring_tobitiri_set', 'sub_1BCC0',
+         'char_nameplate_dsp', 'sub_1BCC0',
          'send_kage_ball_pntr']
 # Routines the board's C does in their place: StF's two sound requests,
 # which queue a code (g0) for the sound board (megamix.c snd_request_u and
@@ -105,7 +107,7 @@ TO_C = {'sound_request_u': '_snd_request_u', 'sound_request_special': '_snd_requ
 # mirrored fighter); any other code label they load (a
 # task's next function, a callback) is lifted and keeps its name.
 NUMBERS = {'loc_1FFC', 'loc_2AA8', 'loc_6600', 'loc_7FF8', 'loc_8020', 'loc_8040', 'loc_BFF4', 'loc_10000',
-           'loc_20010', 'loc_78AFC', 'loc_2100', 'loc_7A00', 'loc_14060', 'sys_proc_table',
+           'loc_20010', 'loc_2100', 'loc_7A00', 'loc_14060', 'sys_proc_table',
            'off_1010', 'dword_4010', 'loc_AAA0', 'loc_5550', 'off_1018', 'loc_32180', 'loc_1C38'}
 # Labels the routines' data uses as numbers, where the code uses them as
 # labels: the wind table dword_689E4's `.long send_tex_col_part` is 0x800.
@@ -137,8 +139,10 @@ RAM_PAD = 0x400                          # room past the highest address a block
 # RAM the routines reach through a base: the two fighters' motion records
 # (action_init: 0x520000 and 0x5207C8, 0x800 bytes each), chg_pol_color_req's
 # ramp (0x546008, 0x120 bytes a row, rows 0..27) and the backup RAM's copy
-# (add_BACKUP_RAM_TO_RAM, 0x599000, which megamix.c points it at).
-RAM_SPANS = [(0x520000, 0x520FC8), (0x546000, 0x547F88), (0x599000, 0x59C400)]
+# (add_BACKUP_RAM_TO_RAM, 0x599000, which megamix.c points it at), and the
+# scattered rings (ring_tobitiri_set: 24 records of 44 bytes from 0x574010,
+# then its counts at 0x574B10).
+RAM_SPANS = [(0x520000, 0x520FC8), (0x546000, 0x547F88), (0x599000, 0x59C400), (0x574000, 0x574B20)]
 # The per-character tables a guest fighter (a character of another game in a
 # StF character's place) needs entries of its own in: the routines read them
 # at fixed addresses in the data ROM instead (guest_<name>), where
@@ -225,7 +229,12 @@ INSERT_LIFTED = {
 # 0x3F9BAF44, 0x3FE986E6), where StF has no wall and +-0.4. FV's exec_action
 # (F 0x1435C) is StF's, in FV's units: an FV fighter's +-0.4 and 0.8 are * K
 # (0x3F515653, 0x3FD15653).
+# ring_tobitiri_set (a hit's rings, damage_calculation's): only StF's own
+# fighters carry rings; a guest (char_game not 0) drops none.
 INSERT = {
+    'ring_tobitiri_set': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                          'cmpobe  GAME_STF, r14, ring_tobitiri_set_own', 'ret',
+                          'ring_tobitiri_set_own:'],
     'loc_13F18': ['ldob    0x1B1(g7), r3', 'ldob    guest_char_game[r3], r3',
                   'cmpobe  GAME_FV, r3, loc_13F18_fv',
                   'cmpobne GAME_VF2, r3, loc_13F18_own', 'lda     0x3F9BAF44, r13',

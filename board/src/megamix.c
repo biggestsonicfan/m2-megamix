@@ -636,6 +636,7 @@ static void fight_step(const u32 pad[2]) {
     for (p = 0; p < 2u; p++)
         stf_task((void (*)(void))RW(robs[p], TASK_FN), robs[p], robs[p], robs[p ^ 1u]);
     stf_task((void (*)(void))RW(stf_coli, TASK_FN), stf_coli, robs[0], robs[1]);
+    stf_task((void (*)(void))RW(stf_effect, TASK_FN), stf_effect, robs[0], robs[1]);
     stf_task(stf_get_game_info, stf_enemy[0], robs[0], robs[1]);
     stf_task(stf_cam_mode_10, stf_cam, robs[0], robs[1]);
     /* the camera's frame count, which StF's camera_init (os display) moves
@@ -650,6 +651,13 @@ static void fight_step(const u32 pad[2]) {
      * the afterimages */
     stf_task(stf_sub_8A29C, stf_tobi, robs[0], robs[1]);
     stf_call(stf_zanzou_control, robs[0], robs[1], 0u);
+    /* GAME_DSP's trail: each fighter's place on the ground, kept for the
+     * last 8 frames, where kira_kira_disp puts hyper mode's sparkles */
+    for (p = 0; p < 2u; p++) {
+        u32 at = RW(robs[p], ROB_TRAIL_AT), k;
+        RW(robs[p], ROB_TRAIL_AT) = (at + 1u) & 7u;
+        for (k = 0; k < 3u; k++) RW(robs[p], ROB_TRAIL + at * 12u + k * 4u) = RW(robs[p], ROB_GXPOS + k * 4u);
+    }
 }
 
 /* A round: both fighters back to their marks, the collision task, the
@@ -686,6 +694,14 @@ static void round_start(fighter_t fs[2]) {
     RW(stf_tobi, TASK_FLAG) = TASK_ALIVE;
     RW(stf_tobi, TASK_SIZE) = sizeof stf_tobi;
     for (i = 0; i < 2u; i++) rob_start(i);
+    /* the effect task, as fa_effect starts it (efc_ram_init: no sparks,
+     * smoke or barrier pieces left from the last round), then efc_cont */
+    for (i = 0; i < sizeof stf_effect / 4; i++) stf_effect[i] = 0u;
+    RW(stf_effect, TASK_FLAG) = TASK_ALIVE;
+    RW(stf_effect, TASK_SIZE) = sizeof stf_effect;
+    stf_task(stf_fa_effect, stf_effect, robs[0], robs[1]);
+    /* the scattered rings: none (ring_tobitiri_init, as the battle's start runs it) */
+    stf_call(stf_ring_tobitiri_init, robs[0], robs[1], 0u);
     /* the spin attack's models, pulse and drop for both (sub_81038, as
      * StF's battle modes run it before a round) */
     stf_call(stf_sub_81038, robs[0], robs[1], 0u);
@@ -699,6 +715,10 @@ static void round_start(fighter_t fs[2]) {
                        cur_stage && m2_obj_fb(cur_stage->wall) ? m2_obj_fb(cur_stage->wall) : 0x41000000u;
     rout[0] = rout[1] = ring_out = 0u;
     rout_vy[0] = rout_vy[1] = 0u;
+    /* back to the fight from the last round's judging (ko_disp's K.O. off;
+     * its size and turn, stf_disp +0x94 and +0x98, cleared below) */
+    RAM8(G_SUB_MODE + 1u) = SUB_FIGHT_DSP;
+    RAM8(G_JUDGE) = 0u;
     /* the HUD, as MES_ROUND_INT and MES_READY_INT leave it: both bars
      * from empty, the lamps (clear_win_lamp_cntr's, then win_lamp_int) */
     for (i = 0; i < sizeof stf_disp / 4; i++) stf_disp[i] = 0u;
@@ -1129,6 +1149,49 @@ static void tobi_draw(u32 pn[3]) {
         }
         pn[1u + ((u32 *)RW(o, TOBI_OWNER) == robs[1])] += polys - before;
     }
+}
+
+/* The effects camera_init draws after the projectiles, on the fighters'
+ * camera, in its order, each with set_obj (its faces in POLYGON, as
+ * osage_dsp's), on the camera's block (g13: they face the camera by its
+ * angles):
+ * - efc_disp: the hit sparks, dust and flying pieces efc_cont steps (the
+ *   collision's efc_rob_set_set and the like put them in);
+ * - efc_face_opt_disp: the marks over a fighter's head (shock, "?", "NO");
+ * - guard_attack_effect_disp: a guarded hit's flash (smoke_pattern_put, before
+ *   it, draws nothing in StF: its pointers at 0x500890 are never set);
+ * - ring_tobitiri: the rings a hit knocks out of one of StF's fighters
+ *   (damage_calculation's ring_tobitiri_set: more for a bigger hit; parts
+ *   in their place from StF's boss robots, characters 0xB and 0xD, which the
+ *   board has not, so Eggman drops rings as in StF) and the stars over
+ *   a stunned one. It steps them too (they fall, bounce off the walls at 7.5
+ *   and blink out); on Aurora Icefield (stage_num 2) each has its reflection;
+ * - kira_kira_disp, each fighter's: hyper mode's sparkles;
+ * - guard_barrier_effect_disp: a barrier's shield, and its pieces when it
+ *   breaks;
+ * - laser_effect_disp: Metal Sonic's laser charging;
+ * - ko_disp, after the HUD's text: the turning K.O. that grows in over a
+ *   knock-out, while also_sub_mode is JUDGE_DSP (the round's end sets it).
+ * The sparks that efc_disp puts in list blocks (layers 9 and 13, which
+ * camera_init runs before the stage and after the cage) run here. */
+#define EFC_LAYER_A 9u
+#define EFC_LAYER_B 13u
+static void effects_draw(void) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    u32 k, p;
+    *cf = COP_WMATRIX;
+    for (k = 0; k < 9; k++) *cf = m2_obj_fb(cam_l.r[k]);
+    for (k = 0; k < 3; k++) *cf = m2_obj_fb(cam_l.t[k]);
+    stf_task(stf_efc_disp, stf_cam, robs[0], robs[1]);
+    stf_task(stf_efc_face_opt_disp, stf_cam, robs[0], robs[1]);
+    stf_task(stf_guard_attack_effect_disp, stf_cam, robs[0], robs[1]);
+    stf_task(stf_ring_tobitiri, stf_cam, robs[0], robs[1]);
+    for (p = 0; p < 2u; p++) stf_task(stf_kira_kira_disp, stf_cam, robs[p], robs[p ^ 1u]);
+    stf_task(stf_guard_barrier_effect_disp, stf_cam, robs[0], robs[1]);
+    stf_task(stf_laser_effect_disp, stf_cam, robs[0], robs[1]);
+    osage_splice(EFC_LAYER_A);
+    osage_splice(EFC_LAYER_B);
+    stf_task(stf_ko_disp, stf_cam, robs[0], robs[1]);
 }
 
 /* move_tpd_req and move_tpd_send: once a frame a stage hands move_tpd_req a
@@ -2028,6 +2091,14 @@ int main(void) {
                   if (l0 != l1) (RAM8(l0 ? G_ROUND_WINS1 : G_ROUND_WINS0))++;
                   else if (e0 != e1) (RAM8(e0 > e1 ? G_ROUND_WINS0 : G_ROUND_WINS1))++;
                   if (ring_out) ring_msg(1u);
+                  /* StF's judging, for ko_disp and the rules that stop at
+                   * the round's end (attack_hit, damage_unit): also_sub_mode
+                   * JUDGE_DSP, and 0x500050 0 for a knock-out (the K.O.), 2
+                   * for the time running out (JUDGE_DSP_INT's not_scr_bg_move
+                   * bit 0) or a ring out, which StF never has. _sub_mode
+                   * stays FIGHT_DSP, so cam_mode_10 keeps following. */
+                  RAM8(G_SUB_MODE + 1u) = SUB_JUDGE_DSP;
+                  RAM8(G_JUDGE) = (l0 | l1) && !ring_out ? 0u : 2u;
                   snd_request_u(SND_GONG);
                   over = 180u;
               }
@@ -2046,6 +2117,7 @@ int main(void) {
         for (i = 0; i < 2u; i++) { polys = 0u; draw_fighter(&fs[i], i, 0u); spin_frame(i); kage_outside(i); pn[1u + i] += polys; }
         zanzou_draw(pn);
         tobi_draw(pn);
+        effects_draw();
         if (in_menu) poly_win_draw(pn);
         *(volatile u32 *)ZCLIP_REG = 0xFFFF00FFu;
         m2_frame_commit();
