@@ -184,8 +184,30 @@ up are player 2's records), and every roster name table in the program has
 DURAL at 9: 0x2980C, 0x509E8 (read by `ld 0x509E8[r8*4]`, 0x52E10), 0x5CB28
 and the debug menu's 0x46298 (ACHO, its development name; its "1P CHAR" and
 "2P CHAR" lines read rob+0x1B0 by it, 0x45EC4, 0x45EF8). This is the ROM's
-slot order, not the web menu's. rob+0x624 is likely the
-ring-out fall (BOARD.md, Ring out), the ground outside the ring.
+slot order, not the web menu's.
+
+rob+0x624 is the ring-out ground: body parts lying on the floor outside
+the ring. The debug menu calls it `out_on` (its string at 0x45158, read by
+`ldos 0x624(g7)` at 0x4514C). Only one store puts a value in it:
+`stos g3,0x624(g7)` at 0x23B44, in the ring-edge test (from 0x2396C, called
+for each fighter at 0x2358C and 0x23598). That code walks the fighter's 29
+body spheres (rob+0xD00, 16 bytes each) and keeps two bit masks:
+
+- 0x114(g13): the sphere's bottom (centre y less radius) is at or below
+  stage_soko (0x50A010) + 0.05 (0x23A7C..0x23A90).
+- g4: the sphere is past one of the ring's edge planes, its count at 0x23BB8
+  and its normals at 0x23BBC: the plane's distance, less stage_x (0x50A00C), is
+  0 or more (0x23ABC..0x23AF0).
+
+It ANDs the two (0x23B38), maps the sphere bits to body-part bits through
+0x23878 (table at 0x2007B76), and stores the result. With the same masks,
++0x614 (`stage_on`) gets the parts on the ring floor and inside it (0x23B58),
+and +0x618 gets the parts at the fighter's own floor height, rob+0x1C
+(0x23B64). Every other store to +0x624 is a clear to 0: the round reset
+(0x14190), fighter setup (0x54AD4) and 36 `mov 0,r15; stis r15,0x624(g7)`
+pairs. 0x17BC0 also reads it and sets w0 bit 5, the ring-out flag (BOARD.md,
+Ring out). So the override means a fighter lying outside the ring hears
+the plain `down`/`land` set, whatever the stage's +0x74.
 
 Every record, with the floor the web Megamix draws for it (`?stage=N`, the
 menu number; noclip's reading of the ring models, not checked against the
