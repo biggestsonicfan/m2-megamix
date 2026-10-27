@@ -176,7 +176,7 @@ sample read (0xCE2608..0xCE3608) the frame after its code, the kick's
   `sd_WB04_82_04`. Shenmue makes no sound of its own on a hit (the move's
   sound marks the blow, landing or not), so these could go quiet for Ryo and
   Chai, or keep StF's.
-- **The lines:** 0xAE17xx for the lines and shouts. `snd_round` in megamix.c
+- **The lines:** 0xAE17xx for the lines and shouts. `snd_round` in sound.c
   sends the round's sounds; the intro exchange would go after the gong when
   the two fighters are Ryo and Chai (a line's length in frames before the
   reply), the others at JUDGE_INT and VIC_INT, `down` from the knockdown,

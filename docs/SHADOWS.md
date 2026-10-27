@@ -350,7 +350,7 @@ The board runs StF's routines, lifted by `tools/lift-stf.py` (roots
 `sub_63AC4`, `rob_kage_disp_inside`, `rob_kage_disp_outside`; the lift
 pulls in `rob_kage_set_matrix`, `rob_kage_set_flag_sub`,
 `rob_kage_disp_test`, `tobi_kage_set_flag`, `tobi_kage_disp` and
-`off_64988` with its tables). `megamix.c` calls them in StF's order:
+`off_64988` with its tables). `kage.c` calls them in StF's order:
 
 - `kage_stage`, with the stage (`load_stage`): VECTER_X/Y (0x501020/22)
   from the stage's light, and `stage_soko` (0x50A010) from StF's stage
@@ -397,7 +397,7 @@ The masks: `send_kage_ball_pntr` sends each slot's collision ball to the
 copro (0x306E0 + slot for player 1, 0x307E0 + slot for player 2), which
 op 0x75 tests. It reads the ball numbers from 0x4C84, which on the board is
 UART code, so the masks were garbage (Akira's shadow broke into pieces).
-The lift stubs it, and `megamix.c`'s `kage_balls` sends the tables at
+The lift stubs it, and `kage.c`'s `kage_balls` sends the tables at
 `rob_start`: StF's (9 0 2 3 4 5 6 7 8 9 10 11 12 14 15 16) for an StF
 fighter, and VF2's record's middle balls (3 0 2 4 6 8 9 11 13 3 15 18 20
 23 26 28) for a guest, all of whom ride VF2's ball record.

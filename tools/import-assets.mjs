@@ -226,7 +226,7 @@ const SET_FIGHTERS = 1;
 const MOTION_LIST = 0x06400004, MOTIONS = 519;
 const SCROLL_TABLE = 0x06480000;          /* _ScrollCG_Initialize / _ScrollColor_Initialize */
 const PATTERN_TABLE = 0x06480300;        /* dsp_pattern_new, dsp_character, clr_pattern */
-const SCROLL_SLOTS = [0, 70, 170];        /* megamix.c's _Scroll_Initialize calls */
+const SCROLL_SLOTS = [0, 70, 170];        /* main.c's _Scroll_Initialize calls */
 
 async function importStf(R) {
     const { main, xtra, copro, polygons, textures, program } = R;
@@ -242,7 +242,7 @@ async function importStf(R) {
     const keepAt = (a, len, label) => { const [r, o] = at(a); r.keep(o, len, label); };
     const u32At = (a) => { const [r, o] = at(a); return r.u32(o); };
 
-    /* The colour pipeline (m2_color_init, megamix.c): the luma ramp, a count
+    /* The colour pipeline (m2_color_init, main.c): the luma ramp, a count
      * of 0x80-byte blocks and the bytes; the polygon palette. */
     const LUMA = 0x0d0008;
     main.keep(LUMA, 4 + main.u32(LUMA) * 0x80, 'luma ramp');

@@ -34,6 +34,37 @@ table B (2048 entries, not 512): StF's stage sets need up to 1178, and the
 SDK's size drops six of their pages. It keeps the SDK's include guard and is
 included in place of it; the SDK itself is used unchanged.
 
+## The program's layout
+
+`board/src` is one module a file; `megamix.h` declares what they share, and
+`megamix.c` includes them all so they compile as one unit (m2-sdk is
+header-only: its functions and state are defined in its headers, built global
+for the boot asm, so a module built on its own would carry its own copy).
+
+| File | What it holds |
+| --- | --- |
+| `main.c` | the frame loop: boot, the setup, a round's start and end, the up-to-four vblank steps, the link's sync |
+| `fighter.c` | StF's fighters: their tasks and globals, `rob_init`, `fight_step`, `round_start`, the HUD |
+| `fighter_draw.c` | a fighter's parts from the coprocessor's slots, the seams and midriff, the spin ball, the mirror image |
+| `effects.c` | afterimages, projectiles and StF's effects |
+| `osage.c` | the sway chains and StF's list blocks |
+| `kage.c` | the shadows |
+| `armour.c` | FV's armour: limits, HUD, kept across rounds |
+| `replay.c` | FV's replay |
+| `ringout.c` | VF2's ring out and its message |
+| `tpd.c` | the moving texture points: eyes, pit, pipes |
+| `stage.c` | the stage's meshes, materials and light; `load_stage`; FV's town turn and Kuma |
+| `sky.c` | the sky on the tile layers |
+| `colors.c` | the colour translation runs |
+| `texture.c` | the texture sets and palettes |
+| `sound.c` | the sound requests to the 68000 |
+| `menu.c` | the setup menu, on tile layer 1 |
+| `camera.c` | the camera and the stage's light in its frame |
+| `cop.c` | the coprocessor's matrix and the submits |
+| `linkplay.c` | the two-cabinet link's glue (the protocol is `link.c`) |
+| `carry.c` | points carried between slots, alone on the i960's floating point |
+| `stf_call.s`, `stf_motion.s` | the lifted StF code and how it is called |
+
 ## The data ROMs
 
 `tools/import-assets.mjs` writes `board/roms/sfight/`'s data ROMs: each starts
@@ -137,7 +168,7 @@ took.
 The board's C is soft-float (`M2_SOFTFLOAT`), all but `src/carry.c`, built
 with `-mnumerics` for the i960's own `mulr`/`addr`/`divr` as the lifted
 code is. It carries points from one slot's frame into another's (Ryo's
-seams and midriff, `megamix.c`); in soft-float its matrix setup took 6.75
+seams and midriff, `fighter_draw.c`); in soft-float its matrix setup took 6.75
 ms of a 7.4 ms call, and Ryo's twelve seams held the board to 30 fps (his
 `draw_fighter` 10 ms a pass where Akira's is 0.9 ms). Floats cross the two
 conventions by pointer only.
@@ -194,7 +225,7 @@ same frame of the stance motion (278), all sixteen part positions in the rob
 - Colours: `m2_load_model_palette` copies each part's colour bases from the
   polygon palette ROM. The colour translation RAM (`0x01810000`) is what turns
   them into RGB, row by row, and StF's own routines fill it (lifted by
-  `lift-stf.py`, called from `megamix.c`'s `stage_colors` and
+  `lift-stf.py`, called from `colors.c`'s `stage_colors` and
   `fighter_colors`), in the order StF's boot, `change_scene` and its debug
   menu's colour refresh (0x46754) call them: `set_display_type_crt` (the
   test menu's CRT setting: TST_*_ADD 22, TST_*_MUL 54, TST_B_BRIGHT 31,
@@ -238,7 +269,7 @@ same frame of the stance motion (278), all sixteen part positions in the rob
   head into the head's frame, and `clip_medama` with its table by character
   (`word_21734`) makes it a shift of each eye's texture points.
   `move_tpd_req` queues the shifts (0x5019B0) and returns where the moved
-  points will be in texture RAM (+0x2058); megamix.c `eyes_frame` runs
+  points will be in texture RAM (+0x2058); tpd.c `eyes_frame` runs
   `tpd_move_init` and `snc_eye_thd_set` for both fighters and uploads the
   queue after the stage's own tpd block, as `move_tpd_send` does, and
   `draw_fighter` draws the eye models on those points (on their own points
@@ -258,11 +289,11 @@ same frame of the stance motion (278), all sixteen part positions in the rob
   rob+0x2068 to 1, clears the ball's angles and resets the smoke. While it
   is 1, StF's `rob_disp_rdn_loop` draws none of the parts but slot 0 as the
   ball: `spin_attack_cnt_nml_dsp`, or `_esp_dsp` for Espio (parent 7).
-  megamix.c `spin_ball` draws them the same way on slot 0's matrix (the
+  fighter_draw.c `spin_ball` draws them the same way on slot 0's matrix (the
   mirror too). After each fighter's display, `camera_init` runs
   `spin_smoke_trg` every third frame (not under rob+0x804 bit 4) and
   `spin_attack_cnt` (both lifted), and then `spin_smoke_cnt`, which
-  megamix.c `spin_frame` does: the 20 puffs at rob+0x21A0 (live mask
+  fighter_draw.c `spin_frame` does: the 20 puffs at rob+0x21A0 (live mask
   +0x2740) each take their step (`sub_81CD8`/`81D44`/`81DB0`, lifted),
   move, and draw model 0x323 + age/25 facing the camera until age 32.
   `sub_81038` loads each fighter's ball models (+0x2084), drop (+0x20EC)
@@ -662,7 +693,7 @@ items are Akira's own.
 
 ### Where a guest is still treated as StF's
 
-An audit of the lifted code, `megamix.c` and `vf2-guest.mjs` (no code
+An audit of the lifted code, the board's modules (`board/src`) and `vf2-guest.mjs` (no code
 changed). Line numbers are `stf_motion.s`'s. What a VF2 or FV fighter
 should get is after the arrow.
 
@@ -899,7 +930,7 @@ Inert on the board, for later:
   - It never runs on the board. Its only callers are in `sub_2BEF4`
     (14936, from `collision`), which walks the projectile objects of
     `mod_fa_tobi` (0x5008A4, the board's zeroed `stf_tobi`) and takes only
-    ones with bit 31 set. Nothing in the lifted code or `megamix.c` makes
+    ones with bit 31 set. Nothing in the lifted code or the board's own code makes
     one, so the loop finds none.
   - VF2 has no projectiles. His reaction lists (VF2's 40 by category,
     crouch, behind and side) are what VF2 gives him for a strike. VF2 never
@@ -1131,7 +1162,7 @@ put in for Akira, and import-assets runs it after Akira's.
   S and O, its far points (in O's frame), the runs of mesh words that hold
   them, and the mesh with a byte a word saying which coordinate goes there.
   The import puts a seam triangle's far corners first (A, or A and B, turning
-  its corners round), so each is one run. megamix.c's `seams_build` carries
+  its corners round), so each is one run. fighter_draw.c's `seams_build` carries
   the far points into S's frame (H⁻¹C p, `carry`, shared with the midriff).
   It sends one whole seam a frame to polygon RAM (player 1 at 0x1000, player
   2 at 0x3000; 3980 words for all 12) until all are there, and after that
@@ -1620,7 +1651,7 @@ VF2's rule, from its program (Ghidra and objdump): `rob_check_stage`
 both fighters still have energy, and the round goes to the one whose bit 5
 is clear.
 
-StF has no ring out, so the board adds it (`ring_out_step`, megamix.c) on
+StF has no ring out, so the board adds it (`ring_out_step`, ringout.c) on
 VF2's stages only. There stage_x (0x50A00C) is 100.0, so StF's walls never
 stop anyone, and the board checks the root against the ring's half size,
 7.5 times VF2_SCALE (15.2). A fighter past it falls under the gravity at
@@ -1857,7 +1888,7 @@ sets up what StF's game loop would have set up around it.
   0, reserves the slots in it (Fn 0x80: the mask, the step +0xC62, and per
   slot its 3 models from `off_B540C`[skeleton][character], a guest table).
   The ring holds the slot matrices of the last frame (Fn 0x7F, sent by the
-  lifted `calc_unit_mat`). `zanzou_draw` (megamix.c) is StF's
+  lifted `calc_unit_mat`). `zanzou_draw` (effects.c) is StF's
   `zanzou_disp`: for each ring entry (Fn 0x85) with life left, on every
   other frame (frame_counter + entry odd), it composes the entry's matrix
   onto the camera (Fn 0x84) and draws its model, opaque, so the copies
@@ -1867,7 +1898,7 @@ sets up what StF's game loop would have set up around it.
 - Projectiles (#1601): Eggman's bomb is StF's own (docs/PROJECTILES.md).
   `fight_step` runs StF's projectile step loop (`sub_8A29C`, lifted with
   the bomb's steps) on `stf_tobi`; the bomb's burst hits through StF's
-  collision task, so damage and guard are StF's. `tobi_draw` (megamix.c)
+  collision task, so damage and guard are StF's. `tobi_draw` (effects.c)
   is StF's `tobi_disp` and `tdl_bakudan`: the bomb, its fuse, its landing
   marker and the burst. Check: MAME, Eggman's forward+punch takes Honey
   from 140 to 120; with her guard held it takes nothing.
@@ -1992,7 +2023,7 @@ and the ring's master) or `2P` (player 2's, the slave). The role is kept in
 the backup RAM (0x01D03FF0: "MMX1", the role, its complement), so it holds
 across power-offs. The row under it shows the link's state: `NO_COMM_BOARD`,
 `COMM_STARTING`, `NO_OTHER_CABINET`, `LINKING` or `LINKED`. The code is
-`board/src/link.c`, with its use in `megamix.c`.
+`board/src/link.c`, with its use in `linkplay.c` and `main.c`.
 
 What it was built from: Virtual-On's and Motor Raid's comm code, as m2-hle2
 (`src/board/m2comm.h`) and YAMP (`von-comm-packet.md`, `mr-comm-packet.md`,
@@ -2080,7 +2111,7 @@ build's profile yet.
 ## Shadows
 
 The fighters' shadows are StF's: its lifted `rob_kage_*` routines and its
-tables (`off_64988`), called by `megamix.c`'s `kage_stage`, `kage_light`,
+tables (`off_64988`), called by `kage.c`'s `kage_stage`, `kage_light`,
 `kage_inside` and `kage_outside` in StF's order; each guest has a table of
 its own (`tools/guest-shadows.mjs`) and the masks' balls come from
 `kage_balls`. On Aurora Icefield, as in StF, the fighters are mirrored in
@@ -2097,7 +2128,7 @@ StF's 24-bit codes, as StF does, through the i8251 at 0x9C0000, the high
 byte first:
 
 - The lifted code's `sound_request_u` and `sound_request_special` are
-  `megamix.c`'s `snd_request_u` and `snd_request_special` (lift-stf.py
+  `sound.c`'s `snd_request_u` and `snd_request_special` (lift-stf.py
   `TO_C`, which keeps every g register, as StF's do). They put the code in
   a ring of 32, as StF's do (AUDIO_2; a code is dropped when it is full),
   and `sound_request_u` turns bank 0x9E into 0x9C's. StF's attract-mode
@@ -2113,7 +2144,7 @@ byte first:
   (`stage_contact_sound`, lifted now with `check_same_sound`). StF's voice
   tables are zeros: StF's fighters have no voices, and it has no announcer
   (its `sound_queue_input` scripts each play 0xA00000 and stop).
-- The fight's flow, from `megamix.c` (`snd_round`): 0xA00001 (the sound
+- The fight's flow, from `sound.c` (`snd_round`): 0xA00001 (the sound
   program's reset) at boot (the SDK's `m2_sound_init`, StF's
   `init_sound`); 0xA00003 as a round is set (SET_INT); the stage's music on
   round 1 (`stage_bgm_select`: `STAGE_MUSIC_IN_ORDER`, 0xDBFDC, by
@@ -2174,13 +2205,13 @@ their scenes' and commands' bank sets); the others point at 0x400 bytes of
 silence. The effects it can send (`stfSends`) are the codes StF's main
 program names (0x00AEggxx, gg 0x11..0x6F, as a long in epr-19001/19002)
 but for the sound test's list (`AUDIO_LIST`, 0xDC2C8, which names every
-one), and the ones `megamix.c` names: 99 of StF's effects, 91 samples. The
+one), and the ones the board's modules (`board/src/*.c`) name: 99 of StF's effects, 91 samples. The
 guest's song goes in after StF's 25: its tones and samples renumbered after
 StF's (83 and 602), its scene after StF's 23, its tracks with their program
 changes renumbered, the new tables at 0x48500 (StF's program ends at
 0x48492, 0xFF after it), root[0], [1], [3] and [7] pointed at them. The tool
 checks the limits (128 tones, 1024 samples, 0x7000 bytes of tones, 8 MB of
-samples) and that the song's code is the one `megamix.c` sends.
+samples) and that the song's code is the one the board sends.
 
 - FV's Western is FV's song 5 (its sound test's 0xAE1005, western_song):
   scene 5 (12 channels, no DSP, mixer or bank change), tracks 0x61F100 and

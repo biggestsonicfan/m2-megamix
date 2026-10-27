@@ -387,7 +387,7 @@ stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
         console.log('stage', stages.length - 1, nm, 'FV set', st.texSets.at(-1), 'as', FV_SET0 + n, 'draws', draws.length);
     });
 }
-/* Fighting Vipers' armour on the HUD (board/src/megamix.c armour_hud): each
+/* Fighting Vipers' armour on the HUD (board/src/armour.c armour_hud): each
  * player's figure as FV's energy_disp draws it beside the bar, FV's own
  * tiles, pattern and colours. The figures are patterns 0x20 (player 1) and
  * 0x147 (player 2) of FV's tile patterns (0x06450300), 11 rows of 5, their
@@ -447,7 +447,7 @@ stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
     out.push(`static const u16 armour_whole = 0x${snap(31 << 5).toString(16)}, armour_green[6] = {${u16s(blink(0x345c8))}}, armour_red[6] = {${u16s(blink(0x345d4))}};`);
     console.log('armour figures: tiles', first.map((f, k) => `${f}+${count[k]}`).join(', '));
 }
-/* Fighting Vipers' replay camera (megamix.c rep_cam): where it looks from in
+/* Fighting Vipers' replay camera (replay.c rep_cam): where it looks from in
  * each pass of a replay, one of eight (FV's camera modes 0x11 and 0x12 read
  * them at 0x06CEC8E4 and 0x06CEC944: x, y, z from the point it looks at),
  * in FV's units times FV_SCALE, the board's. */

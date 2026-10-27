@@ -156,7 +156,7 @@ const unit = (a) => { const l = Math.hypot(...a) || 1; return [a[0] / l, a[1] / 
  * go to that joint's seam (`seams`, by `S,O`, S the node's slot and O the
  * parent's) and not to the rigid part, and each corner on the parent keeps
  * its point in O's frame too (`o`), which the board carries into S's frame
- * every frame (megamix.c seams_build). */
+ * every frame (fighter_draw.c seams_build). */
 function cutParts(model, k, { flatFaces = false, stripWinding = false } = {}) {
     const rest = restMatrices(model), nodes = model.nodes;
     const anchor = [];
@@ -599,7 +599,7 @@ export function importShenmue(R, ctx, games, { tiles, byTex }, { name: who = 'RY
      * mesh stores it), then N runs (the first word | the count << 16: the
      * words that hold far points), then the mesh's W words (encodeMesh, its
      * far corners where they are at rest), then W bytes: 0 for a word as it
-     * is, else 1 + 3 point + axis, the coordinate megamix.c's seams_build
+     * is, else 1 + 3 point + axis, the coordinate fighter_draw.c's seams_build
      * puts there (carried into S's frame). The board sends a seam's mesh to
      * polygon RAM once, and after that only its runs, each frame. */
     const seamAts = [];

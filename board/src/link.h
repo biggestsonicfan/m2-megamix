@@ -39,7 +39,7 @@ enum {
 #define LINK_DELAY 3u        /* frames between a pad's press and its frame */
 #define LINK_HIST  32u       /* frames of pads (and of checks) a packet carries */
 
-/* a frame's pad: StF's pad bits (megamix.c pad_bits) and start (bit 8) */
+/* a frame's pad: StF's pad bits (main.c pad_bits) and start (bit 8) */
 #define LINK_START 0x100u
 
 typedef struct {
@@ -63,7 +63,7 @@ lk_u32 link_board(void);
 /* Start the comm board in a role (LINK_MASTER, LINK_SLAVE), or stop it (LINK_OFF). */
 void link_start(lk_u32 role);
 /* The boot's watchdog: vblanks a board with a role waits for the other cabinet
- * before it boots alone (megamix.c link_boot) */
+ * before it boots alone (linkplay.c link_boot) */
 #define LINK_BOOT_WAIT 600u
 
 /* Once a pass, before the pads are used: this cabinet's pad (mine), the
