@@ -7,6 +7,8 @@ import { makeFighter } from '../js/fighters.js';
 
 const games = await loadNodeGames();
 const fighters = ROSTER.map((e) => makeFighter(games, e));
+/* StF's Egg UFO is a craft, not a body: eight parts. */
+const FEW_PARTS = { 'EGG UFO': 8 };
 const ACTS = ['stance', 'crouch', 'guard', 'walkF', 'walkB', 'dashF', 'jump', 'down', 'rise'];
 
 for (const f of fighters) {
@@ -18,7 +20,7 @@ for (const f of fighters) {
         assert.equal(p.mats.length, 16);
         /* Ryo's model is one skin over the sixteen slots; the rest are parts. */
         if (p.parts[0]?.skin) assert.ok(p.parts[0].skin.positions.length === body.skin.count * 3, `${f.name} ${a} skin`);
-        else assert.ok(p.parts.length >= 10, `${f.name} ${a} parts ${p.parts.length}`);
+        else assert.ok(p.parts.length >= (FEW_PARTS[f.name] ?? 10), `${f.name} ${a} parts ${p.parts.length}`);
         for (const part of p.parts) if (part.key != null) assert.ok(body.decode(part.key), `${f.name} model ${part.key}`);
     }
     const entries = f.moves.tables.get(f.moves.root);

@@ -55,7 +55,8 @@ async function load() {
         mode = 'need';
         return;
     }
-    stages = GAMES.flatMap((g) => games[g.key].stages.map((stage) => ({ game: games[g.key], stage })));
+    stages = ['stages', 'extraStages'].flatMap((list) =>
+        GAMES.flatMap((g) => games[g.key][list].map((stage) => ({ game: games[g.key], stage }))));
     try {
         renderer = new Renderer(document.getElementById('view'));
     } catch (e) {

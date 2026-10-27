@@ -383,7 +383,10 @@ function stfFighter(game, entry) {
                     const pose = buildPose(ch.skeleton, sample);
                     const mats = poseMatrices(pose);
                     const parts = [];
-                    ch.slots.forEach((s, i) => { if (s.model) parts.push({ key: s.model, matrix: mats[i] }); });
+                    /* A slot with bit 15 set names a model in the EPROM's second
+                     * directory, whose mesh is in polygon RAM, not read here (Egg
+                     * Minion's hands, Super Sonic's head): docs/RECORDS.md, The part lists. */
+                    ch.slots.forEach((s, i) => { if (s.model && !(s.model & 0x8000)) parts.push({ key: s.model, matrix: mats[i] }); });
                     ch.face.eyes.forEach((id, i) => { if (id) parts.push({ key: keyOf(id, i), matrix: mats[S.HEAD] }); });
                     if (segs.length) {
                         if (!sim) { sim = createOsageSim(osage); settleOsage(sim, pose, {}); }
