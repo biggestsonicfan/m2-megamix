@@ -448,7 +448,7 @@ clears them one frame later, when the head runs.
     then fails, the run returns (0x1D17C, `bx (g14)` at 0x1D190) to
     0x1C740, and 0x1C750 runs the fighter's own table from 0x1C758 with
     that g0. Nothing in the table at 0x34E5A stores g0, so a fail from it
-    reaches 0x1C750 with the caller's g0. Nothing in the table at 0x356D7 stores g0 either, so a fail from it also reaches 0x1C750 with the caller's g0. Nothing in the table at 0x356EB stores g0, so a fail from it that reaches 0x1C750 sees the caller's g0, which is not definitely 0 or 1. Nothing in the table at 0x35EEC stores g0; its first op, 0x16 with key 6, reads g0 at 0x1C9FC, so a fail from it that reaches 0x1C750 sees the caller's g0, which is not definitely 0 or 1. A commit ends the whole call instead (0x1C5C8, `ret` at
+    reaches 0x1C750 with the caller's g0. Nothing in the table at 0x356D7 stores g0 either, so a fail from it also reaches 0x1C750 with the caller's g0. Nothing in the table at 0x356EB stores g0, so a fail from it that reaches 0x1C750 sees the caller's g0, which is not definitely 0 or 1. A commit ends the whole call instead (0x1C5C8, `ret` at
     0x1C5F8). The ROM stores no name for 0x1D194, 0x37EB4 or 0x3863C.
     Apart from those two paths, the button bits compared at 0x1CA18 come
     from byte +2, not from the held byte.
