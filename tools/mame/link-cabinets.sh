@@ -9,7 +9,9 @@
 #   tools/mame/link-cabinets.sh <dir> [mame] [extra MAME options...]
 #
 # mame defaults to the shared build. Close either window and the other's
-# board drops the link (MAME's comm simulation may hang that one; close it).
+# board drops the link and waits; start that cabinet again (the same command,
+# or its MAME line) and the two link again. Upstream MAME dies of SIGPIPE
+# there; the shared build has the fork's fix (m2comm-drop, Pinboard #1632).
 set -e
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../.." && pwd)
