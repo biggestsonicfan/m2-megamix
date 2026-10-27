@@ -42,9 +42,9 @@ import tempfile
 # fight's camera (camera_work's modes for a round: 9 places it, 10 follows);
 # zanzou_control: the afterimages (the projectile task's last call: reserves
 # a fighter's trailing parts in the geometrizer's ring while play op 0x26's
-# mask is set, megamix.c zanzou_draw draws them); sub_8A29C: the projectile
+# mask is set, effects.c zanzou_draw draws them); sub_8A29C: the projectile
 # task's step loop (each live object's step through projectile_list; only
-# Eggman's bomb, type 2, has its steps lifted, megamix.c tobi_draw draws it).
+# Eggman's bomb, type 2, has its steps lifted, effects.c tobi_draw draws it).
 # The colours (colorxlat), as StF's change_scene and its debug menu's colour
 # refresh (0x46754) set them: stage_disp (the stage record's RED, GREEN, BLUE,
 # then chg_pol_color_req's ramp, luma 0..47 of rows 0..27, which
@@ -67,7 +67,7 @@ import tempfile
 # The eyes: snc_eye_thd_set (camera_init's, a fighter at a time) turns the
 # other fighter's head (or the camera) into the head's frame and, through
 # clip_medama and its table by character (word_21734), into a shift of each
-# eye's texture points, which move_tpd_req queues and megamix.c eyes_frame
+# eye's texture points, which move_tpd_req queues and tpd.c eyes_frame
 # uploads; tpd_move_init empties the queue (main_loop's, once a frame).
 # The spin attack (Sonic's spindash; a play op of the motion, sub_81A48, sets
 # rob+0x2068): sub_81038 (a battle's start: each fighter's ball models and
@@ -75,9 +75,9 @@ import tempfile
 # after a spinning fighter's rob_disp: the ball's turn and pulse) and
 # spin_smoke_trg (a puff of smoke every third frame); the puffs' own steps
 # (sub_81CD8, sub_81D44, sub_81DB0) are what spin_smoke_cnt calls, which
-# megamix.c spin_frame draws as it does.
+# fighter_draw.c spin_frame draws as it does.
 # The replay of a move (FV's REP_WAZA, which StF kept the code of and never
-# starts; megamix.c rep_start): rec_disp (the record task: both fighters'
+# starts; replay.c rep_start): rec_disp (the record task: both fighters'
 # frame into the ring, once a frame) and sub_3900C (the play task's start:
 # the effects put by, the first frame loaded, then replay_waza_disp, a
 # frame a frame, and put_last_replay back to the live frame at the end).
@@ -96,12 +96,12 @@ ROOTS = ['set_motion', 'calc_rob_angle', 'calc_rob_angle_cont', 'calc_unit_mat',
          'rec_disp', 'sub_3900C']
 # Routines the board does not run (debug text, name plates,
 # Super Sonic's hair objects; the shadow mask balls, which read a table at
-# 0x4C84 and megamix.c's kage_balls sends): `ret`.
+# 0x4C84 and kage.c's kage_balls sends): `ret`.
 STUBS = ['print_mes', 'print_mes_ex', 'print_hex_w', 'debug_disp_hex', 'dsp_pattern_right',
          'char_nameplate_dsp', 'sub_1BCC0',
          'send_kage_ball_pntr']
 # Routines the board's C does in their place: StF's two sound requests,
-# which queue a code (g0) for the sound board (megamix.c snd_request_u and
+# which queue a code (g0) for the sound board (sound.c snd_request_u and
 # snd_request_special; StF's sends it from an interrupt of its own, which the
 # SDK's table does not have). They keep every g register, as StF's do
 # (sound_request_special saves g0..g3 and g14; its callers keep values there).
@@ -150,7 +150,7 @@ RAM_PAD = 0x400                          # room past the highest address a block
 # RAM the routines reach through a base: the two fighters' motion records
 # (action_init: 0x520000 and 0x5207C8, 0x800 bytes each), chg_pol_color_req's
 # ramp (0x546008, 0x120 bytes a row, rows 0..27) and the backup RAM's copy
-# (add_BACKUP_RAM_TO_RAM, 0x599000, which megamix.c points it at), and the
+# (add_BACKUP_RAM_TO_RAM, 0x599000, which fighter.c points it at), and the
 # scattered rings (ring_tobitiri_set: 24 records of 44 bytes from 0x574010,
 # then its counts at 0x574B10); the replay's: rec_disp's ring (240 frames of
 # 0x88 bytes from 0x535000) and the effect task's copy while a replay plays
@@ -177,10 +177,10 @@ GUEST_BASE = 0x02E00000
 # character of collision-ball records; the lists are copied into its room.
 # midriff is the board's own: a pointer by character (52) to the band VF2
 # and Fighting Vipers draw between the hips and the chest (0: none, as for
-# every StF fighter); megamix.c builds it every frame.
+# every StF fighter); fighter_draw.c builds it every frame.
 # seams is the board's own too: a pointer by character (52) to a list of the
 # meshes that span a joint (0: none), each drawn on one part with its far
-# corners carried from another's every frame (megamix.c seams_build; Ryo's,
+# corners carried from another's every frame (fighter_draw.c seams_build; Ryo's,
 # tools/ryo-guest.mjs).
 # off_C2058: a list by skeleton type (rob+0x84C) of lists by character of
 # the bones calc_rob_angle_cont solves the pose on (15 points: the chest,
@@ -251,7 +251,7 @@ INSERT_LIFTED = {
 # class (byte_2CA3C: 0 upper, 1 lower) picks, once the half's sum and its
 # last are at the limit and the half is whole: that half's broken bit
 # (+0x7F0 bit 2 or 3) and the attacker's kind2 bit 6 (a break dealt: FV's
-# replay, megamix.c rep_watch); both broken the flags' bit 28. The match's
+# replay, replay.c rep_watch); both broken the flags' bit 28. The match's
 # winning blow (+0x914) is StF's own.
 # ring_tobitiri_set (a hit's rings, damage_calculation's): only StF's own
 # fighters carry rings; a guest (char_game not 0) drops none.

@@ -276,7 +276,7 @@ export function importMahler(R, ctx, games, { byKey }, { chr: CHR_ = CHR } = {})
         });
     }
     /* The midriff: its links draw with 1503's streams as FV has them (the
-     * board writes the links in polygon RAM itself: megamix.c midriff_build),
+     * board writes the links in polygon RAM itself: fighter_draw.c midriff_build),
      * so those are copied, each header's tile and colorbase moved; its mesh
      * is never drawn, a copy at his size stands in. */
     const mid = (() => {

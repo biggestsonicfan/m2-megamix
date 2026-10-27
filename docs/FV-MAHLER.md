@@ -74,7 +74,7 @@ players draw the same tiles.
      (four models, no new code beyond a fixed extra part, as the midriff
      is drawn); or
    - with their swing from the upper arms, which is new board code in
-     megamix.c. The left pad goes when slot 6 breaks, the right when slot
+     fighter_draw.c. The left pad goes when slot 6 breaks, the right when slot
      3 does, so with no armour code they never go.
 
    The survey counts them apart ("pads"): 15 cells and 7640 B more.
@@ -203,7 +203,7 @@ adds:
 
 1. **A match-long mask.** New RAM for `finish_wall_flag` (StF uses
    0x574004 for `ring_tobitiri`) plus a broken-sides mask that
-   `round_start` (megamix.c) leaves alone and `load_stage` clears. FV's
+   `round_start` (fighter.c) leaves alone and `load_stage` clears. FV's
    clears (`SET_INT` 0xC800, 0x8688, 0xA088, 0xA9E0) aren't ported.
    `cage_display`'s side skip and the shadow code's flag & 15 tests read
    the mask, not the one side.

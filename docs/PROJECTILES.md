@@ -7,7 +7,7 @@ traces the code from stfdisasm (addresses are StF's), lists Eggman's data
 (`tools/stf-projectiles.mjs` reads it from `sfight.zip`), says what damage a
 bomb does and when a guard stops it, and lists what the board needs to run it.
 Eggman's bomb runs on the board (#1601): StF's step loop and the bomb's
-steps are lifted, `megamix.c` runs them each frame and draws the bomb, its
+steps are lifted, the board (`effects.c`) runs them each frame and draws the bomb, its
 fuse, its landing marker and its burst. See Checks for what was tested.
 
 ## StF's path
@@ -125,7 +125,7 @@ unchanged):
   record still holds StF's code addresses; only add them with their own
   characters.
 
-In `megamix.c`:
+On the board (`fighter.c` and `effects.c`):
 
 1. `round_start` zeroes `stf_tobi` at each round's start, as `fa_tobi` does
    (and sends coprocessor op 0x81, `Fn_zanzou_init`).
