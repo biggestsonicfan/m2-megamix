@@ -1892,6 +1892,8 @@ held, and a change of stage or fighter shows at once.
      2P CHAR  HONEY
      energy     140   energy_max (0x5000A0), 10..250; the bars scale by it
      barrier      5   barrier_default_num (0x50A424), 0..9
+     link       OFF   the cabinet's role: OFF, 1P, 2P (see Two cabinets)
+          LINKED   the link's state
 
 - Controls, either player, as in StF's menu: up and down move the cursor,
   kick raises a value and punch lowers it (both wrap), guard held repeats
@@ -1939,6 +1941,101 @@ held, and a change of stage or fighter shows at once.
   Ryo's 288 (YKB_M's 1793) is the import's count, his seams' faces in
   it. After a fighter changes, his seams come in one a pass, so his
   count climbs for a few passes.
+
+## Two cabinets: the link
+
+Two cabinets, each with its own board and one player, can play one fight
+over the Model 2 communication board (837-11615 on Model 2B; MAME's
+`m2comm.cpp`). The setup's `link` row gives the cabinet its role: `OFF`
+(both players on this board, as before), `1P` (this cabinet is player 1's
+and the ring's master) or `2P` (player 2's, the slave). The role is kept in
+the backup RAM (0x01D03FF0: "MMX1", the role, its complement), so it holds
+across power-offs. The row under it shows the link's state: `NO_COMM_BOARD`,
+`COMM_STARTING`, `NO_OTHER_CABINET`, `LINKING` or `LINKED`. The code is
+`board/src/link.c`, with its use in `megamix.c`.
+
+What it was built from: Virtual-On's and Motor Raid's comm code, as m2-hle2
+(`src/board/m2comm.h`) and YAMP (`von-comm-packet.md`, `mr-comm-packet.md`,
+from Motor Raid's ROM symbols `_InitCommunication`, `_checkBoard`,
+`_ResetCommBoard`, `_SendNetData`, `_GetNetData`) describe them, and MAME's
+simulation of the board.
+
+The board, as the i960 sees it:
+
+    0x01A10000  shared RAM, 16 KB (also at 0x01A00000; VON and Motor Raid
+                use this mirror)
+      +0x00     the ring: 1 up (0 not yet)
+      +0x01     the role the program writes once the board runs: 1 master,
+                2 slave
+      +0x03     the nodes on the ring, once it is up
+      +0x14     the frame offset, little-endian (0x1C0)
+      +0x2000   this board's frame: the Z80 sends it once a vblank
+      +0x2000 + offset
+                the frame it took from the node one hop up the ring: on a
+                ring of two, the other board's
+    0x01A14000  CN: 1 starts the board (its RAM cleared), 0 stops it. A
+                board reads bit 0 back as written; no board reads all ones
+    0x01A14002  FG: bit 0 written 1 makes a master
+
+In MAME the ring comes up about four seconds after both boards run.
+
+- Lockstep. Nothing of the fight goes over but the pads. Each board sends
+  its player's pad (StF's pad bits and start) for the frame LINK_DELAY (3)
+  ahead, and steps frame t only once it holds the other's pad for t. A
+  packet carries the last 32 frames of pad, so a frame the Z80 drops or
+  sends twice loses nothing. Both boards run the whole game, setup and
+  fight, from the same pads, so both screens show the same thing.
+- The packet (116 bytes, in the frame at 0x2000): magic, state, role and
+  hold, the session, the frames it has pads for, the last frame stepped
+  and a check of its state, the pads, the master's setup and a sum. A
+  read whose sum fails (the Z80 wrote the frame meanwhile) is read again.
+- Sessions. Once the ring is up the master offers a session; the slave
+  takes it, and when both have it they start in step from frame 0 with
+  the master's setup (`LP_SYNC`). A board in a fight on its own holds
+  the link back (the hold bit), so a link forms only from the setup.
+- The same start. Boards that ran different fights alone hold different
+  StF state (camera, recorder, the enemy and effect tasks, its RAM at
+  0x500000..0x599000). The board saves all of it after boot
+  (`boot_state`), and both restore it at every sync and drop, so two
+  boards start in step from the same state whatever ran before.
+- `rand`. StF's `rand` is the C library's, whose state each board keeps
+  apart from the snapshot. While linked, `rand` steps an LCG on `G_RANDOM` instead
+  (an INSERT in `tools/lift-stf.py`), which both boards hold the same.
+- The check. Each stepped frame's state (both fighters, the setup, wins,
+  the clock, `G_RANDOM`) is hashed (`link_sum`) and goes out with the
+  pads. A board whose hash for a frame differs from the other's drops the
+  link (a desync), and both start over from the master's setup.
+- The boot's watchdog. A board with a role boots into a
+  `COMMUNICATION_CHECK` window, as VON and Motor Raid do: its cabinet,
+  the link's state and a countdown. Once the boards link, both go to the
+  setup in step. After ten seconds (`LINK_BOOT_WAIT`), or at start, it
+  boots on its own, and links later from the setup if the other cabinet
+  comes.
+- A drop. A ring that goes down, or 300 vblanks without the other's pads,
+  restarts the comm board (as Motor Raid's `_ResetCommBoard` does) and
+  sends the board back to the setup on its own; it links again when the
+  other is back. A desync keeps the ring.
+
+Tested in MAME (two `sfight`s of the shared build, joined on two local
+ports, with a Lua script playing both cabinets): boards booted together
+linked within six seconds, and their checks and screenshots matched frame
+for frame over 5000 frames of setup and fight, with 10..115 vblanks of
+waiting. A board started 12..15 s late, after the other had played alone,
+linked with no desync. A comm board stopped mid-fight (CN 0) dropped both,
+and they linked again with a new session, still matching. With `link
+OFF` the game plays as before.
+
+To play two cabinets in MAME:
+
+    tools/mame/link-cabinets.sh /tmp/cabinets [mame] [options...]
+
+It runs a MAME for each cabinet in its own directory, the roles set by
+`tools/mame/link-role.lua`. MAME's comm simulation does not survive the
+other side going: when one MAME closes, the other stops drawing, and has
+to be closed too (`m2comm.cpp` loops reading a frame from a closed
+socket). So in MAME a drop is tested by stopping a comm board, not a MAME.
+m2-hle2's comm board (`m2comm_install`) is not wired into the board
+build's profile yet.
 
 ## Shadows
 
@@ -2158,6 +2255,8 @@ Known gaps:
   which the board does not load (it loads set 1 and the stage's), so it
   does not show.
 - The camera's round-end and StF's own replay modes are not run.
+- Two cabinets link over the comm board (see Two cabinets: the link);
+  in MAME only, as m2-hle2's board profile has no comm board yet.
 
 ## Plan
 

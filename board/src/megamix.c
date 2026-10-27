@@ -19,6 +19,7 @@
 #include "poses.h"
 #include "stf_motion.h"
 #include "rob.h"
+#include "link.h"
 
 #define FOCUS 280.0f
 
@@ -1782,17 +1783,23 @@ static u32 edges(u32 now, u32 *held) { u32 e = now & ~*held; *held = now; return
 #define T_TEXT     0x8000u
 #define T_INV      0x8080u
 #define T_CURSOR   0x801Cu
-enum { M_START, M_TIME, M_ROUND, M_STAGE, M_P1, M_P2, M_ENERGY, M_BARRIER, M_ITEMS };
+enum { M_START, M_TIME, M_ROUND, M_STAGE, M_P1, M_P2, M_ENERGY, M_BARRIER, M_LINK, M_ITEMS };
 static const char *const menu_label[M_ITEMS] = {
-    "GAME_START", "time", "round", "stage", "1P CHAR", "2P CHAR", "energy", "barrier" };
+    "GAME_START", "time", "round", "stage", "1P CHAR", "2P CHAR", "energy", "barrier", "link" };
 /* each value's range and step: the clock in seconds (StF's time, 1..99),
  * the rounds to win (0x500052, the lamps StF draws), the energy a round
  * starts with (energy_max, 0x5000A0, which the bars scale by) and the
  * barriers a match starts with (barrier_default_num, 0x50A424) */
-static const u16 menu_min[M_ITEMS]  = { 0, 1, 1, 0, 0, 0, 10, 0 };
-static const u16 menu_max[M_ITEMS]  = { 0, 99, 5, STAGES - 1, POSE_ANIMS - 1, POSE_ANIMS - 1, 250, 9 };
-static const u16 menu_step[M_ITEMS] = { 0, 1, 1, 1, 1, 1, 10, 1 };
-static u16 menu_val[M_ITEMS] = { 0, 30, 2, 0, 0, 1, 140, 5 };
+/* and the cabinet's link (link.c): OFF, 1P's (the master) or 2P's, this
+ * board's own, kept in the backup RAM; the others are the master's once
+ * the boards are linked */
+static const u16 menu_min[M_ITEMS]  = { 0, 1, 1, 0, 0, 0, 10, 0, LINK_OFF };
+static const u16 menu_max[M_ITEMS]  = { 0, 99, 5, STAGES - 1, POSE_ANIMS - 1, POSE_ANIMS - 1, 250, 9, LINK_SLAVE };
+static const u16 menu_step[M_ITEMS] = { 0, 1, 1, 1, 1, 1, 10, 1, 1 };
+static u16 menu_val[M_ITEMS] = { 0, 30, 2, 0, 0, 1, 140, 5, LINK_OFF };
+static const char *const link_name[3] = { "OFF", "1P", "2P" };
+/* the status line, by link.state */
+static const char *const link_state_name[6] = { "", "NO_COMM_BOARD", "COMM_STARTING", "NO_OTHER_CABINET", "LINKING", "LINKED" };
 static const char *const fighter_name[POSE_ANIMS] = { "SONIC", "HONEY", "EGGMAN", "AKIRA", "RYO", "CHAI", "HORNET", "MAHLER" };
 /* The game a fighter's name line shows where it is not the one its code
  * runs as: Ryo and Chai (Shenmue's) and Hornet (Daytona USA's car, as Fighters
@@ -1884,7 +1891,8 @@ static void menu_draw(void) {
             v = fighter_name[menu_val[i]];
             win_put(WIN_W - 3u - slen(v) - slen(g), r, g, T_INV);
             win_put(WIN_W - 3u - slen(v), r, ":", T_INV);
-        } else if (i != M_START) v = dec(menu_val[i], b);
+        } else if (i == M_LINK) v = link_name[menu_val[i]];
+        else if (i != M_START) v = dec(menu_val[i], b);
         if (v) win_put(WIN_W - 2u - slen(v), r, v, T_INV);
         if (i == M_STAGE) {               /* the name line, as StF's "15:ADV_MOV2" */
             const char *n = stage_name[menu_val[i]];
@@ -1896,6 +1904,7 @@ static void menu_draw(void) {
             win_put(WIN_W - 3u - slen(n), r, n, T_TEXT);
         }
     }
+    win_put(3, r, link_state_name[link.state], T_TEXT);   /* the blank line */
 }
 
 /* The faces the last frame submitted (polys): each fighter's, by the name
@@ -2181,10 +2190,97 @@ static u32 rep_watch(void) {
     return rep_on;
 }
 
+/* The fight's state as the boot leaves it: StF's RAM (lift-stf.py lays its
+ * blocks out in one run, stf_ram_500000 to the end of stf_ram_599000) and
+ * the task blocks its code keeps. Two boards that link both start again from
+ * it, whatever each ran before: StF's code keeps state from past fights where
+ * a round's start leaves it (the recorder, the CPU players' info, the
+ * camera's, the hit sparks' positions). */
+static u32 boot_ram[0x18000u / 4];
+static u32 boot_blocks[(sizeof robs + sizeof mots + sizeof stf_cam + sizeof stf_rec + sizeof stf_obj0 +
+                        sizeof stf_play + sizeof stf_coli + sizeof stf_effect + sizeof stf_tobi +
+                        sizeof stf_enemy + sizeof stf_disp + sizeof stf_osage) / 4];
+
+static void boot_state(u32 save) {
+    u32 *const blk[] = { robs[0], mots[0], stf_cam, stf_rec, stf_obj0, stf_play, stf_coli,
+                         stf_effect, stf_tobi, stf_enemy[0], stf_disp, stf_osage[0], (u32 *)stf_ram_500000 };
+    const u32 len[] = { sizeof robs, sizeof mots, sizeof stf_cam, sizeof stf_rec, sizeof stf_obj0,
+                        sizeof stf_play, sizeof stf_coli, sizeof stf_effect, sizeof stf_tobi,
+                        sizeof stf_enemy, sizeof stf_disp, sizeof stf_osage,
+                        (u32)(stf_ram_599000 + sizeof stf_ram_599000 - stf_ram_500000) };
+    u32 b, i, *k = boot_blocks;
+    for (b = 0; b < sizeof len / sizeof len[0]; b++) {
+        if (b == sizeof len / sizeof len[0] - 1u) {
+            k = boot_ram;
+            while (len[b] > sizeof boot_ram) ;   /* StF's RAM outgrew boot_ram: make it bigger */
+        }
+        for (i = 0; i < len[b] / 4u; i++, k++) {
+            if (save) *k = blk[b][i];
+            else blk[b][i] = *k;
+        }
+    }
+}
+
+/* link.c's wait for the other board: a vblank, sending the sound meanwhile */
+static void link_wait(void) {
+    u32 v = frameVBL;
+    while (frameVBL == v) snd_pump();
+}
+
+/* The state a linked frame leaves, for link_check: both fighters' records,
+ * StF's clock and random number, the setup and the match. */
+static u32 link_sum(u32 in_menu, u32 over) {
+    u32 i, p, s = 0x811C9DC5u;
+    for (p = 0; p < 2u; p++)
+        for (i = 0; i < ROB_SIZE / 4u; i++) s = (s ^ robs[p][i]) * 0x01000193u;
+    for (i = 0; i < M_LINK; i++) s = (s ^ menu_val[i]) * 0x01000193u;
+    s = (s ^ menu_cur ^ in_menu << 8 ^ over << 16) * 0x01000193u;
+    s = (s ^ (u16)GAME_TIMER ^ (u32)RAM8(G_ROUND_WINS0) << 16 ^ (u32)RAM8(G_ROUND_WINS1) << 24) * 0x01000193u;
+    return (s ^ RAM32(G_RANDOM)) * 0x01000193u;
+}
+
+/* The setup's values the master hands the slave, and its cursor */
+static void link_set(lk_u16 set[LINK_SETS]) {
+    u32 i;
+    for (i = 0; i < LINK_SETS; i++) set[i] = i < M_LINK ? menu_val[i] : 0u;
+    set[M_START] = (u16)menu_cur;
+}
+
+/* The boot's watchdog: with a role kept (the setup's LINK) and a comm board
+ * that answers, wait up to LINK_BOOT_WAIT for the other cabinet, as a
+ * linked game's communication check does. LP_SYNC: the boards are linked
+ * (set the master's setup). Else this board boots alone: on a press of
+ * start, once the wait runs out, or at once with no role or no board. It
+ * links later from the setup (both boards in it), as the other cabinet
+ * comes up. */
+static u32 link_boot(lk_u16 set[LINK_SETS]) {
+    u32 t0 = frameVBL, t, lp;
+    lk_u32 in[2];
+    char b[8];
+    if (link.state <= LS_NO_BOARD) return LP_LOCAL;
+    while ((t = frameVBL - t0) < LINK_BOOT_WAIT) {
+        const char *d = dec((LINK_BOOT_WAIT - t + 59u) / 60u, b);
+        win_frame(WIN_COL, WIN_ROW, WIN_W, 6u);
+        win_put(1, 1, "COMMUNICATION_CHECK", T_INV);
+        win_put(3, 2, "CABINET", T_TEXT);
+        win_put(WIN_W - 2u - slen(link_name[link.role]), 2, link_name[link.role], T_INV);
+        win_put(3, 3, link_state_name[link.state], T_TEXT);
+        win_put(WIN_W - 2u - slen(d), 3, d, T_INV);
+        win_put(3, 4, "START:SINGLE_BOARD", T_TEXT);
+        link_set(set);
+        lp = link_pass(0u, set, in, frameVBL, link_wait);
+        if (lp == LP_SYNC) return lp;
+        if (m2_player(0).start || m2_player(1).start) break;
+        link_wait();
+    }
+    return LP_LOCAL;
+}
+
 int main(void) {
     fighter_t fs[2];
+    lk_u16 set[LINK_SETS];
     u32 i, stage = 0u;
-    u32 held = 0u, pheld = 0u, vbl, step = 0u, over = 0u, in_menu = 1u, quit = 0u;
+    u32 held = 0u, pheld = 0u, vbl, step = 0u, over = 0u, in_menu = 1u, quit = 0u, boot;
     u32 pn[3];                           /* the faces drawn: the stage's, each fighter's */
 
     m2_init();
@@ -2216,17 +2312,78 @@ int main(void) {
     fs[1].anim = &pose_anims[menu_val[M_P2]];
     round_start(fs, 0u);
     load_fighter_colors(fs[0].anim, fs[1].anim);
+    boot_state(1u);
+    menu_val[M_LINK] = (u16)link_saved();
+    link_start(menu_val[M_LINK]);
+    boot = link_boot(set);
     vbl = frameVBL;
     for (;;) {
         m2_player_t p[2];
-        u32 e, pad[2] = { 0u, 0u };
+        u32 e, pad[2] = { 0u, 0u }, pb[2], lp;
+        lk_u32 in[2];
         p[0] = m2_player(0); p[1] = m2_player(1);
-        e = edges((u32)p[0].start | (u32)p[1].start << 1, &held);
+        /* each pad, start as LINK_START; linked, the cabinet's two pads
+         * are its player's, and each player's comes from both boards */
+        for (i = 0; i < 2u; i++) pb[i] = pad_bits(&p[i]) | (p[i].start ? LINK_START : 0u);
+        /* alone, a fight keeps the other cabinet waiting: the boards link
+         * from the setup */
+        link.hold = !in_menu;
+        if (boot) lp = boot, boot = 0u;
+        else {
+            link_set(set);
+            lp = link_pass(pb[0] | pb[1], set, in, frameVBL, link_wait);
+        }
+        if (lp == LP_TICK) { pb[0] = in[0]; pb[1] = in[1]; }
+        if (lp == LP_SYNC || lp == LP_DROP) {
+            /* both boards from the same start (the master's setup, its
+             * cursor), or this one alone again: the setup, the fight's
+             * state as the boot left it, the clock counted from 0 */
+            if (lp == LP_SYNC) {
+                for (i = 1; i < M_LINK; i++) menu_val[i] = set[i];
+                menu_cur = set[M_START] % M_ITEMS;
+            }
+            if (rep_on) rep_quit();
+            boot_state(0u);
+            rep_mark[0] = rep_mark[1] = 0u;
+            rep_time[0] = rep_time[1] = 0;
+            for (i = 0; i < sizeof armour_kept / 4u; i++) ((u32 *)armour_kept)[i] = 0u;
+            stf_globals();
+            frame_counter = step = 0u;
+            RAM32(G_FRAME_COUNTER) = 0u;
+            round_time = menu_val[M_TIME];
+            RAM32(G_ENERGY_MAX) = menu_val[M_ENERGY];
+            RAM32(G_BARRIER_DEFAULT) = menu_val[M_BARRIER];
+            RAM8(G_WINS_NEEDED) = (u8)menu_val[M_ROUND];
+            RAM8(G_ROUND_WINS0) = RAM8(G_ROUND_WINS1) = 0u;
+            stage = menu_val[M_STAGE];
+            load_stage(&stages[stage]);
+            fs[0].anim = &pose_anims[menu_val[M_P1]];
+            fs[1].anim = &pose_anims[menu_val[M_P2]];
+            for (i = 0; i < 64u * 64u; i++) M2_TILE_FG[i] = 0x20u;
+            menu_mask(1u);
+            round_start(fs, 0u);
+            stage_colors(&stages[stage]);
+            load_fighter_colors(fs[0].anim, fs[1].anim);
+            menu_ink(1u);
+            snd_request_u(SND_RESET);
+            in_menu = 1u;
+            over = quit = held = pheld = 0u;
+            continue;
+        }
+        e = edges((pb[0] >> 8 & 1u) | (pb[1] >> 8 & 1u) << 1, &held);
         if (in_menu) {
             /* the setup window, on either pad; the fighters stand in their
              * stance behind it, on the stage it picks, with the clock held */
-            u32 h = pad_bits(&p[0]) | pad_bits(&p[1]);
+            u32 h = (pb[0] | pb[1]) & 0xFFu;
             u32 c = menu_input(edges(h, &pheld), h, e & 3u);
+            if (c == M_LINK) {
+                /* this cabinet's role, a fresh start of its comm board;
+                 * linked, both boards see the press: both go alone */
+                u32 r = link.state == LS_RUN ? LINK_OFF : menu_val[M_LINK];
+                menu_val[M_LINK] = (u16)r;
+                link_save(r);
+                link_start(r);
+            }
             if (c == M_STAGE) {
                 stage = menu_val[M_STAGE];
                 load_stage(&stages[stage]);
@@ -2260,9 +2417,9 @@ int main(void) {
                 GAME_TIMER = (short)(round_time << 6);
             }
         } else {
-            pad[0] = pad_bits(&p[0]); pad[1] = pad_bits(&p[1]);
+            pad[0] = pb[0] & 0xFFu; pad[1] = pb[1] & 0xFFu;
             /* both starts at once: back to the setup */
-            if ((e & 3u) && p[0].start && p[1].start) quit = 1u;
+            if ((e & 3u) && (pb[0] & pb[1] & LINK_START)) quit = 1u;
         }
 
         m2_frame_begin();
@@ -2339,6 +2496,7 @@ int main(void) {
                   over = 180u;
               }
           } }
+        if (lp == LP_TICK) link_check(link_sum(in_menu, over));
         if (!in_menu) hud_draw();
         eyes_frame(&stages[stage].tpd);
         osage_step();
@@ -2361,12 +2519,13 @@ int main(void) {
          * once and drawn every frame. StF's frame_counter counts its 60 Hz
          * loop and sub_2435C runs once a pass, after the wait for the vsync.
          * A pass that runs past a vsync steps the fighters for each vblank it
-         * took, so the count follows the vblanks. */
+         * took, so the count follows the vblanks. Linked, a pass is a
+         * frame of both boards', however long it waited. */
         {
             u32 v = frameVBL;
             /* m2_vsync's wait, sending the sound queue meanwhile */
             while (frameVBL == v) snd_pump();
-            v = frameVBL; frame_counter += v - vbl; vbl = v;
+            v = frameVBL; frame_counter += lp == LP_TICK ? 1u : v - vbl; vbl = v;
             RAM32(G_FRAME_COUNTER) = frame_counter;
             if (stages[stage].slot != 0xFFFFu) stf_call(stf_sub_2435C, robs[0], robs[1], 0u);
         }

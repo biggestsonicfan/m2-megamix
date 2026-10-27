@@ -34,7 +34,7 @@ set(M2_STARTUP_ASM
     ${M2_SDK}/src/i_table.s
     ${M2_SDK}/src/i_handle.s)
 
-add_executable(game.elf ${M2_STARTUP_ASM} src/megamix.c src/carry.c src/stf_call.s src/stf_motion.s)
+add_executable(game.elf ${M2_STARTUP_ASM} src/megamix.c src/link.c src/carry.c src/stf_call.s src/stf_motion.s)
 # StF's motion code keeps its ROM tables' addresses (.stfrom, 0x80000..0xFFFFF).
 set_source_files_properties(src/stf_motion.s PROPERTIES
     COMPILE_OPTIONS "-Wa,-I${CMAKE_SOURCE_DIR}/src"

@@ -255,7 +255,15 @@ INSERT_LIFTED = {
 # winning blow (+0x914) is StF's own.
 # ring_tobitiri_set (a hit's rings, damage_calculation's): only StF's own
 # fighters carry rings; a guest (char_game not 0) drops none.
+# rand mixes the hardware timers (0xF00000) into G_RANDOM; two linked boards
+# (link.c, in step: link.state LS_RUN, 5) must draw the same numbers, so
+# there it steps G_RANDOM alone (an LCG, its high half).
 INSERT = {
+    'rand': ['ld      _link+4, r15', 'cmpobne 5, r15, rand_own',
+             'ld      stf_ram_500000+0x98, r15', 'lda     0x41C64E6D, r14',
+             'mulo    r14, r15, r15', 'lda     12345, r14', 'addo    r14, r15, r15',
+             'st      r15, stf_ram_500000+0x98', 'shro    16, r15, g0', 'ret',
+             'rand_own:'],
     'loc_2BBDC': ['cmpobne 0, r11, loc_2BBDC_own', 'ld      0x914(r10), r14',
                   'cmpobne 0, r14, loc_2BBDC_own', 'ld      0x26C(g13), r15',
                   'bbs     1, r15, loc_2BBDC_hit', 'bbc     4, r15, loc_2BBDC_own',
