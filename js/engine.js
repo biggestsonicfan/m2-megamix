@@ -124,6 +124,7 @@ function setAct(p, act) {
     p.crouching = act === 'crouch' || act === 'toCrouch' || act === 'crouchGuard';
     setMotion(p, ref, { loop: LOOPS.has(act), hold: HOLDS.has(act), state: ACT_STATE[act] });
     p.attack = null; p.timing = null;
+    p.small = false;
 }
 
 /* The body's point on the floor, in the world: the origin carried by the
@@ -246,6 +247,7 @@ function think(fight, p, o) {
     }
     if (fight.phase !== 'fight') return;
     const v = p.pad;
+    if (p.state === ST.JUMP && !p.small && !(v & UP) && p.mot_coma < takeoff(p, p.mot.motion)) smallJump(p);
 
     /* A press: the root table when free or in the air, the parked follow
      * table from the cancel frame of the move that parked it (the engine's
@@ -254,15 +256,17 @@ function think(fight, p, o) {
         const age = fight.tick - p.press.at;
         const inString = p.state === ST.MOTION && p.pc_command && p.timing && p.mot_coma >= p.timing.cancel;
         const air = !inString && p.state === ST.JUMP;
+        const ctx = air ? jumpContext(p) : 0;
         const table = inString ? p.pc_command : FREE.has(p.state) || air ? p.fighter.moves.root : null;
-        if (table) {
+        if (table && ctx != null) {
             const hist = p.press.hist;
-            const how = { ctx: air ? jumpContext(p) : 0, foeDown: o.state === ST.DOWN };
+            const how = { ctx, foeDown: o.state === ST.DOWN };
             const e = matchPress(p.fighter.moves.tables.get(table), p.press.btn, hist.length ? hist : [0], dist, how);
             if (e) { startMove(fight, p, o, e, p.press); p.press = null; return; }
             if (!inString) p.press = null;
         }
-        if (p.press && age > PRESS_BUFFER) p.press = null;
+        /* before take-off the press is latched (+0x120C's low bits) */
+        if (p.press && age > PRESS_BUFFER && ctx != null) p.press = null;
     }
     if (!FREE.has(p.state)) return;
 
@@ -286,26 +290,44 @@ function think(fight, p, o) {
 }
 
 /*
- * The matcher's context in a jump: the key's high byte. StF's caller passes
- * 1 in a jump from motd_jump_coma (+0x80E) on (2 when the action's bit 18,
- * the hyper form, is set; 3 and 4 a second air step, which this engine's
- * jump does not take). VF2's and FV's tables keep 1 and 2 for the rising
- * half of a big and a small jump and 3 and 4 for the falling half (FV's
- * motion names: JU_ big, JUS_ small, the falling kicks under 3). Here: the
- * jump is the big one, its rising half up to the frame its root is
- * highest, and StF's from the first frame.
+ * The jump (VF2 0x1C3CC, StF 0x1DF4C, after the matcher's call): up let go
+ * before take-off (motd_jump_coma, +0x80E) commits the jump again with the
+ * action's bit 18, the small jump, and the jump's handler (VF2 0x147BC)
+ * plays the action table's next slot from the same frame, held to its own
+ * take-off. StF's jump act is its 7 frames of take-off (motd_jump_coma 0),
+ * up let go in any of them; its small jump keeps the motion.
  */
-const CTX_RISE = 1, CTX_FALL = 3;
-const apexes = new WeakMap();
+function takeoff(p, m) {
+    if (p.fighter.game === 'stf') return m.frames + 1;
+    return p.fighter.takeoff?.(m.index) ?? 0;
+}
+function smallJump(p) {
+    p.small = true;
+    const ref = p.fighter.act('jumpSmall');
+    if (!ref.motion) return;
+    const f = Math.min(p.mot_coma, takeoff(p, ref.motion));
+    setMotion(p, ref, { state: ST.JUMP });
+    const a = rootAt(ref.rom, ref.motion, 1), b = rootAt(ref.rom, ref.motion, f);
+    carry(p, a[0] - b[0], a[2] - b[2]);
+    p.mot_coma = f;
+}
+
+/*
+ * The matcher's context in a jump, the key's high byte (VF2 0x1C3E8): before
+ * take-off a press is latched until the frame before it (+0x120C bit 7, set
+ * at once by the small jump's commit), then matched as 1, or 2 in a small
+ * jump; in the air (the handler's step 2, VF2 0x1564C) as 3, or 4 in a small
+ * jump. FV's motion names: JU_ the big jump's, JUS_ the small one's. StF's
+ * jump here is its take-off, so 1 or 2; its 3 and 4 are the air step this
+ * engine's jump does not take. null: latched, not matched yet.
+ */
+const CTX_TAKEOFF = 1, CTX_AIR = 3;
 function jumpContext(p) {
-    if (p.fighter.game === 'stf') return CTX_RISE;
-    const m = p.mot.motion;
-    if (!apexes.has(m)) {
-        let top = 1, y = -Infinity;
-        for (let f = 1; f <= m.frames; f++) { const h = rootAt(p.mot.rom, m, f)[1]; if (h > y) { y = h; top = f; } }
-        apexes.set(m, top);
-    }
-    return p.mot_coma <= apexes.get(m) ? CTX_RISE : CTX_FALL;
+    const up = p.small ? 1 : 0;
+    if (p.fighter.game === 'stf') return CTX_TAKEOFF + up;
+    const t = takeoff(p, p.mot.motion);
+    if (p.mot_coma >= t) return CTX_AIR + up;
+    return p.mot_coma + 1 >= t || p.small ? CTX_TAKEOFF + up : null;
 }
 
 /* Commit to a move (the matcher's commit op): the motion, its timing and

@@ -42,9 +42,9 @@ export const S = { BODY: 0, CHEST: 1, HEAD: 2, LHAND: 5, RHAND: 8, PELVIS: 9, LF
  */
 const ACTION_SLOTS = {
     vf2: { stance: 0, crouch: 1, toStand: 2, toCrouch: 5, guard: 8, guardEnd: 9, crouchGuard: 10, crouchGuardEnd: 11,
-        dashF: 14, dashB: 15, walkF: 20, walkB: 22, jump: 28, down: 31, rise: 32 },
+        dashF: 14, dashB: 15, walkF: 20, walkB: 22, jump: 28, jumpSmall: 29, down: 31, rise: 32 },
     fv: { stance: 0, crouch: 1, toStand: 2, toCrouch: 5, guard: 8, guardEnd: 11, crouchGuard: 12, crouchGuardEnd: 15,
-        dashF: 18, dashB: 20, walkF: 28, walkB: 30, jump: 39, down: 42, rise: 43 },
+        dashF: 18, dashB: 20, walkF: 28, walkB: 30, jump: 39, jumpSmall: 40, down: 42, rise: 43 },
     stf: { stance: 0, crouch: 1, toStand: 2, toCrouch: 3, guard: 5, guardEnd: 6, crouchGuard: 1, crouchGuardEnd: 2,
         dashF: 7, dashB: 9, walkF: 13, walkB: 15, jump: 33, down: 40, rise: 41 },
 };
@@ -188,6 +188,15 @@ function partMask(rom, key, part) {
  * motion deals itself, play op 8 (its frame, byte 3 the damage): Akira's
  * 15 throws 16 for 20, then 10 at frames 47 and 62. */
 const PLAY_DAMAGE = 8;
+
+/* A jump's take-off frame: setup op 3's first u16, motd_jump_coma (+0x80E;
+ * FV's set_mot_dat stores it from op 3). Akira's jump leaves the floor at 14,
+ * his small jump at 10; StF's take-off motions have 0. */
+const OP_JUMP = 3;
+function takeoffOf(s) {
+    const o = s?.ops.find((x) => x.op === OP_JUMP);
+    return o ? s.dv.getUint16(o.at + 1, true) : 0;
+}
 function throwHits(s, scale) {
     return s ? s.play.filter((o) => o.op === PLAY_DAMAGE)
         .map((o) => ({ frame: o.frame, damage: scale(s.dv.getUint8(o.at + 3)) })).filter((h) => h.damage > 0) : [];
@@ -260,6 +269,7 @@ export function matchPress(entries, btn, hist, dist, { ctx = 0, foeDown = false 
  *   attack(id)         {level, damage, kind, side, finish} strike, {victim,
  *                      damage} throw, or null (finish: FV's finish kind)
  *   reaction(a, how)   the motion this fighter plays under attack `a`
+ *   takeoff(id)        a jump motion's take-off frame (0 if none)
  *   createBody()       a drawable body: pose(ref, frame) -> {mats, parts, pose}
  *   look               what its material needs (js/render.js)
  * and, where they are not the VF2/StF ones:
@@ -312,6 +322,7 @@ function vfFighter(game, entry) {
             return a?.times ? { hit: a.times[0], cancel: a.times[1], end: a.times[2] } : null;
         },
         attack(id) { return vfAttack(rom, id, game.key); },
+        takeoff(id) { return takeoffOf(vfSetupOps(rom, id)); },
         reaction(a, how) {
             const kind = a.game === game.key && a.kind != null ? a.kind : game.kindFor(a);
             const cat = REACTIONS.find((r) => r.key === how);
@@ -430,6 +441,7 @@ function stfFighter(game, entry) {
         act, moves,
         timing(id) { return readMotionTiming(rom, id); },
         attack(id) { return stfAttack(rom, id, damage); },
+        takeoff(id) { return takeoffOf(stfSetupOps(rom, id)); },
         reaction(a, how) {
             const id = how === 'down' ? STF_REACT.down
                 : how === 'guard' ? ch.motions[slots[a.crouch ? 'crouchGuard' : 'guard']]

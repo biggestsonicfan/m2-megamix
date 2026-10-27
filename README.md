@@ -94,10 +94,11 @@ approximations. Each is marked `Here:` in `js/engine.js`:
   down. Their entries want en_flag's en_down_attack (+0x5B8 bit 5), which
   StF's get_en_info sets while the other is down and not rising; here it is
   set while the other lies in the down action, not during the fall before.
-- Jump attacks: a press in the jump goes to the context-keyed entries, 1
-  rising and 3 falling (StF's: 1). The engine has one jump, the big one, so
-  the small jump's 2 and 4, StF's second air step and the rising attacks are
-  not reached.
+- Jump attacks: up let go before take-off (setup op 3's motd_jump_coma)
+  makes the jump the small one, as the board does. A press before take-off
+  waits for it and goes to context 1 (2 in a small jump), one in the air to
+  3 (4). StF's jump is its take-off only, so 1 or 2; its air step's 3 and 4
+  are not reached.
 - Throws deal op 5's damage, then the victim motion's own hits (play op 8)
   at their frames; many throws deal none.
 - The CPU player is a simple one.

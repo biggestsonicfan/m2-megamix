@@ -131,3 +131,31 @@ console.log('ok');
     assert.ok(picky.attack(88).down, 'DAT_MUNE_MISS is a down attack');
     console.log('rules: Akira 15', JSON.stringify(akira.attack(15)), 'Picky 88 part', picky.attack(88).part, picky.attack(88).mask.toString(16));
 }
+
+/* The small jump: up let go before take-off commits it (VF2 0x1C3CC), and a
+ * kick in it is matched in context 2 or 4, the big jump's in 1 or 3. */
+{
+    const { createFight, stepFight } = await import('../js/engine.js');
+    const { K } = await import('../js/fighters.js');
+    const kickIn = (f, upFrames) => {
+        const fight = createFight(f, f, f.game);
+        fight.phase = 'fight';
+        for (let t = 1; t <= 30; t++) {
+            stepFight(fight, [{ up: t <= upFrames, K: t === 3 }, {}]);
+            const m = fight.events.find((e) => e.kind === 'move' && e.side === 0);
+            if (m) {
+                const ctx = f.moves.tables.get(f.moves.root)
+                    .filter((e) => (e.key & 0xff) === K && (e.motion & 0x1fff) === m.id).map((e) => e.key >> 8);
+                return { id: m.id, ctx, small: fight.players[0].small };
+            }
+        }
+        return null;
+    };
+    for (const [n, g] of [['AKIRA', 'vf2'], ['PICKY', 'fv'], ['SONIC', 'stf']]) {
+        const f = fighters.find((x) => x.name === n && x.game === g);
+        const small = kickIn(f, 1), big = kickIn(f, 30);
+        assert.ok(small?.small && small.ctx.length && small.ctx.every((c) => c === 2 || c === 4), `${n}: a small jump kick ${JSON.stringify(small)}`);
+        assert.ok(big && !big.small && big.ctx.length && big.ctx.every((c) => c === 1 || c === 3), `${n}: a big jump kick ${JSON.stringify(big)}`);
+        console.log('jumps:', n, 'small', small.id, small.ctx, 'big', big.id, big.ctx);
+    }
+}
