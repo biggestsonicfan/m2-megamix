@@ -205,9 +205,32 @@ It ANDs the two (0x23B38), maps the sphere bits to body-part bits through
 and +0x618 gets the parts at the fighter's own floor height, rob+0x1C
 (0x23B64). Every other store to +0x624 is a clear to 0: the round reset
 (0x14190), fighter setup (0x54AD4) and 36 `mov 0,r15; stis r15,0x624(g7)`
-pairs. 0x17BC0 also reads it and sets w0 bit 5, the ring-out flag (BOARD.md,
-Ring out). So the override means a fighter lying outside the ring hears
+pairs. So the override means a fighter lying outside the ring hears
 the plain `down`/`land` set, whatever the stage's +0x74.
+
+0x17BC0 is the other reader: `ldos 0x624(g7),r14`, then `cmpobe 0,r14` and,
+when it is not 0, `setbit 5` on w0 (rob+0x0, 0x17BC8..0x17BD0). It sits in
+the routine at 0x17B68 (BOARD.md's `rob_check_stage`), which the fighter
+update calls at 0x18538. That routine runs only while w0 bit 7 is
+set and 0x508000 bit 5 is clear (0x17B6C, 0x17B78), clears w0 bit 13, and
+tests the root against stage_x (0x17BA8) before it; the bit 5 test reads
+only +0x624. It sets the bit and never clears it, so once any body part has
+lain outside the ring the bit stays.
+
+w0 bit 5 is the fighter's lost-the-round flag, not a ring-out flag alone. The
+KO sets it too: the damage code at 0x18A70 (0x18A54) and at 0x1B044, both when
+rob+0x1AC (energy) drops to 0 or less, which they clamp to 0. The round judge
+(`JUDGE_DSP_INT`, 0xE5A8) stores 1 in 0x500050 when both still have energy
+(0xE5D0..0xE5F0; BOARD.md reads that as the ring out), then gives the round to
+the fighter without bit 5 and sets it on the loser (0xE5F8, 0xE744, 0xE7A4);
+when both have it, energy and then tie-breaks decide (0xE618..0xE694), or it
+is a draw. Other readers are 0x110CC (either fighter), 0x15830 and 0x1BD20.
+What clears it is the fighter start: `w0 &= 0xFF000000`, then bit 31 set
+(0x54AE4, and the same next to each of the 36 +0x624 clears, e.g. 0xB250), and
+the code by the debug menu's CONTROL TEST strings at 0x55398/0x553B0 and
+0x556EC/0x55700, which also refills both fighters' energy from 0x5000A0. The
+round reset at 0x14190 leaves it: it clears w0 bits 26 and 29 only (0x141F0,
+0x141FC).
 
 Every record, with the floor the web Megamix draws for it (`?stage=N`, the
 menu number; noclip's reading of the ring models, not checked against the
