@@ -90,6 +90,14 @@ approximations. Each is marked `Here:` in `js/engine.js`:
 - The level is op 4's byte 2 in all three games. Guarding is judged on the
   coprocessor, so here the levels beyond high, mid and low guard as a mid
   (FV's slide as a low).
+- Counters: a strike on a fighter whose own strike has not reached its
+  cancel counts, as attack_hit does (StF 0x2B1A4, FV 0x2633C, VF2 0x22A28):
+  mot_kind's mk_attack, which every strike carries and play_motion clears
+  at follow1, +0x80A (StF 0x1BEA0, FV 0x1C1D8, VF2 0x1AC50). VF2 and FV deal
+  half again; StF half again of the damage plus a quarter of the countered
+  move's. Here: StF's smaller counter on a limb (smlcntr, by the part the
+  coprocessor says was struck) is not told apart, so every StF counter is
+  the full one, and a throw is never countered.
 - Down attacks (level 4, and StF's 8 at half damage) land on a fighter lying
   down. Their entries want en_flag's en_down_attack (+0x5B8 bit 5; bit 11
   in VF2), which get_en_info sets from the other's mot_kind as the board
@@ -125,6 +133,12 @@ approximations. Each is marked `Here:` in `js/engine.js`:
   ground table's (StF 0x1D864, FV 0x1D634).
 - Throws deal op 5's damage, then the victim motion's own hits (play op 8)
   at their frames; many throws deal none.
+- Not read from the games yet, the engine's own: attack_hit's other changes
+  to the damage (StF from 0x2B0F8: in the air, down, tender, multi, ukemi;
+  FV and VF2 have most of them), the knock-down (here any blow of 40 or
+  more), the hit combo's one-second window, a guard turned away failing,
+  the throw's reach (1.5 bodies), a strike's active frames (hit to the
+  later of cancel and hit + 2) and the 50 frames lying before the rise.
 - The CPU player is a simple one.
 - Rounds last 40 s and need 2 wins (1–3 in the menu).
 - FV's cage breaks on a finishing KO and stays broken for the match; a

@@ -12,7 +12,7 @@
  *
  * No three.js: the Node test runs a bout through it.
  */
-import { MOTION_ID, S, P, K, G, DOWN, UP, FWD, BACK, HIGH, MID, LOW, ENERGY, matchPress, enFlag, rootAt, motionOf } from './fighters.js';
+import { MOTION_ID, S, P, K, G, DOWN, UP, FWD, BACK, HIGH, MID, LOW, ENERGY, matchPress, enFlag, isCounter, counterDamage, rootAt, motionOf } from './fighters.js';
 import { SLOT_PARENT } from '../vendor/noclip/js/pose.js';
 import { ARENA } from './games.js';
 
@@ -40,7 +40,6 @@ const PUSH_APART = 0.6;
 const sizeOf = (p) => p.fighter.size ?? 1;
 /* A fighter's motion: its own if it has its own (Ryo's), else its ROM's. */
 const motionFor = (f, id) => f.motion?.(id) ?? motionOf(f.rom, id);
-const COUNTER = 1.25;
 
 /* ---- vectors in the world (the viewer's frame: y up) --------------------- */
 
@@ -618,17 +617,29 @@ function strike(fight, p, o) {
         fight.events.push({ kind: 'guard', side: p.side });
         return;
     }
-    const counter = o.state === ST.MOTION && o.timing && o.mot_coma < o.timing.hit;
-    const damage = Math.round(a.damage * (counter ? COUNTER : 1));
+    const counter = counterOn(o);
+    const damage = counter ? counterDamage(p.fighter.game, a, counter.own) : a.damage;
     o.energy = Math.max(0, o.energy - damage);
     /* counted on the fighter hit, as the games count it (hit_combo); a
      * second without a hit ends it here */
     o.hit_combo = (fight.tick - (o.comboAt ?? -99) < 60) ? o.hit_combo + 1 : 1;
     o.comboAt = fight.tick;
+    /* Here: attack_hit's other changes to the damage (air, down, tender,
+     * multi) are not read, and a blow of 40 or more knocks down. */
     o.knocked = o.energy <= 0 || damage >= 40;
     if (o.energy <= 0 && finishes(p, a)) o.finished = true;
     react(fight, o, how, o.knocked ? 'down' : counter ? 'counter' : 'hit');
-    fight.events.push({ kind: 'hit', side: p.side, damage, counter, level: a.level });
+    fight.events.push({ kind: 'hit', side: p.side, damage, counter: !!counter, level: a.level });
+}
+
+/* A counter (fighters.js isCounter): o is playing its own move, before its
+ * cancel; `own` its motd_damage, for StF's. Here: a throw (whose timing the
+ * engine makes up) is never countered. */
+function counterOn(o) {
+    if (o.action !== 'move' || o.moveId == null) return null;
+    const kind = o.fighter.motKind ? o.fighter.motKind(o.moveId) : null;
+    if (!isCounter(kind, o.mot_coma, o.timing)) return null;
+    return { own: o.fighter.attack(o.moveId)?.raw ?? null };
 }
 
 /* A blow on a fighter lying down: the damage, and the lie starts over. */

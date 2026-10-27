@@ -306,3 +306,60 @@ console.log('ok');
         console.log('get-up:', n, m.name, m.id, 'at rise frame', m.t - m.riseAt, 'of', rise.frames, JSON.stringify(w));
     }
 }
+
+/* A counter: attack_hit counts one on a fighter whose mot_kind has
+ * mk_attack, which every strike's motd_kind carries and play_motion clears
+ * at follow1 (+0x80A), so to the strike's cancel, not its hit frame; VF2
+ * and FV deal d * 3 >> 1, StF (d + own >> 2) * 3 >> 1 on its own scale. */
+{
+    const { isCounter, counterDamage, MK_ATTACK } = await import('../js/fighters.js');
+    for (const g of ['vf2', 'fv', 'stf']) {
+        const ids = fighters.filter((f) => f.game === g).flatMap((f) => [...f.moves.tables.values()].flat()
+            .map((e) => [f, e.motion & 0x1fff]).filter(([f, id]) => { const a = f.attack(id); return a && a.victim == null; }));
+        assert.ok(ids.length > 100 && ids.every(([f, id]) => f.motKind(id) & MK_ATTACK), `${g}: every strike has mk_attack`);
+    }
+    const t = { hit: 10, cancel: 20, end: 30 };
+    assert.ok(isCounter(MK_ATTACK, 1, t) && isCounter(MK_ATTACK, 19, t), 'from the first frame to the one before the cancel');
+    assert.ok(!isCounter(MK_ATTACK, 20, t) && !isCounter(0, 5, t), 'not from the cancel, nor without mk_attack');
+    assert.ok(isCounter(null, 12, t), 'no mot_kind (Shenmue): its moves count');
+    assert.equal(counterDamage('vf2', { damage: 25 }), 37);
+    assert.equal(counterDamage('fv', { damage: 30 }), 45);
+    assert.equal(counterDamage('stf', { damage: 14, raw: 10 }, 10), 26, 'StF: (10 + 2) * 3 >> 1 = 18 of 140');
+    /* In a fight: the other's own punch is past its hit frame, before its
+     * cancel; a punch on it is a counter (the engine had it only before the
+     * hit frame). */
+    const { createFight, stepFight, setMotion, bodyPoint, ST } = await import('../js/engine.js');
+    const { motionOf } = await import('../js/fighters.js');
+    for (const [n, g] of [['AKIRA', 'vf2'], ['PICKY', 'fv'], ['SONIC', 'stf']]) {
+        const f = fighters.find((x) => x.name === n && x.game === g);
+        const fight = createFight(f, f, f.game);
+        fight.phase = 'fight';
+        const [p, o] = fight.players;
+        /* the other plays its first strike with frames between hit and cancel */
+        const id = [...new Set(f.moves.tables.get(f.moves.root).map((e) => e.motion & 0x1fff))].find((i) => {
+            const a = f.attack(i), tm = f.timing(i);
+            return a && a.victim == null && !a.down && tm && tm.cancel > tm.hit + 1;
+        });
+        const tm = f.timing(id);
+        p.pos = [-0.4, 0, 0]; o.pos = [0.4, 0, 0];
+        let hit = null;
+        for (let i = 1; i <= 60 && !hit; i++) {
+            if (o.action !== 'move' || o.mot_coma >= tm.cancel - 1) {
+                o.mot = null; o.pos = [0.4, 0, 0];
+                setMotion(o, { rom: f.rom, motion: motionOf(f.rom, id) }, { state: ST.MOTION });
+                Object.assign(o, { action: 'move', moveId: id, timing: tm, attack: null, pc_command: 0 });
+                o.mot_coma = tm.hit;
+                o.posed = o.body.pose(o.mot, o.mot_coma);
+                const b = bodyPoint(o);
+                o.pos[0] -= b[0] - 0.4; o.pos[2] -= b[2];
+            }
+            stepFight(fight, [{ P: i % 30 === 1 }, {}]);
+            hit = fight.events.find((e) => e.kind === 'hit' && e.side === 0) ?? null;
+        }
+        assert.ok(hit, `${n}: a punch lands`);
+        assert.ok(hit.counter, `${n}: a counter past the other's hit frame ${JSON.stringify(hit)} ${JSON.stringify(tm)}`);
+        const a = p.attack ?? f.attack(p.moveId);
+        assert.equal(hit.damage, counterDamage(g, a, f.attack(id).raw), `${n}: the counter's damage`);
+        console.log('counter:', n, 'motion', id, JSON.stringify(tm), JSON.stringify(hit));
+    }
+}

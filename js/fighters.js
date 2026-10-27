@@ -80,6 +80,7 @@ const hitsDown = (ap, stf) => ap === AP_DOWN || (stf && ap === AP_STF_DOWN);
  * this scale; StF's (out of 140, 0x5000A0) is scaled up to it. */
 export const ENERGY = 200;
 const STF_ENERGY = 140;
+const stfScale = (d) => Math.round((d * ENERGY) / STF_ENERGY);
 
 /* ---- the ROMs ------------------------------------------------------------ */
 
@@ -282,6 +283,28 @@ export function enFlag(game, { kind, lying, inAir }) {
     const down = kind == null ? lying
         : !(kind & (MK_RISE | MK_ATTACK)) && (!!(kind & MK_DOWN_POSE) || (!!(kind & MK_DOWN) && !(kind & MK_AIR && inAir)));
     return down ? 1 << (game === 'vf2' ? 11 : 5) : 0;
+}
+
+/* A counter: attack_hit (StF 0x2B1A4, FV 0x2633C, VF2 0x22A28) counts one
+ * when the fighter hit has mk_attack in its mot_kind, which every strike's
+ * motd_kind carries and play_motion clears at follow1 (+0x80A; StF 0x1BEA0,
+ * FV 0x1C1D8, VF2 0x1AC50): from the strike's first frame to its cancel.
+ * VF2 and FV deal half again, d * 3 >> 1. StF first adds a quarter of the
+ * one hit's own motd_damage (+0x822), on its own scale; there a hit on a
+ * limb (its struck parts, +0x6F0, in 0xD9B0) is the smaller "smlcntr",
+ * (d + (own >> 3)) * 5 / 4, which needs the part the coprocessor says was
+ * struck, so here every StF counter is the full one. The attacker's game
+ * decides; `own` is null when the one hit is not StF's (0 here). `kind` is
+ * null for a fighter whose game has no mot_kind (Shenmue): its moves count
+ * to their cancel, and its counters deal VF2's. */
+export { MK_ATTACK };
+export function isCounter(kind, coma, timing) {
+    return !!timing && coma < timing.cancel && (kind == null || !!(kind & MK_ATTACK));
+}
+export function counterDamage(game, a, own) {
+    if (game !== 'stf') return (a.damage * 3) >> 1;
+    const raw = ((a.raw + ((own ?? 0) >> 2)) * 3) >> 1;
+    return stfScale(raw);
 }
 
 /** The entry a press lands on: the first, in the engine's order, whose tests
@@ -550,7 +573,7 @@ function stfFighter(game, entry) {
 function stfAttack(rom, id, cpuDamage) {
     const s = stfSetupOps(rom, id);
     if (!s) return null;
-    const scale = (d) => Math.round((d * ENERGY) / STF_ENERGY);
+    const scale = stfScale;
     const thr = s.ops.find((o) => o.op === 5);
     if (thr) {
         const victim = s.dv.getUint16(thr.at + 1, true) & MOTION_ID;
@@ -560,7 +583,7 @@ function stfAttack(rom, id, cpuDamage) {
     if (!st) return null;
     const ap = s.dv.getUint8(st.at + 2), part = s.dv.getUint8(st.at + 1);
     const d = s.dv.getUint8(st.at + 3) || cpuDamage.get(id) || 10;
-    return { ap, level: strikeLevel(ap), down: hitsDown(ap, true), part, mask: partMask(rom, 'stf', part), damage: scale(d) };
+    return { ap, level: strikeLevel(ap), down: hitsDown(ap, true), part, mask: partMask(rom, 'stf', part), damage: scale(d), raw: d };
 }
 
 /* ---- one game's tables --------------------------------------------------- */
