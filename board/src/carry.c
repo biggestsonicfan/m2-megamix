@@ -1,11 +1,11 @@
 /* carry.c: points in one slot's frame carried into another's, the seams'
- * and the midriff's (megamix.c). This file alone is built for the i960's own
+ * and the midriff's (fighter_draw.c). This file alone is built for the i960's own
  * floating point (mulr, addr, divr on the global and local registers, as
  * StF's lifted code does), the rest of the board soft-float: Ryo's twelve
  * seams in soft-float took 7 ms a pass and held the board to 30 frames a
  * second. Floats go by pointer only, so the two calling conventions meet. */
 typedef unsigned u32;
-typedef struct { float r[9], t[3]; } mat_t;   /* megamix.c's: column-major, the COP's layout */
+typedef struct { float r[9], t[3]; } mat_t;   /* megamix.h's: column-major, the COP's layout */
 
 /* H^-1 C p for each point (the slots' matrices may be scaled, so H^-1 by
  * its cofactors), made once as a 3x4 a. */

@@ -86,7 +86,7 @@ addresses are from noclip's `fvipers` rig and FV's program ROM.
   the hips by motion and in the air, the debris flipbook) is FV's own code.
   StF's code has none of it. A guest without that code draws only the
   whole body, which is what the survey's "core" counts. Breaking armour on
-  the board would be new board code (megamix.c), as the midriff was.
+  the board would be new board code (`board/src`), as the midriff was.
 
 ## Slots
 

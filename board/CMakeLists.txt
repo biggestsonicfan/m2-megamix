@@ -34,6 +34,9 @@ set(M2_STARTUP_ASM
     ${M2_SDK}/src/i_table.s
     ${M2_SDK}/src/i_handle.s)
 
+# The program's modules (src/*.c) are compiled as one unit through megamix.c,
+# which includes them: the header-only SDK defines its functions in the
+# headers (M2_API=, below), so a module built on its own would carry its own copy.
 add_executable(game.elf ${M2_STARTUP_ASM} src/megamix.c src/link.c src/carry.c src/stf_call.s src/stf_motion.s)
 # StF's motion code keeps its ROM tables' addresses (.stfrom, 0x80000..0xFFFFF).
 set_source_files_properties(src/stf_motion.s PROPERTIES

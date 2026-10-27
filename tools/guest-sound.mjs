@@ -77,21 +77,21 @@
  *
  *   node tools/guest-sound.mjs   (a report, from $ROMS_DIR's zips)
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { readZipDirectory, extractZipEntry } from '../vendor/noclip/js/zip.js';
 
 const ROMS = process.env.ROMS_DIR || `${process.env.HOME}/build/mameroms`;
 
-/* StF's songs on the board: Aurora Icefield's and South Island's (megamix.c,
+/* StF's songs on the board: Aurora Icefield's and South Island's (sound.c,
  * STAGE_MUSIC_IN_ORDER) */
 export const KEEP_SONGS = [3, 4];
 /* FV's songs to add, by FV's index in group 0x10 (its sound test's list:
- * western_song is 0xAE1005), and the code each gets, which board/src/megamix.c
+ * western_song is 0xAE1005), and the code each gets, which board/src/sound.c
  * sends (SND_FV_WESTERN) */
 export const FV_SONGS = [{ name: 'western', fv: 5, code: 0xAE1019 }];
 /* VF2's songs to add, by VF2's index in its group 0x10 (AD10nn: Tou-rin's
  * stage plays Lau's 0x0B, the Colosseum's Akira's 0x03), the codes after
- * FV's (megamix.c, SND_VF2_TOURIN and SND_VF2_COLOSSEUM) */
+ * FV's (sound.c, SND_VF2_TOURIN and SND_VF2_COLOSSEUM) */
 export const VF2_SONGS = [{ name: 'tourin', vf2: 0x0B, code: 0xAE101A }, { name: 'colosseum', vf2: 0x03, code: 0xAE101B }];
 /* Akira's sounds, group 0x15: VF2's 9E kk vv for each of these keys and
  * velocities (kit F2's keys his moves play), then his voices, VF2's
@@ -536,7 +536,7 @@ function vf2Track(V, t, toneOf) {
  * The sound codes the board can send: every 0xAEggnn (an SE group's) StF's
  * main program (prog, the i960's view) names, as an immediate or in a table,
  * but for the records of the sound test's list, and the board's own
- * (megamix.c).
+ * (board/src/*.c).
  */
 export function stfSends(prog, boardSrc = '') {
     const dv = new DataView(prog.buffer, prog.byteOffset, prog.length), skip = new Set();
@@ -590,7 +590,7 @@ const toneChange = (D, at, ch) => D.track(at).ev.some((ev) => ev.st === (0xC0 | 
 /*
  * Build the board's sound program and samples from StF's (prog, the four
  * sample ROMs as they are in the zip, main: its main program, boardSrc:
- * megamix.c), FV's and VF2's, and Shenmue's battle pack (shenmue: {pack, the
+ * board/src's .c files, as one string), FV's and VF2's, and Shenmue's battle pack (shenmue: {pack, the
  * SEs to add, null all}, or none). Returns the files, in the zip's byte order,
  * the codes of the added songs, and a report.
  */
@@ -913,7 +913,7 @@ export function buildGuestSound(stfFiles, fvFiles, vf2Files, shenmue = null) {
         }
         out.align(4);
         codes[a.name] = 0xAE1000 + idx;
-        if (codes[a.name] !== a.code) throw new Error(`FV's ${a.name}: code 0x${codes[a.name].toString(16)}, megamix.c sends 0x${a.code.toString(16)}`);
+        if (codes[a.name] !== a.code) throw new Error(`FV's ${a.name}: code 0x${codes[a.name].toString(16)}, the board sends 0x${a.code.toString(16)}`);
         report.push(`FV's ${a.name} (FV 0xAE10${a.fv.toString(16).padStart(2, '0')}): code 0x${codes[a.name].toString(16).toUpperCase()}, scene ${a.scene}, ${a.song.tracks.length} tracks, ${[...a.song.keys.keys()].length} tones, ${a.song.samples.size} samples`);
     });
     /* VF2's: StF's start (A000 02, its scene), then VF2's tracks */
@@ -934,7 +934,7 @@ export function buildGuestSound(stfFiles, fvFiles, vf2Files, shenmue = null) {
         }
         out.align(4);
         codes[a.name] = 0xAE1000 + idx;
-        if (codes[a.name] !== a.code) throw new Error(`VF2's ${a.name}: code 0x${codes[a.name].toString(16)}, megamix.c sends 0x${a.code.toString(16)}`);
+        if (codes[a.name] !== a.code) throw new Error(`VF2's ${a.name}: code 0x${codes[a.name].toString(16)}, the board sends 0x${a.code.toString(16)}`);
         report.push(`VF2's ${a.name} (VF2 0xAD10${a.vf2.toString(16).padStart(2, '0')}): code 0x${codes[a.name].toString(16).toUpperCase()}, scene ${a.scene}, ${a.song.tracks.length} tracks, ${a.song.keys.size} tones, ${a.song.samples.size} samples`);
     });
     /* Akira's: a note each on channel 14 */
@@ -991,7 +991,9 @@ export async function guestSound(stfByName, shenmue = null) {
         ? { prog: new Uint8Array(stfByName[STF_FILES.prog]), samples: STF_FILES.samples.map((n) => new Uint8Array(stfByName[n])),
             main: STF_MAIN.map((n) => new Uint8Array(stfByName[n])) }
         : await readSet({ ...STF_FILES, main: STF_MAIN });
-    const boardSrc = readFileSync(new URL('../board/src/megamix.c', import.meta.url), 'utf8');
+    const boardDir = new URL('../board/src/', import.meta.url);
+    const boardSrc = readdirSync(boardDir).filter((f) => f.endsWith('.c')).sort()
+        .map((f) => readFileSync(new URL(f, boardDir), 'utf8')).join('\n');
     return buildGuestSound({ ...stf, main: interleave(...stf.main), boardSrc, names: STF_FILES.samples },
         await readSet(FV_FILES), await readSet(VF2_FILES), shenmue);
 }

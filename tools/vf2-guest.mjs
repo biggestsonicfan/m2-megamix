@@ -15,7 +15,7 @@
  *   - his records (StF's, Knuckles', with his parts, player 2's and his
  *     actions), his skeleton, his hands and his head;
  *   - his midriff, the band between his hips and his chest (the board's
- *     guest table `midriff`; megamix.c builds and draws it);
+ *     guest table `midriff`; fighter_draw.c builds and draws it);
  *   - his models under free StF model ids: the meshes in the polygon ROM's
  *     empty run, the material and UV streams and the textures as
  *     tools/pack-akira.mjs packs them.
