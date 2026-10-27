@@ -245,8 +245,9 @@ The call chain is `rob_action` 0x143F4 → 0x1499C → 0x18144 (0x16478 or
   So on the setup frame 0x17B68 is skipped, and it runs on every frame after
   that. The bit also gates the motion frame count at rob+0x1AA/0x1AE
   (0x143B4). Nothing in VF2 clears it on a fighter except the fighter start's
-  `w0 &= 0xFF000000`, at the same sites that clear bit 5. The other `clrbit 7` sites are
-  on other structs: 0xC90C and 0x3209C on the task at *0x50083C, 0x53E70 on
+  `w0 &= 0xFF000000`, at the fighter-start sites above (the CONTROL TEST
+  code clears bit 5 alone, with `clrbit 5`). The other `clrbit 7` sites are on
+  other structs: 0xC90C and 0x3209C on the task at *0x50083C, 0x53E70 on
   `fa_camera`, 0x64474 on a task whose +0x40 is the fighter. `rob_action`
   returns before it sets the bit when mode byte 0x50002B is 6 or 7 (0x14320).
 - 0x508000 bit 5 is `debug_flag`'s freeze (DEBUG-MODE.md). In VF2, only
