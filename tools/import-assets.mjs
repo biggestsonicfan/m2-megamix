@@ -42,6 +42,7 @@ import { importAkira, CHR as AKIRA_CHR } from './vf2-guest.mjs';
 import { CHR as RYO_CHR, CHAI_CHR, shenmueTiles, importShenmue } from './ryo-guest.mjs';
 import { CHR as HORNET_CHR, loadHornet, hornetTiles, importHornet } from './hornet-guest.mjs';
 import { CHR as MAHLER_CHR, mahlerTiles, importMahler } from './mahler-guest.mjs';
+import { readObjDir } from './model-obj.mjs';
 import { importVf2Stages, VF2_SET0 } from './vf2-stages.mjs';
 import { importFvStages } from './fv-stages.mjs';
 import { importGuestShadows } from './guest-shadows.mjs';
@@ -49,7 +50,15 @@ import { guestSound, STF_FILES, SHENMUE_PACK } from './guest-sound.mjs';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const ROMS = process.env.ROMS_DIR || `${process.env.HOME}/build/mameroms`;
-const OUT = process.argv[2] ?? `${ROOT}board/roms`;
+/* --obj mahler=<dir>: Mahler's models out of an OBJ folder (tools/model-obj.mjs) */
+const ARGS = process.argv.slice(2), OBJ = {};
+for (let i; (i = ARGS.indexOf('--obj')) >= 0;) {
+    const [who, dir] = (ARGS[i + 1] ?? '').split('=');
+    if (who !== 'mahler' || !dir) throw new Error('--obj mahler=<dir> (only Mahler takes one so far)');
+    OBJ[who] = readObjDir(dir);
+    ARGS.splice(i, 2);
+}
+const OUT = ARGS[0] ?? `${ROOT}board/roms`;
 
 /* ---- the ROM set ---------------------------------------------------------- */
 
@@ -646,7 +655,7 @@ const shenmue = SHENMUE.map((g, i) => {
 });
 const hornet = importHornet(R, akira.ctx, NG, HO, hoTex, { chr: HORNET_CHR });
 for (const line of hornet.report) console.log(`Hornet: ${line}`);
-const mahler = importMahler(R, akira.ctx, NG, maTex, { chr: MAHLER_CHR });
+const mahler = importMahler(R, akira.ctx, NG, maTex, { chr: MAHLER_CHR, obj: OBJ.mahler });
 for (const line of mahler.report) console.log(`Mahler: ${line}`);
 /* each guest's own shadows (tools/guest-shadows.mjs) */
 const cold = shenmueFile('MISC/COLD.BIN');
