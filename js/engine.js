@@ -85,6 +85,7 @@ export function makePlayer(side, fighter) {
         tapAt: -99, tapDir: 0,
         downFor: 0,
         riseKick: null,             /* VF2: the get-up the rise's sub-kind (+0x19E) has picked */
+        fly: null,                  /* StF: the jump's flight, {vy} (+0x30), till it lands */
         wins: 0,                    /* 0x50004F p1_wins / 0x500051 p2_wins */
         posed: null,
         lastMove: '',
@@ -162,7 +163,7 @@ function resetRound(fight) {
         p.yang = i ? Math.PI : 0;
         p.energy = ENERGY;
         p.mot = null;
-        p.pc_command = 0; p.press = null; p.hist = []; p.hit_combo = 0; p.riseKick = null;
+        p.pc_command = 0; p.press = null; p.hist = []; p.hit_combo = 0; p.riseKick = null; p.fly = null;
         p.finished = false;
         setAct(p, 'stance');
     });
@@ -297,11 +298,11 @@ function think(fight, p, o) {
  * before take-off (motd_jump_coma, +0x80E) commits the jump again with the
  * action's bit 18, the small jump, and the jump's handler (VF2 0x147BC)
  * plays the action table's next slot from the same frame, held to its own
- * take-off. StF's jump act is its 7 frames of take-off (motd_jump_coma 0),
- * up let go in any of them; its small jump keeps the motion.
+ * take-off (StF sub_1305C 0x1335C). FV's decoder (0x1DC24) and jump handler
+ * (0x14204) are StF's code; its motions carry the arc in their root, as
+ * VF2's do, and the engine plays them so.
  */
 function takeoff(p, m) {
-    if (p.fighter.game === 'stf') return m.frames + 1;
     return p.fighter.takeoff?.(m.index) ?? 0;
 }
 function smallJump(p) {
@@ -321,16 +322,41 @@ function smallJump(p) {
  * at once by the small jump's commit), then matched as 1, or 2 in a small
  * jump; in the air (the handler's step 2, VF2 0x1564C) as 3, or 4 in a small
  * jump. FV's motion names: JU_ the big jump's, JUS_ the small one's. StF's
- * jump here is its take-off, so 1 or 2; its 3 and 4 are the air step this
- * engine's jump does not take. null: latched, not matched yet.
+ * (0x1DFEC) and FV's (0x1DCB8) take 3 or 4 in the same step, by +0x1B2.
+ * null: latched, not matched yet.
  */
 const CTX_TAKEOFF = 1, CTX_AIR = 3;
 function jumpContext(p) {
     const up = p.small ? 1 : 0;
-    if (p.fighter.game === 'stf') return CTX_TAKEOFF + up;
     const t = takeoff(p, p.mot.motion);
     if (p.mot_coma >= t) return CTX_AIR + up;
     return p.mot_coma + 1 >= t || p.small ? CTX_TAKEOFF + up : null;
+}
+
+/*
+ * StF's flight. Its jump motions stand in place; the handler (ACT_RC_JUMP
+ * 0x13DB8) flies the body. At take-off (step 1, +0x1AA up to +0x80E) it sets
+ * vy (+0x30) to land n frames on, n the commit's +0x5BE (fighters.js flight):
+ * g (n + 1) / 2, +0x5CC's lift 0 in a jump. Each frame rob_spd_control takes
+ * g (0x50A000) off vy and adds vy to y (+0x1C). An air attack the jump's
+ * recommit plays (0x133A0) leaves the flight going. It lands when the body
+ * is down (step 2 0x1410C, w0 bit 2 clear: 0x14870), and the action goes
+ * (+0x19C = 0): what plays plays on, out of the jump.
+ * Here: the jump's drift (+0x5C4 by +0x724..+0x730) is not flown, an air
+ * attack whose setup holds it (bit 19, +0x5C0) plays at once, and the
+ * landing's mk_change (+0x1A4 bit 0) does not free the fighter early.
+ */
+const GRAVITY = 0.02522222138941288;    /* 0x3CCE9ED5 */
+function fly(p) {
+    if (!p.fly && p.state === ST.JUMP && p.fighter.flight && p.mot_coma === takeoff(p, p.mot.motion))
+        p.fly = { vy: GRAVITY * (p.fighter.flight(p.small) + 1) / 2 };
+    if (!p.fly) return;
+    p.fly.vy -= GRAVITY;
+    p.pos[1] += p.fly.vy;
+    if (p.pos[1] > 0) return;
+    p.pos[1] = 0;
+    p.fly = null;
+    if (p.state === ST.JUMP) p.state = ST.MOTION;
 }
 
 /* Commit to a move (the matcher's commit op): the motion, its timing and
@@ -414,6 +440,7 @@ function throwDamage(fight, o, damage) {
 /* ---- playback ------------------------------------------------------------ */
 
 function advance(fight, p) {
+    fly(p);
     const m = p.mot.motion;
     if (p.state === ST.DOWN && p.action === 'down') {
         ++p.downFor;

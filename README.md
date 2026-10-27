@@ -97,8 +97,14 @@ approximations. Each is marked `Here:` in `js/engine.js`:
 - Jump attacks: up let go before take-off (setup op 3's motd_jump_coma)
   makes the jump the small one, as the board does. A press before take-off
   waits for it and goes to context 1 (2 in a small jump), one in the air to
-  3 (4). StF's jump is its take-off only, so 1 or 2; its air step's 3 and 4
-  are not reached.
+  3 (4). StF's jump motions stand in place and its jump handler (0x13DB8)
+  flies the body by gravity, so the engine does too: from take-off for the
+  frames the character record's +0x20 gives (Sonic 38, small 26), with an
+  air attack playing on until it lands. FV's jump code is StF's, but its
+  motions carry the arc, as VF2's do, and the engine plays them so. Here:
+  StF's jump does not drift forward or back, an air attack the setup holds
+  back (+0x5C0) plays at once, and landing does not free the fighter before
+  the motion ends.
 - Attacks while getting up: in VF2 a kick while lying picks the rise's
   get-up kick (the decoder's sub-kind at 0x1BD38): mid, or low with down
   held, played as soon as the lying is out (the rise handler at 0x157DC).

@@ -160,6 +160,34 @@ console.log('ok');
     }
 }
 
+/* StF's air step: its jump flies by gravity from take-off (ACT_RC_JUMP
+ * 0x13DB8), and a punch in the flight is matched in context 3 (0x1DFEC),
+ * the attack played on in the air till the flight lands. */
+{
+    const { createFight, stepFight } = await import('../js/engine.js');
+    const { P } = await import('../js/fighters.js');
+    const sonic = fighters.find((x) => x.name === 'SONIC' && x.game === 'stf');
+    const t0 = sonic.takeoff(sonic.act('jump').motion.index), n = sonic.flight(false);
+    assert.ok(t0 > 0 && n > 0, `SONIC: take-off ${t0}, flight ${n}`);
+    const fight = createFight(sonic, sonic, 'stf');
+    fight.phase = 'fight';
+    const p = fight.players[0];
+    let m = null, top = 0, landed = null;
+    for (let t = 1; t <= 120; t++) {
+        stepFight(fight, [{ up: t <= 30, P: t === t0 + 8 }, {}]);
+        top = Math.max(top, p.pos[1]);
+        const e = fight.events.find((x) => x.kind === 'move' && x.side === 0);
+        if (e) m = { ...e, t, y: p.pos[1], fly: !!p.fly };
+        if (m && landed == null && !p.fly) landed = t;
+    }
+    const ctx = sonic.moves.tables.get(sonic.moves.root)
+        .filter((e) => (e.key & 0xff) === P && (e.motion & 0x1fff) === m?.id).map((e) => e.key >> 8);
+    assert.ok(m && m.fly && m.y > 0, `SONIC: a punch in the air ${JSON.stringify(m)}`);
+    assert.deepEqual(ctx, ctx.length ? ctx.map(() => 3) : [3], `SONIC: matched in context 3 ${JSON.stringify(ctx)}`);
+    assert.ok(landed && Math.abs(landed - (t0 + n)) <= 1 && p.pos[1] === 0, `SONIC: lands ${n} frames on (${landed})`);
+    console.log('air step: SONIC', m.id, 'ctx', ctx, 'at', m.t, 'y', m.y.toFixed(2), 'top', top.toFixed(2), 'landed', landed);
+}
+
 /* Attacks while getting up: VF2's kick while lying picks the rise's get-up
  * kick (down held: the low one), played as soon as the lying is out; FV's
  * and StF's P or K held in the rise's window ends it into the ground

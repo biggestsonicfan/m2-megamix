@@ -38,7 +38,9 @@ export const S = { BODY: 0, CHEST: 1, HEAD: 2, LHAND: 5, RHAND: 8, PELVIS: 9, LF
 /*
  * The action tables, slot by slot, as measured from the motions' roots and
  * (FV) the motions' own names. Each game orders its table its own way; these
- * are the slots the shared engine plays.
+ * are the slots the shared engine plays. The jumps are the ones the jump's
+ * commit plays: StF +0x38(g6) and +0x3C(g6) with bit 18 (sub_1305C 0x132F0),
+ * FV +0x4E(g6) and +0x50(g6) (0x134C0).
  */
 const ACTION_SLOTS = {
     vf2: { stance: 0, crouch: 1, toStand: 2, toCrouch: 5, guard: 8, guardEnd: 9, crouchGuard: 10, crouchGuardEnd: 11,
@@ -47,7 +49,7 @@ const ACTION_SLOTS = {
     fv: { stance: 0, crouch: 1, toStand: 2, toCrouch: 5, guard: 8, guardEnd: 11, crouchGuard: 12, crouchGuardEnd: 15,
         dashF: 18, dashB: 20, walkF: 28, walkB: 30, jump: 39, jumpSmall: 40, down: 42, rise: 43 },
     stf: { stance: 0, crouch: 1, toStand: 2, toCrouch: 3, guard: 5, guardEnd: 6, crouchGuard: 1, crouchGuardEnd: 2,
-        dashF: 7, dashB: 9, walkF: 13, walkB: 15, jump: 33, down: 40, rise: 41 },
+        dashF: 7, dashB: 9, walkF: 13, walkB: 15, jump: 28, jumpSmall: 30, down: 40, rise: 41 },
 };
 
 /*
@@ -283,6 +285,7 @@ export function matchPress(entries, btn, hist, dist, { ctx = 0, foeDown = false 
  *   reaction(a, how)   the motion this fighter plays under attack `a`
  *   takeoff(id)        a jump motion's take-off frame (0 if none)
  *   riseWindow(id)     a get-up's {cancel, window} (FV, StF), else null
+ *   flight(small)      StF: the frames a jump flies (+0x5BE), else null
  *   createBody()       a drawable body: pose(ref, frame) -> {mats, parts, pose}
  *   look               what its material needs (js/render.js)
  * and, where they are not the VF2/StF ones:
@@ -429,6 +432,16 @@ function vfAttack(rom, id, key) {
         finish: key === 'fv' && op ? s.dv.getUint8(op.at + FINISH_AT) : 0 };
 }
 
+/* StF's jump flies by gravity, not by its motion: the jump's commit (sub_1305C
+ * 0x1328C) takes the frames it flies (+0x5BE) from the character record's
+ * +0x20, byte 0 for the jump, byte 1 for the small one (the action's bit 18). */
+const STF_CHAR_PARTS = 0x000c5268;
+function stfFlight(rom, index, small) {
+    const dv = rom.mainCpuView;
+    const record = dv.getUint32(progAddr(rom, STF_CHAR_PARTS) + index * 4, true);
+    return dv.getUint8(dv.getUint32(record + 0x20, true) + (small ? 1 : 0));
+}
+
 function stfFighter(game, entry) {
     const { rom } = game;
     const c = per(rom);
@@ -457,6 +470,7 @@ function stfFighter(game, entry) {
         attack(id) { return stfAttack(rom, id, damage); },
         takeoff(id) { return takeoffOf(stfSetupOps(rom, id)); },
         riseWindow(id) { return riseWindowOf(stfSetupOps(rom, id)); },
+        flight(small) { return stfFlight(rom, entry.index, small); },
         reaction(a, how) {
             const id = how === 'down' ? STF_REACT.down
                 : how === 'guard' ? ch.motions[slots[a.crouch ? 'crouchGuard' : 'guard']]
