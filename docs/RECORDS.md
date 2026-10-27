@@ -69,7 +69,7 @@ Three entries carry bit 15:
 
 | # | character | slot | entry |
 |--|--|--|--|
-| 13 | Egg Minion | 6, 7 (the hands) | 0x8003, 0x8004 |
+| 13 | Egg Minion | 6, 7 (right upper arm, forearm) | 0x8003, 0x8004 |
 | 16 | Super Sonic | 2 (the head) | 0x8000 |
 
 They are models too, out of a second directory. `set_obj` (0x4E98, L4911),
@@ -87,11 +87,32 @@ main directory (count 0x20E0000, entries 0x20E0004, 16 bytes each); set,
 | 0x8003 | 0x80CD70 | 0x808734 | 0x12EF |
 | 0x8004 | 0x80CF08 | 0x808804 | 0x1516 |
 
-The mesh pointers lack bit 23, so the meshes are in polygon RAM, which the
-game fills while it runs, not in the polygon ROMs. Where it copies them from
-is not traced. Until it is, `js/fighters.js` skips those slots: Super Sonic
-fights without his head, Egg Minion without his hands. The poly test at
-L33996 picks the same directory when `INTERUPT_FLAGS_HELD` bit 17 is set.
+Every pointer here is into the board's RAMs: the uv and material pointers
+carry bit 23 (texture RAM, MAME `model2_v.cpp`), the mesh pointers lack it
+(polygon RAM). The boot fills both once, straight from the same EPROM pair
+(XTRA_DATA 0x6400000 is data ROM 0x1000000), in the calls after
+`geometry_stuff` (L6795-6801):
+
+| routine | geo header | fills | from | how |
+|--|--|--|--|--|
+| `sub_11EF8` (0x11EF8) | 0x505 at +0x50: command 5, polygon data | polygon RAM 0..0x7FFF, 16 runs of 0x800 words | 0x6468000 | a word a word |
+| `sub_12090` (0x12090) | 0x404 at +0x40: command 4, texture data | texture RAM 0x8000..0xBFFF, 8 runs of 0x800 | 0x6460000 | a halfword a word |
+| `sub_12138` (0x12138) | the same | texture RAM 0xC000..0xFFFF | 0x6464000 | a halfword a word |
+
+No other code sends a 0x505 header, and the other 0x404 senders write
+texture RAM below 0x8000 (`geometry_stuff`, `move_tpd_send` at 0x5000), so
+what the second directory points at stays as the boot left it. It can be
+read from the ROM: `js/fighters.js` (`stfRamModel`) decodes those models with
+polygon RAM taken from data ROM 0x1068000 and texture RAM's two runs from
+0x1060000 and 0x1064000. Super Sonic's 0x8000 is a Sonic head with longer
+spikes (1014 vertices, Sonic's 0xBD3 has 972); Egg Minion's 0x8003 and 0x8004
+are his left arm's 0xB51 mirrored and 0xB58 again, so they are his right arm
+with its drill. The other two are not in a part list: 0x8001 is Super
+Sonic's second head, the high half of his face record's +4 (0xC9A74:
+0x8000, 0x8001, as Sonic's is 0xBD3, 0xBD4; noclip's `faceModel` drops ids
+past the main directory), and 0x8002 is the Chaos Emerald,
+`draw_chaos_emeralds` (`lda 0x8002, g0; call set_obj`, L119013). The poly test at L33996 picks the same directory
+when `INTERUPT_FLAGS_HELD` bit 17 is set.
 
 ## StF's stage records
 
