@@ -177,8 +177,14 @@ plays them. No two values share a code. The program's own sound-name table
 | 2 (a foot) | 0x9E155F `land` | 0x9E1C7F `woodfoot2` | 0x9E1A7F `metalfoot2` |
 
 Two things override the stage (0x4396C..0x43998): a fighter with rob+0x624
-set gets value 0, and fighter 9 (rob+0x1B1; Dural, by `VF2_NAMES`) plays
-value 2's sound, the metal one, before the stage's. rob+0x624 is likely the
+set gets value 0, and fighter 9 plays value 2's sound, the metal one, before
+the stage's. The test is `ldob 0x1B1(g7)` against 9 (0x4396C). rob+0x1B1 is
+the character, rob+0x1B0 less 13 when it is 13 or more (0xB1DC..0xB1F8; 13 and
+up are player 2's records), and every roster name table in the program has
+DURAL at 9: 0x2980C, 0x509E8 (read by `ld 0x509E8[r8*4]`, 0x52E10), 0x5CB28
+and the debug menu's 0x46298 (ACHO, its development name; its "1P CHAR" and
+"2P CHAR" lines read rob+0x1B0 by it, 0x45EC4, 0x45EF8). This is the ROM's
+slot order, not the web menu's. rob+0x624 is likely the
 ring-out fall (BOARD.md, Ring out), the ground outside the ring.
 
 Every record, with the floor the web Megamix draws for it (`?stage=N`, the
