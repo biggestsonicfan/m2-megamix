@@ -421,7 +421,13 @@ clears them one frame later, when the head runs.
     rob+0x19C bit 18 is clear (`bbs 18,r15` at 0x1C40C, r15 loaded from
     rob+0x19C at 0x1C408), 0x1C410 puts 0x09040000 in r5 and 0x1C418 stores
     it in rob+0x194. That value has bit 18 set, so the `bbs 18,r5` at
-    0x1C438 is taken. The key is 0x2xx when rob+0x19C bit 18 is set, or
+    0x1C438 is taken. That UP is the CONTROL TEST UP. Byte +0 of a
+    rob+0x1280 entry is a copy of rob+0x1200 (`ldob 0x1200(g7),r8` at
+    0x1BC2C, `stob r8,0x1280(g7)[r5*4]` at 0x1BC38). When 0x1C244 skips the
+    0x1C250 load, r8 is still that 0x1BC2C value. So bit 5 of r8 is bit 13
+    of 0x500700, held, not newly pressed (new presses are byte +2, `andnot`
+    at 0x1BC34). `bbs 5,r8` jumps to 0x1C420 when the bit is set, so
+    0x1C408..0x1C41C run only when UP is not held. The key is 0x2xx when rob+0x19C bit 18 is set, or
     when it is clear and UP is not held. It is 0x1xx only when bit 18 is
     clear and UP is held. The 0x300/0x400 test at 0x1C460 (`bbs 18,r5`)
     branches off at 0x1C3E8, before 0x1C410, so there r5 has rob+0x19C's
