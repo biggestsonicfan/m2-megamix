@@ -408,9 +408,39 @@ clears them one frame later, when the head runs.
     6, 0x1C448) after bit 7 of that byte is set. 0x1C400 sets bit 7 when
     rob+0x1AA + 1 is at least rob+0x80E. 0x1C41C also sets it, when the
     input holds no UP and rob+0x19C bit 18 is clear. The key is then 0x200
-    plus the buttons if rob+0x19C has bit 18 set (`bbs 18` at 0x1C438,
-    0x1C444), or 0x100 plus the buttons if it is clear. So high byte 2 means
-    rob+0x1A4 bit 12 set, rob+0x1B2 not 2 and rob+0x19C bit 18 set.
+    plus the buttons if r5 has bit 18 set (`bbs 18` at 0x1C438, 0x1C444),
+    or 0x100 plus the buttons if it is clear (r5 in the next item).
+  - rob+0x19C bit 18. VF2's ROBn_INFO debug window names rob+0x19C
+    `action` (string at 0x44B34) and rob+0x194 `command` (0x44B1C). The ROM
+    stores no name for bit 18. Of 0x1C30C, 0x1C3E8 and 0x1C438, only
+    0x1C438 tests bit 18: `bbs 18,r5` (0x3791600C). 0x1C30C tests rob+0x1A4
+    bit 12 and 0x1C3E8 compares rob+0x1B2 with 2. r5 is a copy, not
+    memory. 0x1C3CC loads rob+0x19C into r5, and 0x1C3D8 ands it with
+    0xFF040000, which keeps bit 18. Then, if the held input (r8,
+    rob+0x1280[i*4], 0x1C250) has no UP (`bbs 5,r8` at 0x1C404) and
+    rob+0x19C bit 18 is clear (`bbs 18,r15` at 0x1C40C, r15 loaded from
+    rob+0x19C at 0x1C408), 0x1C410 puts 0x09040000 in r5 and 0x1C418 stores
+    it in rob+0x194. That value has bit 18 set, so the `bbs 18,r5` at
+    0x1C438 is taken. The key is 0x2xx when rob+0x19C bit 18 is set, or
+    when it is clear and UP is not held. It is 0x1xx only when bit 18 is
+    clear and UP is held. The 0x300/0x400 test at 0x1C460 (`bbs 18,r5`)
+    branches off at 0x1C3E8, before 0x1C410, so there r5 has rob+0x19C's
+    own bit 18. So high byte 2 means rob+0x1A4 bit 12 set, rob+0x1B2 not
+    2, and rob+0x19C bit 18 set or UP not held.
+  - The stores to rob+0x19C that can set bit 18. 0x146EC loads rob+0x194
+    into r11 and jumps on its top byte (rob+0x197) through the table at
+    0x1B808 (8 bytes an entry). Four stores write that r11 to rob+0x19C:
+    0x14790, 0x147A4, 0x14948 and 0x1497C, so bit 18 comes from rob+0x194.
+    The entry for top byte 9 (handler 0x147BC; 0x09040000 above and
+    0x09040280 at 0x39102 are type 9) changes r11 before 0x14948.
+    0x147E4..0x147F0 or in the old rob+0x19C with bits 16..18 cleared
+    (`andnot` 7 << 16). 0x148B4..0x148BC clear bits 18, 24 and 27
+    (`andnot` 0x09040000) when rob+0x1A4 bit 12 is clear at 0x148A8. A
+    fifth store, 0x16018, writes the sign-extended low half of rob+0x19C
+    (`ldos` at 0x1600C) plus 0x11000000, so its bit 18 is the old bit 15.
+    Of the rest, 0x15364 and 0x155F0 write rob+0x19C back with bit 19
+    cleared, 0x15ED0, 0x1641C and 0x16454 write 0x10000000, 0x03000000 and
+    0x04000000, and 18 write 0. (0x1F888 stores to 0x19C(g13), not g7.)
   - Which entry. Every root key with high byte 2 and bit 0 set (0x201,
     0x203, 0x205, 0x207) runs script 0x390EA. Keys 0x202 and 0x206 (bit 1
     set, bit 0 clear) run 0x39107. No root key is 0x204 (GUARD alone).
