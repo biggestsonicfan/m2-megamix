@@ -306,8 +306,8 @@ clears them one frame later, when the head runs.
   VF2 does not name it. StF's table calls bit 29 `small`, which is another
   meaning. Only `set_motion` sets it on a fighter (0x19F90). That happens
   when the motion id (low 13 bits) is in the table at 0x1B98C (288, 926, 934,
-  928, 610, 622, 623, 640, 422, 421, 417; whose motions they are is not
-  traced). Each reader tests the opponent (g8):
+  928, 610, 622, 623, 640, 422, 421, 417; listed below). Each reader tests
+  the opponent (g8):
   - Throw damage at 0x145C8: + damage/4, debug label "sd_nage" (0x1B982).
   - Hit damage at 0x229E4: × 1.75, label "counter2" (0x23D7D). Unless
     rob+0x1A4 has bit 16 or 14, it is × 1.5 instead, label "counter3"
@@ -320,6 +320,41 @@ clears them one frame later, when the head runs.
   reader run only when settings byte [0x50016C]+0x3351 has bit 6
   (SHARED-CODE.md: clear on MAME's vf2), so with that bit clear, bit 29 is
   never set.
+
+  The 11 ids in 0x1B98C (u16s up to 0x1B9A2, in table order). A motion id
+  is global, an index into the setup table 0x200D34C, so each belongs to one
+  fighter: the one whose command program (0x1D1FC[fighter]) plays it. The
+  only names the program gives are in its list of named moves at 0x50928:
+  for each fighter a pointer to rows of up to 8 motion ids (16 bytes), and
+  at 0x50980 a pointer to that fighter's names, one per row, in the same
+  order. 0x52B10 reads it: it compares the fighter's motion id (rob+0x1A8)
+  with each row and sets the row's bit in +0x244 of the struct in g13.
+  (0x2974C holds an older copy of the same lists; no code reads it.)
+
+  | id | hex | fighter | name in the program |
+  |--|--|--|--|
+  | 288 | 0x120 | Jeffry | Hip Attack (his row 8; command G+K+P) |
+  | 926 | 0x39E | Wolf | Drop Kick (his row 6) |
+  | 934 | 0x3A6 | Wolf | Drop Kick (the same row) |
+  | 928 | 0x3A0 | Wolf | Drop Kick (the same row) |
+  | 610 | 0x262 | Shun | Gyoshin-Toutai (his row 7; back+K) |
+  | 622 | 0x26E | Shun | Haito-Rensenkyaku (his row 2) |
+  | 623 | 0x26F | Shun | none; the motion 622 hands over to (setup op 1, 0x201A4D2) |
+  | 640 | 0x280 | Shun | none |
+  | 422 | 0x1A6 | Shun | none |
+  | 421 | 0x1A5 | Shun | none; in his command program at 0x38E45, next to 422 at 0x38E52 |
+  | 417 | 0x1A1 | Shun | none |
+
+  Wolf's Drop Kick row has seven ids: 926, 932, 1228, 935, 928, 933 and
+  934. Only 926, 928 and 934 are in 0x1B98C. No other string, debug label or
+  data table in the program names these motions.
+
+  FV and StF have no such table. Their `set_motion` goes straight from the
+  bit-14 block to the bit-13 block (FV 0x1B5E4 → 0x1B5FC, StF 0x1AFAC →
+  0x1AFC4), with nothing between where VF2 has 0x19F44..0x19F94, and the 22
+  bytes of 0x1B98C appear nowhere in either program. Jeffry, Wolf and Shun
+  are not in FV's or StF's roster, so neither program has or names these
+  motions.
 - Settings byte 0x3351 bit 6 is the test menu's GAME ASSIGNMENTS item
   **VERSION**. Its two choices are "NORMAL" (bit clear) and "VERSION 2.1"
   (bit set): the menu record at 0x77BE8 (byte 0x3351, bit code 0x34 = bit 6,
