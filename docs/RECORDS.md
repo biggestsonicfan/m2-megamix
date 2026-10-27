@@ -424,9 +424,33 @@ clears them one frame later, when the head runs.
     0x1C454. That third way keeps only bits 0..2. 0x1C70C jumps to 0x1C770,
     and 0x1C7E0 dispatches each op through 0x1D250, where entry 0x0E
     (0x1D288) is 0x1CA08. No instruction from 0x1C70C to 0x1CA18 writes
-    g0; native code run by `callx` at 0x1CBB0 and 0x1CBE8 is not traced
-    here. So the button bits compared at 0x1CA18 come from byte +2, not
-    from the held byte.
+    g0, but native code run by `callx` can, and in two VF2 programs it
+    does before a 0x1CA18 compare. `callx (r3)` at 0x1CBE8 is op 0x14
+    (0x1D2A0); its callee is the word at script +1, and no script reached
+    from the eleven programs at 0x1D1FC (or from the tables op 0x15
+    stores, at 0x1CC4C or 0x1CC64) uses op 0x14. `callx (g4)` at 0x1CBB0
+    is op 0x13 (0x1D29C); its callee is code inside the script, at script +5 rounded
+    up to 4. On return, `mov r3,g4` (0x1CBB4) and `b 0x1c7e0` (0x1CBB8)
+    carry on at the word at script +1. All 89 op 0x13 sites those
+    programs reach write g0: 87 put a value in g0 (`lda`, `shlo` or
+    `addo`) and `b 0x1d194`, which `ret`s with g0 from `testle g0`
+    (0x1D1CC) or `mov 0,g0` (0x1D1D4); 0x37EB4 and 0x3863C set g0 to 0
+    or 1 and `ret`. In 88 sites the next op is 0x16, which compares g0
+    at 0x1C9FC, not 0x1CA18. Two paths reach 0x1CA18 after the call. In
+    program 3 (0x378C8) the op 0x13 at 0x37EAF carries on at 0x37ED4, an
+    op 0x0E header with key 1, so 0x1CA18 compares the callee's 0 or 1
+    there. In program 5 (0x38278) op 0x15 at 0x38614 stores the table at
+    0x38633 in rob+0x122C (0x1CC4C). 0x1A100 copies that to rob+0x1228,
+    and 0x229AC copies rob+0x1228 to rob+0x121C. A table in rob+0x121C
+    runs first (`bal 0x1c758` at 0x1C73C, which saves g4 and g14 but not
+    g0). If g0 is 7 (op 0x16 at 0x38633), its op 0x13 at 0x38636 sets g0
+    to 0 or 1. If the script
+    then fails, the run returns (0x1D17C, `bx (g14)` at 0x1D190) to
+    0x1C740, and 0x1C750 runs the fighter's own table from 0x1C758 with
+    that g0. A commit ends the whole call instead (0x1C5C8, `ret` at
+    0x1C5F8). The ROM stores no name for 0x1D194, 0x37EB4 or 0x3863C.
+    Apart from those two paths, the button bits compared at 0x1CA18 come
+    from byte +2, not from the held byte.
   - The high byte. With rob+0x1A4 bit 12 clear, g0 is matched at 0x1C39C
     as it is (high byte 0) or with 0x500 added when rob+0x0 has bit 4 set (0x1C394).
     With bit 12 set (`bbs 12` at 0x1C30C) and rob+0x1B2 equal to 2, g0 gets
