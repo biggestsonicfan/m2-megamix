@@ -163,7 +163,11 @@ const midriffRecs = (fv, m) => streamsOf(fv, m).recs;
 /* R: import-assets' regions; ctx: importAkira's (after the guests before
  * him); games: loadNodeGames(); tex: mahlerTiles(fv), after importAkira
  * packed them (each tile's `at`). */
-export function importMahler(R, ctx, games, { byKey }, { chr: CHR_ = CHR } = {}) {
+/* obj: his models out of an OBJ folder instead (tools/model-obj.mjs
+ * readObjDir, of `export MAHLER`): a slot or hand model the folder has
+ * replaces the ROM's, at his size as they are; the rest, and the midriff,
+ * stay FV's. Its faces' tiles must be his (mahlerTiles). */
+export function importMahler(R, ctx, games, { byKey }, { chr: CHR_ = CHR, obj = null } = {}) {
     const { main, polygons, textures } = R;
     const fv = games.fv.rom, vf2 = games.vf2.rom;
     const Who = 'Mahler';
@@ -226,10 +230,19 @@ export function importMahler(R, ctx, games, { byKey }, { chr: CHR_ = CHR } = {})
         let polys = readObject(fv, pt.model);
         const pads = A.extras.filter((e) => e.slot === s);
         for (const e of pads) polys = polys.concat(readObject(fv, e.model).map((q) => moved(q, placed(e))));
+        const mine = obj?.pieces.filter((q) => q.slot === s && !q.hands);
+        if (mine?.length) {
+            polys = mine.flatMap((q) => q.polys);
+            report.push(`slot ${s}: ${mine.map((q) => q.name).join('+')} from ${obj.report[0].split(':')[0]}, ${polys.length} polygons`);
+        }
         pieces.push({ slot: s, what: [pt.model, ...pads.map((e) => e.model)].join('+'), polys: polys.map(scaled) });
     });
     M.hands.forEach((l, h) => l.forEach((m, i) => {
-        if (m !== A.parts[h ? 8 : 5].model && !pieces.some((q) => q.hand === m)) pieces.push({ hand: m, what: `hand ${m}`, polys: readObject(fv, m).map(scaled) });
+        if (m !== A.parts[h ? 8 : 5].model && !pieces.some((q) => q.hand === m)) {
+            const mine = obj?.pieces.find((q) => q.hands && q.model === m);
+            if (mine) report.push(`hand ${m}: ${mine.name} from ${obj.report[0].split(':')[0]}, ${mine.polys.length} polygons`);
+            pieces.push({ hand: m, what: `hand ${m}`, polys: (mine?.polys ?? readObject(fv, m)).map(scaled) });
+        }
     }));
     report.push(`${pieces.length} models (${A.extras.length} pads on the chest), ${pieces.reduce((n, q) => n + q.polys.length, 0)} polygons`);
 

@@ -1529,6 +1529,36 @@ this follows.
   takeoff and landing heights (2.4 before) as FV's arc × K, 0.102 a frame
   forward; Akira's and Sonic's are as before.
 
+### Mahler from an OBJ
+
+`tools/model-obj.mjs` writes any fighter's models as Wavefront OBJ and MTL
+(its header has the rules), and `import-assets.mjs --obj mahler=<dir>` builds
+Mahler from such a folder in place of FV's polygons:
+
+```sh
+node tools/model-obj.mjs export MAHLER /tmp/mahler    # mahler.obj, .mtl, .m2.json, tex/
+#   edit /tmp/mahler/mahler.obj in Blender (Wavefront, Y up, -Z forward)
+node tools/model-obj.mjs check /tmp/mahler            # faces against the ROM's
+node tools/import-assets.mjs --obj mahler=/tmp/mahler # then make, as above
+```
+
+- **Objects.** `slotNN` is body part NN, `slotNN_extraK` a piece FV draws on
+  NN's matrix (his shoulder pads are `slot01_extra0..3`), `handH_M` hand
+  shape M of hand H. A slot's model is its object and its extras, merged as
+  the ROM import merges them; delete an extra and it is gone. An object that
+  is missing keeps FV's model. The midriff stays FV's.
+- **Materials** are the board's texture header words and attribute bits
+  (`m2_<th0>_<th1>_<th2>_<th3>_<attr>`); the PNGs and colours are a preview.
+  A face keeps its tile and colours by keeping its material.
+- **Round trip.** An unedited export reads back face for face as the ROM's
+  (points within 1e-14, the same UVs, headers and normals) for Akira, Mahler
+  and Sonic (`tests/model-obj.test.mjs`); every mesh encodes in no more
+  records than the ROM's. Links are worked out again, so the data ROMs'
+  bytes differ from the stock import, the faces do not.
+- **Seen.** Mahler with his head ×1.6 and the four pads deleted: 1209
+  polygons drawn against 1387 (the debug count), the head bigger, on the
+  board in MAME.
+
 ### Mahler's moves: Fighting Vipers'
 
 `importFvMoves` takes the motions FV Mahler's program and tables reach:
