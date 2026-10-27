@@ -91,8 +91,9 @@ approximations. Each is marked `Here:` in `js/engine.js`:
   coprocessor, so here the levels beyond high, mid and low guard as a mid
   (FV's slide as a low).
 - Down attacks (level 4, and StF's 8 at half damage) land on a fighter lying
-  down. The matcher's en_info bit 5, which their entries want, is taken for
-  "the other is down".
+  down. Their entries want en_flag's en_down_attack (+0x5B8 bit 5), which
+  StF's get_en_info sets while the other is down and not rising; here it is
+  set while the other lies in the down action, not during the fall before.
 - Jump attacks: a press in the jump goes to the context-keyed entries, 1
   rising and 3 falling (StF's: 1). The engine has one jump, the big one, so
   the small jump's 2 and 4, StF's second air step and the rising attacks are

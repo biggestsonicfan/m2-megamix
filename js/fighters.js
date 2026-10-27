@@ -221,10 +221,13 @@ function satisfies(e, hist) {
 
 /* The guards a live fight can answer: the distance tests against the real
  * distance, `vs` passes, the flag tests read clear (nothing sets them here)
- * but for en_info bit 5 (+0x720, get_en_info), which the down attacks'
- * entries want set. Here: it is taken for "the other is lying down"; StF's
- * get_en_info sets it from the other's +0x1A4 state bits, not traced
- * further. */
+ * but for en_down_attack, bit 5 of en_flag (+0x5B8), which the down
+ * attacks' entries want set. StF's matcher op 7 (load_en_flag, by 0x1F028)
+ * tests en_flag; get_en_info sets bit 5 at 0x19400 from the other's
+ * mot_kind (+0x1A4): never while it rises (bit 15) or attacks (bit 8); on
+ * its down pose (bit 16) or an ukemi (+0x70C bit 2); else on mk_down
+ * (bit 14) unless it is still in the air (bit 4) with this fighter's +0x5BC
+ * set. The caller passes it as `foeDown`: the other lying down. */
 const EN_DOWN = 5;
 function guardsPass(e, dist, foeDown) {
     return e.guards.every(([g, v]) => {
