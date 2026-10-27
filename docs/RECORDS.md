@@ -164,11 +164,53 @@ program EPRs (disassembled with `i960-nindy-elf-gdb` from a command file;
 Bits 2–6, 8 and 12 were named before (ring, raft, rock, mirror floor,
 second look, extra piece, one model).
 
-+0x74 is the surface the fighters land and step on. 0x43950 reads it and
-picks one of three sound codes per sound out of 0x201E29C; the landing and
-step code (0x15608, 0x1AF44..0x1AF6C) plays them. Ikada and Islands have 1,
-Yuki-yama, Mirror and the Test record 2, the rest 0. The guess is 0 a hard
-floor, 1 wood or a raft, 2 a soft one (snow, the mirror's water). +0x66 and
++0x74 picks the landing and step sounds. 0x43950 reads it
+(`ldob 0x6EEAC(stage_num<<8)`) and takes one of three codes per sound out of
+the lists at 0x201E29C; the landing and step code (0x15608, 0x1AF44..0x1AF6C)
+plays them. No two values share a code:
+
+| sound | +0x74 = 0 | 1 | 2 |
+|--|--|--|--|
+| 0 | 0x9E187F | 0x9E207F | 0x9E1E7F |
+| 1 | 0x9E155F | 0x9E1B7F | 0x9E197F |
+| 2 | 0x9E155F | 0x9E1C7F | 0x9E1A7F |
+
+Two things override the stage: a fighter with rob+0x624 set gets value 0,
+and fighter 9 (rob+0x1B1) plays value 2's sound before the stage's.
+
+Every record, with the floor the web Megamix draws for it (`?stage=N`, the
+menu number; noclip's reading of the ring models, not checked against the
+board):
+
+| record | stage | menu | +0x74 | floor drawn |
+|--|--|--|--|--|
+| 0 | Tou-rin | 0 | 0 | stone paving |
+| 1 | Colloseum | 1, 2 | 0 | cobbles |
+| 2 | Ikada | 3 | 1 | wooden planks (the raft) |
+| 3 | Budou-jou | 4 | 0 | grey-blue stone |
+| 4 | Ban-ri | 5 | 0 | stone setts |
+| 5 | Islands | 6 | 1 | a wood-grain deck with a raised edge |
+| 6 | Souseiji | 7 | 0 | rough stone |
+| 7 | Stones | 8 | 0 | rock |
+| 8 | Yuki-yama | 9 | 2 | a polished brown ring, lined in squares; the snow is around it (bit 11's ground) |
+| 9 | Tetsujisi | 10 | 0 | cobbles |
+| 10, 11 | Mirror | 11 | 2 | dark water |
+| 12 | Test | 29 | 2 | steel tread plate |
+| 13 | Tetsujisi (a copy) | - | 0 | the same as record 9 |
+| 14 | Colloseum (a copy) | - | 0 | the same as record 1 |
+| 15 | Test ("13:") | 30 | 0 | steel tread plate, the same as record 12 |
+
+What each value means, labelled only where the stages that share it agree:
+
+- **0: a hard floor.** Stone, cobbles, rock, and steel on record 15. They
+  all agree.
+- **1: wood.** Ikada's raft and Islands' deck are both wood.
+- **2: unknown.** Snow (Yuki-yama), water (Mirror) and steel (record 12) do
+  not agree. Record 12 and record 15 draw the same steel floor but have
+  2 and 0, so the value is not the floor's material alone. "Soft" fits snow
+  and water but not the Test record, which may simply have been left set.
+
++0x66 and
 +0x67 are 0xFF everywhere.
 
 ### VF2's fighter records (0x200620C)
