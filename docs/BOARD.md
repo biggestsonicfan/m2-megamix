@@ -1393,6 +1393,13 @@ the 52 action slots and 19 of the 30 reaction kinds his own (FM's table at
   frame (next 0) for good: 0x656, from down and a punch, stood ~690 frames.
   Such a motion gets an op 2 with hit, cancel and end at op 0x12's frame, or
   the motion's last.
+- **Walks.** FM's walk handlers (kind 3, 0x0600DFE0: slot 31, then 33;
+  kind 4, 0x0600E090: 34, then 36) play 0x121 forward and 0x120 back, each
+  moving him on its root, but FM's kind words for them (0xC20 and 0x0C)
+  aren't StF's walk kinds. StF's walk (states 3, 4) then changed motion every
+  frame (flag bit 11, `mot_change`), so he stood on frame 1 and never moved.
+  The motions of VF2's walk slots get StF's kinds (`WALK_KIND`: 0x420
+  forward, 0xC20 back).
 - **Lost.** His 10 throws, FM's escape tests (ops 0x43..0x48, 73 of them),
   its follow-switches (0x4A, 0x4E) and button 8's commits have no StF
   counterpart and fail; air checks (0x32) commit as plain ones.
@@ -1401,7 +1408,9 @@ the 52 action slots and 19 of the 30 reaction kinds his own (FM's table at
 Check: MAME (scripted bout, Hornet vs Honey): his stance is 1639 (FM 0x11C);
 punch, kick, the down and back moves and his reactions to Honey's strikes
 all return to it; his shadow, a hull a piece (docs/SHADOWS.md), falls whole on
-the stance, mid-flip and on the car pose.
+the stance, mid-flip and on the car pose. Holding forward he walks up to
+Eggman and pushes him back; holding back he walks away, on both walks'
+frames (MAME, Hornet vs Eggman).
 
 ## The guest: Fighting Vipers' Mahler
 
