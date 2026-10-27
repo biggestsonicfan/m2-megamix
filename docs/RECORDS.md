@@ -390,8 +390,12 @@ clears them one frame later, when the head runs.
     they are not equal it steps 7 bytes to the next header. The first header
     whose word equals g0 is the one whose script runs. The "second byte" is
     header byte +2, the high byte of g0. The key holds no stick bits.
-  - The low three bits of g0 are buttons newly pressed in the fighter's
-    input byte rob+0x1200. That byte is 0x500700 shifted right 8 for player 1
+  - The low three bits of g0 are new presses from byte +2 of a rob+0x1280
+    entry (r9), not from rob+0x1200, which holds the buttons held. 0x1BC1C
+    loads byte +0 of the previous entry into r6, 0x1BC2C loads rob+0x1200
+    into r8, and `andnot r6,r8,r9` at 0x1BC34 makes r9 = r8 AND NOT r6. That
+    r9 is stored as byte +2 at 0x1BC40, and 0x1C258 loads it back for an
+    older entry. rob+0x1200 is 0x500700 shifted right 8 for player 1
     (0x1BA60) or 16 for player 2 (0x1BAB4). The CONTROL TEST screen (0x607D4,
     labels 0x76A68..0x76AC8) shows player 1's PUNCH from bit 8 of 0x500700,
     KICK 9, GUARD 10, DOWN 12, UP 13, RIGHT 14, LEFT 15. So in the key and in
@@ -399,6 +403,30 @@ clears them one frame later, when the head runs.
     bit 4 is DOWN, 5 UP, 6 RIGHT and 7 LEFT. 0x1C2D4..0x1C308 copies the new
     PUNCH and KICK bits into g0. It copies GUARD only when rob+0x1A4 has bit
     25 or 26 set or g0 is already nonzero.
+  - From r9 to 0x1CA18. 0x1C2D4 clears g0. `chkbit`/`alterbit` copy r9
+    bits 0 and 1 to g0 bits 0 and 1 (0x1C2D8..0x1C2E4), then r9 bit 2 to
+    g0 bit 2 (0x1C2FC, 0x1C300) and r9 bit 8 to g0 bit 5 (0x1C304,
+    0x1C308). r9 is loaded as a byte, so bit 8 is set only by `setbit
+    8,r9,r9` at 0x1C68C. Before that, 0x1C5FC (`bal` at 0x1BD18 with g0 0,
+    at 0x1C270 with g0 1) can change r9: it ands r9 with 7 into r5
+    (0x1C600), can hold those bits back in rob+0x123E[g0] and clear them
+    from r9 (`andnot r4,r9,r9`, r4 = 7, at 0x1C62C and 0x1C6B0), and puts
+    held-back bits into r9 later (`or r5,r9,r9` at 0x1C6C4). 0x1C68C runs
+    when the held-back bits are 6 and r8 AND 7 is 2 (0x1C680..0x1C688).
+    The ROM stores no name for that bit. The interpreter does not lose r9
+    across the calls before 0x1C2D4: 0x1C778 saves r8..r11 (`stq`) and
+    0x1D188 loads them back (`ldq`). g0 then reaches the matcher one of
+    three ways: as it is, or plus 0x500 (0x1C398), then `bal 0x1c70c` at
+    0x1C39C; plus 0x300 or 0x400 (0x1C464, 0x1C46C), then `bal` at
+    0x1C470; or through rob+0x120C: `or g0,r4,r4` at 0x1C428 when r4's low
+    three bits are 0, `and 7,r4,r3` at 0x1C430, g0 = r3 + 0x100 (`lda
+    0x100(r3),g0` at 0x1C43C) or r3 + 0x200 (0x1C444), then `bal` at
+    0x1C454. That third way keeps only bits 0..2. 0x1C70C jumps to 0x1C770,
+    and 0x1C7E0 dispatches each op through 0x1D250, where entry 0x0E
+    (0x1D288) is 0x1CA08. No instruction from 0x1C70C to 0x1CA18 writes
+    g0; native code run by `callx` at 0x1CBB0 and 0x1CBE8 is not traced
+    here. So the button bits compared at 0x1CA18 come from byte +2, not
+    from the held byte.
   - The high byte. With rob+0x1A4 bit 12 clear, g0 is matched at 0x1C39C
     as it is (high byte 0) or with 0x500 added when rob+0x0 has bit 4 set (0x1C394).
     With bit 12 set (`bbs 12` at 0x1C30C) and rob+0x1B2 equal to 2, g0 gets
