@@ -106,3 +106,28 @@ if (chai) {
         'throws', throws.map((e) => e.name).join(' '));
 } else console.log('Chai skipped: no Shenmue disc');
 console.log('ok');
+
+/* The rules the setup records carry: a throw's damage (op 5) and the
+ * victim motion's own hits (play op 8), each strike's attack part as a slot
+ * mask and its level (op 4), and the down attacks' entries, which the
+ * matcher takes in a jump's context with the other lying down. */
+{
+    const { matchPress, P, HIGH, MID, LOW } = await import('../js/fighters.js');
+    const named = (n, g) => fighters.find((f) => f.name === n && f.game === g);
+    const akira = named('AKIRA', 'vf2');
+    assert.deepEqual(akira.attack(15), { victim: 16, damage: 20, hits: [{ frame: 47, damage: 10 }, { frame: 62, damage: 10 }] }, 'Akira 15 throws 16');
+    for (const g of ['vf2', 'fv', 'stf']) {
+        const strikes = fighters.filter((f) => f.game === g).flatMap((f) => [...f.moves.tables.values()].flat()
+            .map((e) => f.attack(e.motion & 0x1fff)).filter((a) => a && a.victim == null));
+        assert.ok(strikes.every((a) => a.part === 0 || a.mask), `${g}: every part has slots`);
+        assert.ok(strikes.some((a) => a.part === 41 && a.mask === 0xffff) || g !== 'stf', `${g}: part 41 the whole body`);
+        assert.ok(strikes.some((a) => a.down), `${g}: down attacks`);
+        assert.deepEqual([HIGH, MID, LOW].map((l) => strikes.some((a) => a.level === l)), [true, true, g !== 'stf'], `${g}: levels`);
+    }
+    const picky = named('PICKY', 'fv');
+    const root = picky.moves.tables.get(picky.moves.root);
+    assert.equal(matchPress(root, P, [0], 1, { ctx: 1, foeDown: true })?.motion & 0x1fff, 88, 'Picky pounces on a fighter down');
+    assert.notEqual(matchPress(root, P, [0], 1, { ctx: 1 })?.motion & 0x1fff, 88, 'and not on one standing');
+    assert.ok(picky.attack(88).down, 'DAT_MUNE_MISS is a down attack');
+    console.log('rules: Akira 15', JSON.stringify(akira.attack(15)), 'Picky 88 part', picky.attack(88).part, picky.attack(88).mask.toString(16));
+}

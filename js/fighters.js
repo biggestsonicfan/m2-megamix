@@ -20,7 +20,7 @@
  */
 import { readFighters, readFighterMotions, poseFighter, partMaterial, standardRig } from '../vendor/noclip/js/vf2fighters.js';
 import { readCharacter } from '../vendor/noclip/js/characters.js';
-import { decodeMotion, sampleMotion, resolveData, readMotionTiming } from '../vendor/noclip/js/motion.js';
+import { decodeMotion, sampleMotion, resolveData, readMotionTiming, readMotionScript } from '../vendor/noclip/js/motion.js';
 import { buildPose, poseMatrices, viewerMatrix } from '../vendor/noclip/js/pose.js';
 import { programMoves, readMoves } from '../vendor/noclip/js/moves.js';
 import { attackOf, reactionMotion, REACTIONS } from '../vendor/noclip/js/reactions.js';
@@ -57,14 +57,26 @@ const ACTION_SLOTS = {
  */
 const STF_REACT = { light: 177, heavy: 182, crouch: 221, down: 225 };
 
-/* Hit levels, as VF2's and FV's strike op keeps them (op 4, byte 2). */
+/* Hit levels, as the strike op keeps them (op 4, byte 2, motd_ap +0x821):
+ * 0 high, 1 mid, 2 low. The rest, read from FV's motion names and the
+ * matcher's contexts: 3 the jump attacks (JU_, JUS_), 4 the down attacks
+ * (DAT_ pounces and stomps; StF's attack_hit wants 4, or its own 8, against
+ * a fighter lying down), 5 FV's slide (a low), 6 one VF2 move, 7 and 8 StF's
+ * own (7 passes for high where StF's air check excludes 0 and 7). The guard
+ * itself is judged on the coprocessor (StF hands it both levels at
+ * 0x1D003A3A), which this engine does not run: here 3 and 6 to 8 guard as a
+ * mid, 4 as a mid on a fighter standing, 5 as a low. */
 export const HIGH = 0, MID = 1, LOW = 2;
+const AP_JUMP = 3, AP_DOWN = 4, AP_SLIDE = 5, AP_STF_DOWN = 8;
+function strikeLevel(ap) {
+    return ap === HIGH || ap === LOW ? ap : ap === AP_SLIDE ? LOW : MID;
+}
+const hitsDown = (ap, stf) => ap === AP_DOWN || (stf && ap === AP_STF_DOWN);
 
 /* The energy every fighter has here. VF2's and FV's strike damage is on
  * this scale; StF's (out of 140, 0x5000A0) is scaled up to it. */
 export const ENERGY = 200;
 const STF_ENERGY = 140;
-const THROW_DAMAGE = 50;
 
 /* ---- the ROMs ------------------------------------------------------------ */
 
@@ -111,17 +123,27 @@ function vfSetupOps(rom, id) {
     if (!p) return null;
     const r = resolveData(rom, p.view.getUint32(p.off, true));
     if (!r) return null;
-    const dv = r.view, ops = [];
+    const dv = r.view, ops = [], play = [];
     let at = r.off + R.head;
     while (at < dv.byteLength) {
         const op = dv.getUint8(at);
-        if (op === 0 || op === 8 || op >= R.ops) break;
+        if (op === 0 || op >= R.ops) return { dv, ops, play };
+        if (op === 8) { at++; break; }
         ops.push({ op, at });
         const len = op === 0x10 ? 2 + 2 * dv.getUint8(at + 1) : rom.mainCpuView.getUint8(R.lengths + op);
-        if (!len) break;
+        if (!len) return { dv, ops, play };
         at += len;
     }
-    return { dv, ops };
+    /* the play script after op 8: each op its frame (u16 at +1), its length
+     * from the profile's script list (js/fighterhands.js walks it too) */
+    const L = rom.game.rig.script ?? [];
+    while (at + 4 <= dv.byteLength) {
+        const op = dv.getUint8(at);
+        if (op === 0 || op >= L.length || !L[op]) break;
+        play.push({ op, frame: dv.getUint16(at + 1, true), at });
+        at += L[op];
+    }
+    return { dv, ops, play };
 }
 
 /* StF: the same record, from the program's motion list (0xCE380), head 13
@@ -142,7 +164,33 @@ function stfSetupOps(rom, id) {
         ops.push({ op, at: p });
         p += len;
     }
-    return { dv, ops };
+    return { dv, ops, play: readMotionScript(rom, id) };
+}
+
+/* The attack part's slots: op 4 byte 1 (+0x820) indexes a table of
+ * sixteen-bit slot masks the hit test walks (42 entries, the last 0xFFFF, the
+ * whole body). The three games' tables match but for part 20, StF 0x206 where
+ * VF2 and FV have 0x202. */
+const PART_MASKS = { stf: { prog: 0xce020 }, vf2: { data: 0x02007aca }, fv: { data: 0x0640e72e } };
+const PARTS = 42;
+function partMask(rom, key, part) {
+    const c = per(rom);
+    if (!c.parts) {
+        const T = PART_MASKS[key];
+        const at = T?.prog != null ? { view: rom.mainCpuView, off: progAddr(rom, T.prog) }
+            : T ? resolveData(rom, T.data) : null;
+        c.parts = at ? [...Array(PARTS)].map((_, i) => at.view.getUint32(at.off + i * 4, true)) : [];
+    }
+    return c.parts[part] ?? 0;
+}
+
+/* A throw's damage: op 5 byte 3 at the throw, then the hits the victim's
+ * motion deals itself, play op 8 (its frame, byte 3 the damage): Akira's
+ * 15 throws 16 for 20, then 10 at frames 47 and 62. */
+const PLAY_DAMAGE = 8;
+function throwHits(s, scale) {
+    return s ? s.play.filter((o) => o.op === PLAY_DAMAGE)
+        .map((o) => ({ frame: o.frame, damage: scale(s.dv.getUint8(o.at + 3)) })).filter((h) => h.damage > 0) : [];
 }
 
 /* ---- the input matcher (js/moves.js's, run live) ------------------------- */
@@ -172,9 +220,16 @@ function satisfies(e, hist) {
 }
 
 /* The guards a live fight can answer: the distance tests against the real
- * distance, `vs` passes, the flag tests read clear (nothing sets them here). */
-function guardsPass(e, dist) {
+ * distance, `vs` passes, the flag tests read clear (nothing sets them here)
+ * but for en_info bit 5 (+0x720, get_en_info), which the down attacks'
+ * entries want set. Here: it is taken for "the other is lying down"; StF's
+ * get_en_info sets it from the other's +0x1A4 state bits, not traced
+ * further. */
+const EN_DOWN = 5;
+function guardsPass(e, dist, foeDown) {
     return e.guards.every(([g, v]) => {
+        if (g === 'en_set' && v === EN_DOWN) return foeDown;
+        if (g === 'en_clear' && v === EN_DOWN) return !foeDown;
         if (g.endsWith('_clear')) return true;
         if (g === 'nearer_than') return dist < v;
         if (g === 'further_than') return dist > v;
@@ -183,10 +238,12 @@ function guardsPass(e, dist) {
 }
 
 /** The entry a press lands on: the first, in the engine's order, whose tests
- * pass. `hist` is the stick since the last press, collapsed, oldest first. */
-export function matchPress(entries, btn, hist, dist) {
-    return entries?.find((e) => (e.key & 0xff) === btn && (e.key >> 8) === 0
-        && guardsPass(e, dist) && satisfies(e, hist)) ?? null;
+ * pass. `hist` is the stick since the last press, collapsed, oldest first.
+ * `ctx` is the key's high byte the caller is in (0 on the ground; the jump's
+ * contexts, see the engine). */
+export function matchPress(entries, btn, hist, dist, { ctx = 0, foeDown = false } = {}) {
+    return entries?.find((e) => (e.key & 0xff) === btn && (e.key >> 8) === ctx
+        && guardsPass(e, dist, foeDown) && satisfies(e, hist)) ?? null;
 }
 
 /* ---- the fighters -------------------------------------------------------- */
@@ -251,7 +308,7 @@ function vfFighter(game, entry) {
             const a = attackOf(rom, id);
             return a?.times ? { hit: a.times[0], cancel: a.times[1], end: a.times[2] } : null;
         },
-        attack(id) { return vfAttack(rom, id, game.key === 'fv'); },
+        attack(id) { return vfAttack(rom, id, game.key); },
         reaction(a, how) {
             const kind = a.game === game.key && a.kind != null ? a.kind : game.kindFor(a);
             const cat = REACTIONS.find((r) => r.key === how);
@@ -322,20 +379,26 @@ function decodeKey(rom, key) {
         : decodeModel(rom, +model, null, { bytes: rom.polygons.subarray(at), uvPtr: entry.uvPtr, matPtr: parseInt(matPtr, 16) });
 }
 
-/* A VF2/FV strike: op 4's kind word (js/reactions.js), its byte 2 the level
- * (0 high, 1 mid, 2 low; FV's 4 and 5 are its low sweeps), byte 3 the
- * damage and, in FV, byte 0xE the finish kind (+0x874; 3 breaks the cage,
- * docs/FV-STAGES.md). A throw: op 5's victim motion. */
+/* A VF2/FV strike: op 4's kind word (js/reactions.js), its byte 1 the
+ * attack part, byte 2 the level (ap), byte 3 the damage and, in FV, byte 0xE
+ * the finish kind (+0x874; 3 breaks the cage, docs/FV-STAGES.md). A throw:
+ * op 5's victim motion and damage, and the victim motion's own hits. */
 const FINISH_AT = 0xe;
-function vfAttack(rom, id, fv) {
+const same = (d) => d;
+function vfAttack(rom, id, key) {
     const a = attackOf(rom, id);
     if (!a) return null;
-    if (a.victim != null) return { victim: a.victim, damage: THROW_DAMAGE };
     const s = vfSetupOps(rom, id);
+    if (a.victim != null) {
+        const op = s?.ops.find((o) => o.op === 5);
+        return { victim: a.victim, damage: op ? s.dv.getUint8(op.at + 3) : 0, hits: throwHits(vfSetupOps(rom, a.victim), same) };
+    }
     const op = s?.ops.find((o) => o.op === 4);
-    const lv = op ? s.dv.getUint8(op.at + 2) : MID;
-    return { kind: a.kind, side: a.side, level: lv > LOW ? LOW : lv, damage: op ? s.dv.getUint8(op.at + 3) : 10,
-        finish: fv && op ? s.dv.getUint8(op.at + FINISH_AT) : 0 };
+    const ap = op ? s.dv.getUint8(op.at + 2) : MID;
+    const part = op ? s.dv.getUint8(op.at + 1) : 0;
+    return { kind: a.kind, side: a.side, ap, level: strikeLevel(ap), down: hitsDown(ap, false),
+        part, mask: partMask(rom, key, part), damage: op ? s.dv.getUint8(op.at + 3) : 10,
+        finish: key === 'fv' && op ? s.dv.getUint8(op.at + FINISH_AT) : 0 };
 }
 
 function stfFighter(game, entry) {
@@ -397,20 +460,24 @@ function stfFighter(game, entry) {
     };
 }
 
-/* An StF strike: op 4, byte 3 after the opcode its damage (punch 10, spin
- * 30), out of 140; the level is not known for certain, so it comes from the
- * input (see the engine). A throw: op 5's first u16, the victim motion
- * (280 throws into 281), and byte 3 its damage. */
+/* An StF strike: op 4 as VF2's (byte 1 the part, 2 the level, 3 the
+ * damage: punch 10, spin 30), out of 140. A throw: op 5's first u16, the
+ * victim motion (280 throws into 281), byte 3 its damage, and the victim
+ * motion's own hits; most of StF's throws deal none. */
 function stfAttack(rom, id, cpuDamage) {
     const s = stfSetupOps(rom, id);
     if (!s) return null;
     const scale = (d) => Math.round((d * ENERGY) / STF_ENERGY);
     const thr = s.ops.find((o) => o.op === 5);
-    if (thr) return { victim: s.dv.getUint16(thr.at + 1, true) & MOTION_ID, damage: scale(s.dv.getUint8(thr.at + 3) || 30) };
+    if (thr) {
+        const victim = s.dv.getUint16(thr.at + 1, true) & MOTION_ID;
+        return { victim, damage: scale(s.dv.getUint8(thr.at + 3)), hits: throwHits(stfSetupOps(rom, victim), scale) };
+    }
     const st = s.ops.find((o) => o.op === 4);
     if (!st) return null;
+    const ap = s.dv.getUint8(st.at + 2), part = s.dv.getUint8(st.at + 1);
     const d = s.dv.getUint8(st.at + 3) || cpuDamage.get(id) || 10;
-    return { level: null, damage: scale(d) };
+    return { ap, level: strikeLevel(ap), down: hitsDown(ap, true), part, mask: partMask(rom, 'stf', part), damage: scale(d) };
 }
 
 /* ---- one game's tables --------------------------------------------------- */
@@ -434,7 +501,7 @@ export function prepareGame(game) {
         for (const mv of pm?.moves ?? []) {
             const id = mv.motion & MOTION_ID;
             if (seen.has(id)) continue;
-            const a = vfAttack(rom, id);
+            const a = vfAttack(rom, id, game.key);
             if (a && a.kind != null && a.kind < R.kinds) seen.set(id, a);
         }
     }

@@ -83,12 +83,23 @@ struct dump, F2 pauses and F3 steps one frame.
 The engine is written from what the three games share, so some parts are
 approximations. Each is marked `Here:` in `js/engine.js`:
 
-- Hits are tested from the forward-most hand, foot or head (the limb up to
-  its elbow, knee or chest) against a capsule, not from the part the setup
-  record names.
-- StF's strike level is not read. The input decides it.
+- Strikes hit with the part their setup record names (op 4's attack part,
+  the slot masks at StF 0xCE020, VF2 0x02007ACA, FV 0x0640E72E), each slot
+  as a limb, against a capsule from the floor to the head; the board's own
+  hit volumes are the coprocessor's.
+- The level is op 4's byte 2 in all three games. Guarding is judged on the
+  coprocessor, so here the levels beyond high, mid and low guard as a mid
+  (FV's slide as a low).
+- Down attacks (level 4, and StF's 8 at half damage) land on a fighter lying
+  down. The matcher's en_info bit 5, which their entries want, is taken for
+  "the other is down".
+- Jump attacks: a press in the jump goes to the context-keyed entries, 1
+  rising and 3 falling (StF's: 1). The engine has one jump, the big one, so
+  the small jump's 2 and 4, StF's second air step and the rising attacks are
+  not reached.
+- Throws deal op 5's damage, then the victim motion's own hits (play op 8)
+  at their frames; many throws deal none.
 - The CPU player is a simple one.
-- Throws use 50 damage on VF2/FV, because their damage is not read.
 - Rounds last 40 s and need 2 wins (1–3 in the menu).
 - FV's cage breaks on a finishing KO and stays broken for the match; a
   fighter past a broken side is out (docs/FV-MAHLER.md, Breaking the cage).

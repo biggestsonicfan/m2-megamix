@@ -13,6 +13,7 @@
  * No three.js: the Node test runs a bout through it.
  */
 import { MOTION_ID, S, P, K, G, DOWN, UP, FWD, BACK, HIGH, MID, LOW, ENERGY, matchPress, rootAt, motionOf } from './fighters.js';
+import { SLOT_PARENT } from '../vendor/noclip/js/pose.js';
 import { ARENA } from './games.js';
 
 /* The action states, as Sonic the Fighters' fight code numbers them
@@ -246,15 +247,18 @@ function think(fight, p, o) {
     if (fight.phase !== 'fight') return;
     const v = p.pad;
 
-    /* A press: the root table when free, the parked follow table from the
-     * cancel frame of the move that parked it (the engine's string window). */
+    /* A press: the root table when free or in the air, the parked follow
+     * table from the cancel frame of the move that parked it (the engine's
+     * string window). */
     if (p.press && fight.tick - p.press.at > CHORD) {
         const age = fight.tick - p.press.at;
         const inString = p.state === ST.MOTION && p.pc_command && p.timing && p.mot_coma >= p.timing.cancel;
-        const table = inString ? p.pc_command : FREE.has(p.state) ? p.fighter.moves.root : null;
+        const air = !inString && p.state === ST.JUMP;
+        const table = inString ? p.pc_command : FREE.has(p.state) || air ? p.fighter.moves.root : null;
         if (table) {
             const hist = p.press.hist;
-            const e = matchPress(p.fighter.moves.tables.get(table), p.press.btn, hist.length ? hist : [0], dist);
+            const how = { ctx: air ? jumpContext(p) : 0, foeDown: o.state === ST.DOWN };
+            const e = matchPress(p.fighter.moves.tables.get(table), p.press.btn, hist.length ? hist : [0], dist, how);
             if (e) { startMove(fight, p, o, e, p.press); p.press = null; return; }
             if (!inString) p.press = null;
         }
@@ -279,6 +283,29 @@ function think(fight, p, o) {
     if (p.crouching) return setAct(p, 'toStand');
     const want = v & FWD ? 'walkF' : v & BACK ? 'walkB' : 'stance';
     if (p.action !== want) setAct(p, want);
+}
+
+/*
+ * The matcher's context in a jump: the key's high byte. StF's caller passes
+ * 1 in a jump from motd_jump_coma (+0x80E) on (2 when the action's bit 18,
+ * the hyper form, is set; 3 and 4 a second air step, which this engine's
+ * jump does not take). VF2's and FV's tables keep 1 and 2 for the rising
+ * half of a big and a small jump and 3 and 4 for the falling half (FV's
+ * motion names: JU_ big, JUS_ small, the falling kicks under 3). Here: the
+ * jump is the big one, its rising half up to the frame its root is
+ * highest, and StF's from the first frame.
+ */
+const CTX_RISE = 1, CTX_FALL = 3;
+const apexes = new WeakMap();
+function jumpContext(p) {
+    if (p.fighter.game === 'stf') return CTX_RISE;
+    const m = p.mot.motion;
+    if (!apexes.has(m)) {
+        let top = 1, y = -Infinity;
+        for (let f = 1; f <= m.frames; f++) { const h = rootAt(p.mot.rom, m, f)[1]; if (h > y) { y = h; top = f; } }
+        apexes.set(m, top);
+    }
+    return p.mot_coma <= apexes.get(m) ? CTX_RISE : CTX_FALL;
 }
 
 /* Commit to a move (the matcher's commit op): the motion, its timing and
@@ -306,8 +333,9 @@ function startMove(fight, p, o, e, press) {
     fight.events.push({ kind: 'move', side: p.side, id, name: p.lastMove });
 }
 
-/* Here: Sonic the Fighters' level byte is not read, so the press gives it:
- * down and anything is low, a punch high, the rest mid. */
+/* Here: for a fighter whose strikes carry no level (none of the three
+ * games'; a game brought in may), the press gives it: down and anything is
+ * low, a punch high, the rest mid. */
 function levelOf(press) {
     const last = press.hist[press.hist.length - 1] ?? 0;
     if (last & DOWN) return LOW;
@@ -344,10 +372,18 @@ function throwStart(fight, p, o, id, atk) {
     setMotion(o, { rom: p.fighter.rom, motion: victim }, { state: ST.NAGERARE });
     o.action = 'thrown';
     o.attack = null; o.timing = null; o.press = null;
-    o.throwDamage = atk.damage;
+    /* op 5's damage at the throw, the victim motion's own hits at their
+     * frames (advance) */
+    o.throwHits = atk.hits ?? [];
     o.thrower = p.fighter.name;
+    throwDamage(fight, o, atk.damage ?? 0);
     p.lastMove = `throw ${id}`;
     fight.events.push({ kind: 'throw', side: p.side, id, victim: atk.victim });
+}
+
+function throwDamage(fight, o, damage) {
+    o.energy = Math.max(0, o.energy - damage);
+    fight.events.push({ kind: 'thrown', side: o.side, damage });
 }
 
 /* ---- playback ------------------------------------------------------------ */
@@ -357,7 +393,11 @@ function advance(fight, p) {
     if (p.state === ST.DOWN && p.action === 'down') {
         if (++p.downFor > DOWN_FRAMES && p.energy > 0) { p.downFor = 0; setAct(p, 'rise'); return; }
     }
-    if (p.mot_coma < m.frames) { p.mot_coma++; return; }
+    if (p.mot_coma < m.frames) {
+        p.mot_coma++;
+        if (p.state === ST.NAGERARE) for (const h of p.throwHits ?? []) if (h.frame === p.mot_coma) throwDamage(fight, p, h.damage);
+        return;
+    }
     if (p.loop) {
         const a = rootAt(p.mot.rom, m, m.frames), b = rootAt(p.mot.rom, m, 1);
         carry(p, a[0] - b[0], a[2] - b[2]);
@@ -372,8 +412,7 @@ function advance(fight, p) {
 function ended(fight, p) {
     switch (p.state) {
     case ST.NAGERARE:
-        p.energy = Math.max(0, p.energy - (p.throwDamage ?? 0));
-        fight.events.push({ kind: 'thrown', side: p.side, damage: p.throwDamage });
+        p.throwHits = null;
         p.downFor = 0;
         return setAct(p, 'down');
     case ST.YARARE:
@@ -390,37 +429,60 @@ function ended(fight, p) {
 
 /* ---- strikes --------------------------------------------------------------
  *
- * Here: the board tests each strike against the other's body by the moving
- * part its setup names; this engine takes the end of a limb that is furthest
- * forward (hands, feet, head) through the active frames, hit to the later of
- * cancel and hit + 2, against a capsule from the floor to the head. The limb
- * from its inner joint (elbow, knee, chest) to that end is tested, not the
- * end alone, so a blow that reaches past the body still lands.
+ * The board tests a strike by the attack part its setup names (op 4 byte 1,
+ * +0x820): a mask of the rig's slots (fighters.js partMask). Each slot in it
+ * is tested as the limb it moves: from its origin to its one child's, or,
+ * for an end (hand, foot, head) or a branch (the chest), from its parent's
+ * origin to its own. Here: the limbs are tested through the active frames,
+ * hit to the later of cancel and hit + 2, against a capsule from the floor
+ * to the head (the board's own hit volumes are the coprocessor's), and a
+ * strike with no part (a game brought in) uses the limb end that is
+ * furthest forward (hands, feet, head) from its inner joint.
  */
 const EFFECTORS = [S.LHAND, S.RHAND, S.LFOOT, S.RFOOT, S.HEAD];
 const INNER = { [S.LHAND]: S.LHAND - 1, [S.RHAND]: S.RHAND - 1, [S.LFOOT]: S.LFOOT - 1, [S.RFOOT]: S.RFOOT - 1, [S.HEAD]: S.CHEST };
-function strike(fight, p, o) {
-    if (p.state !== ST.MOTION || !p.attack || p.hitDone || !p.timing) return;
-    const { hit, cancel } = p.timing;
-    if (p.mot_coma < hit || p.mot_coma > Math.max(hit + 2, cancel)) return;
+const CHILDREN = SLOT_PARENT.map((_, s) => SLOT_PARENT.flatMap((q, c) => (q === s ? [c] : [])));
+function limbOf(s) {
+    const kids = CHILDREN[s];
+    if (kids.length === 1) return [s, kids[0]];
+    return SLOT_PARENT[s] >= 0 ? [SLOT_PARENT[s], s] : [s, kids[0]];
+}
+function limbs(p, a) {
+    const out = [];
+    for (let s = 0; s < SLOT_PARENT.length; s++) if (a.mask & (1 << s)) out.push(limbOf(s));
+    if (out.length) return out;
     const fwd = [Math.cos(p.yang), 0, -Math.sin(p.yang)];
     const base = bodyPoint(p);
     let best = null, reach = -Infinity;
     for (const s of EFFECTORS) {
-        const w = slotWorld(p, s);
-        const r = dot(sub(w, base), fwd);
+        const r = dot(sub(slotWorld(p, s), base), fwd);
         if (r > reach) { reach = r; best = s; }
     }
-    if (o.state === ST.NAGERARE || o.state === ST.DOWN || o.state === ST.RISE) return;
+    return [[INNER[best], best]];
+}
+/* A down attack (fighters.js hitsDown) lands on a fighter lying down, the
+ * rest pass over it; StF's level 8 does half (its attack_hit's tetsu path). */
+const STF_DOWN_HALF = 8;
+function strike(fight, p, o) {
+    if (p.state !== ST.MOTION || !p.attack || p.hitDone || !p.timing) return;
+    const { hit, cancel } = p.timing;
+    if (p.mot_coma < hit || p.mot_coma > Math.max(hit + 2, cancel)) return;
+    if (o.state === ST.NAGERARE || o.state === ST.RISE) return;
+    const lying = o.state === ST.DOWN;
+    if (lying && !p.attack.down) return;
+    const fwd = [Math.cos(p.yang), 0, -Math.sin(p.yang)];
     const head = slotWorld(o, S.HEAD), pel = slotWorld(o, S.PELVIS);
-    const foot = [pel[0], 0.1, pel[2]];
-    const tip = slotWorld(p, best), inner = slotWorld(p, INNER[best]);
+    const foot = lying ? pel : [pel[0], 0.1, pel[2]];
     let d = Infinity;
-    for (let k = 0; k <= 4; k++) {
-        const t = k / 4, at = [inner[0] + (tip[0] - inner[0]) * t, inner[1] + (tip[1] - inner[1]) * t, inner[2] + (tip[2] - inner[2]) * t];
-        d = Math.min(d, segDist(at, foot, head));
+    for (const [i, j] of limbs(p, p.attack)) {
+        const inner = slotWorld(p, i), tip = slotWorld(p, j);
+        for (let k = 0; k <= 4; k++) {
+            const t = k / 4, at = [inner[0] + (tip[0] - inner[0]) * t, inner[1] + (tip[1] - inner[1]) * t, inner[2] + (tip[2] - inner[2]) * t];
+            d = Math.min(d, segDist(at, foot, head));
+        }
     }
     if (d > BODY_RADIUS * sizeOf(o) + HIT_RADIUS * sizeOf(p)) return;
+    if (lying) return downHit(fight, p, o);
     const a = p.attack;
     /* A high blow goes over a crouch (the board's yarare test does the same
      * by height). */
@@ -446,6 +508,16 @@ function strike(fight, p, o) {
     fight.events.push({ kind: 'hit', side: p.side, damage, counter, level: a.level });
 }
 
+/* A blow on a fighter lying down: the damage, and the lie starts over. */
+function downHit(fight, p, o) {
+    const a = p.attack;
+    p.hitDone = true;
+    const damage = p.fighter.game === 'stf' && a.ap === STF_DOWN_HALF ? Math.round(a.damage / 2) : a.damage;
+    o.energy = Math.max(0, o.energy - damage);
+    o.downFor = 0;
+    fight.events.push({ kind: 'hit', side: p.side, damage, counter: false, level: a.level, down: true });
+}
+
 function react(fight, o, how, kind) {
     const ref = o.fighter.reaction(how, kind) ?? o.fighter.reaction(how, 'hit');
     o.pc_command = 0; o.press = null; o.attack = null; o.timing = null;
@@ -460,7 +532,8 @@ function react(fight, o, how, kind) {
 /* ---- the arena ----------------------------------------------------------- */
 
 function separate(fight, a, b) {
-    if (a.state === ST.NAGERARE || b.state === ST.NAGERARE) return;
+    /* one thrown, or lying down, is stood over (a pounce lands on it) */
+    if ([a, b].some((p) => p.state === ST.NAGERARE || p.state === ST.DOWN)) return;
     const pa = bodyPoint(a), pb = bodyPoint(b);
     const d = flat(pa, pb), apart = PUSH_APART * (sizeOf(a) + sizeOf(b)) / 2;
     if (d >= apart || d < 1e-6) return;
