@@ -54,6 +54,13 @@ export const VF2_SLOT = {
     0: 0, 3: 2, 4: 5, 7: 7, 8: 12, 9: 15, 10: 16, 11: 19, 12: 20, 13: 21, 14: 22, 15: 24, 16: 26, 17: 27,
     20: 31, 21: 33, 22: 36, 23: 34, 24: 37, 25: 38, 26: 39, 27: 40, 31: 49, 81: 41, 82: 42, 83: 43,
 };
+/* VF2's walk slots (20, 21 forward; 22, 23 back) and the kind word StF's
+ * walk wants of their motions (mk_move | mk_walk, | mk_back): in states 3
+ * and 4 it changes motion every frame while the kind isn't that, so the walk
+ * never leaves frame 1. FM's walk handlers (kind 3 0x0600DFE0: slot 31, then
+ * 33; kind 4 0x0600E090: 34, then 36) don't read FM's kind that way, and
+ * Hornet's are 0xC20 (forward, 0x121) and 0x0C (back, 0x120). */
+export const WALK_KIND = { 20: 0x420, 21: 0x420, 22: 0xc20, 23: 0xc20 };
 /* VF2's falls (0x2CE: STF_ACTIONS 38, 39 and the knock-downs) are FM's 0x69C. */
 const FALL = 0x69c;
 /* The kinds StF has no type for that play one of his action slots (FM
@@ -160,6 +167,13 @@ export function importFmMoves(R, ctx, game, fighter, { who = 'Hornet' } = {}) {
         return n;
     };
     report.push(`${ids.length} motions (${ids.filter((id) => rowOf(id).bank.n === fighter.motions).length} his bank's, the rest the common one's), ${first}..${top - 1}`);
+    /* his walks' kinds, StF's (WALK_KIND) */
+    const walkKind = new Map();
+    for (const [x, k] of Object.entries(WALK_KIND)) {
+        const m = slots[VF2_SLOT[x]];
+        if (walkKind.has(m) && walkKind.get(m) !== k) throw new Error(`${who}: motion ${hex(m)} walks both ways`);
+        walkKind.set(m, k);
+    }
 
     /* ---- setups, StF's way ---- */
     const damages = new Map();
@@ -168,8 +182,10 @@ export function importFmMoves(R, ctx, game, fighter, { who = 'Hornet' } = {}) {
     function convertSetup(id) {
         const s = setups.get(id), h = s.head;
         /* the head: FM's kind word (+0) is StF's 0x804, its +8 and +9 StF's 0x810 and 0x814;
-         * of its kind2 (+4, big-endian) only bit 5, the armour breaker, means the same to StF */
-        const out = [h[3], h[2], h[1], h[0], h[7] & 0x20, 0, 0, 0, h[8], 0, h[9], 0, 0];
+         * of its kind2 (+4, big-endian) only bit 5, the armour breaker, means the same to StF;
+         * a walk's kind is StF's (WALK_KIND) */
+        const kind = walkKind.has(id) ? le32(walkKind.get(id)) : [h[3], h[2], h[1], h[0]];
+        const out = [...kind, h[7] & 0x20, 0, 0, 0, h[8], 0, h[9], 0, 0];
         let strike = null, win = null;
         for (const { op, b } of s.setup) {
             const u16 = (o) => b.readUInt16BE(o);
