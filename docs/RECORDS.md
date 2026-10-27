@@ -260,6 +260,68 @@ The call chain is `rob_action` 0x143F4 → 0x1499C → 0x18144 (0x16478 or
   the freeze (`bbs 5` at 0x14370 → 0x14410). So while the debug menu holds the
   fight, the ring test does not run and cannot set w0 bit 5.
 
+The other w0 bits the notes above touch: bit 31 set by the fighter start,
+bits 26 and 29 cleared at 0x14190. The fighter start's `w0 &= 0xFF000000`
+keeps bits 24 to 31, so it clears neither 26 nor 29. 0x14190 is inside the
+setup head 0x13F08 that every fighter start points rob+0xC at, so a start
+clears them one frame later, when the head runs.
+
+- w0 bit 31 is the task scheduler's run flag, on every task, not a fighter
+  flag. The scheduler walks the task list from 0x510000 (next task at
+  +0x8) and calls a task's resume point at +0xC only when its w0 bit 31 is
+  set (`bbc 31` at 0x10DC0, `callx` at 0x10DC8). Under 0x500068 bit 16 it
+  runs only the fixed list at 0x10EA0, *0x500834, with the same test at
+  0x10E88. Bit 31 is set by the fighter start (0x54AE8, and right after 39 of
+  the program's 41 `0xFF000000` masks) and by the `setbit 31` writes through *0x500804 and
+  *0x500808 (0xB254, 0xB308, 0x318E8, 0x53B28, 0x55220 and others). It is
+  cleared by the `mov 1,r4; clrbit 31` sequences that stop tasks: both
+  fighters at 0xC690/0xC6A8, 0xEC80/0xEC98, 0xEE2C/0xEE44, 0x3A1DC/0x3A1F4
+  and 0x58F10/0x58F28, fighter 0 at 0x54A14 and fighter 1 at 0x5610C. The
+  same writes start and stop other tasks: *0x500828, *0x500868, *0x50086C
+  and more. Readers on a fighter: 0x1645C calls the fighter update 0x18144
+  for each fighter whose bit 31 is set (0x16474, 0x1648C), and 0x18644 only
+  when both have it (0x16498). 0x3B158 skips its work when fighter 0's bit
+  is clear. FV's and StF's flag tables do not name bit 31.
+- w0 bit 26 is `smooth_switch` (FV and StF): blend into a new motion from
+  the old pose. Its only test is `bbc 26` at 0x27148, in 0x27130. Callers:
+  `set_motion`'s tail (0x1A0C8), 0x1ABE8, 0x3ACC4 and 0x3AEBC. A blend needs
+  the bit set, debug byte 0x508008 at 0, rob+0xBE4 not 1, and a motion
+  longer than 2 frames (rob+0x800). Then 0x27130 picks a blend kind of 1 to
+  3 (by rob+0x1A4, 0x804, 0xC30 and 0x814) into rob+0xBDD. It also picks a
+  blend length of 1, 2, 4 or 8 frames, by the motion's length, into
+  rob+0xBDE (0x271D8..0x27238), and copies the old pose (rob+0xBD8 → +0x690,
+  20 entries of 12 bytes) to 0x50E0F0. Without a blend, rob+0xBE5, +0xBDD
+  and +0xBE4 are set to 0 (0x271C4..0x271D0). `set_motion` puts 1 in +0xBE4
+  when its g0 has bit 13 or 14 (0x19F40, 0x19FA8), which turns one blend
+  off. Writes: boot sets bit 26 on both fighters (0x9B04, 0x9B3C). The setup
+  head clears it (0x141F0), plays the stance (`set_motion` 0x14288) and sets
+  it again (0x14290), so the stance comes in without a blend and every
+  motion after it blends. The frame-timed command player at 0x548CC (lists
+  at 0x5001D0 and 0x5001D4, timed by the frame count 0x500024) runs 0x54BE8
+  for each entry. That routine stores the entry's command in rob+0x194 and
+  sets bit 26, or clears it when the entry's byte +6 is not 0
+  (0x54BFC..0x54C08). The `clrbit 26` at 0xCDE8 is on *0x500834, not a
+  fighter.
+- w0 bit 29 marks a fighter in one of 11 motions that take extra damage.
+  VF2 does not name it. StF's table calls bit 29 `small`, which is another
+  meaning. Only `set_motion` sets it on a fighter (0x19F90). That happens
+  when the motion id (low 13 bits) is in the table at 0x1B98C (288, 926, 934,
+  928, 610, 622, 623, 640, 422, 421, 417; whose motions they are is not
+  traced). Each reader tests the opponent (g8):
+  - Throw damage at 0x145C8: + damage/4, debug label "sd_nage" (0x1B982).
+  - Hit damage at 0x229E4: × 1.75, label "counter2" (0x23D7D). Unless
+    rob+0x1A4 has bit 16 or 14, it is × 1.5 instead, label "counter3"
+    (0x23D86), and the bit is cleared (0x22A18).
+  - Collision 0x188A8.
+  - The opponent logic at 0x41890 and 0x41C2C.
+
+  It is also cleared by the setup head (0x141FC) and by the rise at 0x158D0.
+  The other bit 29 writes are on *0x500864 and *0x500834. The set and every
+  reader run only when settings byte [0x50016C]+0x3351 has bit 6
+  (SHARED-CODE.md: clear on MAME's vf2), so with that bit clear, bit 29 is
+  never set. What bit 6 is, and so whether a real board ever uses bit 29,
+  is still a lead.
+
 Every record, with the floor the web Megamix draws for it (`?stage=N`, the
 menu number; noclip's reading of the ring models, not checked against the
 board):
