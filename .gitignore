@@ -3,3 +3,4 @@ board/src/stf_motion.s
 board/src/stf_motion.h
 board/src/stf_rom_80000.bin
 board/roms/
+board/moves-out/

@@ -95,6 +95,37 @@ A run with the stripped ROMs draws the same frames as one with StF's full set
 stages), and a read trace of the board finds no word it reads that the import
 left out.
 
+### Moves as text
+
+`tools/moves-text.mjs` writes each fighter's moves on the board as a plain
+listing, `board/moves-out/<chr>-<name>.moves` (it reads `board/roms`, so run
+the import first). A listing has two parts:
+
+- **The command program.** This is the input matcher StF's `_uk_execute_move`
+  runs. Each op is one line, with labels in place of addresses: `key P ground
+  S_8212D`, `exact down+fwd`, `alt S_82140`, `commit 380 type=0x1c`, and
+  `native S_x g0=516 near` for the inline code.
+- **The setup records.** These are the `animation_related` records of every
+  motion the program plays, and of the motions those go on to. Each has its
+  13-byte head, then its ops: `timing` gives the hit, cancel and end frames,
+  `strike` the attack id, level and damage, `throw` the victim's motion and
+  damage, and `play` an op and its frame. Any other op is written as its bytes.
+
+Assembled where it came from, a listing gives back the same bytes, and
+`tests/moves-text.test.mjs` checks this for all eight fighters. Assembled
+somewhere else, it reads back as the same moves.
+
+A `.moves` file put in `board/moves/` replaces that fighter's moves the next
+time `tools/import-assets.mjs` runs:
+
+- A program that differs from what is in the ROM goes in the guest heap. The
+  fighter's MOVESET_ARRAY slot then points at it, and its `near` natives
+  become far ones (`STF_NATIVE_TAIL_FAR`).
+- A setup that differs also goes in the heap, and its motion's slot points at
+  it. That slot belongs to the motion, so the change applies to every fighter
+  who plays that motion.
+- Anything unchanged stays where it is. A file nobody edited changes no bytes.
+
 ## How a fighter is drawn
 
 The motions are StF's own code. `tools/lift-stf.py` lifts StF's motion

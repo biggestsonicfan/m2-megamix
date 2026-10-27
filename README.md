@@ -25,7 +25,9 @@ uses (`tools/import-assets.mjs`). It boots into a game setup in the style of
 StF's debug menu (time, rounds, stage, both fighters, energy, barriers;
 up/down to pick, kick/punch to change, start to fight). Two cabinets can
 play one fight over the Model 2 communication board (`tools/mame/link-cabinets.sh`).
-Its source is `board/src`, one module a file. See `docs/BOARD.md`.
+A fighter's moves can be written out as text, edited and imported again
+(`tools/moves-text.mjs`, `board/moves/`). Its source is `board/src`, one module a file.
+See `docs/BOARD.md`.
 
 ## Running
 
