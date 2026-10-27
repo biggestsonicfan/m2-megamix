@@ -365,8 +365,11 @@ clears them one frame later, when the head runs.
     commit word 0x1A1. Likewise no stick input and no table before it.
   - 422 (0x1A6): the follow-up table 0x38E18, key 0x004 (G), commit at
     0x38E51. 0x38E18 is parked (op 0x0D at 0x38E0C) by the commit of 419
-    (0x1A3, at 0x38E13), which the root table plays for neutral, back+down,
-    back+K (key 0x002) or back+G+K (0x006).
+    (0x1A3, at 0x38E13), which the root table plays for no stick bit, then
+    DOWN with the flag-1 side bit, then K with that side bit (key 0x002) or
+    G+K (0x006). The flag-1 side bit is LEFT or RIGHT by rob+0x0 bit 1
+    (below); the note used to call it "back", a word the program does not
+    store.
   - 421 (0x1A5): the same table's K (key 0x002) commits 420 (0x1A4, at
     0x38E34) and parks 0x38E39 (op 0x0D at 0x38E2F). The matcher next runs
     from there: op 0x16, a wait (ops 0x12, 0x1D), then the commit of 421
@@ -379,6 +382,58 @@ clears them one frame later, when the head runs.
   plays or hands off to another of the four. 421 and 422 are the two
   branches after 419 (420 then 421, or 422). The program stores no name for
   419, 420 or the high byte 2 of a key.
+
+  How a key is compared, from the matcher that runs Shun's program (the
+  table pointer is loaded at 0x1BBD4, the ops dispatch through 0x1D250):
+  - Op 0x0E (handler 0x1CA08) reads header bytes +1 and +2 as one 16-bit
+    word, +1 low, and compares it with g0 (`cmpobe r3,g0` at 0x1CA18). If
+    they are not equal it steps 7 bytes to the next header. The first header
+    whose word equals g0 is the one whose script runs. The "second byte" is
+    header byte +2, the high byte of g0. The key holds no stick bits.
+  - The low three bits of g0 are buttons newly pressed in the fighter's
+    input byte rob+0x1200. That byte is 0x500700 shifted right 8 for player 1
+    (0x1BA60) or 16 for player 2 (0x1BAB4). The CONTROL TEST screen (0x607D4,
+    labels 0x76A68..0x76AC8) shows player 1's PUNCH from bit 8 of 0x500700,
+    KICK 9, GUARD 10, DOWN 12, UP 13, RIGHT 14, LEFT 15. So in the key and in
+    rob+0x1200, bit 0 is PUNCH, 1 KICK and 2 GUARD (the note's P, K, G),
+    bit 4 is DOWN, 5 UP, 6 RIGHT and 7 LEFT. 0x1C2D4..0x1C308 copies the new
+    PUNCH and KICK bits into g0. It copies GUARD only when rob+0x1A4 has bit
+    25 or 26 set or g0 is already nonzero.
+  - The high byte. With rob+0x1A4 bit 12 clear, g0 is matched at 0x1C39C
+    as it is (high byte 0) or with 0x500 added when rob+0x0 has bit 4 set (0x1C394).
+    With bit 12 set (`bbs 12` at 0x1C30C) and rob+0x1B2 equal to 2, g0 gets
+    0x300 added, or 0x400 when rob+0x19C has bit 18 set (0x1C45C..0x1C46C).
+    Otherwise, with bit 12 set, the program keeps the first nonzero buttons
+    in the low three bits of rob+0x120C (0x1C428). It matches them once (bit
+    6, 0x1C448) after bit 7 of that byte is set. 0x1C400 sets bit 7 when
+    rob+0x1AA + 1 is at least rob+0x80E. 0x1C41C also sets it, when the
+    input holds no UP and rob+0x19C bit 18 is clear. The key is then 0x200
+    plus the buttons if rob+0x19C has bit 18 set (`bbs 18` at 0x1C438,
+    0x1C444), or 0x100 plus the buttons if it is clear. So high byte 2 means
+    rob+0x1A4 bit 12 set, rob+0x1B2 not 2 and rob+0x19C bit 18 set.
+  - Which entry. Every root key with high byte 2 and bit 0 set (0x201,
+    0x203, 0x205, 0x207) runs script 0x390EA. Keys 0x202 and 0x206 (bit 1
+    set, bit 0 clear) run 0x39107. No root key is 0x204 (GUARD alone).
+    0x390EA commits 0x265 if rob+0x5B8 has bit 11 set (op 7, handler
+    0x1C974). If not, it commits 0x1AA when rob+0x19C has bit 16 set (op
+    0x1C, handler 0x1CD00). Only when both tests fail does it commit
+    0x09040280 (at 0x39102), which plays 640. 0x39107 commits 0x1A1 (417, at
+    0x3910E) only when rob+0x19C has bit 16 set. If not, it commits
+    0x09040090 when bit 17 is set, and 0x377 when it is not. Neither script
+    has a stick op, so the earlier "no stick input" holds.
+  - The stick tests are separate script ops, not part of the key. Ops 0, 1
+    and 3 (handlers 0x1C7F0, 0x1C84C, 0x1C8AC) take a stick mask from byte
+    +1. Bit 0 of byte +2 sets bit r6 in the mask and bit 1 sets bit r7. They
+    compare it with the input sample masked to 0xF0: held from
+    rob+0x1280[i*4], new from rob+0x1282[i*4] (0x1D0E8..0x1D128). Ops 2 and
+    0x1E take a bit number, 8 meaning r6 and 9 meaning r7 (0x1C87C,
+    0x1C820). Op 0x28
+    branches on bit r6 or r7 of rob+0x1281[i*4] (0x1CE84). r6 is 6 (RIGHT)
+    and r7 is 7 (LEFT) when rob+0x0 bit 1 is clear, and the other way round
+    when it is set (0x1BCE0..0x1BCF8). 419's script (0x38DD7 → 0x38DFB)
+    takes the r7 branch of op 0x28 at 0x38DA1. Then it runs op 1 with 0x10
+    and flag 2 (DOWN plus the r7 bit), op 3 with the same mask, and op 1
+    with 0x00 (no stick bit), most recent first.
 
   FV and StF have no such table. Their `set_motion` goes straight from the
   bit-14 block to the bit-13 block (FV 0x1B5E4 → 0x1B5FC, StF 0x1AFAC →
