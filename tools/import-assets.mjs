@@ -35,7 +35,7 @@
  * outdir/assets.txt, the list of what it kept, by region and address, and
  * outdir/guests.json, what each guest lost on the way in (tools/grade-guest.mjs).
  */
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
 import { readZipDirectory, extractZipEntry } from '../vendor/noclip/js/zip.js';
 import { loadNodeGames, shenmueFile } from '../tests/node-roms.mjs';
 import { importAkira, CHR as AKIRA_CHR } from './vf2-guest.mjs';
@@ -46,6 +46,7 @@ import { importVf2Stages, VF2_SET0 } from './vf2-stages.mjs';
 import { importFvStages } from './fv-stages.mjs';
 import { importGuestShadows } from './guest-shadows.mjs';
 import { guestSound, STF_FILES, SHENMUE_PACK } from './guest-sound.mjs';
+import { installMoves } from './moves-text.mjs';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const ROMS = process.env.ROMS_DIR || `${process.env.HOME}/build/mameroms`;
@@ -661,6 +662,11 @@ for (const line of vf2st.report) console.log(`VF2 stages: ${line}`);
 /* Fighting Vipers' Western (tools/fv-stages.mjs) */
 const fvst = importFvStages(R, NG, akira.ctx);
 for (const line of fvst.report) console.log(`FV stages: ${line}`);
+/* board/moves: fighters' moves as text, edited (tools/moves-text.mjs writes
+ * them), in place of what each had */
+const MOVES = `${ROOT}board/moves`;
+for (const f of existsSync(MOVES) ? readdirSync(MOVES).filter((n) => n.endsWith('.moves')).sort() : [])
+    for (const line of installMoves(R, akira.ctx, readFileSync(`${MOVES}/${f}`, 'utf8'), f)) console.log(`Moves ${f}: ${line}`);
 /* the guest tables, as they are after every guest's entries */
 for (const [name, t] of Object.entries(R.guest.tables)) R.main.put(t.at - MAIN_DATA, t.bytes, `guest ${name}`);
 
