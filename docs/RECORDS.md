@@ -167,16 +167,19 @@ second look, extra piece, one model).
 +0x74 picks the landing and step sounds. 0x43950 reads it
 (`ldob 0x6EEAC(stage_num<<8)`) and takes one of three codes per sound out of
 the lists at 0x201E29C; the landing and step code (0x15608, 0x1AF44..0x1AF6C)
-plays them. No two values share a code:
+plays them. No two values share a code. The program's own sound-name table
+(0x76C7C on, a code and its name: `metalfoot1`, `wooddown`...) names each:
 
 | sound | +0x74 = 0 | 1 | 2 |
 |--|--|--|--|
-| 0 | 0x9E187F | 0x9E207F | 0x9E1E7F |
-| 1 | 0x9E155F | 0x9E1B7F | 0x9E197F |
-| 2 | 0x9E155F | 0x9E1C7F | 0x9E1A7F |
+| 0 (a fall) | 0x9E187F `down` | 0x9E207F `wooddown` | 0x9E1E7F `metaldown` |
+| 1 (a foot) | 0x9E155F `land` | 0x9E1B7F `woodfoot1` | 0x9E197F `metalfoot1` |
+| 2 (a foot) | 0x9E155F `land` | 0x9E1C7F `woodfoot2` | 0x9E1A7F `metalfoot2` |
 
-Two things override the stage: a fighter with rob+0x624 set gets value 0,
-and fighter 9 (rob+0x1B1) plays value 2's sound before the stage's.
+Two things override the stage (0x4396C..0x43998): a fighter with rob+0x624
+set gets value 0, and fighter 9 (rob+0x1B1; Dural, by `VF2_NAMES`) plays
+value 2's sound, the metal one, before the stage's. rob+0x624 is likely the
+ring-out fall (BOARD.md, Ring out), the ground outside the ring.
 
 Every record, with the floor the web Megamix draws for it (`?stage=N`, the
 menu number; noclip's reading of the ring models, not checked against the
@@ -200,15 +203,17 @@ board):
 | 14 | Colloseum (a copy) | - | 0 | the same as record 1 |
 | 15 | Test ("13:") | 30 | 0 | steel tread plate, the same as record 12 |
 
-What each value means, labelled only where the stages that share it agree:
+What each value means (0 and 1 from the floors that share them, 2 from the names):
 
 - **0: a hard floor.** Stone, cobbles, rock, and steel on record 15. They
   all agree.
 - **1: wood.** Ikada's raft and Islands' deck are both wood.
-- **2: unknown.** Snow (Yuki-yama), water (Mirror) and steel (record 12) do
-  not agree. Record 12 and record 15 draw the same steel floor but have
-  2 and 0, so the value is not the floor's material alone. "Soft" fits snow
-  and water but not the Test record, which may simply have been left set.
+- **2: metal.** The program names its sounds `metaldown`, `metalfoot1`
+  and `metalfoot2`. It is the sound the game gives Yuki-yama, Mirror and
+  Test record 12 whatever their floors look like (snow, water, steel), the
+  same set Dural's metal body adds on every stage. Record 15 draws the same
+  steel floor with 0 (`down`/`land`), so the byte is set by stage, not read
+  from the floor.
 
 +0x66 and
 +0x67 are 0xFF everywhere.
