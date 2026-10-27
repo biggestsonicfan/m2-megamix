@@ -297,7 +297,7 @@ export function enFlag(game, { kind, lying, inAir }) {
  * decides; `own` is null when the one hit is not StF's (0 here). `kind` is
  * null for a fighter whose game has no mot_kind (Shenmue): its moves count
  * to their cancel, and its counters deal VF2's. */
-export { MK_ATTACK };
+export { MK_ATTACK, MK_AIR };
 export function isCounter(kind, coma, timing) {
     return !!timing && coma < timing.cancel && (kind == null || !!(kind & MK_ATTACK));
 }
@@ -305,6 +305,19 @@ export function counterDamage(game, a, own) {
     if (game !== 'stf') return (a.damage * 3) >> 1;
     const raw = ((a.raw + ((own ?? 0) >> 2)) * 3) >> 1;
     return stfScale(raw);
+}
+
+/* A blow in the air: attack_hit (StF 0x2B298 "air", FV 0x26380) deals half
+ * again, d * 3 >> 1, when the fighter hit has mk_air and not mk_down in its
+ * mot_kind, after a counter and ukemi (which take it instead). mot_kind is
+ * the motion's motd_kind (set_mot_dat, StF 0x1B4FC), and the jump handler
+ * adds mk_air at take-off (fix_hara: StF ACT_RC_JUMP 0x140CC, FV 0x14508);
+ * engine.js airKind. VF2's (0x22B6C) gives way on a combo's first hit to a
+ * d * 5 / 4 that needs the struck part (+0x6D4 not in 0xD9B0), so VF2 is
+ * left as it was. null: no change. */
+export function airDamage(game, a, kind) {
+    if ((game !== 'stf' && game !== 'fv') || (kind & (MK_AIR | MK_DOWN)) !== MK_AIR) return null;
+    return game === 'stf' ? stfScale((a.raw * 3) >> 1) : (a.damage * 3) >> 1;
 }
 
 /** The entry a press lands on: the first, in the engine's order, whose tests

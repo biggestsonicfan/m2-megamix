@@ -12,7 +12,7 @@
  *
  * No three.js: the Node test runs a bout through it.
  */
-import { MOTION_ID, S, P, K, G, DOWN, UP, FWD, BACK, HIGH, MID, LOW, ENERGY, matchPress, enFlag, isCounter, counterDamage, rootAt, motionOf } from './fighters.js';
+import { MOTION_ID, S, P, K, G, DOWN, UP, FWD, BACK, HIGH, MID, LOW, ENERGY, matchPress, enFlag, isCounter, counterDamage, airDamage, MK_AIR, rootAt, motionOf } from './fighters.js';
 import { SLOT_PARENT } from '../vendor/noclip/js/pose.js';
 import { ARENA } from './games.js';
 
@@ -87,6 +87,7 @@ export function makePlayer(side, fighter) {
         fly: null,                  /* StF: the jump's flight, {vy} (+0x30), till it lands */
         air: null,                  /* a jump's frames left in the air from take-off (+0x5BC) */
         held: null,                 /* an air attack held back, {e, press, at} (+0x19C bit 19) */
+        hara: null,                 /* the jump's motion from take-off: mk_air (+0x1A4 bit 4) */
         wins: 0,                    /* 0x50004F p1_wins / 0x500051 p2_wins */
         posed: null,
         lastMove: '',
@@ -164,7 +165,7 @@ function resetRound(fight) {
         p.yang = i ? Math.PI : 0;
         p.energy = ENERGY;
         p.mot = null;
-        p.pc_command = 0; p.press = null; p.hist = []; p.hit_combo = 0; p.riseKick = null; p.fly = null; p.air = null; p.held = null;
+        p.pc_command = 0; p.press = null; p.hist = []; p.hit_combo = 0; p.riseKick = null; p.fly = null; p.air = null; p.held = null; p.hara = null;
         p.finished = false;
         setAct(p, 'stance');
     });
@@ -382,6 +383,9 @@ function airTime(fight, p) {
     if (p.state !== ST.JUMP) { p.air = p.held = null; return; }
     if (p.air != null) p.air = Math.max(0, p.air - 1);
     else if (p.mot_coma === takeoff(p, p.mot.motion) && p.fighter.flight) p.air = p.fighter.flight(p.small);
+    /* the jump handler's step 1 at take-off (+0x1AA up to +0x80E) calls
+     * fix_hara: mk_air on its mot_kind (airKind) */
+    if (p.mot_coma >= takeoff(p, p.mot.motion)) p.hara = p.mot;
     if (p.held && p.air <= p.held.at) {
         const { e, press } = p.held;
         p.held = null;
@@ -618,18 +622,19 @@ function strike(fight, p, o) {
         return;
     }
     const counter = counterOn(o);
-    const damage = counter ? counterDamage(p.fighter.game, a, counter.own) : a.damage;
+    const air = counter ? null : airDamage(p.fighter.game, a, airKind(o));
+    const damage = counter ? counterDamage(p.fighter.game, a, counter.own) : air ?? a.damage;
     o.energy = Math.max(0, o.energy - damage);
     /* counted on the fighter hit, as the games count it (hit_combo); a
      * second without a hit ends it here */
     o.hit_combo = (fight.tick - (o.comboAt ?? -99) < 60) ? o.hit_combo + 1 : 1;
     o.comboAt = fight.tick;
-    /* Here: attack_hit's other changes to the damage (air, down, tender,
-     * multi) are not read, and a blow of 40 or more knocks down. */
+    /* Here: attack_hit's other changes to the damage (down, tender, multi,
+     * ukemi) are not read, and a blow of 40 or more knocks down. */
     o.knocked = o.energy <= 0 || damage >= 40;
     if (o.energy <= 0 && finishes(p, a)) o.finished = true;
     react(fight, o, how, o.knocked ? 'down' : counter ? 'counter' : 'hit');
-    fight.events.push({ kind: 'hit', side: p.side, damage, counter: !!counter, level: a.level });
+    fight.events.push({ kind: 'hit', side: p.side, damage, counter: !!counter, air: air != null, level: a.level });
 }
 
 /* A counter (fighters.js isCounter): o is playing its own move, before its
@@ -640,6 +645,16 @@ function counterOn(o) {
     const kind = o.fighter.motKind ? o.fighter.motKind(o.moveId) : null;
     if (!isCounter(kind, o.mot_coma, o.timing)) return null;
     return { own: o.fighter.attack(o.moveId)?.raw ?? null };
+}
+
+/* o's mot_kind for attack_hit (fighters.js airDamage): its motion's
+ * motd_kind, with mk_air from the jump's take-off on (p.hara, airTime) till
+ * its next motion. Here: play ops that change mot_kind mid-motion, and
+ * StF's mk_air at the stage's edge (rob_check_stage), are not followed. */
+function airKind(o) {
+    const id = o.mot?.motion?.index;
+    const kind = o.fighter.motKind && id != null && o.mot.rom === o.fighter.rom ? o.fighter.motKind(id) : 0;
+    return o.hara && o.hara === o.mot ? kind | MK_AIR : kind;
 }
 
 /* A blow on a fighter lying down: the damage, and the lie starts over. */

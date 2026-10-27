@@ -363,3 +363,39 @@ console.log('ok');
         console.log('counter:', n, 'motion', id, JSON.stringify(tm), JSON.stringify(hit));
     }
 }
+
+/* In the air: attack_hit deals d * 3 >> 1 (StF on its own scale) on a
+ * fighter whose mot_kind has mk_air and not mk_down; the jump motions'
+ * motd_kind has no mk_air, the jump handler adds it at take-off (fix_hara).
+ * VF2's air gives way to a struck-part test, so VF2 is left as it was. */
+{
+    const { airDamage, MK_AIR } = await import('../js/fighters.js');
+    assert.equal(airDamage('fv', { damage: 18 }, MK_AIR), 27);
+    assert.equal(airDamage('stf', { damage: 14, raw: 10 }, MK_AIR), 21, 'StF: 10 * 3 >> 1 = 15 of 140');
+    assert.equal(airDamage('fv', { damage: 18 }, MK_AIR | (1 << 14)), null, 'not with mk_down');
+    assert.equal(airDamage('vf2', { damage: 18 }, MK_AIR), null);
+    assert.equal(airDamage('fv', { damage: 18 }, 1 << 12), null, 'mk_jump alone is not in the air');
+    const { createFight, stepFight } = await import('../js/engine.js');
+    for (const [n, g, reads] of [['AKIRA', 'vf2', false], ['PICKY', 'fv', true], ['SONIC', 'stf', true]]) {
+        const f = fighters.find((x) => x.name === n && x.game === g);
+        assert.ok(!(f.motKind(f.act('jump').motion.index) & MK_AIR), `${n}: the jump's motd_kind has no mk_air`);
+        for (const jump of [true, false]) {
+            const fight = createFight(f, f, f.game);
+            fight.phase = 'fight';
+            const [p, o] = fight.players;
+            p.pos = [-0.45, 0, 0]; o.pos = [0.45, 0, 0];
+            let hit = null, past = null;
+            for (let i = 0; i < 90 && !hit; i++) {
+                past = !!o.hara && o.hara === o.mot && o.mot_coma >= f.takeoff(o.mot.motion.index);
+                stepFight(fight, [{ P: i === 0 }, { up: jump && i < 3 }]);
+                hit = fight.events.find((e) => e.kind === 'hit' && e.side === 0) ?? null;
+            }
+            assert.ok(hit && !hit.counter, `${n}: the punch lands`);
+            assert.equal(past, jump, `${n}: past the jump's take-off`);
+            const base = p.attack.damage;
+            assert.equal(hit.damage, jump ? airDamage(g, p.attack, MK_AIR) ?? base : base, `${n}: in the air ${jump}`);
+            assert.equal(hit.air, jump && reads);
+            console.log('air:', n, jump ? 'jumping' : 'standing', JSON.stringify(hit));
+        }
+    }
+}

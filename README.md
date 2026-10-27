@@ -98,6 +98,13 @@ approximations. Each is marked `Here:` in `js/engine.js`:
   move's. Here: StF's smaller counter on a limb (smlcntr, by the part the
   coprocessor says was struck) is not told apart, so every StF counter is
   the full one, and a throw is never countered.
+- In the air: a blow on a fighter whose mot_kind has mk_air and not mk_down
+  deals half again in StF and FV (attack_hit's "air", StF 0x2B298, FV
+  0x26380), after a counter. mot_kind is the motion's own kind, and the
+  jump handler adds mk_air at take-off (fix_hara: StF 0x140CC, FV 0x14508)
+  till the next motion. Here: VF2's (0x22B6C) gives way on a combo's first
+  hit to a quarter more that needs the struck part, so VF2's is not read;
+  play ops that change mot_kind mid-motion are not followed.
 - Down attacks (level 4, and StF's 8 at half damage) land on a fighter lying
   down. Their entries want en_flag's en_down_attack (+0x5B8 bit 5; bit 11
   in VF2), which get_en_info sets from the other's mot_kind as the board
@@ -134,8 +141,8 @@ approximations. Each is marked `Here:` in `js/engine.js`:
 - Throws deal op 5's damage, then the victim motion's own hits (play op 8)
   at their frames; many throws deal none.
 - Not read from the games yet, the engine's own: attack_hit's other changes
-  to the damage (StF from 0x2B0F8: in the air, down, tender, multi, ukemi;
-  FV and VF2 have most of them), the knock-down (here any blow of 40 or
+  to the damage (StF from 0x2B0F8: down, tender, multi, ukemi; FV and VF2
+  have most of them, and VF2 its air), the knock-down (here any blow of 40 or
   more), the hit combo's one-second window, a guard turned away failing,
   the throw's reach (1.5 bodies), a strike's active frames (hit to the
   later of cancel and hit + 2) and the 50 frames lying before the rise.
