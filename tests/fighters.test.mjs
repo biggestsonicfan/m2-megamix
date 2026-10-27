@@ -126,10 +126,59 @@ console.log('ok');
     }
     const picky = named('PICKY', 'fv');
     const root = picky.moves.tables.get(picky.moves.root);
-    assert.equal(matchPress(root, P, [0], 1, { ctx: 1, foeDown: true })?.motion & 0x1fff, 88, 'Picky pounces on a fighter down');
+    assert.equal(matchPress(root, P, [0], 1, { ctx: 1, en: 1 << 5 })?.motion & 0x1fff, 88, 'Picky pounces on a fighter down');
     assert.notEqual(matchPress(root, P, [0], 1, { ctx: 1 })?.motion & 0x1fff, 88, 'and not on one standing');
     assert.ok(picky.attack(88).down, 'DAT_MUNE_MISS is a down attack');
     console.log('rules: Akira 15', JSON.stringify(akira.attack(15)), 'Picky 88 part', picky.attack(88).part, picky.attack(88).mask.toString(16));
+}
+
+/* en_down_attack (fighters.js enFlag), as get_en_info sets it from the
+ * other's mot_kind: on the knock-down's fall as well as the lying, not while
+ * this fighter is in the air over a fall, not on a stance, nor on StF's and
+ * FV's rise (mk_rise). Bit 5 in StF and FV (Sonic's down, K: 46), 11 in VF2,
+ * where Akira's pounce (567, the small jump's P) wants it. */
+{
+    const { matchPress, enFlag, P, K, DOWN } = await import('../js/fighters.js');
+    for (const g of ['vf2', 'fv', 'stf']) {
+        const f = fighters.find((x) => x.game === g);
+        const bit = 1 << (g === 'vf2' ? 11 : 5);
+        const kindOf = (ref) => f.motKind(ref.motion.index);
+        const fall = f.reaction({ game: g, kind: 0, side: 0, level: 1, damage: 30 }, 'down');
+        assert.equal(enFlag(g, { kind: kindOf(fall) }), bit, `${g}: set on the fall`);
+        assert.equal(enFlag(g, { kind: kindOf(fall), inAir: true }), 0, `${g}: not from the air`);
+        assert.equal(enFlag(g, { kind: kindOf(f.act('down')), inAir: true }), bit, `${g}: set on the lying`);
+        assert.equal(enFlag(g, { kind: kindOf(f.act('stance')) }), 0, `${g}: not on a stance`);
+        if (g !== 'vf2') assert.equal(enFlag(g, { kind: kindOf(f.act('rise')) }), 0, `${g}: not on the rise`);
+    }
+    assert.equal(enFlag('shenmue', { kind: null, lying: true }), 1 << 5, 'no motd_kind: lying stands in');
+    const akira = fighters.find((f) => f.name === 'AKIRA' && f.game === 'vf2');
+    const root = akira.moves.tables.get(akira.moves.root);
+    assert.equal(matchPress(root, P, [0], 1, { ctx: 2, en: 1 << 11 })?.motion & 0x1fff, 567, 'Akira pounces on bit 11');
+    assert.notEqual(matchPress(root, P, [0], 1, { ctx: 2, en: 1 << 5 })?.motion & 0x1fff, 567, 'not on bit 5');
+    const sonic = fighters.find((f) => f.name === 'SONIC' && f.game === 'stf');
+    const sroot = sonic.moves.tables.get(sonic.moves.root);
+    assert.equal(matchPress(sroot, K, [0, DOWN, 0], 1, { en: 1 << 5 })?.motion & 0x1fff, 46, 'Sonic: down, K on bit 5');
+    assert.notEqual(matchPress(sroot, K, [0, DOWN, 0], 1, {})?.motion & 0x1fff, 46, 'and not without it');
+    /* In a fight: the other is knocked down and still falling; a jump with
+     * P pressed before take-off pounces (Picky's 88 in the jump, Akira's 567
+     * in the small jump). The engine had it only once the other lay. */
+    const { createFight, stepFight, setMotion, ST } = await import('../js/engine.js');
+    for (const [n, g, small, want] of [['PICKY', 'fv', false, 88], ['AKIRA', 'vf2', true, 567]]) {
+        const f = fighters.find((x) => x.name === n && x.game === g);
+        const fight = createFight(f, f, f.game);
+        fight.phase = 'fight';
+        const [p, o] = fight.players;
+        setMotion(o, f.reaction({ game: g, kind: 0, side: 0, level: 1, damage: 30 }, 'down'), { state: ST.YARARE });
+        o.knocked = true;
+        let m = null;
+        for (let t = 1; t <= 40 && !m; t++) {
+            stepFight(fight, [{ up: small ? t === 1 : t <= 20, P: t === 2 }, {}]);
+            m = fight.events.find((e) => e.kind === 'move' && e.side === 0) ?? null;
+            assert.equal(o.state, ST.YARARE, `${n}: the other still falling at ${t}`);
+        }
+        assert.equal(m?.id, want, `${n}: pounces on the fall ${JSON.stringify(m)}`);
+    }
+    console.log('en_down_attack: on the fall and the lying, bit 11 in VF2');
 }
 
 /* The small jump: up let go before take-off commits it (VF2 0x1C3CC), and a

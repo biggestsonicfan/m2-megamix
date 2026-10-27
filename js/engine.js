@@ -12,7 +12,7 @@
  *
  * No three.js: the Node test runs a bout through it.
  */
-import { MOTION_ID, S, P, K, G, DOWN, UP, FWD, BACK, HIGH, MID, LOW, ENERGY, matchPress, rootAt, motionOf } from './fighters.js';
+import { MOTION_ID, S, P, K, G, DOWN, UP, FWD, BACK, HIGH, MID, LOW, ENERGY, matchPress, enFlag, rootAt, motionOf } from './fighters.js';
 import { SLOT_PARENT } from '../vendor/noclip/js/pose.js';
 import { ARENA } from './games.js';
 
@@ -266,7 +266,7 @@ function think(fight, p, o) {
         const table = inString ? p.pc_command : FREE.has(p.state) || air ? p.fighter.moves.root : null;
         if (table && ctx != null) {
             const hist = p.press.hist;
-            const how = { ctx, foeDown: o.state === ST.DOWN };
+            const how = { ctx, en: enOf(p, o) };
             const e = matchPress(p.fighter.moves.tables.get(table), p.press.btn, hist.length ? hist : [0], dist, how);
             if (e) { if (!holdBack(p, e, p.press)) startMove(fight, p, o, e, p.press); p.press = null; return; }
             if (!inString) p.press = null;
@@ -575,6 +575,14 @@ function limbs(p, a) {
     }
     return [[INNER[best], best]];
 }
+/* en_flag's en_down_attack for p (fighters.js enFlag): from the other's
+ * motion's mot_kind, so a knock-down's fall counts as well as the lying. */
+function enOf(p, o) {
+    const id = o.mot?.motion?.index;
+    const kind = o.fighter.motKind && id != null ? o.fighter.motKind(id) : null;
+    return enFlag(p.fighter.game, { kind, lying: o.state === ST.DOWN, inAir: !!p.air });
+}
+
 /* A down attack (fighters.js hitsDown) lands on a fighter lying down, the
  * rest pass over it; StF's level 8 does half (its attack_hit's tetsu path). */
 const STF_DOWN_HALF = 8;

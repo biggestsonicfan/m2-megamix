@@ -250,19 +250,12 @@ function satisfies(e, hist) {
 }
 
 /* The guards a live fight can answer: the distance tests against the real
- * distance, `vs` passes, the flag tests read clear (nothing sets them here)
- * but for en_down_attack, bit 5 of en_flag (+0x5B8), which the down
- * attacks' entries want set. StF's matcher op 7 (load_en_flag, by 0x1F028)
- * tests en_flag; get_en_info sets bit 5 at 0x19400 from the other's
- * mot_kind (+0x1A4): never while it rises (bit 15) or attacks (bit 8); on
- * its down pose (bit 16) or an ukemi (+0x70C bit 2); else on mk_down
- * (bit 14) unless it is still in the air (bit 4) with this fighter's +0x5BC
- * set. The caller passes it as `foeDown`: the other lying down. */
-const EN_DOWN = 5;
-function guardsPass(e, dist, foeDown) {
+ * distance, `vs` passes, and the en_flag (+0x5B8) tests read `en`, the bits
+ * of it the engine works out (enFlag); the other flags read clear. */
+function guardsPass(e, dist, en) {
     return e.guards.every(([g, v]) => {
-        if (g === 'en_set' && v === EN_DOWN) return foeDown;
-        if (g === 'en_clear' && v === EN_DOWN) return !foeDown;
+        if (g === 'en_set') return (en >>> v & 1) === 1;
+        if (g === 'en_clear') return (en >>> v & 1) === 0;
         if (g.endsWith('_clear')) return true;
         if (g === 'nearer_than') return dist < v;
         if (g === 'further_than') return dist > v;
@@ -270,13 +263,34 @@ function guardsPass(e, dist, foeDown) {
     });
 }
 
+/* en_down_attack, which the down attacks' entries want set: bit 5 of
+ * en_flag in StF and FV, bit 11 in VF2 (the matcher's op 7). get_en_info
+ * sets it from the other's mot_kind (+0x1A4; StF 0x193DC, FV 0x19810, VF2
+ * 0x188AC): never while it rises (bit 15) or attacks (bit 8); on its down
+ * pose (bit 16), or its ukemi (mot_kind2 bit 2, StF +0x70C, FV +0x720; no
+ * ukemi here); else on mk_down (bit 14) unless it is in the air (bit 4)
+ * while this fighter's frames left in the air (+0x5BC) are not 0. So a
+ * knock-down's fall (mk_air and mk_down in all three) already counts.
+ * mot_kind is the motion's motd_kind as the setup reader loads it (StF
+ * 0x1B4D8, FV 0x1B964, VF2 0x1A318: mk_attack with mk_rise reads as the
+ * down pose). VF2 also sets it on any fighter under a debug setting
+ * (0x50016C+0x3351 bit 6 with the other's +0 bit 29), which is not here.
+ * `kind` is the other's motd_kind, null when its game has none (Shenmue):
+ * then `lying` stands in. */
+const MK_AIR = 1 << 4, MK_ATTACK = 1 << 8, MK_DOWN = 1 << 14, MK_DOWN_POSE = 1 << 16;
+export function enFlag(game, { kind, lying, inAir }) {
+    const down = kind == null ? lying
+        : !(kind & (MK_RISE | MK_ATTACK)) && (!!(kind & MK_DOWN_POSE) || (!!(kind & MK_DOWN) && !(kind & MK_AIR && inAir)));
+    return down ? 1 << (game === 'vf2' ? 11 : 5) : 0;
+}
+
 /** The entry a press lands on: the first, in the engine's order, whose tests
  * pass. `hist` is the stick since the last press, collapsed, oldest first.
  * `ctx` is the key's high byte the caller is in (0 on the ground; the jump's
- * contexts, see the engine). */
-export function matchPress(entries, btn, hist, dist, { ctx = 0, foeDown = false } = {}) {
+ * contexts, see the engine); `en` the fighter's en_flag (enFlag). */
+export function matchPress(entries, btn, hist, dist, { ctx = 0, en = 0 } = {}) {
     return entries?.find((e) => (e.key & 0xff) === btn && (e.key >> 8) === ctx
-        && guardsPass(e, dist, foeDown) && satisfies(e, hist)) ?? null;
+        && guardsPass(e, dist, en) && satisfies(e, hist)) ?? null;
 }
 
 /* ---- the fighters -------------------------------------------------------- */
@@ -292,6 +306,7 @@ export function matchPress(entries, btn, hist, dist, { ctx = 0, foeDown = false 
  *   reaction(a, how)   the motion this fighter plays under attack `a`
  *   takeoff(id)        a jump motion's take-off frame (0 if none)
  *   riseWindow(id)     a get-up's {cancel, window} (FV, StF), else null
+ *   motKind(id)        its motion's motd_kind (+0x804), the mot_kind bits
  *   flight(small)      the frames a jump flies (+0x5BE)
  *   flies              StF: the jump flies by gravity, not by its motion
  *   airHold(id)        an air attack's hold, frames left in the air (+0x5C0)
@@ -351,6 +366,7 @@ function vfFighter(game, entry) {
         airHold(id) { return airHoldOf(vfSetupOps(rom, id)); },
         flight(small) { return vfFlight(rom, game.key, body.index, small); },
         riseWindow(id) { return game.key === 'fv' ? riseWindowOf(vfSetupOps(rom, id)) : null; },
+        motKind(id) { return vfSetupOps(rom, id)?.kind ?? 0; },
         reaction(a, how) {
             const kind = a.game === game.key && a.kind != null ? a.kind : game.kindFor(a);
             const cat = REACTIONS.find((r) => r.key === how);
@@ -491,6 +507,7 @@ function stfFighter(game, entry) {
         takeoff(id) { return takeoffOf(stfSetupOps(rom, id)); },
         airHold(id) { return airHoldOf(stfSetupOps(rom, id)); },
         riseWindow(id) { return riseWindowOf(stfSetupOps(rom, id)); },
+        motKind(id) { return stfSetupOps(rom, id)?.kind ?? 0; },
         flight(small) { return stfFlight(rom, entry.index, small); },
         flies: true,
         reaction(a, how) {

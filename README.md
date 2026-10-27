@@ -91,9 +91,13 @@ approximations. Each is marked `Here:` in `js/engine.js`:
   coprocessor, so here the levels beyond high, mid and low guard as a mid
   (FV's slide as a low).
 - Down attacks (level 4, and StF's 8 at half damage) land on a fighter lying
-  down. Their entries want en_flag's en_down_attack (+0x5B8 bit 5), which
-  StF's get_en_info sets while the other is down and not rising; here it is
-  set while the other lies in the down action, not during the fall before.
+  down. Their entries want en_flag's en_down_attack (+0x5B8 bit 5; bit 11
+  in VF2), which get_en_info sets from the other's mot_kind as the board
+  does (StF 0x193DC, FV 0x19810, VF2 0x188AC): on mk_down, so on a
+  knock-down's fall as well as the lying, but not while it rises or attacks,
+  nor over a fall while this fighter is in the air. Here: the hit itself
+  still lands only on a fighter lying down, and there is no ukemi
+  (mot_kind2 bit 2).
 - Jump attacks: up let go before take-off (setup op 3's motd_jump_coma)
   makes the jump the small one, as the board does. A press before take-off
   waits for it and goes to context 1 (2 in a small jump), one in the air to
