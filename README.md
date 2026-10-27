@@ -101,10 +101,15 @@ approximations. Each is marked `Here:` in `js/engine.js`:
   flies the body by gravity, so the engine does too: from take-off for the
   frames the character record's +0x20 gives (Sonic 38, small 26), with an
   air attack playing on until it lands. FV's jump code is StF's, but its
-  motions carry the arc, as VF2's do, and the engine plays them so. Here:
-  StF's jump does not drift forward or back, an air attack the setup holds
-  back (+0x5C0) plays at once, and landing does not free the fighter before
-  the motion ends.
+  motions carry the arc, as VF2's do, and the engine plays them so. An air
+  attack whose command has bit 19 is held back, in all three games: it
+  waits in the jump until the frames left in the air (+0x5BC) are down to
+  its motion's hold (setup op 3, +0x5C0), as the jump handler plays it
+  (StF 0x1410C, FV 0x14548, VF2 0x155CC). Sonic's small-jump kick comes out
+  with 4 of 26 frames left, Picky's with 9 of 24, Akira's punch with 19 of
+  32. Here: StF's jump does not drift forward or back, the frames left
+  count down from take-off (the board works them out from the body's height
+  each frame), and landing does not free the fighter before the motion ends.
 - Attacks while getting up: in VF2 a kick while lying picks the rise's
   get-up kick (the decoder's sub-kind at 0x1BD38): mid, or low with down
   held, played as soon as the lying is out (the rise handler at 0x157DC).

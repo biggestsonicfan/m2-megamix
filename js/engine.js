@@ -86,6 +86,8 @@ export function makePlayer(side, fighter) {
         downFor: 0,
         riseKick: null,             /* VF2: the get-up the rise's sub-kind (+0x19E) has picked */
         fly: null,                  /* StF: the jump's flight, {vy} (+0x30), till it lands */
+        air: null,                  /* a jump's frames left in the air from take-off (+0x5BC) */
+        held: null,                 /* an air attack held back, {e, press, at} (+0x19C bit 19) */
         wins: 0,                    /* 0x50004F p1_wins / 0x500051 p2_wins */
         posed: null,
         lastMove: '',
@@ -163,7 +165,7 @@ function resetRound(fight) {
         p.yang = i ? Math.PI : 0;
         p.energy = ENERGY;
         p.mot = null;
-        p.pc_command = 0; p.press = null; p.hist = []; p.hit_combo = 0; p.riseKick = null; p.fly = null;
+        p.pc_command = 0; p.press = null; p.hist = []; p.hit_combo = 0; p.riseKick = null; p.fly = null; p.air = null; p.held = null;
         p.finished = false;
         setAct(p, 'stance');
     });
@@ -266,7 +268,7 @@ function think(fight, p, o) {
             const hist = p.press.hist;
             const how = { ctx, foeDown: o.state === ST.DOWN };
             const e = matchPress(p.fighter.moves.tables.get(table), p.press.btn, hist.length ? hist : [0], dist, how);
-            if (e) { startMove(fight, p, o, e, p.press); p.press = null; return; }
+            if (e) { if (!holdBack(p, e, p.press)) startMove(fight, p, o, e, p.press); p.press = null; return; }
             if (!inString) p.press = null;
         }
         /* before take-off the press is latched (+0x120C's low bits) */
@@ -342,13 +344,12 @@ function jumpContext(p) {
  * recommit plays (0x133A0) leaves the flight going. It lands when the body
  * is down (step 2 0x1410C, w0 bit 2 clear: 0x14870), and the action goes
  * (+0x19C = 0): what plays plays on, out of the jump.
- * Here: the jump's drift (+0x5C4 by +0x724..+0x730) is not flown, an air
- * attack whose setup holds it (bit 19, +0x5C0) plays at once, and the
+ * Here: the jump's drift (+0x5C4 by +0x724..+0x730) is not flown, and the
  * landing's mk_change (+0x1A4 bit 0) does not free the fighter early.
  */
 const GRAVITY = 0.02522222138941288;    /* 0x3CCE9ED5 */
 function fly(p) {
-    if (!p.fly && p.state === ST.JUMP && p.fighter.flight && p.mot_coma === takeoff(p, p.mot.motion))
+    if (!p.fly && p.state === ST.JUMP && p.fighter.flies && p.mot_coma === takeoff(p, p.mot.motion))
         p.fly = { vy: GRAVITY * (p.fighter.flight(p.small) + 1) / 2 };
     if (!p.fly) return;
     p.fly.vy -= GRAVITY;
@@ -357,6 +358,36 @@ function fly(p) {
     p.pos[1] = 0;
     p.fly = null;
     if (p.state === ST.JUMP) p.state = ST.MOTION;
+}
+
+/*
+ * An air attack held back. A command with bit 19 matched in a jump stores
+ * its motion's op 3 u16 at +5 in jp_next_lacoma (+0x5C0; StF 0x133C8, FV
+ * 0x13600, VF2 0x14914) and keeps the jump motion; the jump handler's
+ * flight step (StF 0x1410C, FV 0x14548, VF2 0x155CC) plays it once the
+ * frames left in the air (land_time, +0x5BC) are down to that, and clears
+ * the bit. Before take-off land_time is 0, so one there plays at once. A
+ * later press commits over it, and landing (0x14870: +0x19C = 0) drops it.
+ * Here: land_time counts down from +0x5BE at take-off, where the board
+ * works it out from the body's height and speed each frame (calc_land_time);
+ * for StF's flight the two agree, VF2's and FV's motions carry their arc.
+ */
+const HOLD = 1 << 19;
+function holdBack(p, e, press) {
+    const at = e.cmd & HOLD && p.state === ST.JUMP && p.air != null ? p.fighter.airHold?.(e.motion & MOTION_ID) : null;
+    if (at == null || p.air <= at) return false;
+    p.held = { e, press, at };
+    return true;
+}
+function airTime(fight, p) {
+    if (p.state !== ST.JUMP) { p.air = p.held = null; return; }
+    if (p.air != null) p.air = Math.max(0, p.air - 1);
+    else if (p.mot_coma === takeoff(p, p.mot.motion) && p.fighter.flight) p.air = p.fighter.flight(p.small);
+    if (p.held && p.air <= p.held.at) {
+        const { e, press } = p.held;
+        p.held = null;
+        startMove(fight, p, fight.players[1 - p.side], e, press);
+    }
 }
 
 /* Commit to a move (the matcher's commit op): the motion, its timing and
@@ -440,6 +471,7 @@ function throwDamage(fight, o, damage) {
 /* ---- playback ------------------------------------------------------------ */
 
 function advance(fight, p) {
+    airTime(fight, p);
     fly(p);
     const m = p.mot.motion;
     if (p.state === ST.DOWN && p.action === 'down') {

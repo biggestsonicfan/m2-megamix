@@ -200,6 +200,13 @@ function takeoffOf(s) {
     const o = s?.ops.find((x) => x.op === OP_JUMP);
     return o ? s.dv.getUint16(o.at + 1, true) : 0;
 }
+/* An air attack held back (the command's bit 19): op 3's u16 at +5,
+ * jp_next_lacoma (+0x5C0), the frames left in the air (+0x5BC) at which the
+ * jump handler plays it (StF 0x133C8, FV 0x13600, VF2 0x14914). */
+function airHoldOf(s) {
+    const o = s?.ops.find((x) => x.op === OP_JUMP);
+    return o ? s.dv.getUint16(o.at + 5, true) : null;
+}
 /* A get-up's attack window (FV and StF): a motion of motd_kind's mk_rise
  * (bit 15) whose setup op 23 sets +0x87A (byte 1). P or K held while
  * follow1 (op 2's cancel, +0x80A) less the frame is at most that ends the
@@ -285,7 +292,9 @@ export function matchPress(entries, btn, hist, dist, { ctx = 0, foeDown = false 
  *   reaction(a, how)   the motion this fighter plays under attack `a`
  *   takeoff(id)        a jump motion's take-off frame (0 if none)
  *   riseWindow(id)     a get-up's {cancel, window} (FV, StF), else null
- *   flight(small)      StF: the frames a jump flies (+0x5BE), else null
+ *   flight(small)      the frames a jump flies (+0x5BE)
+ *   flies              StF: the jump flies by gravity, not by its motion
+ *   airHold(id)        an air attack's hold, frames left in the air (+0x5C0)
  *   createBody()       a drawable body: pose(ref, frame) -> {mats, parts, pose}
  *   look               what its material needs (js/render.js)
  * and, where they are not the VF2/StF ones:
@@ -339,6 +348,8 @@ function vfFighter(game, entry) {
         },
         attack(id) { return vfAttack(rom, id, game.key); },
         takeoff(id) { return takeoffOf(vfSetupOps(rom, id)); },
+        airHold(id) { return airHoldOf(vfSetupOps(rom, id)); },
+        flight(small) { return vfFlight(rom, game.key, body.index, small); },
         riseWindow(id) { return game.key === 'fv' ? riseWindowOf(vfSetupOps(rom, id)) : null; },
         reaction(a, how) {
             const kind = a.game === game.key && a.kind != null ? a.kind : game.kindFor(a);
@@ -432,14 +443,23 @@ function vfAttack(rom, id, key) {
         finish: key === 'fv' && op ? s.dv.getUint8(op.at + FINISH_AT) : 0 };
 }
 
-/* StF's jump flies by gravity, not by its motion: the jump's commit (sub_1305C
- * 0x1328C) takes the frames it flies (+0x5BE) from the character record's
- * +0x20, byte 0 for the jump, byte 1 for the small one (the action's bit 18). */
+/* The frames a jump flies (+0x5BE), as the jump's commit takes them from the
+ * character record (+0x190): StF's (sub_1305C 0x1328C) at +0x20, byte 0 for
+ * the jump, byte 1 for the small one (the action's bit 18); FV's (0x134F0)
+ * the same at +0x34; VF2's (0x14828) byte +0x4C, the small jump 32. StF's
+ * jump flies by gravity, not by its motion. */
 const STF_CHAR_PARTS = 0x000c5268;
 function stfFlight(rom, index, small) {
     const dv = rom.mainCpuView;
     const record = dv.getUint32(progAddr(rom, STF_CHAR_PARTS) + index * 4, true);
     return dv.getUint8(dv.getUint32(record + 0x20, true) + (small ? 1 : 0));
+}
+function vfFlight(rom, key, index, small) {
+    const u32 = (addr) => { const r = resolveData(rom, addr); return r.view.getUint32(r.off, true); };
+    const u8 = (addr) => { const r = resolveData(rom, addr); return r.view.getUint8(r.off); };
+    const record = u32(rom.game.rig.fighters.records + index * 4);
+    if (key === 'vf2') return small ? 32 : u8(record + 0x4c);
+    return u8(u32(record + 0x34) + (small ? 1 : 0));
 }
 
 function stfFighter(game, entry) {
@@ -469,8 +489,10 @@ function stfFighter(game, entry) {
         timing(id) { return readMotionTiming(rom, id); },
         attack(id) { return stfAttack(rom, id, damage); },
         takeoff(id) { return takeoffOf(stfSetupOps(rom, id)); },
+        airHold(id) { return airHoldOf(stfSetupOps(rom, id)); },
         riseWindow(id) { return riseWindowOf(stfSetupOps(rom, id)); },
         flight(small) { return stfFlight(rom, entry.index, small); },
+        flies: true,
         reaction(a, how) {
             const id = how === 'down' ? STF_REACT.down
                 : how === 'guard' ? ch.motions[slots[a.crouch ? 'crouchGuard' : 'guard']]

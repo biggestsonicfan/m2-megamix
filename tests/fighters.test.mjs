@@ -188,6 +188,37 @@ console.log('ok');
     console.log('air step: SONIC', m.id, 'ctx', ctx, 'at', m.t, 'y', m.y.toFixed(2), 'top', top.toFixed(2), 'landed', landed);
 }
 
+/* An air attack held back: a command with bit 19 (StF 0x133C8, FV 0x13600,
+ * VF2 0x14914) waits in the jump till the frames left in the air (+0x5BC)
+ * are down to its motion's op 3 hold (+0x5C0), then the jump handler plays
+ * it (StF 0x1410C, FV 0x14548, VF2 0x155CC). A small jump's kick (Akira's
+ * punch: his kick there, 41, is not held), pressed just after take-off. */
+{
+    const { createFight, stepFight } = await import('../js/engine.js');
+    const { P, K } = await import('../js/fighters.js');
+    for (const [n, g, btn] of [['SONIC', 'stf', 'K'], ['PICKY', 'fv', 'K'], ['AKIRA', 'vf2', 'P']]) {
+        const f = fighters.find((x) => x.name === n && x.game === g);
+        const fight = createFight(f, f, f.game);
+        fight.phase = 'fight';
+        const p = fight.players[0];
+        let t0 = null, pressAt = null, m = null, held = null;
+        for (let t = 1; t <= 80 && !m; t++) {
+            const kick = t0 != null && pressAt == null;
+            if (kick) pressAt = t;
+            stepFight(fight, [{ up: t === 1, [btn]: kick }, {}]);
+            if (t0 == null && p.air != null) t0 = t;
+            held ??= p.held && { ...p.held, t };
+            m = fight.events.find((e) => e.kind === 'move' && e.side === 0) ?? null;
+            if (m) m = { ...m, t };
+        }
+        assert.ok(held && m && m.id === (held.e.motion & 0x1fff), `${n}: a kick held back ${JSON.stringify({ held, m })}`);
+        assert.ok(held.e.cmd & 1 << 19 && held.e.key === (4 << 8 | { P, K }[btn]), `${n}: bit 19, context 4 ${held.e.cmd.toString(16)}`);
+        const n0 = f.flight(true);
+        assert.equal(m.t - t0, n0 - held.at, `${n}: out with ${held.at} of ${n0} frames left (press ${pressAt - t0}, out ${m.t - t0})`);
+        console.log('air hold:', n, btn, 'motion', m.id, 'pressed', pressAt - t0, 'held from', held.t - t0, 'out at', m.t - t0, `(${held.at} of ${n0} left)`);
+    }
+}
+
 /* Attacks while getting up: VF2's kick while lying picks the rise's get-up
  * kick (down held: the low one), played as soon as the lying is out; FV's
  * and StF's P or K held in the rise's window ends it into the ground
