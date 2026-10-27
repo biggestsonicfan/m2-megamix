@@ -109,7 +109,9 @@ approximations. Each is marked `Here:` in `js/engine.js`:
   with 4 of 26 frames left, Picky's with 9 of 24, Akira's punch with 19 of
   32. Here: StF's jump does not drift forward or back, the frames left
   count down from take-off (the board works them out from the body's height
-  each frame), and landing does not free the fighter before the motion ends.
+  each frame), landing does not free the fighter before the motion ends,
+  and a press made before take-off plays one frame before take-off, where
+  the board plays it at take-off.
 - Attacks while getting up: in VF2 a kick while lying picks the rise's
   get-up kick (the decoder's sub-kind at 0x1BD38): mid, or low with down
   held, played as soon as the lying is out (the rise handler at 0x157DC).
