@@ -232,6 +232,33 @@ the code by the debug menu's CONTROL TEST strings at 0x55398/0x553B0 and
 round reset at 0x14190 leaves it: it clears w0 bits 26 and 29 only (0x141F0,
 0x141FC).
 
+The two gates on 0x17B68 are `bbc 7` on w0 at 0x17B6C and `bbs 5` on
+0x508000 at 0x17B78. Either one branches to the routine's `ret` at 0x180B8.
+The call chain is `rob_action` 0x143F4 → 0x1499C → 0x18144 (0x16478 or
+0x16490) → 0x18538. Each of those is the only caller of the next.
+
+- w0 bit 7 is `init_end`, the name in FV's and StF's flag tables (VF2's
+  window does not show it). Every fighter start points rob+0xC at the task's
+  setup head 0x13F08 (e.g. 0x54AC0, 0xB228). The head stores `rob_action`
+  0x142F4 as the resume point (0x142A8) and falls into it in the same frame.
+  `rob_action` sets bit 7 as its last act (0x1441C..0x14424), after the update.
+  So on the setup frame 0x17B68 is skipped, and it runs on every frame after
+  that. The bit also gates the motion frame count at rob+0x1AA/0x1AE
+  (0x143B4). Nothing in VF2 clears it on a fighter except the fighter start's
+  `w0 &= 0xFF000000`, at the same sites that clear bit 5. The other `clrbit 7` sites are
+  on other structs: 0xC90C and 0x3209C on the task at *0x50083C, 0x53E70 on
+  `fa_camera`, 0x64474 on a task whose +0x40 is the fighter. `rob_action`
+  returns before it sets the bit when mode byte 0x50002B is 6 or 7 (0x14320).
+- 0x508000 bit 5 is `debug_flag`'s freeze (DEBUG-MODE.md). In VF2, only
+  `debug_sw_check` (0x110F4) writes it, and it stores the word at 0x11280.
+  Opening the menu ORs in 0xA6, which is bits 1, 2, 5 and 7 (0x111B4). Each
+  frame the menu is open sets bit 5 again (0x111EC). The step key clears it for
+  one frame (0x11214), and EXIT clears it together with bits 8 and 2 (0x1122C).
+  Boot stores 0 to the whole word (0x994C). The test at 0x17B78 is a second
+  guard: `rob_action` already skips the whole update, 0x1499C included, under
+  the freeze (`bbs 5` at 0x14370 → 0x14410). So while the debug menu holds the
+  fight, the ring test does not run and cannot set w0 bit 5.
+
 Every record, with the floor the web Megamix draws for it (`?stage=N`, the
 menu number; noclip's reading of the ring models, not checked against the
 board):
