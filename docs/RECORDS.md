@@ -340,14 +340,45 @@ clears them one frame later, when the head runs.
   | 610 | 0x262 | Shun | Gyoshin-Toutai (his row 7; back+K) |
   | 622 | 0x26E | Shun | Haito-Rensenkyaku (his row 2) |
   | 623 | 0x26F | Shun | none; the motion 622 hands over to (setup op 1, 0x201A4D2) |
-  | 640 | 0x280 | Shun | none |
-  | 422 | 0x1A6 | Shun | none |
-  | 421 | 0x1A5 | Shun | none; in his command program at 0x38E45, next to 422 at 0x38E52 |
-  | 417 | 0x1A1 | Shun | none |
+  | 640 | 0x280 | Shun | none; his root table, P keys with high byte 2 |
+  | 422 | 0x1A6 | Shun | none; G after 419 |
+  | 421 | 0x1A5 | Shun | none; after 420 (K after 419); in his command program at 0x38E45, next to 422 at 0x38E52 |
+  | 417 | 0x1A1 | Shun | none; his root table, K keys with high byte 2 |
 
   Wolf's Drop Kick row has seven ids: 926, 932, 1228, 935, 928, 933 and
   934. Only 926, 928 and 934 are in 0x1B98C. No other string, debug label or
   data table in the program names these motions.
+
+  What plays Shun's four unnamed ids. Shun is command program 8 (root table
+  0x38B0C). His name rows (0x51096, names from 0x51832) are ten: Drunker's
+  Throw(?) 0xAC, Tenshin-Souchusho 0x26C, Haito-Rensenkyaku 0x26E,
+  Sakadachi-Geri(?) 0x25B, Honshin-Rensenkyaku 0x248, Chubu-Soutenkyaku
+  0x1A0, Renpu-Soutai 0x250/0x251/0x252, Gyoshin-Toutai 0x262, Rabbit Kick
+  0x377, Front Over Head Kick 0x46. No setup record of any of the 1359
+  motions hands off to 640, 422, 421 or 417 (setup op 1, op 5, op 0x0A, play
+  ops 0x0A/0x0B/0x17), and none of the four hands off to anything, so each
+  is played only by a commit in Shun's command program:
+  - 640 (0x280): root table, the four keys 0x201, 0x203, 0x205, 0x207 (P,
+    K+P, G+P, G+K+P, key high byte 2), commit word 0x09040280. No stick
+    input, no follow-up table before it.
+  - 417 (0x1A1): root table, keys 0x202 and 0x206 (K, G+K, high byte 2),
+    commit word 0x1A1. Likewise no stick input and no table before it.
+  - 422 (0x1A6): the follow-up table 0x38E18, key 0x004 (G), commit at
+    0x38E51. 0x38E18 is parked (op 0x0D at 0x38E0C) by the commit of 419
+    (0x1A3, at 0x38E13), which the root table plays for neutral, back+down,
+    back+K (key 0x002) or back+G+K (0x006).
+  - 421 (0x1A5): the same table's K (key 0x002) commits 420 (0x1A4, at
+    0x38E34) and parks 0x38E39 (op 0x0D at 0x38E2F). The matcher next runs
+    from there: op 0x16, a wait (ops 0x12, 0x1D), then the commit of 421
+    at 0x38E44, with no key test (op 0x0E) on the way. So 421 follows 420
+    without another button.
+
+  419 and 420 are in no name row, so neither 421 nor 422 comes after a
+  named move, and 640 and 417 come after nothing. None of the four is
+  reached from a named move or by a handoff from one, and none of them
+  plays or hands off to another of the four. 421 and 422 are the two
+  branches after 419 (420 then 421, or 422). The program stores no name for
+  419, 420 or the high byte 2 of a key.
 
   FV and StF have no such table. Their `set_motion` goes straight from the
   bit-14 block to the bit-13 block (FV 0x1B5E4 → 0x1B5FC, StF 0x1AFAC →
