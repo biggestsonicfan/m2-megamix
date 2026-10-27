@@ -99,6 +99,13 @@ approximations. Each is marked `Here:` in `js/engine.js`:
   waits for it and goes to context 1 (2 in a small jump), one in the air to
   3 (4). StF's jump is its take-off only, so 1 or 2; its air step's 3 and 4
   are not reached.
+- Attacks while getting up: in VF2 a kick while lying picks the rise's
+  get-up kick (the decoder's sub-kind at 0x1BD38): mid, or low with down
+  held, played as soon as the lying is out (the rise handler at 0x157DC).
+  The engine plays only the face-up variants. FV and StF have no get-up
+  attacks of their own: P or K held in the rise motion's last frames (setup
+  op 23's window before op 2's cancel) ends the rise, and the press is the
+  ground table's (StF 0x1D864, FV 0x1D634).
 - Throws deal op 5's damage, then the victim motion's own hits (play op 8)
   at their frames; many throws deal none.
 - The CPU player is a simple one.

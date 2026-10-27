@@ -32,6 +32,7 @@ const DASH_WINDOW = 12;             /* frames between the taps of a dash */
 const PRESS_BUFFER = 10;            /* a press held over until a move can take it */
 const CHORD = 2;                    /* frames a press waits for its other buttons */
 const DOWN_FRAMES = 50;             /* lying before the rise */
+const RISE_WAIT = 40;               /* of them, the rise handler's wait for a get-up pick (+0x1AE) */
 const BODY_RADIUS = 0.35;
 const HIT_RADIUS = 0.2;
 const PUSH_APART = 0.6;
@@ -83,6 +84,7 @@ export function makePlayer(side, fighter) {
         press: null,                /* a press waiting for its chord or for a move to end */
         tapAt: -99, tapDir: 0,
         downFor: 0,
+        riseKick: null,             /* VF2: the get-up the rise's sub-kind (+0x19E) has picked */
         wins: 0,                    /* 0x50004F p1_wins / 0x500051 p2_wins */
         posed: null,
         lastMove: '',
@@ -160,7 +162,7 @@ function resetRound(fight) {
         p.yang = i ? Math.PI : 0;
         p.energy = ENERGY;
         p.mot = null;
-        p.pc_command = 0; p.press = null; p.hist = []; p.hit_combo = 0;
+        p.pc_command = 0; p.press = null; p.hist = []; p.hit_combo = 0; p.riseKick = null;
         p.finished = false;
         setAct(p, 'stance');
     });
@@ -247,6 +249,7 @@ function think(fight, p, o) {
     }
     if (fight.phase !== 'fight') return;
     const v = p.pad;
+    if (getUp(p)) return;
     if (p.state === ST.JUMP && !p.small && !(v & UP) && p.mot_coma < takeoff(p, p.mot.motion)) smallJump(p);
 
     /* A press: the root table when free or in the air, the parked follow
@@ -413,7 +416,9 @@ function throwDamage(fight, o, damage) {
 function advance(fight, p) {
     const m = p.mot.motion;
     if (p.state === ST.DOWN && p.action === 'down') {
-        if (++p.downFor > DOWN_FRAMES && p.energy > 0) { p.downFor = 0; setAct(p, 'rise'); return; }
+        ++p.downFor;
+        if (p.riseKick && p.downFor > DOWN_FRAMES - RISE_WAIT && p.energy > 0) return riseKick(fight, p);
+        if (p.downFor > DOWN_FRAMES && p.energy > 0) { p.downFor = 0; setAct(p, 'rise'); return; }
     }
     if (p.mot_coma < m.frames) {
         p.mot_coma++;
@@ -428,6 +433,35 @@ function advance(fight, p) {
     }
     if (p.hold) return;
     ended(fight, p);
+}
+
+/*
+ * Attacks while getting up. VF2's decoder in the rise (0x1BD38, state 0xD)
+ * turns a new kick into the rise's sub-kind: 4, or 3 with down held, 8 with
+ * down and back, 9 with down and forward; the rise handler (0x157DC) waits
+ * out the lying (its phase 3: +0x1AE to 40 with no pick) or plays the pick
+ * at once, the action table's get-up kicks, 57 mid and 61, 69, 65 low
+ * (their first variants: the lying face up, +0x5B8 bit 0 clear).
+ * FV's and StF's rise has no get-up attacks of its own: P or K held in the
+ * mk_rise motion's last frames (fighters.js riseWindow) ends the rise (StF
+ * 0x1D864, FV 0x1D634), and the press is the ground table's.
+ */
+function getUp(p) {
+    const v = p.pad;
+    if (p.state === ST.DOWN && p.action === 'down' && p.fighter.act('riseKick')?.motion && v & ~p.padOld & K) {
+        p.riseKick = !(v & DOWN) ? 'riseKick' : v & BACK ? 'riseLowBack' : v & FWD ? 'riseLowFwd' : 'riseLow';
+        return false;
+    }
+    if (p.state !== ST.RISE || !(v & (P | K))) return false;
+    const w = p.fighter.riseWindow?.(p.mot.motion.index);
+    if (!w || w.cancel - p.mot_coma > w.window) return false;
+    setAct(p, 'stance');
+    return true;
+}
+function riseKick(fight, p) {
+    const name = p.riseKick, id = p.fighter.act(name).motion.index;
+    p.riseKick = null; p.downFor = 0;
+    startMove(fight, p, null, { motion: id, name: `get-up ${id}` }, { btn: K, hist: [name === 'riseKick' ? 0 : DOWN] });
 }
 
 /* A motion ran out: what the action code plays next. */

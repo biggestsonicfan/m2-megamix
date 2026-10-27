@@ -159,3 +159,42 @@ console.log('ok');
         console.log('jumps:', n, 'small', small.id, small.ctx, 'big', big.id, big.ctx);
     }
 }
+
+/* Attacks while getting up: VF2's kick while lying picks the rise's get-up
+ * kick (down held: the low one), played as soon as the lying is out; FV's
+ * and StF's P or K held in the rise's window ends it into the ground
+ * table's move, before the rise has run out. */
+{
+    const { createFight, stepFight } = await import('../js/engine.js');
+    const getUp = (f, pad) => {
+        const fight = createFight(f, f, f.game);
+        fight.phase = 'fight';
+        const p = fight.players[0];
+        p.energy = 100;
+        stepFight(fight, [{}, {}]);
+        p.action = 'down'; p.state = 8; p.mot = f.act('down'); p.mot_coma = 1; p.loop = true; p.downFor = 0;
+        let riseAt = null;
+        for (let t = 1; t <= 150; t++) {
+            if (riseAt == null && p.action === 'rise') riseAt = t;
+            stepFight(fight, [pad(t, p), {}]);
+            const m = fight.events.find((e) => e.kind === 'move' && e.side === 0);
+            if (m) return { ...m, t, riseAt, attack: p.attack, action: p.action };
+        }
+        return null;
+    };
+    const akira = fighters.find((x) => x.name === 'AKIRA' && x.game === 'vf2');
+    const mid = getUp(akira, (t) => ({ K: t === 5 }));
+    const low = getUp(akira, (t) => ({ down: t >= 3 && t <= 6, K: t === 5 }));
+    assert.equal(mid?.id, akira.act('riseKick').motion.index, `AKIRA: a get-up kick ${JSON.stringify(mid)}`);
+    assert.ok(mid.riseAt == null && mid.attack?.damage && mid.t < 50, 'from lying, with its strike');
+    assert.equal(low?.id, akira.act('riseLow').motion.index, `AKIRA: a low get-up kick ${JSON.stringify(low)}`);
+    console.log('get-up:', 'AKIRA', mid.id, 'level', mid.attack.level, 'low', low.id, 'level', low.attack.level, 'at', mid.t);
+    for (const [n, g] of [['PICKY', 'fv'], ['SONIC', 'stf']]) {
+        const f = fighters.find((x) => x.name === n && x.game === g);
+        const rise = f.act('rise').motion, w = f.riseWindow(rise.index);
+        const m = getUp(f, (t, p) => ({ K: p.action === 'rise' && w.cancel - p.mot_coma <= w.window }));
+        assert.ok(m && m.riseAt != null && m.t - m.riseAt < rise.frames, `${n}: a move out of the rise ${JSON.stringify(m)} ${JSON.stringify(w)}`);
+        assert.ok(f.moves.tables.get(f.moves.root).some((e) => (e.motion & 0x1fff) === m.id && e.key >> 8 === 0), `${n}: the ground table's`);
+        console.log('get-up:', n, m.name, m.id, 'at rise frame', m.t - m.riseAt, 'of', rise.frames, JSON.stringify(w));
+    }
+}

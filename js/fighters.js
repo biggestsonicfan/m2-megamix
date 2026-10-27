@@ -42,7 +42,8 @@ export const S = { BODY: 0, CHEST: 1, HEAD: 2, LHAND: 5, RHAND: 8, PELVIS: 9, LF
  */
 const ACTION_SLOTS = {
     vf2: { stance: 0, crouch: 1, toStand: 2, toCrouch: 5, guard: 8, guardEnd: 9, crouchGuard: 10, crouchGuardEnd: 11,
-        dashF: 14, dashB: 15, walkF: 20, walkB: 22, jump: 28, jumpSmall: 29, down: 31, rise: 32 },
+        dashF: 14, dashB: 15, walkF: 20, walkB: 22, jump: 28, jumpSmall: 29, down: 31, rise: 32,
+        riseKick: 57, riseLow: 61, riseLowFwd: 65, riseLowBack: 69 },
     fv: { stance: 0, crouch: 1, toStand: 2, toCrouch: 5, guard: 8, guardEnd: 11, crouchGuard: 12, crouchGuardEnd: 15,
         dashF: 18, dashB: 20, walkF: 28, walkB: 30, jump: 39, jumpSmall: 40, down: 42, rise: 43 },
     stf: { stance: 0, crouch: 1, toStand: 2, toCrouch: 3, guard: 5, guardEnd: 6, crouchGuard: 1, crouchGuardEnd: 2,
@@ -123,15 +124,15 @@ function vfSetupOps(rom, id) {
     if (!p) return null;
     const r = resolveData(rom, p.view.getUint32(p.off, true));
     if (!r) return null;
-    const dv = r.view, ops = [], play = [];
+    const dv = r.view, ops = [], play = [], kind = dv.getUint32(r.off, true);
     let at = r.off + R.head;
     while (at < dv.byteLength) {
         const op = dv.getUint8(at);
-        if (op === 0 || op >= R.ops) return { dv, ops, play };
+        if (op === 0 || op >= R.ops) return { dv, kind, ops, play };
         if (op === 8) { at++; break; }
         ops.push({ op, at });
         const len = op === 0x10 ? 2 + 2 * dv.getUint8(at + 1) : rom.mainCpuView.getUint8(R.lengths + op);
-        if (!len) return { dv, ops, play };
+        if (!len) return { dv, kind, ops, play };
         at += len;
     }
     /* the play script after op 8: each op its frame (u16 at +1), its length
@@ -143,7 +144,7 @@ function vfSetupOps(rom, id) {
         play.push({ op, frame: dv.getUint16(at + 1, true), at });
         at += L[op];
     }
-    return { dv, ops, play };
+    return { dv, kind, ops, play };
 }
 
 /* StF: the same record, from the program's motion list (0xCE380), head 13
@@ -164,7 +165,7 @@ function stfSetupOps(rom, id) {
         ops.push({ op, at: p });
         p += len;
     }
-    return { dv, ops, play: readMotionScript(rom, id) };
+    return { dv, kind: dv.getUint32(rec, true), ops, play: readMotionScript(rom, id) };
 }
 
 /* The attack part's slots: op 4 byte 1 (+0x820) indexes a table of
@@ -197,6 +198,17 @@ function takeoffOf(s) {
     const o = s?.ops.find((x) => x.op === OP_JUMP);
     return o ? s.dv.getUint16(o.at + 1, true) : 0;
 }
+/* A get-up's attack window (FV and StF): a motion of motd_kind's mk_rise
+ * (bit 15) whose setup op 23 sets +0x87A (byte 1). P or K held while
+ * follow1 (op 2's cancel, +0x80A) less the frame is at most that ends the
+ * rise (StF 0x1D864, FV 0x1D634: w0 bit 15, the rise handler's last phase). */
+const MK_RISE = 1 << 15, OP_TIMING = 2, OP_RISE = 23;
+function riseWindowOf(s) {
+    const w = s && s.kind & MK_RISE ? s.ops.find((o) => o.op === OP_RISE) : null;
+    const t = w && s.ops.find((o) => o.op === OP_TIMING);
+    return t ? { cancel: s.dv.getUint16(t.at + 3, true), window: s.dv.getUint8(w.at + 1) } : null;
+}
+
 function throwHits(s, scale) {
     return s ? s.play.filter((o) => o.op === PLAY_DAMAGE)
         .map((o) => ({ frame: o.frame, damage: scale(s.dv.getUint8(o.at + 3)) })).filter((h) => h.damage > 0) : [];
@@ -270,6 +282,7 @@ export function matchPress(entries, btn, hist, dist, { ctx = 0, foeDown = false 
  *                      damage} throw, or null (finish: FV's finish kind)
  *   reaction(a, how)   the motion this fighter plays under attack `a`
  *   takeoff(id)        a jump motion's take-off frame (0 if none)
+ *   riseWindow(id)     a get-up's {cancel, window} (FV, StF), else null
  *   createBody()       a drawable body: pose(ref, frame) -> {mats, parts, pose}
  *   look               what its material needs (js/render.js)
  * and, where they are not the VF2/StF ones:
@@ -323,6 +336,7 @@ function vfFighter(game, entry) {
         },
         attack(id) { return vfAttack(rom, id, game.key); },
         takeoff(id) { return takeoffOf(vfSetupOps(rom, id)); },
+        riseWindow(id) { return game.key === 'fv' ? riseWindowOf(vfSetupOps(rom, id)) : null; },
         reaction(a, how) {
             const kind = a.game === game.key && a.kind != null ? a.kind : game.kindFor(a);
             const cat = REACTIONS.find((r) => r.key === how);
@@ -442,6 +456,7 @@ function stfFighter(game, entry) {
         timing(id) { return readMotionTiming(rom, id); },
         attack(id) { return stfAttack(rom, id, damage); },
         takeoff(id) { return takeoffOf(stfSetupOps(rom, id)); },
+        riseWindow(id) { return riseWindowOf(stfSetupOps(rom, id)); },
         reaction(a, how) {
             const id = how === 'down' ? STF_REACT.down
                 : how === 'guard' ? ch.motions[slots[a.crouch ? 'crouchGuard' : 'guard']]
