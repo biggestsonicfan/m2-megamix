@@ -319,8 +319,33 @@ clears them one frame later, when the head runs.
   The other bit 29 writes are on *0x500864 and *0x500834. The set and every
   reader run only when settings byte [0x50016C]+0x3351 has bit 6
   (SHARED-CODE.md: clear on MAME's vf2), so with that bit clear, bit 29 is
-  never set. What bit 6 is, and so whether a real board ever uses bit 29,
-  is still a lead.
+  never set.
+- Settings byte 0x3351 bit 6 is the test menu's GAME ASSIGNMENTS item
+  **VERSION**. Its two choices are "NORMAL" (bit clear) and "VERSION 2.1"
+  (bit set): the menu record at 0x77BE8 (byte 0x3351, bit code 0x34 = bit 6,
+  choice list 0x5B550 → 0x780BB / 0x780C7). Both copies of the menu (tables
+  0x5B340 and 0x5B3C0) point at the same handler.
+  - 0x3351 is a byte in backup RAM (0x1D03351) with a work copy at
+    0x59C351. [0x50016C] holds 0x1D00000 or 0x599000, the base of one or the
+    other.
+  - The one write that sets it is that handler, 0x5B0F4: `notbit 6`, stored
+    to both copies (0x5B110, 0x5B118). Every other bit of the byte is
+    another item in the same menu: bit 0 ADVERTISE SOUND, 1 CONTINUE,
+    2 DISPLAY TYPE, 3 DRINK, 4 RANKING MODE, 5 VS FINISH.
+  - The defaults routine 0x6010C clears it (it stores 0 to the whole byte at
+    0x60278/0x60280), so the default is NORMAL. It runs from INITIALIZE
+    (0x5B174), from the backup RAM checks (0x6DE4C, 0x6DF30, 0x6E100) and from
+    0x58E68 and 0x5EC30. MAME's vf2 has the bit clear because its backup RAM
+    holds those defaults.
+  - It gates the bit-29 set (`bbc 6` at 0x19F54 skips 0x19F90) and the
+    readers above (for example 0x229DC before 0x229E4). The program tests
+    bit 6 of 0x3351 in 45 places in all, so VERSION 2.1 changes more than
+    bit 29; the others are not traced.
+  - FV has the same byte 0x3351 with bits 0, 1, 2, 4 and 5 for the same
+    items, but its menu (in the data ROMs) has no VERSION item, and no load
+    of 0x3351 in its program is followed by a bit-6 test (VF2 has 45). StF's settings bits are in 0x3353, and its
+    bit 6 is a different item, HYPER MODE (record 0x99D68); StF has no
+    VERSION item.
 
 Every record, with the floor the web Megamix draws for it (`?stage=N`, the
 menu number; noclip's reading of the ring models, not checked against the
