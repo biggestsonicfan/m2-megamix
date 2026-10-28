@@ -249,6 +249,71 @@ F to 37 F):
 - **Frame 41: one knockback.** StF's `sub_2A7E4` (from `coli_attack_chk`)
   is the board's only knockback, for every fighter with no check of the
   game, and VF2's formula (0x2260C..0x2306C) is not on the board.
+- **Frame 41: where a VF2 knockback would sit.** Still open: nothing is
+  ported. The knockback is not hand-written: tools/lift-stf.py lifts StF's
+  `collision` and what it calls into board/src/stf_motion.s (generated, do
+  not edit). `sub_2A7E4` is a 4-line bit-clear; the formula is in the next
+  routine, `attack_hit` (stf_motion.s 15656), g7 the attacker, g8 the
+  victim. Two labels hold it (stf_motion.s at 6416c9a):
+  - s, `loc_2A954` (15732): r9 is P as a float (from `ldob 0x822(g7)`;
+    the `be` taken when P is 0 arrives with r9 = 0). `mulr` 0x3C23D70A
+    (0.01), TGP 0xD001A1A (√), `mulr` 0x42480000 (50), `mulr flt_2BA68`
+    (0.0024999999), `mulr` `ld 8(r7)`, r7 = stf_ram_50A000+0x800 +
+    0x28 × [0x50FE02] (the attacker's +0x843, or 4 when the victim's
+    rob+0x0 bit 29 is set). s = √(P × 0.01) × 50 × 0.0025 × list+8.
+  - |v|, `loc_2B738` (16558): `ld 0x5D8(g8)` (w), `subr` 0x42700000 (60),
+    `mulr` 0x3E99999A (0.3), `addr` 60, `divr` (s over it), `mulr`
+    0x40800000 (×4), TGP 0xD001A1A. |v| = √(4s / (60 + 0.3 (w − 60))).
+    Then two turns (TGP 0x12002424/0x12802525, by r6 and by −r10, r10 =
+    the attacker's +0x82A + +0x26) and the stores: rob+0x5E4 (× 4, × 2 or
+    × `ld 4(r7)`), rob+0x5E0 and rob+0x5E8 (× `ld 0(r7)` unless r8 is 0
+    or in the attacker's rob+0x0 bit 18 case), and one more scaling by
+    `flt_2B904` when the attacker's rob+0x7D2 bit 0 (the finishing blow)
+    is set.
+  A VF2 branch would be two entries in lift-stf.py's INSERT, beside
+  `rsc_gra_vf2` (line 327); INSERT puts its lines right after the label
+  it is keyed on (line 696), and both sites have labels, so no NAMED
+  entry: INSERT['loc_2A954'] (VF2's ×1/30 then ×30, where StF has ×0.01
+  then ×50) and INSERT['loc_2B738'] (VF2's 0.6 and ×2, where StF has 0.3
+  and ×4). The game check the other inserts use (`ldob 0x1B1(gN)`,
+  `ldob guest_char_game[…]`, `cmpobne GAME_VF2`) is in reach for g7 and
+  g8 at both (`loc_2B9CC` and `coli_cont_cop_g4` already check g8). Whose
+  fighter decides (the attacker, who owns P, or the victim, who owns w)
+  matters only in a mixed fight; Akira vs Akira is VF2 on both sides. It
+  is left open.
+  The jab's path, from the source: every hit past `attack_hit`'s head
+  (the round-state gates on 0x50002B/0x500031 to `loc_2B900`, and the
+  victim's rob+0x19F = 0x12 to `sub_19888`) falls through `loc_2A8F8`
+  into `loc_2A954`, so s is always worked out there. Then the guard
+  (victim rob+0x1A4 bit 13) goes to `loc_2B738` by `loc_2AE28` (16011),
+  and a hit by `loc_2AE40` (r8 = 2, 3 on a counter at `loc_2B1A4`) to
+  one of three:
+  - `loc_2B488`, the stagger: r6 = 0, `b loc_2B738` (16439), s as it is.
+  - `loc_2B5E4`, which multiplies s again before `loc_2B738`: by the
+    motion's hit-table value × 2 (`calc_mht_adr`, 16495..16515) or, with
+    no table, by `ld 0x10/0x14/0x18/0x1C(r7)` (`loc_2B69C`, picked by the
+    victim's rob+0x1A4 bit 4 and r8 = 3), with r6 capped.
+  - `loc_2B560` (victim rob+0x1A4 bit 16 with the attacker's bit 22, or
+    bit 11 from `loc_2B5E4`): straight to `loc_2B898`, no new vector.
+  `loc_2B5E4` is taken when the victim's rob+0x1A4 has bit 4, 14 or 16
+  (bit 16 without the attacker's bit 22), or bit 24 with the attacker's
+  +0x821 = 1; when the victim's rob+0x70C has bit 2; when [0x50FE00] has
+  bit 14 (0x4006, the victim's bit-29 case, has it); when r11 (P, raised
+  on a counter) is 50 or more; or when the blow finishes the victim
+  (`sub_19730` against rob+0x1AC). Otherwise `loc_2B488`.
+  For this jab P is 8, it is round 1's first hit, and the friction run
+  logged the victim's rob+0x1A4 as 0x121 at rob_spd_control's entry on
+  frame 40 (bits 0, 5, 8; 4, 14, 16, 24 clear; bit 8 is the counter
+  check, which changes only r8 and r11). That points to `loc_2B488`, s
+  unscaled. But 0x121 was read at the friction tap, not at the hit, and
+  [0x50FE00] (the attacker's +0x828), the victim's rob+0x0 bit 29 and
+  rob+0x70C were not logged, so the source alone does not prove it. The
+  measured adds agree with no extra factor: the board's −0.017 on 41 is
+  0.02289 less a frame's drag (0.0061434), as VF2's −0.031 is 0.03645 −
+  0.0053764, so whatever ran, the extra factors (an s table, list+0 on
+  rob+0x5E0) came to about 1.0 for this jab. The jab's path is still
+  open (a tap at 16439 against 16495 settles it); the written s and |v|
+  hold to the three decimals measured.
 - **Frame 41: one slowdown.** StF's `rob_spd_control` (the block after
   `rsc_fric_end`) is the board's only slowdown, and VF2's constant-k
   slowdown is not on the board.
