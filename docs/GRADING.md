@@ -249,6 +249,9 @@ F to 37 F):
 - **Frame 41: one knockback.** StF's `sub_2A7E4` (from `coli_attack_chk`)
   is the board's only knockback, for every fighter with no check of the
   game, and VF2's formula (0x2260C..0x2306C) is not on the board.
+- **Frame 41: one slowdown.** StF's `rob_spd_control` (the block after
+  `rsc_fric_end`) is the board's only slowdown, and VF2's constant-k
+  slowdown is not on the board.
 
 Left as they are:
 
