@@ -315,6 +315,26 @@ F to 37 F):
   too, falls with the full gravity, as on VF2: for a VF2 fighter the
   branch changes nothing now. Read from the code only; the board was not
   run.
+- The stage bounds into gravity, read in StF, g4/vf2.dis and the board
+  side by side: VF2 pulls a grounded fighter past the bounds into gravity,
+  StF never does, and the board keeps StF's. The test is the same in all
+  three: with rob+0x0 bit 2 clear (grounded) and rob+0x61C 0, it marks the
+  fighter out (r6 = 1) when |rob+0x1F4| or |rob+0x1FC| is at or past
+  [0x50A00C] (StF 0x180C8..0x18110, board/src/stf_motion.s 7437..7453,
+  VF2 0x17A40..0x17A80; StF compares as floats with cmpr/bge, VF2 the
+  sign-cleared bits with cmpibge, which agree for these values; the
+  [0x50A010] each loads into r4 is dead). Only the branch after it
+  differs. VF2's 0x17A84 skips gravity when the fighter is inside and falls
+  into it (0x17A88) when out, so an out grounded fighter has [0x50A000]
+  taken off and rob+0x5CC added to rob+0x30 each frame, and rob+0x1C
+  moves by it: it sinks while still grounded. StF's 0x18114 skips when
+  inside and its 0x18118 skips when out (b 0x1815C), so a grounded fighter
+  never gets gravity; StF reads out-of-bounds again in rob_check_stage
+  (0x18214, into rob+0x620). The board has StF's pair (loc_18114, 7454)
+  and runs it for every fighter: a VF2 guest standing past the bounds
+  keeps its height on the board where VF2 would sink it. The glance
+  before this item was right. Read from the code only; the board was not
+  run.
 
 Left as they are:
 
