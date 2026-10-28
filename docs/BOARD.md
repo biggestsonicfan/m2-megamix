@@ -1670,6 +1670,62 @@ the data ROMs, and `bake-board.mjs` bakes their records into `poses.h`.
   board ROMs and compares points (times SCALE), UVs, tile sizes and the
   texels at levels 0..3. MAME: both stages draw as in VF2.
 
+### VF2's Test stage
+
+VF2's stage record 12 (noclip's "Test", one of `extraStages`: the city
+street with the "VIRTUA FIGHTER 2" graffiti) is setup stage 5, "VF2 TEST",
+after FV's Western, through the same importer (`VF2_STAGE_SLOTS` 0, 1, 12).
+
+- Models: 50 draws. The models Tou-rin and the Colosseum also use keep
+  their ids; Test's own go from `VF2_MORE_TOP` (4139) down (4090..4139),
+  ids StF's kept models leave free (3848..4139), since FV's Western takes
+  4383..4429 below `VF2_STAGE_TOP`'s run.
+- Textures: VF2 texture set 25 as board set 21 (set 20 is FV's). Test reads
+  odd stages'-sheet slots the arenas do not (16..23), so each stage keeps
+  its own odd pages (`oddSlotsRead`: every face whose th2 bit 12 is clear),
+  16 pages in all, and its own destination list: StF data-table index 11
+  (Tou-rin and the Colosseum share index 9, FV's is 10). The arenas' pages
+  stay on the heap; Test's go into `MORE_PAGES`, main_data
+  0x2B80000..0x2C00000, data StF does not keep.
+- Sky: VF2's 0x2502C record 12, 31 blocks. It does not fit beside the
+  arenas' at `VF2_SKY_AT` (main_data ends at 0x3000000), so `SKY_ROOMS` puts
+  each sky whole into the first room it fits: Test's goes to 0x2B30000.
+- Music: VF2's stage table (data 0x1E900) gives Test song 0x18, imported as
+  StF code 0xAE101C (`guest-sound.mjs`, `SND_VF2_TEST` in sound.c).
+- Ring out: as on the arenas.
+- Check: `checkVf2Stages` as above. MAME: setup stage 5, Sonic against
+  Honey on the street, the sky and the graffiti wall behind them.
+
+### DOA's stage
+
+Dead or Alive's stage 10 (the Model 2B set doab, with doa's ROMs: an
+elevated road at night, the city behind it) is setup stage 6, "DOA STAGE 10"
+(DOA has no stage names), through `tools/doa-stages.mjs`, which reads the
+stage as noclip's `doa.js` runs its draw routine.
+
+- Size: VF2's scale (DOA's fighters stand 1.24-1.57 of its units). The
+  ring's top is at y 1.0 in DOA's frame (`DOA_FLOOR`), so the draws move down
+  by it; the ring is +-12.1 (`DOA_RING`) and rings out as the others do.
+- Models: 57 draws of 42 (model, texture points) pairs, ids 4048..4089
+  (`DOA_STAGE_TOP`, below VF2's Test). A draw with no points block uses
+  the model's own. Two draws sway: 512 frames of their turn as s16 tables
+  (`doastage_sway3/4`, stage_draw_t's `sway`; stage.c `sway_mul`).
+- Textures: DOA's stage sheet is raw with no mip chain and the scenery reads
+  slots 2, 3, 6, 7, 10, 11, 14 and 15 of it. Those eight go to the same
+  slots of the stages' sheet as raw pages (tex_send_beta) with mips made
+  here, as board set 22, destination list 12, at main_data 0x2A00000; every
+  face's th2 loses bit 12.
+- Colours: each colour component becomes the StF stage row (0..27) that
+  shows nearest across the luma range; DOA's four lumaram bands are added
+  after StF's 71 at 3/4 (count 75). The four untextured faces take rows
+  14..27, whose luma 48..63 become DOA's row.
+- Sky: DOA's four scroll pictures, its 2048-pixel ring laid twice across the
+  board's 4096, repacked to 62 blocks at 0x2A80000.
+- Music: DOA's can't come along; it plays VF2's Tou-rin (`SND_VF2_TOURIN`).
+- Check: `checkDoaStage`: every model through the board's ROMs against
+  DOA's (points at the scale, UVs, tile sizes, texels at levels 0-3).
+  MAME: setup stage 6, Sonic against Honey on the road, the city behind.
+
 ### Ring out
 
 VF2's rule, from its program (Ghidra and objdump): `rob_check_stage`
