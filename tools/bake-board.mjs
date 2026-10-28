@@ -33,7 +33,7 @@ import { readFrameTables, buildStageDisplayList, opsAt } from '../vendor/noclip/
 import { makeFighter } from '../js/fighters.js';
 import { buildColorxlat } from '../vendor/noclip/js/colors.js';
 import { stormSchedule } from '../vendor/noclip/js/vf2.js';
-import { vf2StagePlan, vf2SkyPlan, VF2_SET0, VF2_RING, SCALE as VF2_SCALE, ARMOUR_BLOCKS, colourSnap } from './vf2-stages.mjs';
+import { vf2StagePlan, vf2SkyPlan, VF2_SETS, VF2_RING, SCALE as VF2_SCALE, ARMOUR_BLOCKS, colourSnap } from './vf2-stages.mjs';
 import { fvBoardPlan, fvSkyPlan, FV_SET0, FV_RING, FV_SCALE, FV_TURN } from './fv-stages.mjs';
 import { xtraResolve } from '../vendor/noclip/js/romset.js';
 import { resolveData } from '../vendor/noclip/js/motion.js';
@@ -253,6 +253,9 @@ function spinOf(st, e) {
     return spin;
 }
 const stages = [];
+/* VF2's, Tou-rin and the Colosseum in the setup's 2 and 3, Test after FV's
+ * Western, so the setup's numbers stay as they were */
+const vf2Stages = [];
 stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
     const list = buildStageDisplayList(st, frames).filter((e) => !e.extra && !e.points);
     /* cage_display's panels come wall by wall, each wall's in table order. */
@@ -345,10 +348,11 @@ stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
         const bright = vr.getFloat32(base + 0x6c, true), vx = vr.getInt16(base + 0x70, true), vy = vr.getInt16(base + 0x72, true);
         const tint = st.tint.map((t) => Math.round(t * 128)).join(', ');
         const nm = st.name.toUpperCase();
-        stages.push(`{"${nm}", ${VF2_SET0 + n}, ${draws.length}, ${name}_draws, {0, 28, 0, 64, ${name}_cx}, ${name}_mat, 0x0, ${f32(bright)}, ${vx}, ${vy}, 0xFFFF, {${tint}}, {0, 0, 0, 0, 0}, ` +
+        vf2Stages.push(`{"${nm}", ${VF2_SETS[n]}, ${draws.length}, ${name}_draws, {0, 28, 0, 64, ${name}_cx}, ${name}_mat, 0x0, ${f32(bright)}, ${vx}, ${vy}, 0xFFFF, {${tint}}, {0, 0, 0, 0, 0}, ` +
             `${f32(VF2_RING * VF2_SCALE)}, ${lit}, ${storm}, ${flash}, ${wind}, ${windAt}, ${windShift}, &${name}_sky}`);
-        console.log('stage', stages.length - 1, nm, 'VF2 set', st.texSets[0], 'as', VF2_SET0 + n, 'draws', draws.length);
+        console.log('VF2 stage', n, nm, 'VF2 set', st.texSets[0], 'as', VF2_SETS[n], 'draws', draws.length);
     });
+    stages.push(...vf2Stages.slice(0, 2));
 }
 /*
  * Fighting Vipers' Western (tools/fv-stages.mjs, which puts its models,
@@ -387,6 +391,7 @@ stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
         console.log('stage', stages.length - 1, nm, 'FV set', st.texSets.at(-1), 'as', FV_SET0 + n, 'draws', draws.length);
     });
 }
+stages.push(...vf2Stages.slice(2));
 /* Fighting Vipers' armour on the HUD (board/src/armour.c armour_hud): each
  * player's figure as FV's energy_disp draws it beside the bar, FV's own
  * tiles, pattern and colours. The figures are patterns 0x20 (player 1) and

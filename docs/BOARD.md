@@ -1670,6 +1670,32 @@ the data ROMs, and `bake-board.mjs` bakes their records into `poses.h`.
   board ROMs and compares points (times SCALE), UVs, tile sizes and the
   texels at levels 0..3. MAME: both stages draw as in VF2.
 
+### VF2's Test stage
+
+VF2's stage record 12 (noclip's "Test", one of `extraStages`: the city
+street with the "VIRTUA FIGHTER 2" graffiti) is setup stage 5, "VF2 TEST",
+after FV's Western, through the same importer (`VF2_STAGE_SLOTS` 0, 1, 12).
+
+- Models: 50 draws. The models Tou-rin and the Colosseum also use keep
+  their ids; Test's own go from `VF2_MORE_TOP` (4139) down (4090..4139),
+  ids StF's kept models leave free (3848..4139), since FV's Western takes
+  4383..4429 below `VF2_STAGE_TOP`'s run.
+- Textures: VF2 texture set 25 as board set 21 (set 20 is FV's). Test reads
+  odd stages'-sheet slots the arenas do not (16..23), so each stage keeps
+  its own odd pages (`oddSlotsRead`: every face whose th2 bit 12 is clear),
+  16 pages in all, and its own destination list: StF data-table index 11
+  (Tou-rin and the Colosseum share index 9, FV's is 10). The arenas' pages
+  stay on the heap; Test's go into `MORE_PAGES`, main_data
+  0x2B80000..0x2C00000, data StF does not keep.
+- Sky: VF2's 0x2502C record 12, 31 blocks. It does not fit beside the
+  arenas' at `VF2_SKY_AT` (main_data ends at 0x3000000), so `SKY_ROOMS` puts
+  each sky whole into the first room it fits: Test's goes to 0x2B30000.
+- Music: VF2's stage table (data 0x1E900) gives Test song 0x18, imported as
+  StF code 0xAE101C (`guest-sound.mjs`, `SND_VF2_TEST` in sound.c).
+- Ring out: as on the arenas.
+- Check: `checkVf2Stages` as above. MAME: setup stage 5, Sonic against
+  Honey on the street, the sky and the graffiti wall behind them.
+
 ### Ring out
 
 VF2's rule, from its program (Ghidra and objdump): `rob_check_stage`

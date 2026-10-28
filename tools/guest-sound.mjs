@@ -90,9 +90,11 @@ export const KEEP_SONGS = [3, 4];
  * sends (SND_FV_WESTERN) */
 export const FV_SONGS = [{ name: 'western', fv: 5, code: 0xAE1019 }];
 /* VF2's songs to add, by VF2's index in its group 0x10 (AD10nn: Tou-rin's
- * stage plays Lau's 0x0B, the Colosseum's Akira's 0x03), the codes after
- * FV's (sound.c, SND_VF2_TOURIN and SND_VF2_COLOSSEUM) */
-export const VF2_SONGS = [{ name: 'tourin', vf2: 0x0B, code: 0xAE101A }, { name: 'colosseum', vf2: 0x03, code: 0xAE101B }];
+ * stage plays Lau's 0x0B, the Colosseum's Akira's 0x03, Test (record 12)
+ * 0x18, from the round start's table at data 0x1E900), the codes after FV's
+ * (sound.c, SND_VF2_TOURIN, SND_VF2_COLOSSEUM and SND_VF2_TEST) */
+export const VF2_SONGS = [{ name: 'tourin', vf2: 0x0B, code: 0xAE101A }, { name: 'colosseum', vf2: 0x03, code: 0xAE101B },
+    { name: 'test', vf2: 0x18, code: 0xAE101C }];
 /* Akira's sounds, group 0x15: VF2's 9E kk vv for each of these keys and
  * velocities (kit F2's keys his moves play), then his voices, VF2's
  * requests AD gg nn (each a note of key nn on a kit's channel) */
