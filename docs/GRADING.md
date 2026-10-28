@@ -298,6 +298,23 @@ F to 37 F):
   init_barrier_count_for_player_per_match and _uk_display_hit_combo. They
   run for every fighter, VF2's guests too, so a VF2 fighter on the board
   can be held where VF2 never holds one.
+- StF's × 0.7 gravity, read in StF, g4/vf2.dis and the board side by side:
+  the board has StF's, VF2 has none, and on the board it never fires. In
+  the board's rob_spd_control (rsc_gra_calc, board/src/stf_motion.s 7457,
+  StF 0x1811C) the gravity [0x50A000] is multiplied by flt_1D290 (0.7)
+  when rob+0x1A4 bit 14 is set, before it is taken off rob+0x30; sub_16A4C
+  (6159) and calc_land_time (8987) have the same test and multiply.
+  VF2's gravity (0x17A88..0x17AA8) takes [0x50A000] off rob+0x30 as it is,
+  with no bit test and no multiply. With the bit set a fighter would fall
+  with 0.7 of the gravity (rob+0x5CC still added), so the same jump speed
+  would carry it higher and keep it up longer. Nothing on the board sets
+  rob+0x1A4 bit 14: no StF code stores it, the one data-driven setter
+  (play op 5, loc_1C29C 10314) takes its bit from the motion, StF's
+  motions never ask for 14, and vf2-guest.mjs keeps only STF_FLAG_BITS
+  (no 14) in a guest's op 5. So every fighter on the board, VF2's guests
+  too, falls with the full gravity, as on VF2: for a VF2 fighter the
+  branch changes nothing now. Read from the code only; the board was not
+  run.
 
 Left as they are:
 
