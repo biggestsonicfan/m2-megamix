@@ -280,6 +280,24 @@ F to 37 F):
   0.10744 is below k, so it is zeroed. The rest of the routine: only StF
   has the rob+0xA0E countdown and × 0.7 gravity on rob+0x1A4 bit 14; only
   VF2 adds rob+0x5C8/0x5D0 at × 0.5 under [0x500068] bit 20.
+- The rob+0xA0E countdown, read in StF, g4/vf2.dis and the board side by
+  side: the board has StF's, VF2 has none. The board's rob_spd_control is
+  StF's lifted (board/src/stf_motion.s 7357), and after rsc_espd_end
+  (StF 0x180AC) it decrements a non-zero rob+0xA0E; while it stays above
+  0 the routine returns (loc_181D4) before gravity, the move of rob+0x18..
+  by rob+0x2C..0x34 and rob_check_stage, so the fighter holds still; on
+  the frame it reaches 0 rob+0x2C..0x34 are restored from rob+0xA10 and
+  the frame goes on. Friction on rob+0x5C8/0x5D0 still runs on the held
+  frames. VF2's routine goes straight from its rob+0x5D4 store (0x17A3C)
+  to the gravity check (0x17A40, the same code as StF's rsc_gra_chk), and
+  no instruction in vf2.dis addresses 0xA0E or 0xA10 on a fighter. The
+  board's setters are StF's: ACT_RC_JUMP (6 frames, rob+0x2C..0x34 saved
+  to 0xA10 and zeroed: the jump's start-up), the wall hit (ACT_RC_KABEHIT's
+  arkh_0: 7..15 from weight − 60, or 30 with rob+0x7D2 bit 0), sub_165D4 and
+  ACT_RC_JUMP's other path (from rob+0x800), and clears in
+  init_barrier_count_for_player_per_match and _uk_display_hit_combo. They
+  run for every fighter, VF2's guests too, so a VF2 fighter on the board
+  can be held where VF2 never holds one.
 
 Left as they are:
 
