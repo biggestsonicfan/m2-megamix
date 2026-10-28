@@ -404,9 +404,8 @@ F to 37 F):
   outside when out of bounds, 0x17E44; at 0 when rob+0x614 is set,
   0x17FB8), through StF's sub_1980C (VF2's 0x18B58, the same routine on
   each game's offsets). Left out: VF2's rob+0x624 setting w0 bit 5
-  (ringout.c does VF2's ring out), its edge stumbles (motions
-  0xC020182..9 and the turn to rob+0x61A), and its end without StF's
-  rob+0x1E18 tail. Run on MAME (Akira vs Sonic, South Island): Akira
+  (ringout.c does VF2's ring out) and its end without StF's rob+0x1E18
+  tail (the edge stumbles came later; below). Run on MAME (Akira vs Sonic, South Island): Akira
   takes VF2's path every frame (seeds 2 and 3: its ground, wall, air and
   landing branches hit), and with seeds 1 and 2 the logs match the build
   before it frame for frame; none of those fights landed him out of
@@ -434,6 +433,46 @@ F to 37 F):
   So on a cage stage a VF2 fighter out of bounds lands on the cage's
   floor, not the ground outside: StF's floor is under him there. (The
   board's [0x50A010] on South Island is -10.0, not VF2's -0.5.)
+
+  VF2's edge stumbles are in the same branch now (INSERT at loc_18248,
+  VF2's 0x17BD4..0x180B4 instruction for instruction, each `ret` a branch
+  to 0x183CC). The teeter, VF2's 0x18B or 0x18A, picked by the atan of a
+  foot (rob+0x2A8/0x2B0 or 0x284/0x28C) against rob+0x616, the side bit
+  turned; the slips, 0x182..0x185; the falls off, 0x186..0x189, then the
+  landing at 0; and the turn VF2 writes to rob+0x61A (0x18008). VF2's
+  request command 0xC (DOWN, V 0x1564C) is StF's 8 (ACT_RC_DOWN), 0
+  (MOTION) is 0 in both. The motion ids are the fighter's own, from the
+  board's table `edge_motion` (by rob+0x1B1; VF2's 0x182..0x18B as board
+  ids; 0 for a fighter without them, which then plays none). Forced in
+  MAME (Akira vs Sonic, South Island, both forced the same way for 3
+  frames from frame 35; a tap on rob+0x198 and rob+0x618..0x61B with
+  their pcs):
+  - Near teeter (rob+0x614 = 0x8000, rob+0x620 = 0; VF2's wall path, as
+    on South Island rob+0x61C is never 0): Akira's request 0x080202A9
+    (board pc 0x1367C; motion 681, VF2's 0x18A), rob+0x61A = 0xE000
+    (pc 0x13A70), his side bit turned; he plays 681 for 49 frames.
+  - Far teeter (rob+0x614 = 0x1000): the same request at the same pc,
+    rob+0x61A = 0xE000, side kept.
+  - Teeter facing in (rob+0x616 = 0xA000): request 0x2AA (pc 0x1365C;
+    682, VF2's 0x18B, command 0), rob+0x61A = 0x5000 (pc 0x13A54); 682
+    for 71 frames.
+  - Slip: request 0x080202A1 (pc 0x1377C; 673, VF2's 0x182), rob+0x61A =
+    0xE000; 673 for 52 frames.
+  - Off (out of bounds as above): request 0x080202A5 (pc 0x138CC; 677,
+    VF2's 0x186), rob+0x61A = 0xE000, then the landing at 0; 677 for 42
+    frames.
+  - Sonic, in every run: no motion 673..682 and no rob+0x61A write; his
+    only rob+0x198 write was StF's own (0x9000000, pc 0x1009C), and
+    rob+0x620 = 1 from StF's path.
+
+  The turn is written but nothing on the board uses it. StF's contact
+  read stores rob+0x618 as a word (board pc 0x1E7B0, `st r7, 0x618(g7)`),
+  which clears rob+0x61A the next frame; VF2 stores it as a short (V
+  0x1419C). VF2 reads rob+0x61A in rob_revise_yang (V 0x17710, with
+  rob+0x1A4 bit 23 or w0 bit 9, set only by the throw action at V
+  0x16248) and in the script native `tag_yang` (V 0x49040); the board
+  has neither for a VF2 fighter, so his yang (rob+0x26) stays where it
+  was (0xE000 in the 0xA000 run). Not changed here.
 
 Left as they are:
 

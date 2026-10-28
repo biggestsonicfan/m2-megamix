@@ -337,7 +337,7 @@ export function importHornet(R, ctx, games, H, { byKey }, { chr: CHR_ = CHR } = 
     const mv = importFmMoves(R, ctx, H.game, H.fighter, { who: Who });
     report.push(...mv.report);
     const chars = seatGuest(R, ctx, { chr: CHR_, parts, skel, rigAt, ballRec, seamList, game: R.guest.games.VF2,
-        moves: mv.moves, kinds: mv.kindsAt, remap: mv.remapAt, actions: mv.actionsAt }, alloc);
+        moves: mv.moves, kinds: mv.kindsAt, remap: mv.remapAt, actions: mv.actionsAt, edge: 0 }, alloc);
     report.push(`heap to ${hex(ctx.heapEnd())}`);
 
     const coverage = {

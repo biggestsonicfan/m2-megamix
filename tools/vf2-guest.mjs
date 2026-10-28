@@ -107,6 +107,10 @@ export function reachAt(b, op, k) {
     v.setFloat32(0, v.getFloat32(0, true) * k, true);
 }
 const COMMIT_ACTION = { 7: 18, 8: 19, 0x12: 14, 0x13: 15, 0x1d: 16, 0x1e: 17 };
+/* VF2's edge stumbles (rob_check_stage, V 0x17C00..0x17FB8): the slips
+ * 0x182..0x185, the falls off 0x186..0x189, the teeters 0x18A, 0x18B; the
+ * board's lift plays them by place from edge_motion (tools/lift-stf.py). */
+export const EDGE_MOTIONS = Array.from({ length: 10 }, (_, k) => 0x182 + k);
 
 /* StF's 52 action slots, each played with one of VF2's (its number) or a VF2
  * motion ({ motion }), matched by what the motion does: stance, crouch,
@@ -402,7 +406,7 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
         for (let i = 0; i < 40; i++) { const x = d32(t + i * 4); if (!x && k) kind0++; r.push(x || reactions[0][i]); }
         reactions.push(r);
     }
-    const want = new Set([...A.actions, ...STF_ACTIONS.map(actionMotion), ...reactions.flat().map((x) => x & MOTION_ID)].filter((x) => x));
+    const want = new Set([...A.actions, ...STF_ACTIONS.map(actionMotion), ...reactions.flat().map((x) => x & MOTION_ID), ...EDGE_MOTIONS].filter((x) => x));
     const commitWord = (a) => p32(a + 1);
     for (const a of commits) {
         const w = commitWord(a), type = w >>> 24;
@@ -719,6 +723,9 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
     };
     const actions = actionsOf(mid);
     const actionsAt = alloc(u16s(actions), 'actions');
+    /* edge_motion: his edge stumbles, under mid */
+    const edgeAt = alloc(u16s(EDGE_MOTIONS.map(mid)), 'edge motions');
+    T.edge_motion.view.setUint32(CHR * 4, edgeAt, true);
 
     /* ptr_DA0B4[character] (sub_2B94C): his 30 lists, each VF2's 40, then
      * StF's category 5 (an attack with 0x1A4 bit 22: his hit's) and StF's
@@ -980,6 +987,7 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
             actions: alloc(u16s(actionsOf(gid)), 'actions', 4, who),
             kinds: kindsOf(gid, who),
             remap: alloc(u16s(remapOf(gid)), 'motion remap', 4, who),
+            edge: alloc(u16s(EDGE_MOTIONS.map(gid)), 'edge motions', 4, who),
         };
     }
 
@@ -1036,7 +1044,7 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
     const ctx = {
         alloc, heapEnd: () => heap, u32s, u16s, grow, pack, freeTaken, polyEnd: poly, modelIds: new Set(modelId.values()),
         recs, bones, rigBytes, balls, kinds, kindsAt, knuxKinds, ownAt, own, theirs, theirsAt, actions, actionsAt, newRoot, progAt,
-        handsAt, mid, newId, setups, convertSetup, ownMoveset, reactions, damage, knuxActions,
+        handsAt, edgeAt, mid, newId, setups, convertSetup, ownMoveset, reactions, damage, knuxActions,
         reserveIds, putMotion, theirCopy, vf2Frames, ownBlocksEnd: () => room,
         headOf: (p) => M((p ? A.p2 : A).parts[2].model),
     };
