@@ -465,14 +465,40 @@ F to 37 F):
     only rob+0x198 write was StF's own (0x9000000, pc 0x1009C), and
     rob+0x620 = 1 from StF's path.
 
-  The turn is written but nothing on the board uses it. StF's contact
-  read stores rob+0x618 as a word (board pc 0x1E7B0, `st r7, 0x618(g7)`),
-  which clears rob+0x61A the next frame; VF2 stores it as a short (V
-  0x1419C). VF2 reads rob+0x61A in rob_revise_yang (V 0x17710, with
-  rob+0x1A4 bit 23 or w0 bit 9, set only by the throw action at V
-  0x16248) and in the script native `tag_yang` (V 0x49040); the board
-  has neither for a VF2 fighter, so his yang (rob+0x26) stays where it
-  was (0xE000 in the 0xA000 run). Not changed here.
+  The turn takes effect now, for a VF2 fighter only. Two things kept it
+  from doing anything:
+  - StF's area_coli stores the copro's rob+0x618 as a word (`st r7,
+    0x618(g7)`, board pc 0x1E7B0 before), which cleared rob+0x61A every
+    frame. VF2 stores it as a short (V 0x1419C). For a VF2 fighter the board now keeps
+    rob+0x61A in the word's high half (a label, area_coli_618, before
+    the store).
+  - VF2's rob_revise_yang (V 0x17710) turns rob+0x26 toward rob+0x61A
+    while rob+0x1A4 bit 23 is set, 0x38E (5 degrees) a frame, with no
+    window (V 0x1771C, 0x177E0, into the turn at V 0x17890). The stumble
+    motions set that bit (Akira's 0x1A4 is 0x804021 in 681, 0x800021 in
+    682, 0x800861 in 673 and 677). StF's has no such path: it reads
+    rob+0x61A only with w0 bit 9 (StF 0x17CD0), which nothing sets
+    during a stumble. The board's rob_revise_yang now takes VF2's path
+    for a VF2 fighter with bit 23, after StF's own gate (mod_fa_coli
+    bit 31). VF2's `tag_yang` (V 0x49040) is not a reader the stumble
+    needs: it is the debug menu's display of rob+0x61A.
+  Forced again in MAME the same way (Akira vs Sonic, South Island, 3
+  frames from frame 35, rob+0x26 logged each frame):
+  - Teeter facing in (rob+0x616 = 0xA000): rob+0x61A = 0x5000; Akira's
+    rob+0x26 goes 0xE000, 0xE38E, 0xE71C ... 0x5000 by frame 71 (0x38E a
+    frame through 0) and stays 0x5000 to the end of the log (frame
+    198), motion 682 still playing under idle input. (#1825's "682 for
+    71 frames" was its log's window.) Before: rob+0x26 stayed 0xE000.
+  - Slip with rob+0x616 = 0xA000: rob+0x61A = 0xF000; rob+0x26 0xE000 to
+    0xF000 in 4 frames and held through motion 673. On the fall that
+    follows (606) the board's usual 0x8000 flip (StF's, also VF2's V
+    0x1B454) turns both rob+0x26 and rob+0x61A.
+  - Near teeter and off the edge with rob+0x616 = 0xE000: rob+0x61A =
+    0xE000, the yang he already had, so rob+0x26 stays 0xE000 as before.
+  - Sonic, in every run: rob+0x61A 0 and rob+0x26 0x6000 throughout.
+  Unforced, the board's fights are the same as before frame for frame:
+  battle.lua, 12000 frames, Akira vs Sonic seeds 1 and 2 and Sonic vs
+  Honey seed 1, old and new ROMs' traces identical.
 
 Left as they are:
 

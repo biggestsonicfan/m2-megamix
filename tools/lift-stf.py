@@ -126,7 +126,9 @@ NATIVE_TAIL = 'cmd_native_tail', 0x1EF48, 'ld      0x1A4(g7), r15  # unreachable
 # them: the label, the routine, and the line after which it goes (the first
 # match from the routine's label on). coli_cont_cop_g4: the line after
 # coli_cont_cop reads function 0x3B's results back (g4 the push).
-NAMED = {'coli_cont_cop_g4': ('coli_cont_cop', 'ld      (g11)[g12*1], g5')}
+# area_coli_618: area_coli's store of the copro's 0x618 word.
+NAMED = {'coli_cont_cop_g4': ('coli_cont_cop', 'ld      (g11)[g12*1], g5'),
+         'area_coli_618': ('area_coli', 'st      r6, 0x624(g7)')}
 # Tables below 0x1000 that are tables all the same (cop_initialize_end2's
 # collision-ball pointers).
 LOW_TABLES = {'off_FE8'}
@@ -307,7 +309,25 @@ INSERT_LIFTED = {
 # command and the fighter's own id (edge_motion), which set_motion's remap
 # leaves alone. Left out: VF2's 0x624 setting w0 bit 5 (ringout.c does VF2's
 # ring out), and its end without StF's 0x1E18 tail (kept here).
+# The turn takes effect as VF2's does: area_coli_618, StF's area_coli stores
+# 0x618 as a word, which clears 0x61A each frame; VF2's (V 0x1419C) is a
+# short, so a VF2 fighter's 0x61A is kept in the word's high half. And
+# rob_revise_yang (V 0x17710): with 0x1A4 bit 23 (the stumbles' motions set
+# it) VF2 turns 0x26 toward 0x61A at 0x38E (5 degrees) a frame, no window, at
+# VF2's 0x17890 (StF's loc_17EEC); StF has no such path. After StF's own gate
+# (mod_fa_coli bit 31), before the rest of its tree. VF2's tag_yang native
+# (V 0x49040) is the debug menu's display, not a reader.
 INSERT = {
+    'area_coli_618': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                      'cmpobne GAME_VF2, r14, area_coli_618_own', 'ldos    0x61A(g7), r14',
+                      'shlo    16, r14, r14', 'shlo    16, r7, r7', 'shro    16, r7, r7',
+                      'or      r14, r7, r7', 'area_coli_618_own:'],
+    'rob_revise_yang': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                        'cmpobne GAME_VF2, r14, rob_revise_yang_own', 'ld      stf_ram_500000+0x828, r3',
+                        'ld      0x0(r3), r15', 'bbc     0x1F, r15, loc_17F74', 'ld      0x1A4(g7), r7',
+                        'bbc     0x17, r7, rob_revise_yang_own', 'ldos    0x61A(g7), r9',
+                        'ldis    0x26(g7), r13', 'subi    r13, r9, r9', 'lda     0x38E, r6',
+                        'b       loc_17EEC', 'rob_revise_yang_own:'],
     'rand': ['ld      _link+4, r15', 'cmpobne 5, r15, rand_own',
              'ld      stf_ram_500000+0x98, r15', 'lda     0x41C64E6D, r14',
              'mulo    r14, r15, r15', 'lda     12345, r14', 'addo    r14, r15, r15',
