@@ -183,10 +183,17 @@ approximations. Each is marked `Here:` in `js/engine.js`:
 - StF (0x2AE40) drops a blow when the attacker has the other behind it,
   unless +0x70C bit 20 is set; FV and VF2 have no such step there. Not
   followed.
+- A strike's active frames: coli_attack_chk (StF 0x2A678, FV 0x25AA4, VF2
+  0x22404) tests a strike while its mot_kind has mk_attack, which
+  play_motion clears at the cancel, from the hit frame on: hit to the frame
+  before the cancel, once a motion. Here: StF's strikes without +0x860 bit
+  22 may strike again 8 frames after a hit; FV's and VF2's
+  cac_attack_cancel (0x25A84, 0x223BC) drops a few moves with
+  en_from_behind set; neither is followed. Shenmue's strikes, with no
+  mot_kind, are active from hit to the later of cancel and hit + 2.
 - Not read from the games yet, the engine's own: attack_hit's other changes
   to the damage (StF from 0x2B0F8: tender, multi, ukemi; FV and VF2
-  have most of them, and VF2 its air), a strike's active frames (hit to
-  the later of cancel and hit + 2) and the 50 frames lying before the
+  have most of them, and VF2 its air) and the 50 frames lying before the
   rise.
 - The CPU player is a simple one.
 - Rounds last 40 s and need 2 wins (1–3 in the menu).

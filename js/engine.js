@@ -12,7 +12,7 @@
  *
  * No three.js: the Node test runs a bout through it.
  */
-import { MOTION_ID, S, P, K, G, DOWN, UP, FWD, BACK, HIGH, MID, LOW, ENERGY, matchPress, enFlag, fromBehind, throwFlags, isCounter, counterDamage, airDamage, downDamage, knocksDown, MK_AIR, rootAt, motionOf } from './fighters.js';
+import { MOTION_ID, S, P, K, G, DOWN, UP, FWD, BACK, HIGH, MID, LOW, ENERGY, matchPress, enFlag, fromBehind, throwFlags, isCounter, strikeActive, counterDamage, airDamage, downDamage, knocksDown, MK_AIR, rootAt, motionOf } from './fighters.js';
 import { SLOT_PARENT } from '../vendor/noclip/js/pose.js';
 import { ARENA } from './games.js';
 
@@ -578,9 +578,8 @@ function ended(fight, p) {
  * +0x820): a mask of the rig's slots (fighters.js partMask). Each slot in it
  * is tested as the limb it moves: from its origin to its one child's, or,
  * for an end (hand, foot, head) or a branch (the chest), from its parent's
- * origin to its own. Here: the limbs are tested through the active frames,
- * hit to the later of cancel and hit + 2, against a capsule from the floor
- * to the head (the board's own hit volumes are the coprocessor's), and a
+ * origin to its own, through its active frames (fighters.js strikeActive).
+ * Here: the limbs are tested against a capsule from the floor to the head (the board's own hit volumes are the coprocessor's), and a
  * strike with no part (a game brought in) uses the limb end that is
  * furthest forward (hands, feet, head) from its inner joint.
  */
@@ -650,8 +649,8 @@ function enBehind(p, o) {
 const STF_DOWN_HALF = 8;
 function strike(fight, p, o) {
     if (p.state !== ST.MOTION || !p.attack || p.hitDone || !p.timing) return;
-    const { hit, cancel } = p.timing;
-    if (p.mot_coma < hit || p.mot_coma > Math.max(hit + 2, cancel)) return;
+    /* fighters.js strikeActive: hit to the frame before the cancel */
+    if (!strikeActive(p.fighter.motKind ? kindAt(p) : null, p.mot_coma, p.timing)) return;
     if (o.state === ST.NAGERARE || o.state === ST.RISE) return;
     const lying = o.state === ST.DOWN;
     if (lying && !p.attack.down) return;

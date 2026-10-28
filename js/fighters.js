@@ -348,6 +348,23 @@ export { MK_ATTACK, MK_AIR, MK_DOWN, MK_DOWN_POSE };
 export function isCounter(kind, coma, timing) {
     return !!timing && coma < timing.cancel && (kind == null || !!(kind & MK_ATTACK));
 }
+
+/* A strike's active frames: coli_attack_chk (StF 0x2A678, FV 0x25AA4, VF2
+ * 0x22404) tests the attacker's struck parts only while its mot_kind has
+ * mk_attack (cleared at the cancel, as for isCounter) and its frame (+0x1AA)
+ * is at or past the hit frame (+0x808): hit to the frame before the cancel,
+ * once a motion (g13+0x90). Here: StF's strikes without +0x860 bit 22 may
+ * strike again 8 frames after a hit (g13+0x2AC), which this engine's one hit
+ * a move does not follow; FV's and VF2's cac_attack_cancel (0x25A84,
+ * 0x223BC), which drops a few moves (FV 0x164; VF2 0x139, 0x93, 0x2A, 0x27E,
+ * 0x330, 0x127) with en_from_behind set, is not followed. A fighter with no
+ * mot_kind (Shenmue's, kind null) keeps the engine's own: hit to the later
+ * of cancel and hit + 2. */
+export function strikeActive(kind, coma, timing) {
+    if (!timing || coma < timing.hit) return false;
+    if (kind == null) return coma <= Math.max(timing.hit + 2, timing.cancel);
+    return isCounter(kind, coma, timing);
+}
 export function counterDamage(game, a, own) {
     if (game !== 'stf') return (a.damage * 3) >> 1;
     const raw = ((a.raw + ((own ?? 0) >> 2)) * 3) >> 1;

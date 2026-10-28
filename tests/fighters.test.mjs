@@ -364,6 +364,50 @@ console.log('ok');
     }
 }
 
+/* A strike's active frames: coli_attack_chk tests a strike while its
+ * mot_kind has mk_attack, which play_motion clears at the cancel, from the
+ * hit frame on: hit to the frame before the cancel (the engine had it to the
+ * later of cancel and hit + 2). */
+{
+    const { strikeActive, MK_ATTACK } = await import('../js/fighters.js');
+    const t = { hit: 10, cancel: 11, end: 30 };
+    assert.ok(!strikeActive(MK_ATTACK, 9, t) && strikeActive(MK_ATTACK, 10, t), 'from the hit frame');
+    assert.ok(!strikeActive(MK_ATTACK, 11, t) && !strikeActive(MK_ATTACK, 12, t), 'not from the cancel');
+    assert.ok(!strikeActive(0, 10, t), 'not without mk_attack');
+    assert.ok(strikeActive(null, 12, t) && !strikeActive(null, 13, t), 'no mot_kind (Shenmue): to hit + 2');
+    const { createFight, stepFight, setMotion, ST } = await import('../js/engine.js');
+    const { motionOf } = await import('../js/fighters.js');
+    for (const [n, g] of [['AKIRA', 'vf2'], ['PICKY', 'fv'], ['SONIC', 'stf']]) {
+        const f = fighters.find((x) => x.name === n && x.game === g);
+        /* the strike played from `from`, one frame: does it land? */
+        const lands = (id, dist, from) => {
+            const fight = createFight(f, f, f.game);
+            fight.phase = 'fight';
+            const [p, o] = fight.players;
+            p.pos = [-dist / 2, 0, 0]; o.pos = [dist / 2, 0, 0];
+            setMotion(p, { rom: f.rom, motion: motionOf(f.rom, id) }, { state: ST.MOTION });
+            Object.assign(p, { action: 'move', moveId: id, timing: f.timing(id), attack: f.attack(id), hitDone: false, pc_command: 0 });
+            p.mot_coma = from;
+            stepFight(fight, [{}, {}]);
+            return fight.events.some((e) => e.kind === 'hit' && e.side === 0);
+        };
+        const DIST = [0.2, 0.4, 0.6, 0.8, 1, 1.2, 1.4];
+        /* a strike of one or two active frames, which the engine played on
+         * to its cancel, that lands at its hit frame */
+        let id, near;
+        for (const i of [...new Set([...f.moves.tables.values()].flat().map((e) => e.motion & 0x1fff))]) {
+            const a = f.attack(i), tm = f.timing(i);
+            if (!a || a.victim != null || a.down || !tm || tm.cancel <= tm.hit || tm.cancel > tm.hit + 2) continue;
+            near = DIST.filter((d) => lands(i, d, tm.hit - 1));
+            if (near.length) { id = i; break; }
+        }
+        assert.ok(id != null, `${n}: a strike of one or two active frames lands at its hit frame`);
+        const tm = f.timing(id);
+        assert.ok(DIST.every((d) => !lands(id, d, tm.cancel - 1)), `${n}: motion ${id} not at its cancel ${JSON.stringify(tm)}`);
+        console.log('active frames:', n, 'motion', id, JSON.stringify(tm), 'lands at', near.join(' '));
+    }
+}
+
 /* In the air: attack_hit deals d * 3 >> 1 (StF on its own scale) on a
  * fighter whose mot_kind has mk_air and not mk_down; the jump motions'
  * motd_kind has no mk_air, the jump handler adds it at take-off (fix_hara).
