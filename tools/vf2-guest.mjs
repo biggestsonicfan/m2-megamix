@@ -99,6 +99,13 @@ export const COMMIT_TYPE = {
     0x15: 0x11, 0x16: 0x12, 0x17: 0x13, 0x18: 0x14, 0x19: 0x15, 0x1a: 0x16, 0x1b: 0x17, 0x1c: 0x18,
     0x1f: 0x19, 0x20: 0x1a,
 };
+/* The reach guards (ops 0x1A nearer than, 0x1B further than: a float at +1)
+ * are a distance the board measures at his size. */
+export function reachAt(b, op, k) {
+    if (op !== 0x1a && op !== 0x1b) return;
+    const v = new DataView(b.buffer, b.byteOffset + 1, 4);
+    v.setFloat32(0, v.getFloat32(0, true) * k, true);
+}
 const COMMIT_ACTION = { 7: 18, 8: 19, 0x12: 14, 0x13: 15, 0x1d: 16, 0x1e: 17 };
 
 /* StF's 52 action slots, each played with one of VF2's (its number) or a VF2
@@ -684,6 +691,7 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
             case 0x33: reloc(1, b); prog.push(0x11, ...b.subarray(1, 5)); break;
             default:
                 if (u.op === 0x2b && b[2]) { lost.op2bBytes += !quiet; b[2] = 0; }
+                reachAt(b, u.op, SCALE);
                 if ([0x0d, 0x0f, 0x27, 0x11].includes(u.op)) reloc(1, b);
                 if (u.op === 0x0e) reloc(3, b);
                 if (u.op === 0x28) for (const o of [1, 5, 9]) reloc(o, b);

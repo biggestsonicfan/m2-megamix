@@ -34,6 +34,11 @@
 --           same script); BT_INPUTS=<file> plays a written one instead:
 --           lines "<frame> <p1> <p2>", each pad a string of U D L R P K G
 --           (or -), held from that frame of the round on.
+-- BT_RECORD=<file>  write the replay: what was pressed, by round, as lines
+--           "r<round> <frame> <p1> <p2>" (each pad as BT_INPUTS', from the
+--           round's start, BT_LEAD in it), one each time a pad changes.
+-- BT_REPLAY=<file>  play a written replay (BT_RECORD's) instead of the
+--           script: each round its own lines; a round it lacks, no input.
 -- BT_LEAD   frames of no input before the script, from the round's start
 --           (default 30), so the games' few frames of intro pose do not
 --           eat its first presses.
@@ -63,6 +68,7 @@ local MENU   = os.getenv("BT_MENU") or "30,2,0,0,1,140,5"
 local INPUTS = os.getenv("BT_INPUTS")
 local TRACE_BOOT = os.getenv("BT_TRACE_BOOT")
 local LEAD = tonumber(os.getenv("BT_LEAD") or "30")
+local RECORD, REPLAY = os.getenv("BT_RECORD"), os.getenv("BT_REPLAY")
 
 local sp = manager.machine.devices[":maincpu"].spaces["program"]
 -- The board keeps StF's globals where its link put them (stf_ram_<addr>
@@ -155,16 +161,39 @@ else
     if a ~= last[1] or b ~= last[2] then script[#script + 1] = { k, a, b }; last = { a, b } end
   end
 end
-local function script_at(k)
-  k = k - LEAD
-  if k < 0 then return { 0, "", "" } end
-  -- the last entry at or before k (the script is in frame order)
-  local lo, hi, best = 1, #script, nil
+-- the last entry of a list in frame order at or before k
+local function entry_at(list, k)
+  local lo, hi, best = 1, #list, nil
   while lo <= hi do
     local mid = (lo + hi) // 2
-    if script[mid][1] <= k then best = mid; lo = mid + 1 else hi = mid - 1 end
+    if list[mid][1] <= k then best = mid; lo = mid + 1 else hi = mid - 1 end
   end
-  return best and script[best] or { 0, "", "" }
+  return best and list[best] or { 0, "", "" }
+end
+-- A replay: each round's own list, its frames the round's (the lead in them).
+local replay = {}
+if REPLAY then
+  for line in io.lines(REPLAY) do
+    local r, k, a, b = line:match("^r(%d+)%s+(%d+)%s+(%S+)%s+(%S+)")
+    if r then
+      r = tonumber(r); replay[r] = replay[r] or {}
+      table.insert(replay[r], { tonumber(k), a == "-" and "" or a, b == "-" and "" or b })
+    end
+  end
+end
+local function script_at(k, r)
+  if REPLAY then return entry_at(replay[r] or {}, k) end
+  k = k - LEAD
+  if k < 0 then return { 0, "", "" } end
+  return entry_at(script, k)
+end
+local record = RECORD and assert(io.open(RECORD, "w"))
+local recorded = {}   -- the last pads written to the replay, and its round
+local function record_at(r, k, e)
+  if not record or (recorded[1] == r and recorded[2] == e[2] and recorded[3] == e[3]) then return end
+  record:write(string.format("r%d %d %s %s\n", r, k, e[2] == "" and "-" or e[2], e[3] == "" and "-" or e[3]))
+  record:flush()
+  recorded = { r, e[2], e[3] }
 end
 
 ---- the setup -----------------------------------------------------------------
@@ -431,8 +460,9 @@ frame = function()
   end
   if in_round then
     k = k and math.max(k + 1, t0 - timer - 1) or t0 - timer - 1
-    local e = script_at(k)
+    local e = script_at(k, round)
     pad("P1", e[2]); pad("P2", e[3])
+    record_at(round, k, e)
     -- the last countdown's state, as step t0 - old - 1; once the clock
     -- stops (the KO), the frame's own
     if snap then

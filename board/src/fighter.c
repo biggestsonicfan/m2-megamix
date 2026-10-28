@@ -327,19 +327,30 @@ u32 round_time = 30u;             /* seconds, the setup menu's time */
  * first round and a quarter turn more for each round after it, each facing
  * the other. cos(k * 45 degrees) * 2, by k; 1.4142143 is the COP's sqrt 2.
  * On the other games' stages, as those games start a round (read off VF2
- * and FV fights): 2.0 apart along x, VF2 every round, FV a quarter turn
- * more for each round after the first. */
+ * and FV fights): 2.0 of theirs apart along x, VF2 every round, FV a
+ * quarter turn more for each round after the first. Those stages and their
+ * fighters are drawn at the guests' size (tools/vf2-guest.mjs SCALE,
+ * tools/fv-stages.mjs FV_SCALE), so 2.0 of theirs is 2.0 times that here:
+ * about StF's 4.0 (VF2_SCALE: poses.h). */
+#define FV_SCALE  (2.676f / 1.309f)
 static u16 start_ang;
 static const u32 start_cos[8] = {
     0x40000000u, 0x3FB504F7u, 0x00000000u, 0xBFB504F7u, 0xC0000000u, 0xBFB504F7u, 0x00000000u, 0x3FB504F7u,
 };
 static float start_f(u32 k) { union { u32 u; float f; } v; v.u = start_cos[k & 7u]; return v.f; }
 
+/* half the start distance on stage n: 2, 3, 5 VF2's, 4 FV's, 6 DOA's */
+static float start_half(u32 n) {
+    if (n == 4u) return 0.5f * FV_SCALE;
+    if (n == 2u || n == 3u || n == 5u) return 0.5f * VF2_SCALE;
+    return n >= 2u ? 0.5f : 1.0f;
+}
+
 /* next: the match's next round, the armour as the last one left it */
 void round_start(fighter_t fs[2], u32 next) {
     u32 i, k;
     u32 n = stage_index();               /* 2, 3 VF2's; 4 FV's */
-    float d = n >= 2u ? 0.5f : 1.0f;
+    float d = start_half(n);
     start_ang = !next ? (n >= 2u ? 0u : 0x2000u) : (u16)(start_ang + (n == 2u || n == 3u ? 0u : 0x4000u));
     k = start_ang >> 13;
     stage_round_start();

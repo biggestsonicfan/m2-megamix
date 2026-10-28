@@ -30,7 +30,7 @@
  *     StF's kind (FV_KIND); a kind FV has none of stays Akira's.
  */
 import { resolveData } from '../vendor/noclip/js/motion.js';
-import { MOTION_ID, STF_ACTIONS, DAMAGE, scaleMotion, strikeTrail, trailOp } from './vf2-guest.mjs';
+import { MOTION_ID, STF_ACTIONS, DAMAGE, scaleMotion, strikeTrail, trailOp, reachAt } from './vf2-guest.mjs';
 
 const MAIN_DATA = 0x02000000;
 /* His moves go in main_data's room from 0x9913a0 (nothing StF's the board
@@ -405,6 +405,7 @@ export function importFvMoves(R, ctx, fv, A, { who, k, thrown, handShape = (s) =
             prog.push(...le32((0x8c800000 | mid(u.g0)) >>> 0), ...le32(0x84003000), ...le32(R.guest.nativeTail));
             break;
         default:
+            reachAt(b, u.op, k);
             if ([0x0d, 0x0f, 0x27, 0x11].includes(u.op)) reloc(1, b);
             if (u.op === 0x0e) reloc(3, b);
             if (u.op === 0x28) for (const o of [1, 5, 9]) reloc(o, b);

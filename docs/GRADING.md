@@ -49,6 +49,31 @@ Give each run its own directory and its own `-cfg_directory`,
   made blind. A value the menu can't show (energy above 250) stops the
   run after 400 presses.
 
+## The board, by replay
+
+The input script plays the same presses in both games, but what a press
+does depends on the fight so far, so a small difference grows. The board
+is graded by replay instead: the battle is played in its source game and
+recorded (`BT_RECORD=<file>`: both pads, every frame from the round's
+start), and the recording is played on the board (`BT_REPLAY=<file>`) in
+place of the script. With the same fight on both, the first frame they
+part is the board's own difference.
+
+```bash
+tools/mame/board-replays.sh <outdir> <board build dir> [jobs file]
+```
+
+plays every pairing of the board's fighters that a source game has (StF's
+Sonic, Honey and Eggman on South Island and Aurora; Akira on VF2's
+Tou-rin, Colosseum and Test stage; Mahler on FV's Western), three MAMEs
+at a time, and grades each (`<outdir>/<name>/grade.txt`). A job is a line
+`<name> <game> <p1> <p2> <stage> <board menu>`. The board's energy is
+StF's 140 for StF and Akira (his jab takes 18 of VF2's 220 and 11-12 of
+the board's 140), 250 for Mahler (13 of FV's 280 and 11-12 of 250):
+Mahler's damage is about 0.88 of FV's, not StF's bar's share. The board
+draws the guests and their stages at StF's size (VF2's 2.027, FV's
+2.044), and the grader takes its places back to the source's units.
+
 ## What is graded
 
 `tools/grade-battle.mjs`, round by round:
@@ -83,7 +108,8 @@ frame's.
 
 ## Results
 
-Seed 1, the board at energy 140 and barrier 5, StF's pairings of Sonic,
+By replay (board-replays.sh), seed 1, the board at energy 140 and
+barrier 5, StF's pairings of Sonic,
 Honey and Eggman (1P, 2P) on South Island and Aurora Icefield:
 
 | 1P, 2P     | Sonic       | Honey       | Eggman      |
@@ -97,8 +123,9 @@ Honey and Eggman (1P, 2P) on South Island and Aurora Icefield:
 | Honey      | 100 A       | 100 A       | 100 A       |
 | Eggman     | 100 A       | 99 A        | 100 A       |
 
-The guests, against their own games: Akira vs Akira on Tou-rin (VF2) 28 F,
-Mahler vs Mahler on Western (FV) 21 F (below).
+The guests, against their own games: Akira vs Akira 32 F on Tou-rin, the
+Colosseum and the Test stage (the fights are the same on all three: no
+ring edge comes in), Mahler vs Mahler on Western (FV) 37 F (below).
 
 ## What the grading found
 
@@ -118,9 +145,9 @@ Sonic vs Honey on South Island went from D (44) to A (100):
   `game_engine_setup`'s constants are seeded with it.
 
 - **Start places.** The board started every stage's fighters at StF's
-  places and angle. On a VF2 stage they now start at VF2's (half StF's
-  distance, the same every round), on FV's Western at FV's (a quarter
-  turn on each round).
+  places and angle. On a VF2 stage they now start at VF2's (±1, the same
+  every round), on FV's Western at FV's (a quarter turn on each round),
+  in the guests' units: ±1 × VF2's (or FV's) size on the board.
 
 - **The last blow.** A round's KO blow can land on the frame the board
   judges it, which it logs no frame of; the grader takes it from the end
@@ -128,17 +155,41 @@ Sonic vs Honey on South Island went from D (44) to A (100):
 
 Left as they are:
 
+The guests, by replay (Akira from 28 F by script to 32 F, Mahler from 21
+F to 37 F):
+
+- **No trade lockout.** StF's `coli_attack_chk` keeps a fighter whose
+  strike just landed from being hit back for a while (+0x2AC); VF2 and FV
+  have no such lockout, and two guests' jabs trade. It is skipped when
+  both fighters are guests (`loc_2A6B8`, tools/lift-stf.py).
+- **The push between bodies.** `coli_recalc_pos` keeps two bodies 0.3
+  apart and caps the push at 0.3 a frame, in StF's units; for two guests
+  of one game it is in theirs now (`loc_2D7B0`, `loc_2D7E0`): VF2's
+  factor is always 0.3 × its size and has no cap, FV's are StF's × its
+  size.
+- **The reach guards.** The guests' command programs went over with
+  their `nearer_than`/`further_than` distances (ops 0x1A, 0x1B) in their
+  own units, against a distance the board measures at their size: Mahler
+  took his far jab (FV 672) where FV takes the near one (671). They are
+  scaled now (`reachAt`, tools/vf2-guest.mjs), and his first punch is
+  FV's, on FV's frame.
+
+Left as they are:
+
+- **The guests' push, still.** The fights part on the first jab's contact
+  (Akira frame 40, Mahler 39). The overlap the COP returns (g4) is where:
+  on Akira's frame 39 the board's matches VF2's (0.1169 VF2 units; the
+  largest ball pair's overlap, balls 6 and 6), but on frame 40 VF2's is
+  0.2233 and the board's (StF's SHARC program) 0.0834, with the same
+  contact vector. The arms have crossed by then, and VF2's 0.2233 is
+  neither the largest pair's overlap (0.0932) nor their sum (0.4557):
+  VF2's COP is a TGP program of its own, whose rule for it is not known.
+  Its masks (+0x264/0x268, the balls' C0/C4) are VF2's, and the strike's
+  balls sent or not make no difference. Mahler parts the same way (frame
+  39: the board has pushed him 0.040 FV units, FV 0.014).
 - Honey's intro pose: StF's motion 15, the board's 507.
 - The board's rounds end 4 or 5 frames before StF's (the winner and the
   energy left are the same).
-- The guests part from their source a few frames into the first attack
-  (Akira vs Akira on Tou-rin: frame 35; Mahler vs Mahler on Western: 38).
-  Two Akiras jabbing at 2.0 apart slide apart about 0.15 a frame from the
-  jab's second frame on the board; in VF2 they stand until the hit (frame
-  39) and are pushed 0.17. A jab from 3.3 apart doesn't move him on the
-  board, so it's StF's push between bodies, not the motion: it reaches
-  further than VF2's (or FV's) for the guests' bodies. Graded F (VF2 28,
-  FV 21) until it is fixed.
 - Sonic vs Sonic and Sonic vs Honey on Aurora stop MAME, always on the
   same frame of round 1 (501; 1092), whatever the fight did up to it:
   `geo_adsp` (the shared build's Model 2B geometrizer, its own SHARC

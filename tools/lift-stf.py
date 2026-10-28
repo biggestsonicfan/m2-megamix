@@ -255,6 +255,18 @@ INSERT_LIFTED = {
 # winning blow (+0x914) is StF's own.
 # ring_tobitiri_set (a hit's rings, damage_calculation's): only StF's own
 # fighters carry rings; a guest (char_game not 0) drops none.
+# coli_attack_chk (loc_2A6B8): a strike whose move lacks +0x860 bit 22
+# lands only while the collision task's 0x2AC is 0, and a hit sets it to 8,
+# so in StF the first of two strikes on a frame shuts the other out (no
+# trades) and nothing lands for 8 frames after a hit. VF2's (0x22404) and
+# FV's (0x25AA4) have no such wait: a strike lands once a move (StF's bit-22
+# path, the 0x90 bit and the motion kept at 0x8C), and two on a frame trade.
+# A guest (char_game not 0) takes that path.
+# coli_recalc_pos (loc_2D7B0, loc_2D7E0): two fighters' bodies are kept
+# 0.3 apart, in their game's units; StF's 0.3 (the push factor, +0x67C) is
+# taken to the guests' size for a pair from one other game: VF2's always
+# 0.3 * SCALE (0x3F1BAF44), FV's StF's factors * K. StF and FV hold the push
+# to 0.3 a frame (FV's * K, 0x3F1D00BE); VF2 does not.
 # rand mixes the hardware timers (0xF00000) into G_RANDOM; two linked boards
 # (link.c, in step: link.state LS_RUN, 5) must draw the same numbers, so
 # there it steps G_RANDOM alone (an LCG, its high half).
@@ -279,6 +291,8 @@ INSERT = {
                   'cmpobne 0xC, r15, loc_2BBDC_own', 'ld      0x0(g8), r15',
                   'setbit  0x1C, r15, r15', 'st      r15, 0x0(g8)',
                   'loc_2BBDC_own:'],
+    'loc_2A6B8': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobne GAME_STF, r14, loc_2A6D0'],
     'ring_tobitiri_set': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                           'cmpobe  GAME_STF, r14, ring_tobitiri_set_own', 'ret',
                           'ring_tobitiri_set_own:'],
@@ -312,6 +326,20 @@ INSERT = {
                   'cmpobe  0, r4, loc_1B044_own', 'lda     0x1FFF, r5', 'and     r5, g0, r6',
                   'ldos    (r4)[r6*2], r6', 'cmpobe  0, r6, loc_1B044_own', 'andnot  r5, g0, g0',
                   'or      r6, g0, g0', 'loc_1B044_own:'],
+    'loc_2D7B0': ['ldob    0x1B1(g7), r3', 'ldob    guest_char_game[r3], r3',
+                  'ldob    0x1B1(g8), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobne r3, r14, loc_2D7B0_own', 'cmpobe  GAME_STF, r3, loc_2D7B0_own',
+                  'cmpobe  GAME_FV, r3, loc_2D7B0_fv', 'cmpobne GAME_VF2, r3, loc_2D7B0_own',
+                  'lda     0x3F1BAF44, r15', 'b       loc_2D7B0_own',
+                  'loc_2D7B0_fv:', 'lda     0x4002D5F4, r14', 'mulr    r14, r15, r15',
+                  'loc_2D7B0_own:'],
+    'loc_2D7E0': ['ldob    0x1B1(g7), r3', 'ldob    guest_char_game[r3], r3',
+                  'ldob    0x1B1(g8), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobne r3, r14, loc_2D7E0_own', 'cmpobe  GAME_VF2, r3, loc_2D7F8',
+                  'cmpobne GAME_FV, r3, loc_2D7E0_own', 'lda     0x3F1D00BE, r15',
+                  'bbs     0x1F, g4, loc_2D7F8', 'cmpr    r15, g4', 'bge     loc_2D7F8',
+                  'mov     r15, g4', 'b       loc_2D7F8',
+                  'loc_2D7E0_own:'],
     'loc_2B9CC': ['ldob    0x1B1(g8), r3', 'ldob    guest_char_game[r3], r3',
                   'cmpobe  GAME_STF, r3, loc_2B9CC_up', 'ld      0x1A4(g8), r3',
                   'bbc     3, r3, loc_2B9CC_up', 'addo    4, r9, r9',

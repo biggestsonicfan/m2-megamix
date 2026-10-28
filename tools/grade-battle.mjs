@@ -33,6 +33,24 @@ if (!srcPath || !brdPath) {
     process.exit(2);
 }
 
+/* A game's unit on the board: its fighters' size there over their own
+ * (tools/vf2-guest.mjs SCALE, tools/fv-stages.mjs FV_SCALE). */
+const UNITS = { vf2: (71 / 73) * (1.670 / 1.309) * (2.676 / 1.638), fv: 2.676 / 1.309 };
+
+/* The board draws VF2's and FV's fighters and stages at StF's size
+ * (UNITS), so its places are taken back to the source's units. */
+function toSourceUnits(src, brd, report) {
+    const u = brd.setup?.game === 'board' ? UNITS[src.setup?.game] ?? 1 : 1;
+    if (u === 1) return;
+    /* (a step the log skipped shares the step before's fighters) */
+    const seen = new Set();
+    for (const r of brd.rounds) for (const fr of r.frames) for (const q of fr.p) {
+        if (seen.has(q)) continue;
+        seen.add(q); q.x /= u; q.y /= u; q.z /= u;
+    }
+    report.notes.push(`places: the board's divided by ${u.toFixed(3)}, ${src.setup.game}'s size on the board`);
+}
+
 export function readLog(text) {
     const log = { setup: null, rounds: [], error: null, done: false };
     for (const line of text.split('\n')) {
@@ -168,6 +186,7 @@ export function grade(src, brd) {
     const f = cross && src.setup.energy && brd.setup?.energy ? brd.setup.energy / src.setup.energy : 1;
     const sameDmg = (a, b) => (f === 1 ? a.dmg === b.dmg : Math.abs(a.dmg * f - b.dmg) <= 1);
     if (f !== 1) report.notes.push(`energy: source ${src.setup.energy}, board ${brd.setup.energy}: the source's damage scaled by ${f.toFixed(3)}`);
+    toSourceUnits(src, brd, report);
     for (const key of cross ? ['wins_needed', 'time'] : ['energy', 'wins_needed', 'time'])
         if (src.setup && brd.setup && src.setup[key] !== brd.setup[key])
             report.setup.push(`${key}: source ${src.setup[key]}, board ${brd.setup[key]}`);
