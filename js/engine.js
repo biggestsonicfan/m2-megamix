@@ -12,7 +12,7 @@
  *
  * No three.js: the Node test runs a bout through it.
  */
-import { MOTION_ID, S, P, K, G, DOWN, UP, FWD, BACK, HIGH, MID, LOW, ENERGY, matchPress, enFlag, fromBehind, throwFlags, isCounter, strikeActive, counterDamage, airDamage, downDamage, knocksDown, MK_AIR, rootAt, motionOf } from './fighters.js';
+import { MOTION_ID, S, P, K, G, DOWN, UP, FWD, BACK, HIGH, MID, LOW, ENERGY, matchPress, enFlag, fromBehind, throwFlags, isCounter, strikeActive, counterDamage, airDamage, downDamage, knocksDown, blowUnits, downStun, riseWait, MK_AIR, rootAt, motionOf } from './fighters.js';
 import { SLOT_PARENT } from '../vendor/noclip/js/pose.js';
 import { ARENA } from './games.js';
 
@@ -31,8 +31,7 @@ const START_X = 1;                  /* a round starts the fighters at x = -1 and
 const DASH_WINDOW = 12;             /* frames between the taps of a dash */
 const PRESS_BUFFER = 10;            /* a press held over until a move can take it */
 const CHORD = 2;                    /* frames a press waits for its other buttons */
-const DOWN_FRAMES = 50;             /* lying before the rise */
-const RISE_WAIT = 40;               /* of them, the rise handler's wait for a get-up pick (+0x1AE) */
+const DOWN_STUN = 10;               /* the engine's own stun lying, where no knock-down set one */
 const BODY_RADIUS = 0.35;
 const HIT_RADIUS = 0.2;
 const PUSH_APART = 0.6;
@@ -83,6 +82,7 @@ export function makePlayer(side, fighter) {
         press: null,                /* a press waiting for its chord or for a move to end */
         tapAt: -99, tapDir: 0,
         downFor: 0,
+        downStun: null,             /* the knock-down's stun (+0x5DE), fighters.js downStun */
         riseKick: null,             /* VF2: the get-up the rise's sub-kind (+0x19E) has picked */
         fly: null,                  /* StF: the jump's flight, {vy} (+0x30), till it lands */
         air: null,                  /* a jump's frames left in the air from take-off (+0x5BC) */
@@ -166,7 +166,7 @@ function resetRound(fight) {
         p.yang = i ? Math.PI : 0;
         p.energy = ENERGY;
         p.mot = null;
-        p.pc_command = 0; p.press = null; p.hist = []; p.hit_combo = 0; p.riseKick = null; p.fly = null; p.air = null; p.held = null; p.hara = null; p.en_behind = false;
+        p.pc_command = 0; p.press = null; p.hist = []; p.hit_combo = 0; p.riseKick = null; p.downStun = null; p.fly = null; p.air = null; p.held = null; p.hara = null; p.en_behind = false;
         p.finished = false;
         setAct(p, 'stance');
     });
@@ -480,14 +480,24 @@ function throwDamage(fight, o, damage) {
 
 /* ---- playback ------------------------------------------------------------ */
 
+/*
+ * The lying: the knock-down's stun (fighters.js downStun, +0x5DE), then the
+ * rise handler's wait (riseWait, +0x1AE) or a get-up picked, then the rise.
+ * Here: the stun starts with the lying motion, where the board's rise
+ * handler lays it a frame or two after the fall's length; a rise command's
+ * mashing (+0x194 into +0x5DC, 4 frames off the stun each) is not read;
+ * a throw's victim, and a knock-down by Shenmue's blows, lie the engine's
+ * own DOWN_STUN, where the board's play ops 8 and 18 set a throw's stun.
+ */
 function advance(fight, p) {
     airTime(fight, p);
     fly(p);
     const m = p.mot.motion;
     if (p.state === ST.DOWN && p.action === 'down') {
         ++p.downFor;
-        if (p.riseKick && p.downFor > DOWN_FRAMES - RISE_WAIT && p.energy > 0) return riseKick(fight, p);
-        if (p.downFor > DOWN_FRAMES && p.energy > 0) { p.downFor = 0; setAct(p, 'rise'); return; }
+        const stun = p.downStun ?? DOWN_STUN;
+        if (p.riseKick && p.downFor > stun && p.energy > 0) return riseKick(fight, p);
+        if (p.downFor > stun + riseWait(p.fighter.game, p.fighter.entry?.index ?? 0) && p.energy > 0) { p.downFor = 0; setAct(p, 'rise'); return; }
     }
     if (p.mot_coma < m.frames) {
         p.mot_coma++;
@@ -558,7 +568,7 @@ function ended(fight, p) {
     switch (p.state) {
     case ST.NAGERARE:
         p.throwHits = null;
-        p.downFor = 0;
+        p.downFor = 0; p.downStun = null;
         return setAct(p, 'down');
     case ST.YARARE:
         if (p.knocked || p.energy <= 0) { p.knocked = false; p.downFor = 0; return setAct(p, 'down'); }
@@ -691,6 +701,7 @@ function strike(fight, p, o) {
     /* Here: attack_hit's other changes to the damage (tender, multi, ukemi)
      * are not read. */
     o.knocked = o.energy <= 0 || knocksDown(p.fighter.game, a, damage, kind | (aKind & MK_AIR), o.crouching);
+    if (o.knocked) o.downStun = downStun(p.fighter.game, blowUnits(p.fighter.game, a, damage, { counter, down: down != null, air: air != null }));
     if (o.energy <= 0 && finishes(p, a)) o.finished = true;
     react(fight, o, how, o.knocked ? 'down' : counter ? 'counter' : 'hit');
     fight.events.push({ kind: 'hit', side: p.side, damage, counter: !!counter, air: air != null, fall: down != null, level: a.level });
@@ -729,8 +740,10 @@ function kindAt(o) {
 function downHit(fight, p, o) {
     const a = p.attack;
     p.hitDone = true;
-    const damage = p.fighter.game === 'stf' && a.ap === STF_DOWN_HALF ? Math.round(a.damage / 2) : a.damage;
+    const tetsu = p.fighter.game === 'stf' && a.ap === STF_DOWN_HALF;
+    const damage = tetsu ? Math.round(a.damage / 2) : a.damage;
     o.energy = Math.max(0, o.energy - damage);
+    o.downStun = downStun(p.fighter.game, blowUnits(p.fighter.game, a, damage, { tetsu }));
     o.hit_combo++;
     o.downFor = 0;
     fight.events.push({ kind: 'hit', side: p.side, damage, counter: false, level: a.level, down: true });

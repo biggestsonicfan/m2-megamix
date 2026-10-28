@@ -674,3 +674,60 @@ console.log('ok');
     assert.notEqual(far?.kind, 'throw', 'not at 1.9');
     console.log('throw reach: Akira', near.id, 'at 1.2;', far ? `${far.kind} ${far.name ?? far.id}` : 'nothing', 'at 1.9');
 }
+
+/* The lying before the rise: attack_hit's knock-down sets the stun (+0x5DE)
+ * from the blow, StF and FV (d >> 1) * 2, VF2 ((d >> 1) - 7) * 2; the rise
+ * handler (StF 0x14D00, FV 0x1521C, VF2 0x157DC) counts it down in the lying
+ * motion, then waits 40 frames (VF2's fighter 8, 60) and rises. The engine
+ * lay 50 frames whatever the blow. */
+{
+    const { downStun, riseWait, blowUnits, downDamage, MK_DOWN } = await import('../js/fighters.js');
+    assert.equal(downStun('stf', 51), 50, 'StF: to even');
+    assert.equal(downStun('fv', 30), 30);
+    assert.equal(downStun('vf2', 30), 16, 'VF2: (15 - 7) * 2');
+    assert.equal(downStun('vf2', 14), 0, 'VF2: none when not above 0');
+    assert.equal(downStun('vf2', 10), 0);
+    assert.equal(downStun('shenmue', 40), null);
+    assert.equal(riseWait('stf', 8), 40);
+    assert.equal(riseWait('vf2', 8), 60, 'Shun');
+    assert.equal(riseWait('vf2', 21), 60, 'Shun, player 2\'s look');
+    assert.equal(riseWait('vf2', 0), 40);
+    assert.equal(blowUnits('stf', { damage: 14, raw: 10 }, 14), 10, 'StF: out of 140');
+    assert.equal(blowUnits('stf', { damage: 14, raw: 10 }, 11, { down: true }), 8);
+    assert.equal(blowUnits('stf', { damage: 14, raw: 10 }, 7, { tetsu: true }), 5);
+    assert.equal(blowUnits('fv', { damage: 18 }, 27, { air: true }), 27);
+
+    const { createFight, stepFight, setMotion, bodyPoint, ST } = await import('../js/engine.js');
+    for (const [n, g] of [['AKIRA', 'vf2'], ['PICKY', 'fv'], ['SONIC', 'stf']]) {
+        const f = fighters.find((x) => x.name === n && x.game === g);
+        const fight = createFight(f, f, f.game);
+        fight.phase = 'fight';
+        const [p, o] = fight.players;
+        p.pos = [-0.45, 0, 0]; o.pos = [0.45, 0, 0];
+        /* a punch on a knock-down's fall: it knocks down again */
+        setMotion(o, f.reaction({ game: g, kind: 0, side: 0, level: 1, damage: 30 }, 'down'), { state: ST.YARARE });
+        Object.assign(o, { action: 'down', knocked: true, mot_coma: 4 });
+        o.posed = o.body.pose(o.mot, o.mot_coma);
+        const b = bodyPoint(o);
+        o.pos[0] -= b[0] - 0.3; o.pos[2] -= b[2];
+        let hit = null;
+        for (let i = 0; i < 30 && !hit; i++) {
+            stepFight(fight, [{ P: i === 0 }, {}]);
+            hit = fight.events.find((e) => e.kind === 'hit' && e.side === 0) ?? null;
+        }
+        assert.ok(hit && o.knocked, `${n}: knocked down`);
+        const units = blowUnits(g, p.attack, hit.damage, { down: hit.fall });
+        const stun = downStun(g, units);
+        assert.equal(o.downStun, stun, `${n}: the stun from ${units}`);
+        if (g === 'stf') assert.equal(hit.damage, downDamage(g, p.attack, MK_DOWN));
+        let lying = 0, rose = false;
+        for (let i = 0; i < 400 && !rose; i++) {
+            stepFight(fight, [{}, {}]);
+            if (o.state === ST.DOWN && o.action === 'down') lying++;
+            rose = o.state === ST.RISE;
+        }
+        assert.ok(rose, `${n}: rises`);
+        assert.equal(lying, stun + riseWait(g, f.entry.index) + 1, `${n}: lies the stun and the wait`);
+        console.log('lying:', n, `blow ${units}, stun ${stun}, lay ${lying}`);
+    }
+}

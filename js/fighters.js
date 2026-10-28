@@ -365,10 +365,12 @@ export function strikeActive(kind, coma, timing) {
     if (kind == null) return coma <= Math.max(timing.hit + 2, timing.cancel);
     return isCounter(kind, coma, timing);
 }
+const counterRaw = (a, own) => ((a.raw + ((own ?? 0) >> 2)) * 3) >> 1;
+const airRaw = (a) => (a.raw * 3) >> 1;
+const downRaw = (a) => a.raw - (a.raw >> 2);
 export function counterDamage(game, a, own) {
     if (game !== 'stf') return (a.damage * 3) >> 1;
-    const raw = ((a.raw + ((own ?? 0) >> 2)) * 3) >> 1;
-    return stfScale(raw);
+    return stfScale(counterRaw(a, own));
 }
 
 /* A blow in the air: attack_hit (StF 0x2B298 "air", FV 0x26380) deals half
@@ -381,7 +383,7 @@ export function counterDamage(game, a, own) {
  * left as it was. null: no change. */
 export function airDamage(game, a, kind) {
     if ((game !== 'stf' && game !== 'fv') || (kind & (MK_AIR | MK_DOWN)) !== MK_AIR) return null;
-    return game === 'stf' ? stfScale((a.raw * 3) >> 1) : (a.damage * 3) >> 1;
+    return game === 'stf' ? stfScale(airRaw(a)) : (a.damage * 3) >> 1;
 }
 
 /* StF's mot_kind at frame `coma` of a motion `frames` long. set_mot_dat
@@ -421,7 +423,7 @@ function stfKindAt(rom, id, coma, frames) {
  * 0x263D8, VF2 0x22B30), which needs the struck part. null: no change. */
 export function downDamage(game, a, kind) {
     if (game !== 'stf' || (kind & (MK_DOWN | MK_DOWN_POSE)) !== MK_DOWN) return null;
-    return stfScale(a.raw - (a.raw >> 2));
+    return stfScale(downRaw(a));
 }
 
 /* A knock-down: after the damage, attack_hit (StF 0x2B41C, FV 0x26508, VF2
@@ -438,6 +440,36 @@ export function downDamage(game, a, kind) {
  * followed, nor StF's ketchup in its last-energy test, nor the attacker's
  * mk_ride_on, which turns the knock-down into a down hit (category 5); a
  * game with no strike word (Shenmue) knocks down at 40. */
+/* A blow as attack_hit has it in r11, in the attacker's own units (StF's out
+ * of 140): after a counter, StF's down or its tetsu (a level 8 on one lying,
+ * r11 >> 1, 0x2B26C), or the air. `how` the engine's: {counter, down, air,
+ * tetsu}. Another game's is its damage, which is already on the engine's. */
+export function blowUnits(game, a, damage, { counter, down, air, tetsu } = {}) {
+    if (game !== 'stf') return damage;
+    return counter ? counterRaw(a, counter.own) : tetsu ? a.raw >> 1 : down ? downRaw(a) : air ? airRaw(a) : a.raw;
+}
+
+/* The lying before the rise. attack_hit's knock-down (StF from 0x2B5E4, FV
+ * 0x266E8, VF2 0x22E7C) sets the fighter's stun (+0x5DE) from the blow d
+ * (blowUnits): StF and FV (d >> 1) * 2, VF2 ((d >> 1) - 7) * 2, none when
+ * that is not above 0. The down handler (StF ACT_RC_DOWN 0x14B90, FV
+ * 0x15088, VF2 0x1564C) plays the knock-down's fall to its length and hands
+ * over to the rise handler (StF ACT_RC_RISE 0x14D00, FV 0x1521C, VF2
+ * 0x157DC), which lays the fighter in its lying motion, counts the stun
+ * down a frame at a time, then waits riseWait frames on +0x1AE unless a
+ * get-up is picked (+0x19E), and rises; with no energy left it stays down.
+ * null: a game with no attack_hit of the board's (Shenmue). */
+export function downStun(game, d) {
+    if (game === 'stf' || game === 'fv') return (d >> 1) * 2;
+    if (game === 'vf2') return Math.max(0, ((d >> 1) - 7) * 2);
+    return null;
+}
+/* The rise handler's wait after the stun: 40 frames (31 + 9), and in VF2 60
+ * for fighter 8 (+0x1B1, the fighter less 13: Shun). */
+export function riseWait(game, char) {
+    return game === 'vf2' && char % 13 === 8 ? 60 : 40;
+}
+
 const MK_GACHA = 1 << 24, MK_SAKADACHI = 1 << 26;
 const KD_ALWAYS = 1 << 14, KD_NO_DAMAGE = 1 << 10, KD_STANDING = 1 << 8;
 export function knocksDown(game, a, damage, kind, crouch) {

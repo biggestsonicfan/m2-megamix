@@ -191,10 +191,17 @@ approximations. Each is marked `Here:` in `js/engine.js`:
   cac_attack_cancel (0x25A84, 0x223BC) drops a few moves with
   en_from_behind set; neither is followed. Shenmue's strikes, with no
   mot_kind, are active from hit to the later of cancel and hit + 2.
+- The lying before the rise: attack_hit's knock-down (StF from 0x2B5E4, FV
+  0x266E8, VF2 0x22E7C) sets the stun (+0x5DE) from the blow d, in the
+  attacker's units: StF and FV (d >> 1) * 2, VF2 ((d >> 1) - 7) * 2. The
+  rise handler (StF 0x14D00, FV 0x1521C, VF2 0x157DC) counts it down in
+  the lying motion, then waits 40 frames (VF2's Shun 60) unless a get-up
+  is picked. Here: a rise command's mashing (+0x194, 4 frames off each) is
+  not read; a throw's victim (play ops 8 and 18) and Shenmue's blows lie
+  the engine's own 10 and 40.
 - Not read from the games yet, the engine's own: attack_hit's other changes
   to the damage (StF from 0x2B0F8: tender, multi, ukemi; FV and VF2
-  have most of them, and VF2 its air) and the 50 frames lying before the
-  rise.
+  have most of them, and VF2 its air).
 - The CPU player is a simple one.
 - Rounds last 40 s and need 2 wins (1–3 in the menu).
 - FV's cage breaks on a finishing KO and stays broken for the match; a
