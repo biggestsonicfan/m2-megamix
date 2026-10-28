@@ -246,6 +246,9 @@ F to 37 F):
   140/200 (StF's energy over VF2's); round(12 × 0.7) = 8 (`guests.json`
   `damage["12"] = 8`). The one byte is both the damage and the knockback's
   power on both machines, so the energy scale shrinks the knockback too.
+- **Frame 41: one knockback.** StF's `sub_2A7E4` (from `coli_attack_chk`)
+  is the board's only knockback, for every fighter with no check of the
+  game, and VF2's formula (0x2260C..0x2306C) is not on the board.
 
 Left as they are:
 
