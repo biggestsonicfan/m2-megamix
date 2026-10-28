@@ -174,15 +174,14 @@ F to 37 F):
   scaled now (`reachAt`, tools/vf2-guest.mjs), and his first punch is
   FV's, on FV's frame.
 
-Left as they are:
-
-- **The guests' push, still.** The fights part on the first jab's contact
-  (Akira frame 40, Mahler 39). The overlap the COP returns (g4) is where:
-  on Akira's frame 39 the board's matches VF2's (0.1169 VF2 units), but on
-  frame 40 VF2's is 0.2233 and the board's (StF's SHARC program) 0.0834.
-  VF2's TGP rule, read off its function 0x3B (TGP 0x99E, sent by
-  `coli_cont_cop` 0x23524 as `0x1D803B3B` + kind, P1's and P2's g3 masks
-  and two more masks, 0xB4 and 0xB8):
+- **The guests' push.** The fights parted on the first jab's contact
+  (Akira frame 40, Mahler 39), in the overlap the COP returns (g4): on
+  Akira's frame 40 VF2's is 0.2233 VF2 units and StF's SHARC program gave
+  0.0834. Between two VF2 guests the board now works it out as VF2's TGP
+  does (its function 0x3B, TGP 0x99E, sent by `coli_cont_cop` 0x23524 as
+  `0x1D803B3B` + kind, P1's and P2's g3 masks, 0xB4 and 0xB8):
+  `vf2_push` (board/src/push.c), called from StF's `coli_cont_cop` in place
+  of the g4 read back (`coli_cont_cop_g4`, tools/lift-stf.py).
   - The TGP holds 30 balls per fighter, k = 0..29. Ball k has i960 ball
     k's radius (TGP program table 0xAD4+30−k, the same as rob+0xD00's)
     but the position of i960 ball SENT[k], the order
@@ -192,16 +191,30 @@ Left as they are:
   - Pair P2's ball o with P1's ball i; skip it when P2's mask has bit o
     or P1's has bit i (those go to the swept attack test, sub 0x8A5,
     which only counts).
-  - g4 = the largest r[i] + r[o] − |pos_i − pos_o| (× const $e(o) when
-    0xB4 has bit i and 0xB8 bit o; both are 0 here).
+  - g4 = the largest r[i] + r[o] − |pos_i − pos_o| (× const $e(o), 0,
+    when 0xB4 has bit i and 0xB8 bit o; only VF2's BODY, kind 3, has
+    them, 0xFFFFDFFC both). Kinds 4 and 5 give none.
+  - The masks are VF2's, not the board's: its g3 (`calc_attack_flag`
+    0x238a4) maps ball to unit with VF2's bytes at 0x23284, where the
+    guest's rob+0x1D18 has another order (frame 40: VF2 0xE0, the board's
+    +0x768 0x1C0); StF's task +0xC0/+0xC4 are not VF2's 0xB4/0xB8.
 
   Frame 39 (masks 0): TGP balls 6 and 6, 0.1169. Frame 40 (masks 0xE0):
   TGP balls 3 and 3, ball 5's place (a hand) with ball 3's radius 0.13
-  each, 0.26 − 0.0367 = 0.2233. Inputs: both robs' balls at rob+0xD00
-  (x, y, z, r), the 0x3B words, the TGP program's tables; it gives VF2's
-  g4 on all 55 frames from 37 to 91 (17 with an overlap). The board does not
-  do it yet; Mahler's push (frame 39: the board 0.040 FV units, FV
+  each, 0.26 − 0.0367 = 0.2233. The board's own g4 is 0.1168 and 0.2234
+  there (÷ 2.027), and its places on 39 and 40 are VF2's. 900 pairs a
+  frame on the i960 cost the board frames (3 behind on the round), so
+  only the balls in the other fighter's box are paired.
+
+  Akira vs Akira on Tou-rin, regraded: 32 (F) as before (sync 1, motions
+  36, hits 24, end 69). The fight now parts on frame 41, 1P's place off
+  by 0.090 (VF2 −0.621, the board −0.531): the push is 0 on both there;
+  it is the first frame of the jab's reaction (VF2 motion 258, the
+  board's 638). Mahler's push (frame 39: the board 0.040 FV units, FV
   0.014) is not looked at.
+
+Left as they are:
+
 - Honey's intro pose: StF's motion 15, the board's 507.
 - The board's rounds end 4 or 5 frames before StF's (the winner and the
   energy left are the same).

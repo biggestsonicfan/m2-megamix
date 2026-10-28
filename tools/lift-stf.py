@@ -122,6 +122,11 @@ DATA_NUMBERS = {'send_tex_col_part'}
 # The tail the move tables' inline code (opcode 0x13: `lda N, g0; b 0x1EF48`)
 # branches to, after sub_1E468, unlabelled in stfdisasm.
 NATIVE_TAIL = 'cmd_native_tail', 0x1EF48, 'ld      0x1A4(g7), r15  # unreachable code'
+# Lines given a label of the board's, so that INSERT can put code before
+# them: the label, the routine, and the line after which it goes (the first
+# match from the routine's label on). coli_cont_cop_g4: the line after
+# coli_cont_cop reads function 0x3B's results back (g4 the push).
+NAMED = {'coli_cont_cop_g4': ('coli_cont_cop', 'ld      (g11)[g12*1], g5')}
 # Tables below 0x1000 that are tables all the same (cop_initialize_end2's
 # collision-ball pointers).
 LOW_TABLES = {'off_FE8'}
@@ -267,6 +272,9 @@ INSERT_LIFTED = {
 # taken to the guests' size for a pair from one other game: VF2's always
 # 0.3 * SCALE (0x3F1BAF44), FV's StF's factors * K. StF and FV hold the push
 # to 0.3 a frame (FV's * K, 0x3F1D00BE); VF2 does not.
+# coli_cont_cop_g4: the push between two VF2 guests is VF2's TGP's (its
+# function 0x3B), not StF's SHARC's: vf2_coli_push (stf_call.s, push.c) puts
+# it in g4 in place of the one read back.
 # rand mixes the hardware timers (0xF00000) into G_RANDOM; two linked boards
 # (link.c, in step: link.state LS_RUN, 5) must draw the same numbers, so
 # there it steps G_RANDOM alone (an LCG, its high half).
@@ -340,6 +348,11 @@ INSERT = {
                   'bbs     0x1F, g4, loc_2D7F8', 'cmpr    r15, g4', 'bge     loc_2D7F8',
                   'mov     r15, g4', 'b       loc_2D7F8',
                   'loc_2D7E0_own:'],
+    'coli_cont_cop_g4': ['ldob    0x1B1(g7), r3', 'ldob    guest_char_game[r3], r3',
+                         'cmpobne GAME_VF2, r3, coli_cont_cop_g4_own',
+                         'ldob    0x1B1(g8), r3', 'ldob    guest_char_game[r3], r3',
+                         'cmpobne GAME_VF2, r3, coli_cont_cop_g4_own', 'call    vf2_coli_push',
+                         'coli_cont_cop_g4_own:'],
     'loc_2B9CC': ['ldob    0x1B1(g8), r3', 'ldob    guest_char_game[r3], r3',
                   'cmpobe  GAME_STF, r3, loc_2B9CC_up', 'ld      0x1A4(g8), r3',
                   'bbc     3, r3, loc_2B9CC_up', 'addo    4, r9, r9',
@@ -386,6 +399,10 @@ def main():
     tail, tail_at, tail_line = NATIVE_TAIL
     src[[l.strip() for l in src].index(tail_line)] = f'{tail}: {tail_line}'
     addr[tail] = tail_at
+    for name, (routine, after) in NAMED.items():
+        at = [l.split('#')[0].strip() for l in src].index(f'{routine}:')
+        at = next(j for j in range(at, len(src)) if src[j].split('#')[0].strip() == after) + 1
+        src[at] = f'{name}: {src[at]}'
     labline = {}
     for i, l in enumerate(src):
         m = LABEL.match(l)
