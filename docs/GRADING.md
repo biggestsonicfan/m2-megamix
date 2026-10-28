@@ -212,6 +212,28 @@ F to 37 F):
   it is the first frame of the jab's reaction (VF2 motion 258, the
   board's 638). Mahler's push (frame 39: the board 0.040 FV units, FV
   0.014) is not looked at.
+- **Frame 41: the knockback, not the motion.** 638 is 258
+  (`guests.json` `motionIds["638"] = 258`): the reaction is the same, and
+  the grader parts the fights there on 1P's place. Through the reaction's
+  start (set_motion +0.638, the next step +0.070, VF2 units) the two agree
+  to the fifth decimal; then VF2 adds 1P's speeds, `x += rob+0x2C` (pc
+  0x17AB8) and `x += rob+0x5C8` (0x17B30), −0.031 and −0.128, the board
+  (0x13434, 0x1346C) −0.017 and −0.053. Both are the hit vector rob+0x5E0
+  (written on frame 40) times 1.0 and 5.0 (VF2 ROM 0x1B7DC, 0x1B7E0, the
+  same on the board), less a frame's drag. The hit vector:
+  - VF2 (0x2260C..0x2306C): P = the attacker's +0x822 (signed byte),
+    s = √(P/30) × 30 × [0x23270] (0.0025) × list 0x50A800 (by +0x843),
+    |v| = √(2s / (60 + 0.6 (w − 60))), w = the victim's +0x5D8.
+  - The board runs StF's (`loc_2A8F8` 0x1AEC4, `loc_2B738` 0x1BCCC):
+    s = √(P × 0.01) × 50 × 0.0025 × list StF 0x50A800 (by 0x50FFB2) +8,
+    |v| = √(4s / (60 + 0.3 (w − 60))), and none of it in the board's 2.027.
+  - Akira's jab: VF2 P 12, s 0.047434, |v| 0.03645; the board P 8,
+    s 0.035355, |v| 0.04640 board units, 0.02289 VF2 units (×0.628 of
+    VF2's). w is 79 on both. With VF2's P the board's formula still gives
+    0.0253: the formula is the gap, P only part of it.
+  - The drag on frame 41 (VF2 0x179E8: |v| less a constant k) is
+    1.14× VF2's on the board too (rob+0x5C8: 0.1245 board units, VF2
+    0.0538 × 2.027 = 0.1090).
 
 Left as they are:
 
