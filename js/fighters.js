@@ -360,6 +360,34 @@ export function downDamage(game, a, kind) {
     return stfScale(a.raw - (a.raw >> 2));
 }
 
+/* A knock-down: after the damage, attack_hit (StF 0x2B41C, FV 0x26508, VF2
+ * 0x22C84) plays the knock-down (the picker's category 4) and not the hit
+ * when the fighter hit is going down or lying (mk_down, mk_down_pose) or in
+ * the air (mk_air), in VF2 also on its hands (mk_sakadachi, bit 26); when
+ * the strike's word (+0x828) has bit 14; unless that word has bit 10, when
+ * the damage is 50 or more (VF2 30), when the strike has ap 1 and the one
+ * hit mk_gacha (bit 24), and in VF2 when the word has bit 8 and the one hit
+ * is not crouching (mk_syagami); and when the blow takes the last of its
+ * energy (the caller's). The attacker's game decides, on its own damage
+ * scale (StF's out of 140, which stfScale keeps in order); `damage` is the
+ * blow's after counter, down and air. Here: ukemi (StF and FV) is not
+ * followed, nor StF's ketchup in its last-energy test, nor the attacker's
+ * mk_ride_on, which turns the knock-down into a down hit (category 5); a
+ * game with no strike word (Shenmue) knocks down at 40. */
+const MK_GACHA = 1 << 24, MK_SAKADACHI = 1 << 26;
+const KD_ALWAYS = 1 << 14, KD_NO_DAMAGE = 1 << 10, KD_STANDING = 1 << 8;
+export function knocksDown(game, a, damage, kind, crouch) {
+    if (game !== 'stf' && game !== 'fv' && game !== 'vf2') return damage >= 40;
+    if (kind & (MK_DOWN | MK_DOWN_POSE | MK_AIR)) return true;
+    if (game === 'vf2' && kind & MK_SAKADACHI) return true;
+    const w = a.word ?? 0;
+    if (w & KD_ALWAYS) return true;
+    if (w & KD_NO_DAMAGE) return false;
+    if (damage >= (game === 'stf' ? stfScale(50) : game === 'vf2' ? 30 : 50)) return true;
+    if (game === 'vf2' && w & KD_STANDING && !crouch) return true;
+    return a.ap === 1 && !!(kind & MK_GACHA);
+}
+
 /** The entry a press lands on: the first, in the engine's order, whose tests
  * pass. `hist` is the stick since the last press, collapsed, oldest first.
  * `ctx` is the key's high byte the caller is in (0 on the ground; the jump's
@@ -533,6 +561,7 @@ function vfAttack(rom, id, key) {
     const part = op ? s.dv.getUint8(op.at + 1) : 0;
     return { kind: a.kind, side: a.side, ap, level: strikeLevel(ap), down: hitsDown(ap, false),
         part, mask: partMask(rom, key, part), damage: op ? s.dv.getUint8(op.at + 3) : 10,
+        word: op ? s.dv.getUint16(op.at + rom.game.rig.reactions.strike, true) : 0,
         finish: key === 'fv' && op ? s.dv.getUint8(op.at + FINISH_AT) : 0 };
 }
 
@@ -638,7 +667,8 @@ function stfAttack(rom, id, cpuDamage) {
     if (!st) return null;
     const ap = s.dv.getUint8(st.at + 2), part = s.dv.getUint8(st.at + 1);
     const d = s.dv.getUint8(st.at + 3) || cpuDamage.get(id) || 10;
-    return { ap, level: strikeLevel(ap), down: hitsDown(ap, true), part, mask: partMask(rom, 'stf', part), damage: scale(d), raw: d };
+    return { ap, level: strikeLevel(ap), down: hitsDown(ap, true), part, mask: partMask(rom, 'stf', part), damage: scale(d), raw: d,
+        word: s.dv.getUint16(st.at + 7, true) };
 }
 
 /* ---- one game's tables --------------------------------------------------- */

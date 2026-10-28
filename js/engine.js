@@ -12,7 +12,7 @@
  *
  * No three.js: the Node test runs a bout through it.
  */
-import { MOTION_ID, S, P, K, G, DOWN, UP, FWD, BACK, HIGH, MID, LOW, ENERGY, matchPress, enFlag, isCounter, counterDamage, airDamage, downDamage, MK_AIR, rootAt, motionOf } from './fighters.js';
+import { MOTION_ID, S, P, K, G, DOWN, UP, FWD, BACK, HIGH, MID, LOW, ENERGY, matchPress, enFlag, isCounter, counterDamage, airDamage, downDamage, knocksDown, MK_AIR, rootAt, motionOf } from './fighters.js';
 import { SLOT_PARENT } from '../vendor/noclip/js/pose.js';
 import { ARENA } from './games.js';
 
@@ -621,9 +621,9 @@ function strike(fight, p, o) {
         fight.events.push({ kind: 'guard', side: p.side });
         return;
     }
-    const counter = counterOn(o);
-    const down = counter ? null : downDamage(p.fighter.game, a, kindAt(o));
-    const air = counter || down != null ? null : airDamage(p.fighter.game, a, airKind(o));
+    const counter = counterOn(o), kind = kindAt(o), aKind = airKind(o);
+    const down = counter ? null : downDamage(p.fighter.game, a, kind);
+    const air = counter || down != null ? null : airDamage(p.fighter.game, a, aKind);
     const damage = counter ? counterDamage(p.fighter.game, a, counter.own) : down ?? air ?? a.damage;
     o.energy = Math.max(0, o.energy - damage);
     /* counted on the fighter hit, as the games count it (hit_combo); a
@@ -631,8 +631,8 @@ function strike(fight, p, o) {
     o.hit_combo = (fight.tick - (o.comboAt ?? -99) < 60) ? o.hit_combo + 1 : 1;
     o.comboAt = fight.tick;
     /* Here: attack_hit's other changes to the damage (tender, multi, ukemi)
-     * are not read, and a blow of 40 or more knocks down. */
-    o.knocked = o.energy <= 0 || damage >= 40;
+     * are not read. */
+    o.knocked = o.energy <= 0 || knocksDown(p.fighter.game, a, damage, kind | (aKind & MK_AIR), o.crouching);
     if (o.energy <= 0 && finishes(p, a)) o.finished = true;
     react(fight, o, how, o.knocked ? 'down' : counter ? 'counter' : 'hit');
     fight.events.push({ kind: 'hit', side: p.side, damage, counter: !!counter, air: air != null, fall: down != null, level: a.level });

@@ -441,7 +441,51 @@ console.log('ok');
             const going = g === 'stf' && coma < 64;
             assert.equal(hit.fall, going, `${n}: going down at ${coma}`);
             assert.equal(hit.damage, going ? downDamage(g, p.attack, MK_DOWN) : p.attack.damage);
+            assert.ok(o.knocked, `${n}: a blow on the fall keeps it going down`);
             console.log('down:', n, 'fall frame', coma, JSON.stringify(hit));
         }
+    }
+}
+
+/* The knock-down: attack_hit plays it, not the hit, on a strike whose word
+ * (+0x828) has bit 14, on one of 50 or more (VF2 30; StF out of 140) unless
+ * the word has bit 10, on a fighter going down, lying or in the air, and in
+ * VF2 on bit 8 against one standing; the engine had any blow of 40 or more. */
+{
+    const { knocksDown, MK_AIR, MK_DOWN } = await import('../js/fighters.js');
+    const move = (n, g, id) => fighters.find((x) => x.name === n && x.game === g).attack(id);
+    const kd = (n, g, id, kind = 0, crouch = false) => { const a = move(n, g, id); return knocksDown(g, a, a.damage, kind, crouch); };
+    assert.ok(kd('PICKY', 'fv', 89), 'FV: 26 with bit 14');
+    assert.ok(!kd('PICKY', 'fv', 553), 'FV: 28 without');
+    assert.ok(kd('SONIC', 'stf', 46), 'StF: 10 of 140 with bit 14');
+    assert.ok(!kd('SONIC', 'stf', 179), 'StF: 30 of 140 (43 here) without');
+    assert.ok(kd('AKIRA', 'vf2', 11), 'VF2: 30 without bit 14');
+    assert.ok(!kd('AKIRA', 'vf2', 1), 'VF2: 14');
+    assert.ok(move('AKIRA', 'vf2', 578).word & 1 << 8 && kd('AKIRA', 'vf2', 578, 0, true), 'VF2: 40 with bit 8, even crouching');
+    assert.ok(knocksDown('vf2', { word: 1 << 8 }, 10, 0) && !knocksDown('vf2', { word: 1 << 8 }, 10, 0, true), 'VF2: bit 8, standing but not crouching');
+    assert.ok(knocksDown('stf', { raw: 50, word: 0 }, 71, 0) && !knocksDown('stf', { word: 0 }, 70, 0), 'StF: 50 of 140');
+    assert.ok(!knocksDown('fv', { word: 1 << 10 }, 60, 0), 'bit 10: no knock-down by damage');
+    for (const g of ['vf2', 'fv', 'stf']) {
+        assert.ok(knocksDown(g, { word: 0 }, 5, MK_AIR) && knocksDown(g, { word: 0 }, 5, MK_DOWN), `${g}: in the air, going down`);
+    }
+    assert.ok(knocksDown('vf2', { word: 0 }, 5, 1 << 26) && !knocksDown('fv', { word: 0 }, 5, 1 << 26), 'VF2 only: mk_sakadachi');
+    assert.ok(knocksDown('fv', { ap: 1, word: 0 }, 5, 1 << 24) && !knocksDown('fv', { ap: 2, word: 0 }, 5, 1 << 24), 'ap 1 on mk_gacha');
+    assert.ok(knocksDown('shenmue', {}, 40, 0) && !knocksDown('shenmue', {}, 39, 0), 'Shenmue: 40');
+    /* a punch on one standing does not knock it down */
+    const { createFight, stepFight } = await import('../js/engine.js');
+    for (const [n, g] of [['AKIRA', 'vf2'], ['PICKY', 'fv'], ['SONIC', 'stf']]) {
+        const f = fighters.find((x) => x.name === n && x.game === g);
+        const fight = createFight(f, f, f.game);
+        fight.phase = 'fight';
+        const [p, o] = fight.players;
+        p.pos = [-0.45, 0, 0]; o.pos = [0.45, 0, 0];
+        let hit = null;
+        for (let i = 0; i < 30 && !hit; i++) {
+            stepFight(fight, [{ P: i === 0 }, {}]);
+            hit = fight.events.find((e) => e.kind === 'hit' && e.side === 0) ?? null;
+        }
+        assert.ok(hit && !(p.attack.word & 1 << 14), `${n}: the punch lands, no bit 14`);
+        assert.ok(!o.knocked && o.action === 'hit', `${n}: a hit, not a knock-down`);
+        console.log('knock-down:', n, 'punch', JSON.stringify(hit));
     }
 }
