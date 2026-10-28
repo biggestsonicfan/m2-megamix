@@ -322,16 +322,17 @@ F to 37 F):
   attacker's +0x843, which `_uk_read_move_data` copies from byte 10 of
   the strike record; `convertSetup` op 4 puts VF2's byte 13 there. Akira's
   jab in VF2's data ROM (0x2014B77) is `04 05 00 0c 33 33 33 3f 00 00 00
-  80 00 00 00 00 00`, so byte 13 is 0 and the jab uses record 0: word 0
-  0x3F800000 (1.0), +4 5.0, +8 1.0. The store multiplies the horizontal
-  vector by 1.0, which leaves it unchanged, so the written |v| (0.04640
-  board units) holds whether or not the multiply runs (r8 = 0 or the
-  attacker's rob+0x0 bit 18 case skips it). The one exception is
-  the victim's rob+0x0 bit 29, which was not logged. It forces index 4,
-  whose word 0 is 20.0, and it also sets [0x50FE00] = 0x4006, which sends
-  the hit to `loc_2B5E4`. A ×20 does not fit the measured −0.017 on frame
-  41. The knockback item stays open (nothing ported), and so does the
-  jab's three-way split.
+  80 00 00 00 00 00`: byte 13 is 0, so +0x843 = 0 selects record 0,
+  word 0 `stf_list_90[0]` = 0x3F800000 (1.0), unless the victim's
+  rob+0x0 bit 29 is set at the hit. That bit forces [0x50FE02] = 4
+  (`attack_hit`'s head), record 4, word 0 `stf_list_90[40]` = 0x41A00000
+  (20.0), and it also sets [0x50FE00] = 0x4006, which sends the hit to
+  `loc_2B5E4`. The multiply is skipped when r8 is 0 or in the attacker's
+  rob+0x0 bit 18 case.
+  The victim's rob+0x0 bit 29 was not observed at the hit; it is the one
+  missing observation. So the factor for this jab (1.0 or 20.0) is still
+  unknown, and the written |v| is not proven to hold. The three-way split
+  stays unproven, and the knockback item stays open (nothing ported).
 - **Frame 41: one slowdown.** StF's `rob_spd_control` (the block after
   `rsc_fric_end`) is the board's only slowdown, and VF2's constant-k
   slowdown is not on the board.
