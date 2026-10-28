@@ -178,15 +178,30 @@ Left as they are:
 
 - **The guests' push, still.** The fights part on the first jab's contact
   (Akira frame 40, Mahler 39). The overlap the COP returns (g4) is where:
-  on Akira's frame 39 the board's matches VF2's (0.1169 VF2 units; the
-  largest ball pair's overlap, balls 6 and 6), but on frame 40 VF2's is
-  0.2233 and the board's (StF's SHARC program) 0.0834, with the same
-  contact vector. The arms have crossed by then, and VF2's 0.2233 is
-  neither the largest pair's overlap (0.0932) nor their sum (0.4557):
-  VF2's COP is a TGP program of its own, whose rule for it is not known.
-  Its masks (+0x264/0x268, the balls' C0/C4) are VF2's, and the strike's
-  balls sent or not make no difference. Mahler parts the same way (frame
-  39: the board has pushed him 0.040 FV units, FV 0.014).
+  on Akira's frame 39 the board's matches VF2's (0.1169 VF2 units), but on
+  frame 40 VF2's is 0.2233 and the board's (StF's SHARC program) 0.0834.
+  VF2's TGP rule, read off its function 0x3B (TGP 0x99E, sent by
+  `coli_cont_cop` 0x23524 as `0x1D803B3B` + kind, P1's and P2's g3 masks
+  and two more masks, 0xB4 and 0xB8):
+  - The TGP holds 30 balls per fighter, k = 0..29. Ball k has i960 ball
+    k's radius (TGP program table 0xAD4+30−k, the same as rob+0xD00's)
+    but the position of i960 ball SENT[k], the order
+    `set_coli_ball_data` sends them in (bufferram 0x3F40, 0x7F40):
+    SENT = 1 0 2 5 4 7 6 8 10 9 12 11 13 3 16 15 14 19 18 17 21 20 24 23
+    22 27 26 25 29 28.
+  - Pair P2's ball o with P1's ball i; skip it when P2's mask has bit o
+    or P1's has bit i (those go to the swept attack test, sub 0x8A5,
+    which only counts).
+  - g4 = the largest r[i] + r[o] − |pos_i − pos_o| (× const $e(o) when
+    0xB4 has bit i and 0xB8 bit o; both are 0 here).
+
+  Frame 39 (masks 0): TGP balls 6 and 6, 0.1169. Frame 40 (masks 0xE0):
+  TGP balls 3 and 3, ball 5's place (a hand) with ball 3's radius 0.13
+  each, 0.26 − 0.0367 = 0.2233. Inputs: both robs' balls at rob+0xD00
+  (x, y, z, r), the 0x3B words, the TGP program's tables; it gives VF2's
+  g4 on all 55 frames from 37 to 91 (17 with an overlap). The board does not
+  do it yet; Mahler's push (frame 39: the board 0.040 FV units, FV
+  0.014) is not looked at.
 - Honey's intro pose: StF's motion 15, the board's 507.
 - The board's rounds end 4 or 5 frames before StF's (the winner and the
   energy left are the same).
