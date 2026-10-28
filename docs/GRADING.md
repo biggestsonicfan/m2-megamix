@@ -263,6 +263,23 @@ F to 37 F):
 - **Frame 42: the adds to 1P's place.** On frame 42, VF2 adds −0.024
   (rob+0x2C) and −0.057 (rob+0x5C8) to 1P's place; the board adds −0.009
   and 0.000 in VF2 units (−0.01734 and 0 board units).
+- **The slowdown, read side by side.** VF2's slowdown (0x179DC..0x17A3C,
+  in its `rob_spd_control` at 0x1791C) is StF's block after `rsc_fric_end`
+  instruction for instruction: k = [0x50A000] × [0x50A004] × w / 60 ×
+  (1 + rob+0x5D4) × [0x50A008]; |rob+0x5C8, rob+0x5D0| loses k, or both
+  are zeroed if k is larger (rob+0x5D4 with them, unless rob+0x2C/0x34
+  were slowed rather than stopped). The one change is StF's extra × 0.25
+  (0x3E800000, StF 0x17F9C), which VF2 lacks. So "VF2's constant-k
+  slowdown is not on the board" holds for its constants, not its code.
+  VF2 sets the globals at 0x9984: 0.0027222 (0x3B32674F), 1.0, 10.0 (and
+  0.00067556 with 2.0 in its bit-20 slow motion, 0x1FD5C). With w 79 and
+  rob+0x5D4 0.5, VF2's k = 0.05376 and the board's 0.025222 × 0.25 × … =
+  0.12453 board units: the 0.0538 and 0.1245 measured on frame 41. In VF2
+  units the board's is 0.06144, 1.143× VF2's, because StF's gravity × 0.25
+  ÷ 2.027 (0.003111) is not VF2's 0.0027222. On frame 42 the board's
+  0.10744 is below k, so it is zeroed. The rest of the routine: only StF
+  has the rob+0xA0E countdown and × 0.7 gravity on rob+0x1A4 bit 14; only
+  VF2 adds rob+0x5C8/0x5D0 at × 0.5 under [0x500068] bit 20.
 
 Left as they are:
 
