@@ -234,6 +234,18 @@ F to 37 F):
   - The drag on frame 41 (VF2 0x179E8: |v| less a constant k) is
     1.14× VF2's on the board too (rob+0x5C8: 0.1245 board units, VF2
     0.0538 × 2.027 = 0.1090).
+- **Frame 41: where P comes from.** P (+0x822) is the strike's damage byte,
+  copied from byte +3 of the setup's op 4 (the strike) when 2P's jab starts
+  (clock 1887, VF2 motion 18, the board's 527). VF2's set_mot_dat (0x1A728)
+  copies it as P = b[3] × (100 + 5 × rob+0x69C) / 100, rob+0x69C 0 here, from
+  Akira's script in data ROM (record at 0x2014B77: `04 05 00 0c ..`): 12.
+  The board's `_uk_read_move_data` (0x155B0) copies b[3] as it is from the
+  converted record (0x2E0E560: `04 05 00 08 ..`): 8. The 8 is written when
+  the board is built, not when it runs: `tools/vf2-guest.mjs` `damage()`
+  (`convertSetup`, op 4) makes it max(1, round(b[3] × DAMAGE)), DAMAGE =
+  140/200 (StF's energy over VF2's); round(12 × 0.7) = 8 (`guests.json`
+  `damage["12"] = 8`). The one byte is both the damage and the knockback's
+  power on both machines, so the energy scale shrinks the knockback too.
 
 Left as they are:
 
