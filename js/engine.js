@@ -12,7 +12,7 @@
  *
  * No three.js: the Node test runs a bout through it.
  */
-import { MOTION_ID, S, P, K, G, DOWN, UP, FWD, BACK, HIGH, MID, LOW, ENERGY, matchPress, enFlag, isCounter, counterDamage, airDamage, MK_AIR, rootAt, motionOf } from './fighters.js';
+import { MOTION_ID, S, P, K, G, DOWN, UP, FWD, BACK, HIGH, MID, LOW, ENERGY, matchPress, enFlag, isCounter, counterDamage, airDamage, downDamage, MK_AIR, rootAt, motionOf } from './fighters.js';
 import { SLOT_PARENT } from '../vendor/noclip/js/pose.js';
 import { ARENA } from './games.js';
 
@@ -622,19 +622,20 @@ function strike(fight, p, o) {
         return;
     }
     const counter = counterOn(o);
-    const air = counter ? null : airDamage(p.fighter.game, a, airKind(o));
-    const damage = counter ? counterDamage(p.fighter.game, a, counter.own) : air ?? a.damage;
+    const down = counter ? null : downDamage(p.fighter.game, a, kindAt(o));
+    const air = counter || down != null ? null : airDamage(p.fighter.game, a, airKind(o));
+    const damage = counter ? counterDamage(p.fighter.game, a, counter.own) : down ?? air ?? a.damage;
     o.energy = Math.max(0, o.energy - damage);
     /* counted on the fighter hit, as the games count it (hit_combo); a
      * second without a hit ends it here */
     o.hit_combo = (fight.tick - (o.comboAt ?? -99) < 60) ? o.hit_combo + 1 : 1;
     o.comboAt = fight.tick;
-    /* Here: attack_hit's other changes to the damage (down, tender, multi,
-     * ukemi) are not read, and a blow of 40 or more knocks down. */
+    /* Here: attack_hit's other changes to the damage (tender, multi, ukemi)
+     * are not read, and a blow of 40 or more knocks down. */
     o.knocked = o.energy <= 0 || damage >= 40;
     if (o.energy <= 0 && finishes(p, a)) o.finished = true;
     react(fight, o, how, o.knocked ? 'down' : counter ? 'counter' : 'hit');
-    fight.events.push({ kind: 'hit', side: p.side, damage, counter: !!counter, air: air != null, level: a.level });
+    fight.events.push({ kind: 'hit', side: p.side, damage, counter: !!counter, air: air != null, fall: down != null, level: a.level });
 }
 
 /* A counter (fighters.js isCounter): o is playing its own move, before its
@@ -655,6 +656,15 @@ function airKind(o) {
     const id = o.mot?.motion?.index;
     const kind = o.fighter.motKind && id != null && o.mot.rom === o.fighter.rom ? o.fighter.motKind(id) : 0;
     return o.hara && o.hara === o.mot ? kind | MK_AIR : kind;
+}
+
+/* o's mot_kind at its frame, for StF's down (fighters.js downDamage): StF's
+ * own motions followed frame by frame (stfKindAt). Here: another game's
+ * fighter hit by StF's has its motion's motd_kind. */
+function kindAt(o) {
+    const id = o.mot?.motion?.index;
+    if (id == null || o.mot.rom !== o.fighter.rom || !o.fighter.motKind) return 0;
+    return o.fighter.kindAt ? o.fighter.kindAt(id, o.mot_coma, o.mot.motion.frames) : o.fighter.motKind(id);
 }
 
 /* A blow on a fighter lying down: the damage, and the lie starts over. */

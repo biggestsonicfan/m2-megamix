@@ -105,6 +105,12 @@ approximations. Each is marked `Here:` in `js/engine.js`:
   till the next motion. Here: VF2's (0x22B6C) gives way on a combo's first
   hit to a quarter more that needs the struck part, so VF2's is not read;
   play ops that change mot_kind mid-motion are not followed.
+- Going down: StF takes a quarter off a blow on a fighter whose mot_kind
+  has mk_down and not mk_down_pose (attack_hit's "down", 0x2B238): a fall
+  before its play op 5 makes it lie (Sonic's at frame 64). The mot_kind is
+  followed frame by frame: set_mot_dat's load, play_motion's clears at the
+  hit frame and follow1 (0x1BE78, 0x1BEA0), play ops 5 to 7. FV and VF2
+  have no such step.
 - Down attacks (level 4, and StF's 8 at half damage) land on a fighter lying
   down. Their entries want en_flag's en_down_attack (+0x5B8 bit 5; bit 11
   in VF2), which get_en_info sets from the other's mot_kind as the board
@@ -141,7 +147,7 @@ approximations. Each is marked `Here:` in `js/engine.js`:
 - Throws deal op 5's damage, then the victim motion's own hits (play op 8)
   at their frames; many throws deal none.
 - Not read from the games yet, the engine's own: attack_hit's other changes
-  to the damage (StF from 0x2B0F8: down, tender, multi, ukemi; FV and VF2
+  to the damage (StF from 0x2B0F8: tender, multi, ukemi; FV and VF2
   have most of them, and VF2 its air), the knock-down (here any blow of 40 or
   more), the hit combo's one-second window, a guard turned away failing,
   the throw's reach (1.5 bodies), a strike's active frames (hit to the

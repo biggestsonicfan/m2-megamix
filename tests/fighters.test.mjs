@@ -399,3 +399,49 @@ console.log('ok');
         }
     }
 }
+
+/* Going down: StF's attack_hit takes a quarter off a blow on a fighter
+ * whose mot_kind has mk_down and not mk_down_pose, as its fall has until
+ * play op 5 makes it lie (frame 64); FV and VF2 have no such step. */
+{
+    const { downDamage, MK_DOWN, MK_DOWN_POSE } = await import('../js/fighters.js');
+    assert.equal(downDamage('stf', { damage: 14, raw: 10 }, MK_DOWN), 11, 'StF: 10 - 2 = 8 of 140');
+    assert.equal(downDamage('stf', { damage: 14, raw: 10 }, MK_DOWN | MK_DOWN_POSE), null, 'not lying');
+    assert.equal(downDamage('fv', { damage: 18 }, MK_DOWN), null);
+    assert.equal(downDamage('vf2', { damage: 18 }, MK_DOWN), null);
+    const { createFight, stepFight, setMotion, bodyPoint, ST } = await import('../js/engine.js');
+    for (const [n, g] of [['AKIRA', 'vf2'], ['PICKY', 'fv'], ['SONIC', 'stf']]) {
+        const f = fighters.find((x) => x.name === n && x.game === g);
+        const ref = f.reaction({ game: g, kind: 0, side: 0, level: 1, damage: 30 }, 'down');
+        if (g === 'stf') {
+            const m = ref.motion;
+            assert.equal(f.kindAt(m.index, 63, m.frames) & (MK_DOWN | MK_DOWN_POSE), MK_DOWN, 'the fall, before it lies');
+            assert.equal(f.kindAt(m.index, 64, m.frames) & (MK_DOWN | MK_DOWN_POSE), MK_DOWN | MK_DOWN_POSE, 'lying from op 5');
+        }
+        /* a punch on the fall from its frame 4 (a lying StF body is too low
+         * for the engine's capsule; kindAt above covers it) */
+        {
+            const from = 4;
+            const fight = createFight(f, f, f.game);
+            fight.phase = 'fight';
+            const [p, o] = fight.players;
+            p.pos = [-0.45, 0, 0]; o.pos = [0.45, 0, 0];
+            setMotion(o, ref, { state: ST.YARARE });
+            Object.assign(o, { action: 'down', knocked: true, mot_coma: from });
+            o.posed = o.body.pose(o.mot, o.mot_coma);
+            const b = bodyPoint(o);
+            o.pos[0] -= b[0] - 0.3; o.pos[2] -= b[2];
+            let hit = null, coma = null;
+            for (let i = 0; i < 30 && !hit; i++) {
+                coma = o.mot_coma;
+                stepFight(fight, [{ P: i === 0 }, {}]);
+                hit = fight.events.find((e) => e.kind === 'hit' && e.side === 0) ?? null;
+            }
+            assert.ok(hit && !hit.counter, `${n}: a blow lands on the fall from ${from}`);
+            const going = g === 'stf' && coma < 64;
+            assert.equal(hit.fall, going, `${n}: going down at ${coma}`);
+            assert.equal(hit.damage, going ? downDamage(g, p.attack, MK_DOWN) : p.attack.damage);
+            console.log('down:', n, 'fall frame', coma, JSON.stringify(hit));
+        }
+    }
+}

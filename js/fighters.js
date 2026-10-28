@@ -297,7 +297,7 @@ export function enFlag(game, { kind, lying, inAir }) {
  * decides; `own` is null when the one hit is not StF's (0 here). `kind` is
  * null for a fighter whose game has no mot_kind (Shenmue): its moves count
  * to their cancel, and its counters deal VF2's. */
-export { MK_ATTACK, MK_AIR };
+export { MK_ATTACK, MK_AIR, MK_DOWN, MK_DOWN_POSE };
 export function isCounter(kind, coma, timing) {
     return !!timing && coma < timing.cancel && (kind == null || !!(kind & MK_ATTACK));
 }
@@ -318,6 +318,46 @@ export function counterDamage(game, a, own) {
 export function airDamage(game, a, kind) {
     if ((game !== 'stf' && game !== 'fv') || (kind & (MK_AIR | MK_DOWN)) !== MK_AIR) return null;
     return game === 'stf' ? stfScale((a.raw * 3) >> 1) : (a.damage * 3) >> 1;
+}
+
+/* StF's mot_kind at frame `coma` of a motion `frames` long. set_mot_dat
+ * (0x1B4EC) loads motd_kind, mk_rise on a strike made mk_down_pose;
+ * play_motion clears that mk_down_pose at the hit frame (+0x808, 0x1BE78)
+ * and, from follow1 (+0x80A, 0x1BEA0; the motion's length without op 2),
+ * mk_attack, mk_down_pose and bit 26 (0x4010100), and mk_rise on a strike;
+ * play ops 5, 6 and 7 (0x1C29C) set, clear and flip byte 3's bit at their
+ * frame. A fall (motion 225) is mk_down until its op 5 makes it mk_down_pose
+ * at 64, as it comes to lie. */
+const PLAY_SET = 5, PLAY_CLR = 6, PLAY_FLIP = 7;
+function stfKindAt(rom, id, coma, frames) {
+    const s = stfSetupOps(rom, id);
+    if (!s) return 0;
+    let k = s.kind;
+    const strike = !!(k & MK_ATTACK), rising = strike && !!(k & MK_RISE);
+    if (rising) k = (k & ~MK_RISE) | MK_DOWN_POSE;
+    const t = readMotionTiming(rom, id);
+    const ev = [];
+    if (rising && t) ev.push({ frame: t.hit, f: (x) => x & ~MK_DOWN_POSE });
+    ev.push({ frame: t?.cancel ?? frames, f: (x) => (strike ? x & ~MK_RISE : x) & ~0x4010100 });
+    for (const o of s.play) {
+        const bit = 1 << rom.maincpu[o.at + 3];
+        if (o.op === PLAY_SET) ev.push({ frame: o.frame, f: (x) => x | bit });
+        else if (o.op === PLAY_CLR) ev.push({ frame: o.frame, f: (x) => x & ~bit });
+        else if (o.op === PLAY_FLIP) ev.push({ frame: o.frame, f: (x) => x ^ bit });
+    }
+    ev.sort((a, b) => a.frame - b.frame);
+    for (const e of ev) if (e.frame <= coma) k = e.f(k);
+    return k;
+}
+
+/* A blow on a fighter going down: StF's attack_hit "down" (0x2B238) takes a
+ * quarter off when the fighter hit's mot_kind has mk_down and not
+ * mk_down_pose (a fall before it lies), after a counter and ukemi. FV's
+ * and VF2's have no such step: their only quarter off is "tender" (FV
+ * 0x263D8, VF2 0x22B30), which needs the struck part. null: no change. */
+export function downDamage(game, a, kind) {
+    if (game !== 'stf' || (kind & (MK_DOWN | MK_DOWN_POSE)) !== MK_DOWN) return null;
+    return stfScale(a.raw - (a.raw >> 2));
 }
 
 /** The entry a press lands on: the first, in the engine's order, whose tests
@@ -343,6 +383,7 @@ export function matchPress(entries, btn, hist, dist, { ctx = 0, en = 0 } = {}) {
  *   takeoff(id)        a jump motion's take-off frame (0 if none)
  *   riseWindow(id)     a get-up's {cancel, window} (FV, StF), else null
  *   motKind(id)        its motion's motd_kind (+0x804), the mot_kind bits
+ *   kindAt(id, f, n)   StF: its mot_kind (+0x1A4) at frame f of n (stfKindAt)
  *   flight(small)      the frames a jump flies (+0x5BE)
  *   flies              StF: the jump flies by gravity, not by its motion
  *   airHold(id)        an air attack's hold, frames left in the air (+0x5C0)
@@ -544,6 +585,7 @@ function stfFighter(game, entry) {
         airHold(id) { return airHoldOf(stfSetupOps(rom, id)); },
         riseWindow(id) { return riseWindowOf(stfSetupOps(rom, id)); },
         motKind(id) { return stfSetupOps(rom, id)?.kind ?? 0; },
+        kindAt(id, coma, frames) { return stfKindAt(rom, id, coma, frames); },
         flight(small) { return stfFlight(rom, entry.index, small); },
         flies: true,
         reaction(a, how) {
