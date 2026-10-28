@@ -534,3 +534,53 @@ console.log('ok');
         }
     }
 }
+
+/* A guard turned away: attack_hit guards only with en_flag's en_from_behind
+ * clear, which get_en_info sets when the other is more than a quarter turn
+ * off the fighter's facing; StF's and FV's not newly within 0.4 with one of
+ * them in the air. The engine had the attacker's facing against the guard's
+ * (a dot of 0.3). */
+{
+    const { fromBehind } = await import('../js/fighters.js');
+    const deg = (a) => a * Math.PI / 180;
+    for (const g of ['vf2', 'fv', 'stf']) {
+        assert.equal(fromBehind(g, { off: 0, dist: 1 }), false, `${g}: ahead`);
+        assert.equal(fromBehind(g, { off: deg(80), dist: 1 }), false, `${g}: 80 degrees off`);
+        assert.equal(fromBehind(g, { off: deg(-100), dist: 1 }), true, `${g}: 100 degrees off`);
+        assert.equal(fromBehind(g, { off: deg(180), dist: 0.3 }), true, `${g}: behind, close, on the ground`);
+        assert.equal(fromBehind(g, { off: deg(180), dist: 0.3, was: true, air: true }), true, `${g}: stays on`);
+        assert.equal(fromBehind(g, { off: deg(180), dist: 0.3, air: true }), g === 'vf2', `${g}: close in the air`);
+        assert.equal(fromBehind(g, { off: deg(180), dist: 0.5, air: true }), true, `${g}: past 0.4 in the air`);
+    }
+    const { createFight, stepFight, setMotion, ST } = await import('../js/engine.js');
+    for (const [n, g] of [['AKIRA', 'vf2'], ['PICKY', 'fv'], ['SONIC', 'stf']]) {
+        const f = fighters.find((x) => x.name === n && x.game === g);
+        /* held guard, the punch from in front: guarded */
+        {
+            const fight = createFight(f, f, f.game);
+            fight.phase = 'fight';
+            const [p, o] = fight.players;
+            p.pos = [-0.45, 0, 0]; o.pos = [0.45, 0, 0];
+            let ev = null;
+            for (let i = 0; i < 40 && !ev; i++) {
+                stepFight(fight, [{ P: i === 4 }, { G: true }]);
+                assert.equal(o.en_behind, false, `${n}: the guard faces the other`);
+                ev = fight.events.find((e) => (e.kind === 'hit' || e.kind === 'guard') && e.side === 0) ?? null;
+            }
+            assert.equal(ev?.kind, 'guard', `${n}: guarded from in front`);
+        }
+        /* a fighter in a motion (it does not turn) with the other at its back */
+        {
+            const fight = createFight(f, f, f.game);
+            fight.phase = 'fight';
+            const [p, o] = fight.players;
+            p.pos = [-0.6, 0, 0]; o.pos = [0.6, 0, 0];
+            setMotion(o, f.reaction({ game: g, kind: 0, side: 0, level: 1, damage: 30 }, 'down'), { state: ST.YARARE });
+            o.yang = 0;
+            stepFight(fight, [{}, {}]);
+            assert.equal(o.en_behind, true, `${n}: the other at its back`);
+            assert.equal(p.en_behind, false, `${n}: the other ahead`);
+            console.log('behind:', n, 'guard from in front, the back seen');
+        }
+    }
+}

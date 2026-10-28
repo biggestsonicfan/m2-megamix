@@ -12,7 +12,7 @@
  *
  * No three.js: the Node test runs a bout through it.
  */
-import { MOTION_ID, S, P, K, G, DOWN, UP, FWD, BACK, HIGH, MID, LOW, ENERGY, matchPress, enFlag, isCounter, counterDamage, airDamage, downDamage, knocksDown, MK_AIR, rootAt, motionOf } from './fighters.js';
+import { MOTION_ID, S, P, K, G, DOWN, UP, FWD, BACK, HIGH, MID, LOW, ENERGY, matchPress, enFlag, fromBehind, isCounter, counterDamage, airDamage, downDamage, knocksDown, MK_AIR, rootAt, motionOf } from './fighters.js';
 import { SLOT_PARENT } from '../vendor/noclip/js/pose.js';
 import { ARENA } from './games.js';
 
@@ -88,6 +88,7 @@ export function makePlayer(side, fighter) {
         air: null,                  /* a jump's frames left in the air from take-off (+0x5BC) */
         held: null,                 /* an air attack held back, {e, press, at} (+0x19C bit 19) */
         hara: null,                 /* the jump's motion from take-off: mk_air (+0x1A4 bit 4) */
+        en_behind: false,           /* +0x5B8 bit 0 en_from_behind: the other is behind (enBehind) */
         wins: 0,                    /* 0x50004F p1_wins / 0x500051 p2_wins */
         posed: null,
         lastMove: '',
@@ -165,7 +166,7 @@ function resetRound(fight) {
         p.yang = i ? Math.PI : 0;
         p.energy = ENERGY;
         p.mot = null;
-        p.pc_command = 0; p.press = null; p.hist = []; p.hit_combo = 0; p.riseKick = null; p.fly = null; p.air = null; p.held = null; p.hara = null;
+        p.pc_command = 0; p.press = null; p.hist = []; p.hit_combo = 0; p.riseKick = null; p.fly = null; p.air = null; p.held = null; p.hara = null; p.en_behind = false;
         p.finished = false;
         setAct(p, 'stance');
     });
@@ -188,6 +189,7 @@ export function stepFight(fight, pads, screenRight = [1, 0]) {
     for (const [p, o] of [[a, b], [b, a]]) think(fight, p, o);
     for (const p of fight.players) { advance(fight, p); comboEnd(p); }
     for (const p of fight.players) poseNow(fight, p);
+    for (const [p, o] of [[a, b], [b, a]]) p.en_behind = enBehind(p, o);
     if (live) {
         for (const [p, o] of [[a, b], [b, a]]) strike(fight, p, o);
         separate(fight, a, b);
@@ -606,6 +608,19 @@ function enOf(p, o) {
     return enFlag(p.fighter.game, { kind, lying: o.state === ST.DOWN, inAir: !!p.air });
 }
 
+/* en_flag's en_from_behind for p (fighters.js fromBehind), from the bodies
+ * and p's facing. Here: the engine's motions do not turn the facing (+0x812),
+ * get_en_info's way to the other when the two are within 0.4 and one is in
+ * the air (it takes the mover's speed), and StF's and FV's hold while the
+ * coprocessor's collision has them together, are not followed. */
+function enBehind(p, o) {
+    const d = sub(bodyPoint(o), bodyPoint(p));
+    return fromBehind(p.fighter.game, {
+        off: Math.atan2(-d[2], d[0]) - p.yang, dist: Math.hypot(d[0], d[2]),
+        was: p.en_behind, air: !!((airKind(p) | airKind(o)) & MK_AIR),
+    });
+}
+
 /* A down attack (fighters.js hitsDown) lands on a fighter lying down, the
  * rest pass over it; StF's level 8 does half (its attack_hit's tetsu path). */
 const STF_DOWN_HALF = 8;
@@ -636,7 +651,8 @@ function strike(fight, p, o) {
     p.hitDone = true;
     const facingAway = dot([Math.cos(o.yang), 0, -Math.sin(o.yang)], fwd) > 0.3;
     const how = { ...a, crouch: o.crouching, behind: facingAway };
-    if (o.state === ST.GUARD && !facingAway && (o.crouching ? a.level !== HIGH : a.level !== LOW)) {
+    /* attack_hit guards only with en_from_behind clear (enBehind) */
+    if (o.state === ST.GUARD && !o.en_behind && (o.crouching ? a.level !== HIGH : a.level !== LOW)) {
         react(fight, o, how, 'guard');
         fight.events.push({ kind: 'guard', side: p.side });
         return;

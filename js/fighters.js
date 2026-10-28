@@ -285,6 +285,22 @@ export function enFlag(game, { kind, lying, inAir }) {
     return down ? 1 << (game === 'vf2' ? 11 : 5) : 0;
 }
 
+/* en_flag's en_from_behind (+0x5B8 bit 0), as get_en_info sets it each frame
+ * (StF 0x18E34, FV 0x19298, VF2 0x18738): the other is more than a quarter
+ * turn off the fighter's facing, +0x5B4 (+0x26 with the motion's turn,
+ * +0x812, on mot_kind bit 6) against en_dir_yang, the way to the other. In
+ * StF and FV the flag does not come on while the two are within 0.4 (+0x5F4)
+ * and either's mot_kind has mk_air (bit 4), or the coprocessor's collision
+ * (mod_fa_coli +0x164) holds them together; once on it stays on while the
+ * other is behind. attack_hit (StF 0x2A9F0, FV 0x25DD0, VF2 0x226F4) guards
+ * only a fighter with mk_guard and this flag clear. `off` is the angle from
+ * the facing to the other, `was` the flag's last frame. */
+export function fromBehind(game, { off, dist, was = false, air = false }) {
+    if (!(Math.cos(off) < 0)) return false;
+    if (was || (game !== 'stf' && game !== 'fv')) return true;
+    return !(dist <= 0.4 && air);
+}
+
 /* A counter: attack_hit (StF 0x2B1A4, FV 0x2633C, VF2 0x22A28) counts one
  * when the fighter hit has mk_attack in its mot_kind, which every strike's
  * motd_kind carries and play_motion clears at follow1 (+0x80A; StF 0x1BEA0,

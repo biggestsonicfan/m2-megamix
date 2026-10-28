@@ -162,11 +162,19 @@ approximations. Each is marked `Here:` in `js/engine.js`:
   jump do not) and +0 bit 4 is clear (the guard, yarare, ukemi and down
   handlers' stun); StF and FV also not in ukemi. Here: the stun is the
   reaction playing out, not +0x5DE's count; Shenmue's ends once free.
+- A guard turned away: attack_hit (StF 0x2A9F0, FV 0x25DD0, VF2 0x226F4)
+  guards only a fighter whose en_flag has en_from_behind (+0x5B8 bit 0)
+  clear. get_en_info (StF 0x18E34, FV 0x19298, VF2 0x18738) sets it when the
+  other is more than a quarter turn off the fighter's facing; in StF and FV
+  it does not come on while the two are within 0.4 and one is in the air,
+  or the coprocessor's collision holds them. Here: that collision, the
+  motions' own turn (+0x812) and the way to the other in the air at close
+  range are not followed; a guarding fighter turns to the other each frame.
 - Not read from the games yet, the engine's own: attack_hit's other changes
   to the damage (StF from 0x2B0F8: tender, multi, ukemi; FV and VF2
-  have most of them, and VF2 its air), a guard turned away failing, the
-  throw's reach (1.5 bodies), a strike's active frames (hit to the later
-  of cancel and hit + 2) and the 50 frames lying before the rise.
+  have most of them, and VF2 its air), the throw's reach (1.5 bodies), a
+  strike's active frames (hit to the later of cancel and hit + 2) and the
+  50 frames lying before the rise.
 - The CPU player is a simple one.
 - Rounds last 40 s and need 2 wins (1–3 in the menu).
 - FV's cage breaks on a finishing KO and stays broken for the match; a
