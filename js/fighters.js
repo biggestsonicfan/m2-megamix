@@ -689,6 +689,37 @@ function vfFlight(rom, key, index, small) {
     return u8(u32(record + 0x34) + (small ? 1 : 0));
 }
 
+/*
+ * StF's second model directory: a part-list entry with bit 15 set is
+ * `id & 0x7FFF` in the table at 0x647F000 (count, then 16-byte entries:
+ * uv, material, mesh) rather than the main one (`set_obj`, 0x4E98). Its
+ * pointers are all into the board's RAMs, which the boot fills once from the
+ * EPROM pair IC7/IC8 (XTRA_DATA 0x6400000 = data ROM 0x1000000 on):
+ * `sub_12090` texture RAM 0x8000 on from 0x6460000 and `sub_12138` 0xC000 on
+ * from 0x6464000, a halfword a word, and `sub_11EF8` (geo command 5) all of
+ * polygon RAM from 0x6468000, a word a word. Nothing writes those ranges
+ * again. Super Sonic's head is 0x8000, Egg Minion's right arm 0x8003, 0x8004
+ * (docs/RECORDS.md, The part lists).
+ */
+const STF_RAM_MODELS = 0x107f000;
+const STF_POLYGON_RAM = 0x1068000;
+const STF_TEXTURE_RAM = [{ from: 0x8000, at: 0x1060000 }, { from: 0xc000, at: 0x1064000 }];
+
+function stfRamModel(rom, id) {
+    const dv = rom.mainDataView;
+    const n = id & 0x7fff;
+    if (n > dv.getUint32(STF_RAM_MODELS, true)) return null;
+    const e = STF_RAM_MODELS + 4 + n * 16;
+    const [uvPtr, matPtr, meshPtr] = [0, 4, 8].map((o) => dv.getUint32(e + o, true));
+    if (!meshPtr) return null;
+    /* The same ROM with texture RAM's runs in its model table, so the
+     * decoder reads the uv and material pointers (bit 23) out of them. */
+    rom.stfRamRom ??= Object.assign(Object.create(rom), {
+        game: { ...rom.game, modelTable: { ...rom.game.modelTable, textureRam: STF_TEXTURE_RAM } },
+    });
+    return decodeModel(rom.stfRamRom, null, null, { bytes: rom.mainData.subarray(STF_POLYGON_RAM + meshPtr * 4), uvPtr, matPtr });
+}
+
 function stfFighter(game, entry) {
     const { rom } = game;
     const c = per(rom);
@@ -702,7 +733,7 @@ function stfFighter(game, entry) {
         if (!c.models.has(key)) {
             const [id, eye] = String(key).split(':');
             const points = eye != null ? ch.face.eyePoints[+eye] : null;
-            c.models.set(key, decodeModel(rom, +id, points ?? null));
+            c.models.set(key, +id & 0x8000 ? stfRamModel(rom, +id) : decodeModel(rom, +id, points ?? null));
         }
         return c.models.get(key);
     };

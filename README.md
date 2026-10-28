@@ -3,11 +3,15 @@
 This is a small Fighters Megamix built from three Model 2 games. Virtua
 Fighter 2, Fighting Vipers and Sonic the Fighters all run AM2's fighting
 engine. This project plays their fighters against each other, on any of
-their stages, in one engine:
+every stage record they have, in one engine:
 
-- VF2: Akira, Sarah, Kage
-- Fighting Vipers: Picky, Honey, Mahler, Tokio, Bahn
-- Sonic the Fighters: Sonic, Honey, Eggman
+- VF2: all 13 records: Akira, Jacky, Sarah, Kage, Lau, Jeffry, Pai, Wolf,
+  Shun, Dural, Lion, and Mue and Kojacky (which use Lion's record)
+- Fighting Vipers: all 13: Jane, Grace, Honey, Tokio, Bahn, Picky, Raxel,
+  Sanman, Mahler, B.M., Sonic and the two dummy records
+- Sonic the Fighters: all 17: Sonic, Tails, Amy, Metal Sonic, Fang, Bark,
+  Knuckles, Espio, Eggman, Eggman B, Bean, Eggman (boss), Egg UFO, Egg
+  Minion, Rocket Metal, Honey and Super Sonic
 - Shenmue (the beta's disc, if you have it): Ryo, see `docs/RYO.md`, and
   Chai, the final boss, see `docs/CHAI.md`
 
@@ -45,6 +49,14 @@ Ryo's and Chai's files off it at `/shenmue/<path>`, and they join the roster
 
 URL options: `?p1=0&p2=6&stage=3&p1cpu=1&p2cpu=1&rounds=2&start&dump`.
 
+The menu's fighters are the first eleven as before (so old links still
+work), then Ryo and Chai at 11 and 12 when the disc is there, then the
+rest of each game's records. Its stages are the 29 arenas as before (0–28),
+then the other 18 records (29–46): VF2's two Test records, FV's Western 2,
+Airport copies, name entry and unnamed records, and StF's unnamed records,
+boss room and story scenes. Some of those are empty or half built; they are
+there because their flags are what `docs/RECORDS.md` tries to read.
+
 ## Controls
 
 | | P1 | P2 |
@@ -72,6 +84,7 @@ struct dump, F2 pauses and F3 steps one frame.
 - `docs/FV-GUESTS.md` measures what Fighting Vipers' Honey, Tokio and Bahn need as board guests, and what room is left in StF's ROMs and at Model 2B's sizes (`tools/fv-guest-survey.mjs`, `tools/model2-rom-limits.py`).
 - `docs/FV-MAHLER.md` does the same for Mahler: one record for both players, his shoulder pads and sway chain, the 171 motions he shares with B.M. (`tools/fv-guest-survey.mjs --char 8`), and the cage break that stays broken. On the board he is guest 18 (`tools/mahler-guest.mjs`, his moves by `tools/fv-moves.mjs`; docs/BOARD.md).
 - `tools/model-obj.mjs` exports a fighter's models as OBJ and MTL (with its tiles as PNGs) for a 3D program, and reads them back; `tools/import-assets.mjs --obj mahler=<dir>` builds the board's Mahler from the edited folder (docs/BOARD.md, Mahler from an OBJ).
+- `docs/RECORDS.md` reads every fighter record and stage record of the three games: which fields and flag bits are known, which are not, and what each value does where one fighter or stage alone has it; `tools/record-survey.mjs` prints the tables.
 - `docs/SHADOWS.md` is how each game casts the fighters' shadows, StF's way as the parent; `tools/shadow-data.mjs` reads every fighter's table in StF's form.
 - `docs/SHARED-CODE.md` audits the i960 functions StF and VF2 share: which are one code, and what a VF2 fighter still needs (guest data or a branch on `char_game`); `tools/shared-fns.py` compares them.
 - `docs/FM-SATURN.md` covers Fighters Megamix's (Saturn) fighter data and motions; `tools/fm-saturn.mjs` reads them off the disc and converts them to VF2 motion blocks (Hornet's to start with); `tools/daytona-hornet.mjs` finds Daytona USA's Hornet in the Model 2 set and cuts it where FM cuts its Hornet.
@@ -213,7 +226,7 @@ approximations. Each is marked `Here:` in `js/engine.js`:
 
 ```
 node tests/fighters.test.mjs    # every fighter poses, moves and reacts, across games
-node tests/bout.test.mjs        # CPU vs CPU, every pairing (121, 169 with Ryo and Chai)
+node tests/bout.test.mjs        # CPU vs CPU, each pair once (946, 1035 with Ryo and Chai); PAIRS=all both ways
 node tests/cage.test.mjs        # FV's cage: Mahler breaks it, others break it on him, ring out through it
 node tests/model-obj.test.mjs   # Akira, Mahler and Sonic out to OBJ/MTL and back, face for face
 ```

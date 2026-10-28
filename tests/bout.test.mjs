@@ -1,5 +1,7 @@
 /* CPU against CPU, every pairing, on each game's arena: the fight runs,
- * blows land, rounds end. */
+ * blows land, rounds end. With the whole cast (43 with Ryo and Chai) each
+ * pair fights once, a fighter on the left against everyone from itself on;
+ * PAIRS=all fights both ways round. */
 import assert from 'node:assert/strict';
 import { loadNodeGames } from './node-roms.mjs';
 import { ROSTER } from '../js/games.js';
@@ -14,7 +16,7 @@ const total = { hit: 0, guard: 0, throw: 0, move: 0, ringout: 0, cagebreak: 0, r
 const arenas = ['vf2', 'fv', 'stf'];
 let n = 0;
 for (let i = 0; i < ROSTER.length; i++) {
-    for (let j = 0; j < ROSTER.length; j++) {
+    for (let j = process.env.PAIRS === 'all' ? 0 : i; j < ROSTER.length; j++) {
         const fight = createFight(makeFighter(games, ROSTER[i]), makeFighter(games, ROSTER[j]), arenas[n++ % 3]);
         const seen = { hit: 0, guard: 0, throw: 0, move: 0, ringout: 0, cagebreak: 0 };
         let rounds = 0;
