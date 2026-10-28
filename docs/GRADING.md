@@ -254,6 +254,9 @@ F to 37 F):
   slowdown is not on the board.
 - **Frame 41: rob+0x5D4.** 1P's rob+0x5D4 is 0.5 at the slowdown on both
   sides, and the board's 0.5 already includes `ACT_RC_YARARE`'s +0.5.
+- **Frame 41: the slowdown's globals.** On the board at the frame-41
+  slowdown, [0x50A000] = 0.025222, [0x50A004] = 1.0 and [0x50A008] = 10.0,
+  and these are not VF2's k.
 
 Left as they are:
 
