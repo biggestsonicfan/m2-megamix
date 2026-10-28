@@ -500,12 +500,13 @@ F to 37 F):
   battle.lua, 12000 frames, Akira vs Sonic seeds 1 and 2 and Sonic vs
   Honey seed 1, old and new ROMs' traces identical.
 - rob_check_stage's tail, read in StF, g4/vf2.dis and the board side by
-  side: the board has StF's, VF2 has none, and for Akira it looks dead.
+  side: the board has StF's, VF2 has none; for Akira it writes rob+0x760
+  but nothing reads it.
   Every path of the board's routine ends at loc_183CC (StF 0x183CC), VF2's
   branch too (its `ret`s branch there): unless rob+0x1E18 (last frame's
   rob+0x1A4, stored at loc_129DC) has bit 8, a fighter with rob+0x1A4 bit 8
-  gets rob+0x760 = the halfword at [0x500828]+0x1E0 (the stage's axis,
-  which get_my_info also reads), + 0x8000 for 2P (rob+4). Its one reader
+  gets rob+0x760 = the halfword at [0x500828]+0x1E0 (an angle that moves
+  during the round; get_my_info reads it too), + 0x8000 for 2P (rob+4). Its one reader
   is StF's rob_revise_yang (board/src/stf_motion.s 7186..7192, StF 0x17CBC):
   with rob+0x1A4 bit 8 and rob+0x821 == 4 (byte 2 of setup op 4, the
   strike, from _uk_read_move_data) it turns him to rob+0x760 at 0x71C a
@@ -521,8 +522,22 @@ F to 37 F):
   loc_183CC to its `ret` (rob+0x760 unwritten) or at rob_revise_yang's
   bit-8 test; a MAME check: Akira vs Sonic, battle.lua seeds 1 and 2, a
   write tap on rob+0x760 (pc of the stis at loc_183FC) and on rob+0x1A4
-  for bit 8, with rob+0x821; no hit means nothing to port. Read from the
-  code only; the board was not run.
+  for bit 8, with rob+0x821; no hit means nothing to port.
+  Run on MAME (board at 29c0458, Akira 1P vs Sonic 2P, South Island,
+  battle.lua seeds 1 and 2, whole matches; taps on rob+0x760 and rob+0x1A4,
+  rob+0x821 read at each and every frame):
+  - The tail fires for Akira: rob+0x760 stored at board pc 0x13C5C 40
+    times (seed 1, frames 715..3740) and 28 times (seed 2, 715..3164), once
+    each time his rob+0x1A4 bit 8 came on (0xDD81..0xE32A). The bit comes
+    from StF's code, not his data: it came on in his motions 526, 527, 529,
+    558, 559, 600, 731, 732 and 781.
+  - Its reader never does: rob+0x821 was 0, 1 or 2 at each of those stores
+    and never 4 on any frame of his, so rob_revise_yang's bit-8 path (pc
+    0x13008) never turned him to rob+0x760.
+  - Sonic's tail fired too (48 and 34 stores), and his bit 8 was set with
+    rob+0x821 = 4 on 96 and 74 frames: StF's own path, as in StF.
+  So for Akira the difference is a dead store: the board writes a field VF2
+  does not, and nothing reads it in his fights. Nothing to port.
 
 Left as they are:
 
