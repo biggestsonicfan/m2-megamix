@@ -12,7 +12,7 @@
  *
  * No three.js: the Node test runs a bout through it.
  */
-import { MOTION_ID, S, P, K, G, DOWN, UP, FWD, BACK, HIGH, MID, LOW, ENERGY, matchPress, enFlag, fromBehind, isCounter, counterDamage, airDamage, downDamage, knocksDown, MK_AIR, rootAt, motionOf } from './fighters.js';
+import { MOTION_ID, S, P, K, G, DOWN, UP, FWD, BACK, HIGH, MID, LOW, ENERGY, matchPress, enFlag, fromBehind, throwFlags, isCounter, counterDamage, airDamage, downDamage, knocksDown, MK_AIR, rootAt, motionOf } from './fighters.js';
 import { SLOT_PARENT } from '../vendor/noclip/js/pose.js';
 import { ARENA } from './games.js';
 
@@ -436,8 +436,13 @@ function levelOf(press) {
  * and +0x26), and the two motions are made to be played together from there:
  * across games too, as a motion poses on any of the sixteen-slot bodies.
  */
+/* Here: StF's and FV's throw entries test their throw word (+0x720, +0x734)
+ * with the matcher's ops 0x34 and 0x35, which the move reader does not keep,
+ * so their throws reach 1.5 bodies; VF2's want their en_flag bits (enThrow),
+ * and the entry has had its test. */
 const THROW_RANGE = 1.5;
 function canThrow(p, o) {
+    if (p.fighter.throwRanges) return true;
     return flat(bodyPoint(p), bodyPoint(o)) < THROW_RANGE * sizeOf(p) && FREE.has(o.state) && o.state !== ST.SYAGAMI && !o.crouching;
 }
 
@@ -601,11 +606,30 @@ function limbs(p, a) {
     return [[INNER[best], best]];
 }
 /* en_flag's en_down_attack for p (fighters.js enFlag): from the other's
- * motion's mot_kind, so a knock-down's fall counts as well as the lying. */
+ * motion's mot_kind, so a knock-down's fall counts as well as the lying; and
+ * in VF2 its throw bits (enThrow). */
 function enOf(p, o) {
     const id = o.mot?.motion?.index;
     const kind = o.fighter.motKind && id != null ? o.fighter.motKind(id) : null;
-    return enFlag(p.fighter.game, { kind, lying: o.state === ST.DOWN, inAir: !!p.air });
+    return enFlag(p.fighter.game, { kind, lying: o.state === ST.DOWN, inAir: !!p.air }) | enThrow(p, o);
+}
+
+/* VF2's throw bits for p (fighters.js throwFlags), from the bodies, the two
+ * facings and the other's mot_kind. Here: the throw timer (0x50A0B6) and the
+ * other's +0x844 bit 27 with mot_kind bit 1 (a throw at any distance) are not
+ * followed; a fighter with no mot_kind (Shenmue's) counts as standing to be
+ * thrown while it is free. */
+const MK_KAMAE = 1 << 9;
+function enThrow(p, o) {
+    const ranges = p.fighter.throwRanges;
+    if (!ranges) return 0;
+    const d = sub(bodyPoint(o), bodyPoint(p));
+    const way = Math.atan2(-d[2], d[0]);
+    const kind = o.fighter.motKind ? airKind(o) : FREE.has(o.state) ? MK_KAMAE : 0;
+    return throwFlags({
+        off: way - p.yang, turn: way - o.yang, dist: Math.hypot(d[0], d[2]), kind, ownKind: airKind(p),
+        crouch: o.crouching || o.state === ST.SYAGAMI || o.action === 'crouchGuard', ranges,
+    });
 }
 
 /* en_flag's en_from_behind for p (fighters.js fromBehind), from the bodies

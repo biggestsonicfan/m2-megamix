@@ -170,11 +170,24 @@ approximations. Each is marked `Here:` in `js/engine.js`:
   or the coprocessor's collision holds them. Here: that collision, the
   motions' own turn (+0x812) and the way to the other in the air at close
   range are not followed; a guarding fighter turns to the other each frame.
+- The throw's reach: get_en_info (StF 0x18F8C, FV 0x193E4, VF2 0x18768)
+  sets throw bits when the thrower faces the other to within 30° and the
+  other faces it (or away, for the back throws), by the distance root to
+  root against the character's ranges (StF 2.5 for all, FV 1.7, VF2 the
+  record's +0x18..+0x24, Akira 1.4), and the throw entries test them. VF2's
+  (en_flag bits 8, 9, 10, 12, 13; matcher op 7) are followed. Here: StF's
+  and FV's are in a word of their own (+0x720, +0x734) that their entries
+  test with ops 0x34 and 0x35, which the move reader does not keep, so
+  their throws still reach 1.5 bodies; VF2's throw timer (0x50A0B6) is not
+  followed.
+- StF (0x2AE40) drops a blow when the attacker has the other behind it,
+  unless +0x70C bit 20 is set; FV and VF2 have no such step there. Not
+  followed.
 - Not read from the games yet, the engine's own: attack_hit's other changes
   to the damage (StF from 0x2B0F8: tender, multi, ukemi; FV and VF2
-  have most of them, and VF2 its air), the throw's reach (1.5 bodies), a
-  strike's active frames (hit to the later of cancel and hit + 2) and the
-  50 frames lying before the rise.
+  have most of them, and VF2 its air), a strike's active frames (hit to
+  the later of cancel and hit + 2) and the 50 frames lying before the
+  rise.
 - The CPU player is a simple one.
 - Rounds last 40 s and need 2 wins (1–3 in the menu).
 - FV's cage breaks on a finishing KO and stays broken for the match; a

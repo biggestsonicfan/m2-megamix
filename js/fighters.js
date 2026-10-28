@@ -301,6 +301,37 @@ export function fromBehind(game, { off, dist, was = false, air = false }) {
     return !(dist <= 0.4 && air);
 }
 
+/* VF2's throw bits in en_flag, as its get_en_info sets them each frame
+ * (0x18768..0x1888C); its throw entries want them (the matcher's op 7: bit 8
+ * the front throws, 10 and 13 the back ones). None while the throw timer
+ * (0x50A0B6) runs or this fighter's mot_kind has mk_air (bit 4), nor on an
+ * other whose mot_kind has mk_air, mk_down, mk_rise, mk_down_pose or bit 26
+ * (0x401C010). This fighter faces the other to within 30° (0x1554: +0x5B4
+ * against en_dir_yang); the other faces it the same (a front throw) or faces
+ * away (a back one), and its mot_kind has mk_follow, mk_kamae, mk_walk,
+ * mk_guard or bit 28 (0x10002604). The distance (+0x5F4, root to root) is
+ * against the character record's +0x18..+0x24 (init_fix, 0x14218: rob
+ * +0x62C, +0x668, +0x630, +0x634): in front, bit 8 to +0x18 and bit 12 to
+ * +0x1C, or bit 9 to +0x20 on one crouching (+0 bit 8, or mot_kind bit 25);
+ * behind, to +0x24, bit 10, or 13 on one crouching. `off` is the angle from
+ * this fighter's facing to the other, `turn` from the other's facing to the
+ * way from this fighter to it, `ranges` the record's four. StF and FV work
+ * out the same in their own word (StF +0x720, FV +0x734; 0x18F8C, 0x193E4),
+ * which their entries test with ops 0x34 and 0x35. */
+const THROW_AIM = 0x1554 / 0x10000 * 2 * Math.PI;
+const THROWN_NOT = 0x401C010, THROWN = 0x10002604;
+export function throwFlags({ off, turn, dist, kind, ownKind = 0, crouch = false, ranges }) {
+    if (!ranges || ownKind & MK_AIR || kind & THROWN_NOT || !(kind & THROWN)) return 0;
+    const within = (a) => Math.abs(Math.atan2(Math.sin(a), Math.cos(a))) <= THROW_AIM;
+    if (!within(off)) return 0;
+    const low = crouch || !!(kind & 1 << 25);
+    const [near, far, sy, back] = ranges;
+    if (within(turn)) return dist <= back ? 1 << (low ? 13 : 10) : 0;
+    if (!within(turn + Math.PI)) return 0;
+    if (low) return dist <= sy ? 1 << 9 : 0;
+    return (dist <= near ? 1 << 8 : 0) | (dist <= far ? 1 << 12 : 0);
+}
+
 /* A counter: attack_hit (StF 0x2B1A4, FV 0x2633C, VF2 0x22A28) counts one
  * when the fighter hit has mk_attack in its mot_kind, which every strike's
  * motd_kind carries and play_motion clears at follow1 (+0x80A; StF 0x1BEA0,
@@ -431,6 +462,7 @@ export function matchPress(entries, btn, hist, dist, { ctx = 0, en = 0 } = {}) {
  *   flight(small)      the frames a jump flies (+0x5BE)
  *   flies              StF: the jump flies by gravity, not by its motion
  *   airHold(id)        an air attack's hold, frames left in the air (+0x5C0)
+ *   throwRanges        VF2: its four throw ranges (throwFlags), else null
  *   createBody()       a drawable body: pose(ref, frame) -> {mats, parts, pose}
  *   look               what its material needs (js/render.js)
  * and, where they are not the VF2/StF ones:
@@ -486,6 +518,7 @@ function vfFighter(game, entry) {
         takeoff(id) { return takeoffOf(vfSetupOps(rom, id)); },
         airHold(id) { return airHoldOf(vfSetupOps(rom, id)); },
         flight(small) { return vfFlight(rom, game.key, body.index, small); },
+        throwRanges: game.key === 'vf2' ? vfThrowRanges(rom, body.index) : null,
         riseWindow(id) { return game.key === 'fv' ? riseWindowOf(vfSetupOps(rom, id)) : null; },
         motKind(id) { return vfSetupOps(rom, id)?.kind ?? 0; },
         reaction(a, how) {
@@ -591,6 +624,13 @@ function stfFlight(rom, index, small) {
     const dv = rom.mainCpuView;
     const record = dv.getUint32(progAddr(rom, STF_CHAR_PARTS) + index * 4, true);
     return dv.getUint8(dv.getUint32(record + 0x20, true) + (small ? 1 : 0));
+}
+/* VF2's throw ranges (throwFlags): the character record's +0x18..+0x24. */
+function vfThrowRanges(rom, index) {
+    const u32 = (addr) => { const r = resolveData(rom, addr); return r.view.getUint32(r.off, true); };
+    const f32 = (addr) => { const r = resolveData(rom, addr); return r.view.getFloat32(r.off, true); };
+    const record = u32(rom.game.rig.fighters.records + index * 4);
+    return [0x18, 0x1c, 0x20, 0x24].map((o) => f32(record + o));
 }
 function vfFlight(rom, key, index, small) {
     const u32 = (addr) => { const r = resolveData(rom, addr); return r.view.getUint32(r.off, true); };

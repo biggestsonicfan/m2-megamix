@@ -584,3 +584,49 @@ console.log('ok');
         }
     }
 }
+
+/* The throw's reach: VF2's get_en_info (0x18768) sets en_flag bits 8 and 12
+ * (front, to the record's +0x18 and +0x1C), 9 (crouching, +0x20), 10 and 13
+ * (behind, +0x24), when the thrower faces the other to within 30° and the
+ * other faces it or away; its throw entries want them. The engine had none
+ * of them, so VF2 never threw, and threw within 1.5 bodies. */
+{
+    const { throwFlags } = await import('../js/fighters.js');
+    const akira = fighters.find((x) => x.name === 'AKIRA' && x.game === 'vf2');
+    assert.deepEqual(akira.throwRanges.map((r) => +r.toFixed(3)), [1.4, 1.7, 1.4, 1.4], 'Akira\'s ranges');
+    assert.ok(!fighters.find((x) => x.game === 'stf').throwRanges, 'StF\'s are its own word');
+    const deg = (a) => a * Math.PI / 180;
+    const ranges = akira.throwRanges, KAMAE = 1 << 9, front = deg(180);
+    const t = (o) => throwFlags({ off: 0, turn: front, dist: 1.3, kind: KAMAE, ranges, ...o });
+    assert.equal(t({}), 1 << 8 | 1 << 12, 'near, in front');
+    assert.equal(t({ dist: 1.6 }), 1 << 12, 'past +0x18, within +0x1C');
+    assert.equal(t({ dist: 1.8 }), 0, 'out of reach');
+    assert.equal(t({ crouch: true }), 1 << 9, 'crouching');
+    assert.equal(t({ turn: deg(10) }), 1 << 10, 'its back turned');
+    assert.equal(t({ turn: deg(10), crouch: true }), 1 << 13, 'its back turned, crouching');
+    assert.equal(t({ turn: deg(90) }), 0, 'side on');
+    assert.equal(t({ off: deg(31) }), 0, 'thrower 31 degrees off');
+    assert.equal(t({ off: deg(29) }), 1 << 8 | 1 << 12, 'thrower 29 degrees off');
+    assert.equal(t({ kind: KAMAE | 1 << 4 }), 0, 'the other in the air');
+    assert.equal(t({ kind: 1 << 8 }), 0, 'the other striking (mk_attack only)');
+    assert.equal(t({ kind: 1 << 13 }), 1 << 8 | 1 << 12, 'the other guarding');
+    assert.equal(t({ ownKind: 1 << 4 }), 0, 'the thrower in the air');
+
+    const { createFight, stepFight } = await import('../js/engine.js');
+    const throwAt = (x) => {
+        const fight = createFight(akira, akira, 'vf2');
+        fight.phase = 'fight';
+        const [p, o] = fight.players;
+        p.pos = [-x / 2, 0, 0]; o.pos = [x / 2, 0, 0];
+        for (let i = 0; i < 30; i++) {
+            stepFight(fight, [{ P: i === 4, G: i === 4 }, {}]);
+            const e = fight.events.find((v) => v.side === 0 && (v.kind === 'throw' || v.kind === 'move'));
+            if (e) return e;
+        }
+        return null;
+    };
+    const near = throwAt(1.2), far = throwAt(1.9);
+    assert.equal(near?.kind, 'throw', `Akira throws at 1.2 (${JSON.stringify(near)})`);
+    assert.notEqual(far?.kind, 'throw', 'not at 1.9');
+    console.log('throw reach: Akira', near.id, 'at 1.2;', far ? `${far.kind} ${far.name ?? far.id}` : 'nothing', 'at 1.9');
+}
