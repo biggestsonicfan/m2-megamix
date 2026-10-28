@@ -103,6 +103,17 @@ static void kuma_step(void) {
     }
 }
 
+/* DOA's swaying draws: the draw's place with its turn at this frame of the
+ * round (tools/bake-board.mjs, stage_draw_t's sway) */
+static void sway_mul(mat_t *m, const stage_draw_t *d) {
+    const short *s = d->sway + ((frame_counter - turn_at) % SWAY_FRAMES) * 9u;
+    float w[12];
+    u32 k;
+    for (k = 0; k < 9u; k++) w[k] = (float)s[k] * (1.0f / 8192.0f);
+    for (k = 9; k < 12u; k++) w[k] = d->m[k];
+    mat_mul(m, &cam, w);
+}
+
 void draw_stage(const stage_t *st) {
     mat_t m, ct;
     u32 i, model, x0, x1;
@@ -115,7 +126,8 @@ void draw_stage(const stage_t *st) {
     for (i = 0; i < st->ndraws; i++) {
         /* FV's windows (fvBoardPlan): each covers the ones before it */
         if (st->draws[i].win) m2_geo_fifo_window_full();
-        mat_mul(&m, st->draws[i].turn ? &ct : &cam, st->draws[i].m);
+        if (st->draws[i].sway) sway_mul(&m, &st->draws[i]);
+        else mat_mul(&m, st->draws[i].turn ? &ct : &cam, st->draws[i].m);
         if (st->draws[i].side && !fv_side_in(&m)) continue;
         if (st->draws[i].swing) mat_turn(&m, COP_ANG_X, (u32)-(kuma_p >> 16));
         /* StF's sky and Aurora's diamonds turn, a steady step a frame */
