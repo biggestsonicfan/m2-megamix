@@ -257,6 +257,9 @@ F to 37 F):
 - **Frame 41: the slowdown's globals.** On the board at the frame-41
   slowdown, [0x50A000] = 0.025222, [0x50A004] = 1.0 and [0x50A008] = 10.0,
   and these are not VF2's k.
+- **Frame 42: 1P's place.** At the end of frame 42, 1P is at −0.702 on VF2
+  and −0.540 on the board in VF2 units (−1.095 board units), both still in
+  the jab reaction (board motion 638, VF2 motion 258).
 
 Left as they are:
 
