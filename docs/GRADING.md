@@ -575,7 +575,35 @@ F to 37 F):
   rob+0x2C/0x34/0x5D4/0x5D8 and r5 for 1P on frames 40..60; the board's r5
   in VF2 units should be 1.143× VF2's before the port and equal after it,
   and the motions and hits should be graded again (the knockback's own
-  difference stays). Read from the code only; the board was not run.
+  difference stays).
+  Run in MAME (the shared build; the board at 65d16ec), Akira vs Akira on
+  Tou-rin, round 1, 1P, frames 40..60: VF2 by battle.lua's script, the
+  board by its replay. Taps: the stt to 0x50E000 (the entry; ip after it
+  VF2 0x17928, the board 0x1328C), the ld of rob+0x1A4 (r5 read there;
+  VF2 0x17978, the board 0x132E8) and the first ld of rob+0x5C8 after it
+  (the end; VF2 0x179EC, the board 0x1335C). The friction runs on every
+  one of those frames on both: rob+0x1A4 bit 4 is clear (0x121 on 40,
+  0x20001 or 0x20005 after it, the board's 0xC..0x123 from 55). w is 79,
+  [0x50A004] 1.0 and [0x50A008] 10.0 on both; the gravity is VF2's
+  0.0027222 and the board's 0.0252222. r5:
+  - rob+0x5D4 0 (frame 40; the board's 55..60): VF2 0.0035843, the board
+    0.0083023 board units = 0.0040956 VF2 units (÷ SCALE 2.02714).
+  - rob+0x5D4 0.5 (41; VF2 46..60, the board 44..54): VF2 0.0053764, the
+    board 0.0124535 = 0.0061434.
+  - rob+0x5D4 1.0 (42): VF2 0.0071685, the board 0.0166046 = 0.0081911.
+  - rob+0x5D4 1.5 (43): VF2 0.0089606, the board 0.0207558 = 0.0102389.
+  At the same rob+0x5D4 the board's r5 is 1.1427× VF2's on every frame:
+  the 1.143 read from the code (0.0252222 × 0.25 ÷ 2.02714 = 0.0031106,
+  over 0.0027222). r6 (the push's k) is r5 × 10 on both, so 1.1427× too.
+  rob+0x5D4 goes up 0.5 a frame while 1P slides, on both, and is reset
+  when the speed is zeroed, so the two part from frame 44: 1P's speed in
+  on 41 is 0.02289 VF2 units on the board, VF2's 0.03645 (the knockback's
+  difference, above); the board zeroes it on frame 43 (|v| 0.00855 under
+  r5), VF2 on 45. VF2's rob+0x5D4 is 2.0 and 2.5 on 44 and 45 and 0.5
+  after; the board's 0.5 on 44..54 and 0 from 55 (1P is out of the jab
+  reaction there, VF2's still in it). The frames whose ratio is not 1.1427
+  (44, 45: 0.571, 0.490; 55..60: 0.762) have a different rob+0x5D4, not a
+  different formula. Not ported.
 
 Left as they are:
 
