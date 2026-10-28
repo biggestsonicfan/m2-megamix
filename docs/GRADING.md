@@ -538,6 +538,44 @@ F to 37 F):
     rob+0x821 = 4 on 96 and 74 frames: StF's own path, as in StF.
   So for Akira the difference is a dead store: the board writes a field VF2
   does not, and nothing reads it in his fights. Nothing to port.
+- rob_spd_control's head (the friction on the fighter's own speed), read in
+  g4/vf2.dis and the board side by side: the same code but for two
+  instructions, and the friction does not match for a VF2 fighter. VF2's
+  routine (V 0x1791C..0x179D8) and the board's (board/src/stf_motion.s
+  7372..7417, StF 0x17F78..) both save rob+0x18.. to 0x50E000, work out
+  r5 = [0x50A004] × [0x50A000] × w (rob+0x5D8) × 1/60 (0x3C888888) ×
+  (1 + rob+0x5D4) and r6 = r5 × [0x50A008] (the push's k, above), and, unless
+  rob+0x1A4 bit 4 is set, take r5 off |rob+0x2C, rob+0x34| (copro function
+  0x2D, the length) by scaling both by 1 − r5/|v|, or zero them when |v| is
+  at or under r5 (r7 = 1 when scaled). The board's two extras:
+  - `stt r4, 0xA4C(g7)`: rob+0x18..0x20 also saved to rob+0xA4C..0xA57. No
+    instruction in stf_motion.s or stf_call.s and no C file reads
+    rob+0xA3C..0xA57 there (the nearest are 0xA44's st/ld and 0xA58's
+    stq/ldq, other fields), and vf2.dis has no 0xA4x(g7) access at all. A
+    dead store, as far as the board's code goes.
+  - × 0.25 (0x3E800000) after [0x50A004] × [0x50A000]. This is the same
+    × 0.25 the slowdown item above names, but it scales r5 too, so it
+    also changes the friction on the fighter's own speed, not only the push.
+  With VF2's gravity 0.0027222 (5.518e-3 in board units, the 0x3BB4D327
+  ACT_RC_JUMP gives a VF2 fighter's rob+0x5CC) and the board's 0.025222 ×
+  0.25 = 6.306e-3, a VF2 guest's own speed loses 1.143× VF2's friction each
+  frame (w 79, rob+0x5D4 0.5: VF2 5.376e-3 VF2 units, the board 1.2453e-2
+  board units = 6.144e-3 VF2 units), and stops at a speed 1.143× VF2's.
+  Frame 42's rob+0x2C add (VF2 −0.024, the board −0.009, above) is mostly
+  the hit vector's difference; this is the part of it that is left.
+  A port would be a GAME_VF2 branch after rob_spd_control's `mulr r13, r14,
+  r5` (StF 0x17F90..0x17F9C): r5 = [0x50A004] × 0x3BB4D327 (VF2's gravity ×
+  SCALE) in place of [0x50A004] × [0x50A000] × 0.25. It would fix the push's
+  k (r6) in the same stroke, since r6 is r5 × [0x50A008]. It reads
+  rob+0x1B1 (the character, for guest_char_game) and changes how rob+0x2C,
+  rob+0x34, rob+0x5C8, rob+0x5D0 (and rob+0x5D4 with them) wind down. The
+  rob+0xA4C store can stay: nothing reads it. A MAME check: the graded
+  Akira vs Akira replay on Tou-rin, a tap at rob_spd_control's entry and at
+  rsc_fric_end (and V 0x1791C, V 0x179DC on VF2's own run), logging
+  rob+0x2C/0x34/0x5D4/0x5D8 and r5 for 1P on frames 40..60; the board's r5
+  in VF2 units should be 1.143× VF2's before the port and equal after it,
+  and the motions and hits should be graded again (the knockback's own
+  difference stays). Read from the code only; the board was not run.
 
 Left as they are:
 
