@@ -314,6 +314,24 @@ F to 37 F):
   rob+0x5E0) came to about 1.0 for this jab. The jab's path is still
   open (a tap at 16439 against 16495 settles it); the written s and |v|
   hold to the three decimals measured.
+- **Frame 41: the factor on rob+0x5E0/+0x5E8.** `ld 0(r7)` (`loc_2B850`,
+  stf_motion.s 16622) is word 0 of the same 0x28-byte list record whose
+  +8 scales s: r7 is set once at `loc_2A954` and not changed before the
+  stores. The list is in the tree, `stf_list_90` (board/src/fighter.c
+  156, copied to 0x50A800 by `stf_globals`). The index is [0x50FE02], the
+  attacker's +0x843, which `_uk_read_move_data` copies from byte 10 of
+  the strike record; `convertSetup` op 4 puts VF2's byte 13 there. Akira's
+  jab in VF2's data ROM (0x2014B77) is `04 05 00 0c 33 33 33 3f 00 00 00
+  80 00 00 00 00 00`, so byte 13 is 0 and the jab uses record 0: word 0
+  0x3F800000 (1.0), +4 5.0, +8 1.0. The store multiplies the horizontal
+  vector by 1.0, which leaves it unchanged, so the written |v| (0.04640
+  board units) holds whether or not the multiply runs (r8 = 0 or the
+  attacker's rob+0x0 bit 18 case skips it). The one exception is
+  the victim's rob+0x0 bit 29, which was not logged. It forces index 4,
+  whose word 0 is 20.0, and it also sets [0x50FE00] = 0x4006, which sends
+  the hit to `loc_2B5E4`. A ×20 does not fit the measured −0.017 on frame
+  41. The knockback item stays open (nothing ported), and so does the
+  jab's three-way split.
 - **Frame 41: one slowdown.** StF's `rob_spd_control` (the block after
   `rsc_fric_end`) is the board's only slowdown, and VF2's constant-k
   slowdown is not on the board.
