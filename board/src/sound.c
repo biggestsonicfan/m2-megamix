@@ -67,7 +67,7 @@ void snd_pump(void) {
 #define STF_STAGE_MUSIC ((const u32 *)0xDBFDCu)   /* STAGE_MUSIC_IN_ORDER, in the copied ROM */
 
 /* by stage (stage_name's order): 0 for StF's own, by its slot */
-static const u32 guest_music[STAGES] = { 0u, 0u, SND_VF2_TOURIN, SND_VF2_COLOSSEUM, SND_FV_WESTERN, SND_VF2_TEST };
+static const u32 guest_music[STAGES] = { 0u, 0u, SND_VF2_TOURIN, SND_VF2_COLOSSEUM, SND_FV_WESTERN, SND_VF2_TEST, SND_VF2_TOURIN };
 
 void snd_round(u32 stage, const stage_t *st, u32 first) {
     snd_request_u(SND_SET);

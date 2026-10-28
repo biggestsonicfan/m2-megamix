@@ -1696,6 +1696,36 @@ after FV's Western, through the same importer (`VF2_STAGE_SLOTS` 0, 1, 12).
 - Check: `checkVf2Stages` as above. MAME: setup stage 5, Sonic against
   Honey on the street, the sky and the graffiti wall behind them.
 
+### DOA's stage
+
+Dead or Alive's stage 10 (the Model 2B set doab, with doa's ROMs: an
+elevated road at night, the city behind it) is setup stage 6, "DOA STAGE 10"
+(DOA has no stage names), through `tools/doa-stages.mjs`, which reads the
+stage as noclip's `doa.js` runs its draw routine.
+
+- Size: VF2's scale (DOA's fighters stand 1.24-1.57 of its units). The
+  ring's top is at y 1.0 in DOA's frame (`DOA_FLOOR`), so the draws move down
+  by it; the ring is +-12.1 (`DOA_RING`) and rings out as the others do.
+- Models: 57 draws of 42 (model, texture points) pairs, ids 4048..4089
+  (`DOA_STAGE_TOP`, below VF2's Test). A draw with no points block uses
+  the model's own. Two draws sway: 512 frames of their turn as s16 tables
+  (`doastage_sway3/4`, stage_draw_t's `sway`; stage.c `sway_mul`).
+- Textures: DOA's stage sheet is raw with no mip chain and the scenery reads
+  slots 2, 3, 6, 7, 10, 11, 14 and 15 of it. Those eight go to the same
+  slots of the stages' sheet as raw pages (tex_send_beta) with mips made
+  here, as board set 22, destination list 12, at main_data 0x2A00000; every
+  face's th2 loses bit 12.
+- Colours: each colour component becomes the StF stage row (0..27) that
+  shows nearest across the luma range; DOA's four lumaram bands are added
+  after StF's 71 at 3/4 (count 75). The four untextured faces take rows
+  14..27, whose luma 48..63 become DOA's row.
+- Sky: DOA's four scroll pictures, its 2048-pixel ring laid twice across the
+  board's 4096, repacked to 62 blocks at 0x2A80000.
+- Music: DOA's can't come along; it plays VF2's Tou-rin (`SND_VF2_TOURIN`).
+- Check: `checkDoaStage`: every model through the board's ROMs against
+  DOA's (points at the scale, UVs, tile sizes, texels at levels 0-3).
+  MAME: setup stage 6, Sonic against Honey on the road, the city behind.
+
 ### Ring out
 
 VF2's rule, from its program (Ghidra and objdump): `rob_check_stage`

@@ -45,6 +45,7 @@ import { CHR as MAHLER_CHR, mahlerTiles, importMahler } from './mahler-guest.mjs
 import { readObjDir } from './model-obj.mjs';
 import { importVf2Stages, VF2_SET0 } from './vf2-stages.mjs';
 import { importFvStages } from './fv-stages.mjs';
+import { importDoaStages } from './doa-stages.mjs';
 import { importGuestShadows } from './guest-shadows.mjs';
 import { guestSound, STF_FILES, SHENMUE_PACK } from './guest-sound.mjs';
 import { installMoves } from './moves-text.mjs';
@@ -154,8 +155,9 @@ function boardTables() {
     for (const m of h.matchAll(/pose_part_t \w+\[\d+\] = \{([^;]*)\};/g))
         for (const p of m[1].matchAll(/\{(\d+), \d+, (\d+)\}/g)) { models.add(+p[1]); models.add(+p[2]); }
     /* VF2's stages (vf2stageN_draws, sets VF2_SET0 on) are tools/vf2-stages.mjs's,
-     * FV's (fvstageN_draws, set FV_SET0) tools/fv-stages.mjs's */
-    for (const m of h.matchAll(/stage_draw_t (?!vf2|fv)\w+\[\d+\] = \{([^;]*)\};/g))
+     * FV's (fvstageN_draws, set FV_SET0) tools/fv-stages.mjs's, DOA's (doastage_draws,
+     * set DOA_SET) tools/doa-stages.mjs's */
+    for (const m of h.matchAll(/stage_draw_t (?!vf2|fv|doa)\w+\[\d+\] = \{([^;]*)\};/g))
         for (const d of m[1].matchAll(/^\s*\{(\d+), \{/gm)) models.add(+d[1]);
     /* and the models StF's swaying draws swap in (stageN_animK, by frame) */
     for (const m of h.matchAll(/u16 stage\d+_anim\d+\[\d+\] = \{([^}]*)\}/g))
@@ -671,6 +673,9 @@ for (const line of vf2st.report) console.log(`VF2 stages: ${line}`);
 /* Fighting Vipers' Western (tools/fv-stages.mjs) */
 const fvst = importFvStages(R, NG, akira.ctx);
 for (const line of fvst.report) console.log(`FV stages: ${line}`);
+/* Dead or Alive's stage 10 (tools/doa-stages.mjs) */
+const doast = await importDoaStages(R, NG, akira.ctx);
+for (const line of doast.report) console.log(`DOA stage: ${line}`);
 /* board/moves: fighters' moves as text, edited (tools/moves-text.mjs writes
  * them), in place of what each had */
 const MOVES = `${ROOT}board/moves`;

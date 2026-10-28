@@ -35,6 +35,7 @@ import { buildColorxlat } from '../vendor/noclip/js/colors.js';
 import { stormSchedule } from '../vendor/noclip/js/vf2.js';
 import { vf2StagePlan, vf2SkyPlan, VF2_SETS, VF2_RING, SCALE as VF2_SCALE, ARMOUR_BLOCKS, colourSnap } from './vf2-stages.mjs';
 import { fvBoardPlan, fvSkyPlan, FV_SET0, FV_RING, FV_SCALE, FV_TURN } from './fv-stages.mjs';
+import { loadDoa, doaStagePlan, doaSkyPlan, doaStageCx, doaMaterials, DOA_SET, DOA_SCALE, DOA_FLOOR, DOA_RING, SWAY } from './doa-stages.mjs';
 import { xtraResolve } from '../vendor/noclip/js/romset.js';
 import { resolveData } from '../vendor/noclip/js/motion.js';
 import { loadScrollCG } from '../vendor/noclip/js/scroll.js';
@@ -171,9 +172,11 @@ const scale = [k, 0, 0, 0, 0, k, 0, 0, 0, 0, k, 0, 0, 0, 0, 1];
 /* anim, shift, phase, mask: a StF draw that swaps its model (South Island's
  * palms and their shadow): model anim[((frame >> shift) + phase) & mask].
  * spin: a StF draw that turns about its own y, m * ang_y(spin * frame)
- * (South Island's sky, Aurora's diamonds). */
+ * (South Island's sky, Aurora's diamonds).
+ * sway: DOA's swaying draws, the 3x3 of m by frame from the round's start,
+ * s16 at 1/8192, SWAY_FRAMES frames of nine. */
 out.push('typedef struct { u32 model; float m[12]; float x0, x1; u8 turn, side, swing, win;');
-out.push('                 const u16 *anim; u8 shift, phase, mask; u16 spin; } stage_draw_t;');
+out.push('                 const u16 *anim; u8 shift, phase, mask; u16 spin; const short *sway; } stage_draw_t;');
 /* bg: the record's stage_bg_color (+0x16, BGR555), which StF's scr_bg_int
  * puts behind the 3D layer (change_bg_color, bg_col_set).
  * bright, vx, vy: stage_bright (+0x04) and stage_vecter_x/y (+0x08, +0x0A),
@@ -392,6 +395,48 @@ stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
     });
 }
 stages.push(...vf2Stages.slice(2));
+/*
+ * Dead or Alive's stage 10 (tools/doa-stages.mjs, which puts its models,
+ * textures, colours and sky into the data ROMs): the scenery as the stage's
+ * draw routine draws it (noclip doa.js), each draw's model and texture points
+ * a board model; the meshes are scaled by DOA_SCALE and the draws moved down
+ * by DOA_FLOOR, so a matrix is StF's 1/1.6 with DOA's translation, less the
+ * floor, times that scale. The two swaying draws (model 18425) keep their
+ * place and turn by a table of SWAY frames.
+ * Colours: StF's stage rows (doaStageCx). Materials: DOA's 32 (program 0x6B0).
+ * Light: straight down and back, [0, -1, -1] / sqrt 2.
+ */
+{
+    const doa = await loadDoa(), plan = doaStagePlan(doa), { sky: k, bg } = doaSkyPlan(doa, games);
+    const at = (ops) => {
+        const m = composeOps(ops);
+        m[13] -= DOA_FLOOR;
+        for (let i = 12; i < 15; i++) m[i] *= DOA_SCALE;
+        return boardOf(mul(scale, m));
+    };
+    const name = 'doastage';
+    out.push(`#define SWAY_FRAMES ${SWAY}`);
+    plan.draws.forEach((d, i) => {
+        if (!d.sway) return;
+        const v = d.sway.flatMap((ops) => at(ops).slice(0, 9).map((x) => Math.round(x * 8192)));
+        if (v.some((x) => Math.abs(x) > 0x7fff)) throw new Error('DOA sway: past s16');
+        out.push(`static const short ${name}_sway${i}[] = {${v.join(',')}};`);
+    });
+    out.push(`static const stage_draw_t ${name}_draws[${plan.draws.length}] = {`);
+    plan.draws.forEach((d, i) => {
+        const sway = d.sway ? `, 0, 0, 0, 0, 0, ${name}_sway${i}` : '';
+        out.push(`  {${d.id}, {${at(d.ops).map(f32).join(',')}}, 0.0f, 0.0f, 0, 0, 0, 0${sway}},`);
+    });
+    out.push('};');
+    out.push(`static const u16 ${name}_cx[] = {${u16s(cxlatRun(doaStageCx(doa, games, plan), 0, 28, 0, 64))}};`);
+    out.push(`static const u32 ${name}_mat[32] = {${doaMaterials(doa).map((v) => `0x${v.toString(16)}u`).join(',')}};`);
+    out.push(`static const u8 ${name}_skyb[] = {${k.dest.join(',')}};`);
+    out.push(`static const sky_t ${name}_sky = {0x${k.chars.toString(16)}u, 0x${k.pal.toString(16)}u, 0x${k.pano.toString(16)}u, ${k.rows}, ${k.eye}, ${k.dest.length}, ${k.head}, ${name}_skyb, 0, {0, 0}, 0};`);
+    const nm = `DOA ${plan.st.name.toUpperCase()}`;
+    stages.push(`{"${nm}", ${DOA_SET}, ${plan.draws.length}, ${name}_draws, {0, 28, 0, 64, ${name}_cx}, ${name}_mat, 0x${bg.toString(16)}, 1.0f, -8192, 0, 0xFFFF, {128, 128, 128}, {0, 0, 0, 0, 0}, ` +
+        `0, 0, 0, {0, 0, 0}, 0, 0, 0, &${name}_sky, 0, ${f32(DOA_RING * DOA_SCALE)}}`);
+    console.log('stage', stages.length - 1, nm, 'DOA stage', plan.st.num, 'as set', DOA_SET, 'draws', plan.draws.length);
+}
 /* Fighting Vipers' armour on the HUD (board/src/armour.c armour_hud): each
  * player's figure as FV's energy_disp draws it beside the bar, FV's own
  * tiles, pattern and colours. The figures are patterns 0x20 (player 1) and
