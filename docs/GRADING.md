@@ -260,6 +260,9 @@ F to 37 F):
 - **Frame 42: 1P's place.** At the end of frame 42, 1P is at −0.702 on VF2
   and −0.540 on the board in VF2 units (−1.095 board units), both still in
   the jab reaction (board motion 638, VF2 motion 258).
+- **Frame 42: the adds to 1P's place.** On frame 42, VF2 adds −0.024
+  (rob+0x2C) and −0.057 (rob+0x5C8) to 1P's place; the board adds −0.009
+  and 0.000 in VF2 units (−0.01734 and 0 board units).
 
 Left as they are:
 
