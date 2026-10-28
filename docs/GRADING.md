@@ -354,6 +354,45 @@ F to 37 F):
   board never enters that slow motion anyway. The prior note was right, with
   the half replacing the full add rather than adding to it. Read from the
   code only; the board was not run.
+- rob_check_stage's later bounds check, read in StF, g4/vf2.dis and the
+  board side by side: the test is the same in all three, but its input,
+  where its result goes and how it lands an out fighter differ, and the board
+  keeps StF's. StF's own bytes (sfight.zip) check at 0x18214..0x18244, and
+  the board's copy is the same instruction for instruction
+  (board/src/stf_motion.s 7517..7529). VF2's check is at 0x17B94..0x17BBC.
+  In all three, g4 = [0x50A010] (the ground outside) and r11 = 1 when
+  |x| or |z| is at or past [0x50A00C]; inside, both are 0 (StF compares
+  as floats, VF2 the bits; they agree, as before). The differences:
+  - **What it measures.** VF2 always measures the root, rob+0x1F4/0x1FC.
+    StF measures rob+0x18/0x20 instead when rob+0x1A4 bit 4 is set
+    (0x18204..0x18210).
+  - **Where r11 goes.** StF stores r11 to rob+0x620 every frame, right away
+    (0x18248). VF2 never does that: it writes rob+0x620 only when the
+    fighter lands (r11 at 0x17E54, 0 at 0x17C48 and 0x17FD0), or sets it
+    to 1 with rob+0x1A4 bit 23 (0x18000).
+  - **An out fighter in the air.** VF2 lands it on g4 with its usual
+    landing test (g4 + 0.02 against rob+0x1C, 0x17E10..0x17E60), the same
+    test StF uses inside the bounds. So VF2's out fighter falls to the
+    ground outside (−0.5, set at 0x99CC) and lands there. StF lands an out
+    fighter only when rob+0x624 and rob+0xA29 are both set, and then at
+    once: rob+0x1C = g4 with no height test (0x18334..0x1835C). Otherwise
+    every branch goes to 0x183CC (the −1.0 compare at 0x18314 is dead), so
+    rob_check_stage never lands it.
+  - **An out fighter on the ground.** StF clears rob+0x1A4 bit 4 and
+    rob+0x30 only if rob+0x624 is set (0x18254..0x18278). VF2 uses r11 on
+    the ground only when rob+0x61C is set and rob+0x60E is clear
+    (0x17C34): an out fighter then goes to its landing path (0x17E7C).
+
+  On the board every fighter runs StF's path, VF2's guests too, so a
+  guest gets rob+0x620 every frame and StF's landing rule. The bounds are
+  the board's own (fighter.c 393): [0x50A00C] is 8.0 on StF's cage, FV's
+  wall on FV's stages, and 100.0 on VF2's rings. So on a VF2 ring the check
+  never marks anyone out; there ringout.c's ring_out_step (C, not
+  graded here) drops a fighter past the edge instead. On a cage stage, a
+  VF2 guest at the bounds is not landed on [0x50A010] (kage.c 62) as VF2
+  would land it: it lands at once only with rob+0x624 and rob+0xA29 set.
+  With rob+0x1A4 bit 4 set it is measured by rob+0x18/0x20, not its root.
+  Read from the code only; the board was not run.
 
 Left as they are:
 
