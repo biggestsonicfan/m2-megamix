@@ -155,11 +155,18 @@ approximations. Each is marked `Here:` in `js/engine.js`:
   and on the blow that ends it. Here: ukemi, StF's ketchup in that last
   test, and the attacker's mk_ride_on (a down hit instead) are not
   followed; Shenmue's blows knock down at 40.
+- The hit combo: attack_hit counts it on the fighter hit (StF 0x2B018, FV
+  0x26254, VF2 0x22918), and action_after (StF 0x18400, FV 0x18B58, VF2
+  0x18128) ends it on the first frame its mot_kind has no bit 0 (strikes,
+  reactions, falls, lying and the rise have it; stance, walk, guard and
+  jump do not) and +0 bit 4 is clear (the guard, yarare, ukemi and down
+  handlers' stun); StF and FV also not in ukemi. Here: the stun is the
+  reaction playing out, not +0x5DE's count; Shenmue's ends once free.
 - Not read from the games yet, the engine's own: attack_hit's other changes
   to the damage (StF from 0x2B0F8: tender, multi, ukemi; FV and VF2
-  have most of them, and VF2 its air), the hit combo's one-second window,
-  a guard turned away failing, the throw's reach (1.5 bodies), a strike's active frames (hit to the
-  later of cancel and hit + 2) and the 50 frames lying before the rise.
+  have most of them, and VF2 its air), a guard turned away failing, the
+  throw's reach (1.5 bodies), a strike's active frames (hit to the later
+  of cancel and hit + 2) and the 50 frames lying before the rise.
 - The CPU player is a simple one.
 - Rounds last 40 s and need 2 wins (1–3 in the menu).
 - FV's cage breaks on a finishing KO and stays broken for the match; a

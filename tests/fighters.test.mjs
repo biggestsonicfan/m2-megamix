@@ -489,3 +489,48 @@ console.log('ok');
         console.log('knock-down:', n, 'punch', JSON.stringify(hit));
     }
 }
+
+/* The hit combo: counted on each hit, and ended by action_after on the
+ * first frame the fighter's mot_kind has no bit 0 (mk_change) out of its
+ * stun: through a reaction, or a fall, the lying and the rise, back to its
+ * stance; the engine had a one-second window. */
+{
+    const { createFight, stepFight, setMotion, ST } = await import('../js/engine.js');
+    for (const [n, g] of [['AKIRA', 'vf2'], ['PICKY', 'fv'], ['SONIC', 'stf']]) {
+        const f = fighters.find((x) => x.name === n && x.game === g);
+        const kind = (o) => (o.fighter.kindAt ? o.fighter.kindAt(o.mot.motion.index, o.mot_coma, o.mot.motion.frames) : o.fighter.motKind(o.mot.motion.index));
+        const free = (o) => o.state !== ST.YARARE && !(kind(o) & 1);
+        /* a punch: 1, held through the reaction, 0 once free */
+        {
+            const fight = createFight(f, f, f.game);
+            fight.phase = 'fight';
+            const [p, o] = fight.players;
+            p.pos = [-0.45, 0, 0]; o.pos = [0.45, 0, 0];
+            let hit = null, i = 0;
+            for (; i < 30 && !hit; i++) {
+                stepFight(fight, [{ P: i === 0 }, {}]);
+                hit = fight.events.find((e) => e.kind === 'hit' && e.side === 0) ?? null;
+            }
+            assert.ok(hit && o.hit_combo === 1, `${n}: one hit, combo 1`);
+            let t = 0;
+            for (; t < 200 && !free(o); t++) { assert.equal(o.hit_combo, 1, `${n}: held in the reaction`); stepFight(fight, [{}, {}]); }
+            assert.ok(t < 200 && o.hit_combo === 0, `${n}: ended once free (${t} frames, ${o.action})`);
+        }
+        /* a knock-down: held through the fall, the lying and the rise, past
+         * a second, then ended in the stance */
+        {
+            const fight = createFight(f, f, f.game);
+            fight.phase = 'fight';
+            const [, o] = fight.players;
+            setMotion(o, f.reaction({ game: g, kind: 0, side: 0, level: 1, damage: 30 }, 'down'), { state: ST.YARARE });
+            Object.assign(o, { action: 'down', knocked: true, hit_combo: 2 });
+            let t = 0;
+            for (; t < 600 && !(o.state !== ST.YARARE && o.state !== ST.DOWN && o.state !== ST.RISE && free(o)); t++) {
+                assert.equal(o.hit_combo, 2, `${n}: held at frame ${t} (${o.state})`);
+                stepFight(fight, [{}, {}]);
+            }
+            assert.ok(t > 60 && t < 600 && o.hit_combo === 0, `${n}: held ${t} frames, then ended`);
+            console.log('combo:', n, 'knock-down held', t, 'frames');
+        }
+    }
+}

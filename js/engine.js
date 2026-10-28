@@ -186,7 +186,7 @@ export function stepFight(fight, pads, screenRight = [1, 0]) {
     const live = fight.phase === 'fight';
     for (const [p, o, pad] of [[a, b, pads[0]], [b, a, pads[1]]]) readPad(fight, p, o, live ? pad : {}, screenRight);
     for (const [p, o] of [[a, b], [b, a]]) think(fight, p, o);
-    for (const p of fight.players) advance(fight, p);
+    for (const p of fight.players) { advance(fight, p); comboEnd(p); }
     for (const p of fight.players) poseNow(fight, p);
     if (live) {
         for (const [p, o] of [[a, b], [b, a]]) strike(fight, p, o);
@@ -498,6 +498,26 @@ function advance(fight, p) {
 }
 
 /*
+ * The hit combo's end: action_after (StF 0x18400, FV 0x18B58, VF2 0x18128),
+ * each frame after the motion plays, clears hit_combo when the fighter's
+ * mot_kind has no bit 0 (mk_change: its strikes, reactions, falls, lying and
+ * rise carry it; stance, crouch, walk, guard and jump do not) and +0 bit 4
+ * is clear (set while the guard, yarare, ukemi and down handlers hold their
+ * stun); StF's and FV's also not in ukemi (+0x70C, +0x720 bit 2). Here: the
+ * stun is the engine's reaction playing out (ST.YARARE), where yarare frees
+ * the fighter when +0x5DE runs out (StF 0x13BF8 clears bit 0); a fighter
+ * with no mot_kind (Shenmue), or in another game's motion, keeps it until
+ * it is free.
+ */
+const MK_CHANGE = 1 << 0;
+function comboEnd(p) {
+    if (!p.hit_combo || p.state === ST.YARARE) return;
+    const id = p.mot?.motion?.index;
+    const own = id != null && p.mot.rom === p.fighter.rom && p.fighter.motKind;
+    if (own ? !(kindAt(p) & MK_CHANGE) : FREE.has(p.state)) p.hit_combo = 0;
+}
+
+/*
  * Attacks while getting up. VF2's decoder in the rise (0x1BD38, state 0xD)
  * turns a new kick into the rise's sub-kind: 4, or 3 with down held, 8 with
  * down and back, 9 with down and forward; the rise handler (0x157DC) waits
@@ -626,10 +646,9 @@ function strike(fight, p, o) {
     const air = counter || down != null ? null : airDamage(p.fighter.game, a, aKind);
     const damage = counter ? counterDamage(p.fighter.game, a, counter.own) : down ?? air ?? a.damage;
     o.energy = Math.max(0, o.energy - damage);
-    /* counted on the fighter hit, as the games count it (hit_combo); a
-     * second without a hit ends it here */
-    o.hit_combo = (fight.tick - (o.comboAt ?? -99) < 60) ? o.hit_combo + 1 : 1;
-    o.comboAt = fight.tick;
+    /* counted on the fighter hit, as the games count it (hit_combo,
+     * attack_hit StF 0x2B018, FV 0x26254, VF2 0x22918); comboEnd ends it */
+    o.hit_combo++;
     /* Here: attack_hit's other changes to the damage (tender, multi, ukemi)
      * are not read. */
     o.knocked = o.energy <= 0 || knocksDown(p.fighter.game, a, damage, kind | (aKind & MK_AIR), o.crouching);
@@ -673,6 +692,7 @@ function downHit(fight, p, o) {
     p.hitDone = true;
     const damage = p.fighter.game === 'stf' && a.ap === STF_DOWN_HALF ? Math.round(a.damage / 2) : a.damage;
     o.energy = Math.max(0, o.energy - damage);
+    o.hit_combo++;
     o.downFor = 0;
     fight.events.push({ kind: 'hit', side: p.side, damage, counter: false, level: a.level, down: true });
 }
