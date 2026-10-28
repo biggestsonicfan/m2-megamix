@@ -148,13 +148,13 @@ approximations. Each is marked `Here:` in `js/engine.js`:
   at their frames; many throws deal none.
 - Knock-downs: attack_hit (StF 0x2B41C, FV 0x26508, VF2 0x22C84) knocks
   down a fighter going down, lying or in the air (VF2 also on its hands),
-  on a strike whose word (+0x828) has bit 14 (of the command lists' strikes, StF 68 of 101,
-  FV 134 of 232, VF2 23 of 107), and, unless the word has bit 10, on 50
-  damage or more (VF2 30; StF out of its 140), on ap 1 against mk_gacha,
-  and in VF2 on bit 8 against one not crouching; and on the blow that ends
-  it. Here: ukemi, StF's ketchup in that last test, and the attacker's
-  mk_ride_on (a down hit instead) are not followed; Shenmue's blows knock
-  down at 40.
+  on a strike whose word (+0x828) has bit 14 (of the command lists'
+  strikes, StF 68 of 101, FV 134 of 232, VF2 23 of 107), and, unless the
+  word has bit 10, on 50 damage or more (VF2 30; StF out of its 140), on
+  ap 1 against mk_gacha, and in VF2 on bit 8 against one not crouching;
+  and on the blow that ends it. Here: ukemi, StF's ketchup in that last
+  test, and the attacker's mk_ride_on (a down hit instead) are not
+  followed; Shenmue's blows knock down at 40.
 - Not read from the games yet, the engine's own: attack_hit's other changes
   to the damage (StF from 0x2B0F8: tender, multi, ukemi; FV and VF2
   have most of them, and VF2 its air), the hit combo's one-second window,
