@@ -144,6 +144,8 @@ void send_materials(const u32 *mat) {
     for (i = 0; i < 0x20u; i++) { *fifo = mat[i]; *fifo = geo_mat_int[i]; }
 }
 
+u32 stage_index(void) { return cur_stage ? (u32)(cur_stage - stages) : 0u; }
+
 /* A stage: its texture set (each page to the bank its own origin names, as
  * StF's loader does), its colour bases, its rows of colorxlat and their
  * cycling curve, its backdrop colour and its light. */
