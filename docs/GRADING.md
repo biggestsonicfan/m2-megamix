@@ -410,7 +410,30 @@ F to 37 F):
   takes VF2's path every frame (seeds 2 and 3: its ground, wall, air and
   landing branches hit), and with seeds 1 and 2 the logs match the build
   before it frame for frame; none of those fights landed him out of
-  bounds, so the out-of-bounds landings are not yet seen run.
+  bounds.
+
+  Forced out of bounds (MAME's debugger at rob_check_stage's compare:
+  [0x50A00C] read as 1.0 and [0x50A010] as -0.5, so both fighters, at
+  x and z +-1.414 from the round's start, are out by the same margin;
+  both jump on frame 40; a write tap logs each rob+0x620 store and its
+  pc):
+  - Sonic (StF's path): rob+0x620 stored every frame (1 once out, pc of
+    StF's store), ground and air. In the air rob+0x624 and rob+0xA29
+    came on by themselves, and he was put on -0.5 at once from y 3.09 on
+    his way down. With rob+0x624 held clear he was never landed: he fell
+    to y -148, rob+0x620 still stored every frame, until the bounds came
+    back and the in-bounds landing put him at 0.
+  - Akira (VF2's path): rob+0x620 not stored on any frame in the air or
+    on the ground. Over StF's floor rob+0x614 (0x8000, the floor under
+    him) comes on before he is low enough for the ground outside, so he
+    lands at 0 (VF2's 0x17FB8, rob+0x620 stored once, 0). With rob+0x614
+    held clear and rob+0x61C set, as over VF2's empty outside, he fell
+    on to -0.5 (VF2's 0x17E44: rob+0x1C at or under g4 + 0.02 +
+    rob+0x81C), and rob+0x620 was stored once, 1, on that landing, and
+    on no frame before or after it.
+  So on a cage stage a VF2 fighter out of bounds lands on the cage's
+  floor, not the ground outside: StF's floor is under him there. (The
+  board's [0x50A010] on South Island is -10.0, not VF2's -0.5.)
 
 Left as they are:
 
