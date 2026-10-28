@@ -448,7 +448,7 @@ clears them one frame later, when the head runs.
     then fails, the run returns (0x1D17C, `bx (g14)` at 0x1D190) to
     0x1C740, and 0x1C750 runs the fighter's own table from 0x1C758 with
     that g0. Nothing in the table at 0x34E5A stores g0, so a fail from it
-    reaches 0x1C750 with the caller's g0. Nothing in the table at 0x356D7 stores g0 either, so a fail from it also reaches 0x1C750 with the caller's g0. Nothing in the table at 0x356EB stores g0, so a fail from it that reaches 0x1C750 sees the caller's g0, which is not definitely 0 or 1. A commit ends the whole call instead (0x1C5C8, `ret` at
+    reaches 0x1C750 with the caller's g0. Nothing in the table at 0x356D7 stores g0 either, so a fail from it also reaches 0x1C750 with the caller's g0. Nothing in the table at 0x356EB stores g0, so a fail from it that reaches 0x1C750 sees the caller's g0, which is not definitely 0 or 1. g0 at 0x1C750 is not limited to 0 or 1: it is the caller's key unless the parked table ran op 0x13 or 0x14 first, and that key is never 0. `sub_1C70C` has four callers: 0x1BF30 passes 4 (`mov 4,g0` at 0x1BF2C); 0x1C39C passes the button key (0x1C388 branches away on 0), plus 0x500 when rob+0x0 bit 4 is set; 0x1C454 passes 0x100 or 0x200 plus the nonzero buttons in rob+0x120C; 0x1C470 passes the nonzero key plus 0x300 or 0x400. In the table at 0x38633 the first op, 0x16 with key 7 (`16 07 00`), fails at 0x1C9FC before its op 0x13 callee at 0x3863C writes g0, so when the caller's key is not 7, 0x1C750 sees that key unchanged. A commit ends the whole call instead (0x1C5C8, `ret` at
     0x1C5F8). The ROM stores no name for 0x1D194, 0x37EB4 or 0x3863C.
     Apart from those two paths, the button bits compared at 0x1CA18 come
     from byte +2, not from the held byte.
