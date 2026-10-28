@@ -12,7 +12,8 @@
  *
  * No three.js: the Node test runs a bout through it.
  */
-import { MOTION_ID, S, P, K, G, DOWN, UP, FWD, BACK, HIGH, MID, LOW, ENERGY, matchPress, rootAt, motionOf } from './fighters.js';
+import { MOTION_ID, S, P, K, G, DOWN, UP, FWD, BACK, HIGH, MID, LOW, ENERGY, matchPress, enFlag, fromBehind, throwFlags, isCounter, strikeActive, counterDamage, airDamage, downDamage, knocksDown, blowUnits, downStun, riseWait, MK_AIR, rootAt, motionOf } from './fighters.js';
+import { SLOT_PARENT } from '../vendor/noclip/js/pose.js';
 import { ARENA } from './games.js';
 
 /* The action states, as Sonic the Fighters' fight code numbers them
@@ -30,7 +31,7 @@ const START_X = 1;                  /* a round starts the fighters at x = -1 and
 const DASH_WINDOW = 12;             /* frames between the taps of a dash */
 const PRESS_BUFFER = 10;            /* a press held over until a move can take it */
 const CHORD = 2;                    /* frames a press waits for its other buttons */
-const DOWN_FRAMES = 50;             /* lying before the rise */
+const DOWN_STUN = 10;               /* the engine's own stun lying, where no knock-down set one */
 const BODY_RADIUS = 0.35;
 const HIT_RADIUS = 0.2;
 const PUSH_APART = 0.6;
@@ -38,7 +39,6 @@ const PUSH_APART = 0.6;
 const sizeOf = (p) => p.fighter.size ?? 1;
 /* A fighter's motion: its own if it has its own (Ryo's), else its ROM's. */
 const motionFor = (f, id) => f.motion?.(id) ?? motionOf(f.rom, id);
-const COUNTER = 1.25;
 
 /* ---- vectors in the world (the viewer's frame: y up) --------------------- */
 
@@ -82,6 +82,13 @@ export function makePlayer(side, fighter) {
         press: null,                /* a press waiting for its chord or for a move to end */
         tapAt: -99, tapDir: 0,
         downFor: 0,
+        downStun: null,             /* the knock-down's stun (+0x5DE), fighters.js downStun */
+        riseKick: null,             /* VF2: the get-up the rise's sub-kind (+0x19E) has picked */
+        fly: null,                  /* StF: the jump's flight, {vy} (+0x30), till it lands */
+        air: null,                  /* a jump's frames left in the air from take-off (+0x5BC) */
+        held: null,                 /* an air attack held back, {e, press, at} (+0x19C bit 19) */
+        hara: null,                 /* the jump's motion from take-off: mk_air (+0x1A4 bit 4) */
+        en_behind: false,           /* +0x5B8 bit 0 en_from_behind: the other is behind (enBehind) */
         wins: 0,                    /* 0x50004F p1_wins / 0x500051 p2_wins */
         posed: null,
         lastMove: '',
@@ -123,6 +130,7 @@ function setAct(p, act) {
     p.crouching = act === 'crouch' || act === 'toCrouch' || act === 'crouchGuard';
     setMotion(p, ref, { loop: LOOPS.has(act), hold: HOLDS.has(act), state: ACT_STATE[act] });
     p.attack = null; p.timing = null;
+    p.small = false;
 }
 
 /* The body's point on the floor, in the world: the origin carried by the
@@ -158,7 +166,7 @@ function resetRound(fight) {
         p.yang = i ? Math.PI : 0;
         p.energy = ENERGY;
         p.mot = null;
-        p.pc_command = 0; p.press = null; p.hist = []; p.hit_combo = 0;
+        p.pc_command = 0; p.press = null; p.hist = []; p.hit_combo = 0; p.riseKick = null; p.downStun = null; p.fly = null; p.air = null; p.held = null; p.hara = null; p.en_behind = false;
         p.finished = false;
         setAct(p, 'stance');
     });
@@ -179,8 +187,9 @@ export function stepFight(fight, pads, screenRight = [1, 0]) {
     const live = fight.phase === 'fight';
     for (const [p, o, pad] of [[a, b, pads[0]], [b, a, pads[1]]]) readPad(fight, p, o, live ? pad : {}, screenRight);
     for (const [p, o] of [[a, b], [b, a]]) think(fight, p, o);
-    for (const p of fight.players) advance(fight, p);
+    for (const p of fight.players) { advance(fight, p); comboEnd(p); }
     for (const p of fight.players) poseNow(fight, p);
+    for (const [p, o] of [[a, b], [b, a]]) p.en_behind = enBehind(p, o);
     if (live) {
         for (const [p, o] of [[a, b], [b, a]]) strike(fight, p, o);
         separate(fight, a, b);
@@ -245,20 +254,27 @@ function think(fight, p, o) {
     }
     if (fight.phase !== 'fight') return;
     const v = p.pad;
+    if (getUp(p)) return;
+    if (p.state === ST.JUMP && !p.small && !(v & UP) && p.mot_coma < takeoff(p, p.mot.motion)) smallJump(p);
 
-    /* A press: the root table when free, the parked follow table from the
-     * cancel frame of the move that parked it (the engine's string window). */
+    /* A press: the root table when free or in the air, the parked follow
+     * table from the cancel frame of the move that parked it (the engine's
+     * string window). */
     if (p.press && fight.tick - p.press.at > CHORD) {
         const age = fight.tick - p.press.at;
         const inString = p.state === ST.MOTION && p.pc_command && p.timing && p.mot_coma >= p.timing.cancel;
-        const table = inString ? p.pc_command : FREE.has(p.state) ? p.fighter.moves.root : null;
-        if (table) {
+        const air = !inString && p.state === ST.JUMP;
+        const ctx = air ? jumpContext(p) : 0;
+        const table = inString ? p.pc_command : FREE.has(p.state) || air ? p.fighter.moves.root : null;
+        if (table && ctx != null) {
             const hist = p.press.hist;
-            const e = matchPress(p.fighter.moves.tables.get(table), p.press.btn, hist.length ? hist : [0], dist);
-            if (e) { startMove(fight, p, o, e, p.press); p.press = null; return; }
+            const how = { ctx, en: enOf(p, o) };
+            const e = matchPress(p.fighter.moves.tables.get(table), p.press.btn, hist.length ? hist : [0], dist, how);
+            if (e) { if (!holdBack(p, e, p.press)) startMove(fight, p, o, e, p.press); p.press = null; return; }
             if (!inString) p.press = null;
         }
-        if (p.press && age > PRESS_BUFFER) p.press = null;
+        /* before take-off the press is latched (+0x120C's low bits) */
+        if (p.press && age > PRESS_BUFFER && ctx != null) p.press = null;
     }
     if (!FREE.has(p.state)) return;
 
@@ -279,6 +295,104 @@ function think(fight, p, o) {
     if (p.crouching) return setAct(p, 'toStand');
     const want = v & FWD ? 'walkF' : v & BACK ? 'walkB' : 'stance';
     if (p.action !== want) setAct(p, want);
+}
+
+/*
+ * The jump (VF2 0x1C3CC, StF 0x1DF4C, after the matcher's call): up let go
+ * before take-off (motd_jump_coma, +0x80E) commits the jump again with the
+ * action's bit 18, the small jump, and the jump's handler (VF2 0x147BC)
+ * plays the action table's next slot from the same frame, held to its own
+ * take-off (StF sub_1305C 0x1335C). FV's decoder (0x1DC24) and jump handler
+ * (0x14204) are StF's code; its motions carry the arc in their root, as
+ * VF2's do, and the engine plays them so.
+ */
+function takeoff(p, m) {
+    return p.fighter.takeoff?.(m.index) ?? 0;
+}
+function smallJump(p) {
+    p.small = true;
+    const ref = p.fighter.act('jumpSmall');
+    if (!ref.motion) return;
+    const f = Math.min(p.mot_coma, takeoff(p, ref.motion));
+    setMotion(p, ref, { state: ST.JUMP });
+    const a = rootAt(ref.rom, ref.motion, 1), b = rootAt(ref.rom, ref.motion, f);
+    carry(p, a[0] - b[0], a[2] - b[2]);
+    p.mot_coma = f;
+}
+
+/*
+ * The matcher's context in a jump, the key's high byte (VF2 0x1C3E8): before
+ * take-off a press is latched until the frame before it (+0x120C bit 7, set
+ * at once by the small jump's commit), then matched as 1, or 2 in a small
+ * jump; in the air (the handler's step 2, VF2 0x1564C) as 3, or 4 in a small
+ * jump. FV's motion names: JU_ the big jump's, JUS_ the small one's. StF's
+ * (0x1DFEC) and FV's (0x1DCB8) take 3 or 4 in the same step, by +0x1B2.
+ * null: latched, not matched yet.
+ */
+const CTX_TAKEOFF = 1, CTX_AIR = 3;
+function jumpContext(p) {
+    const up = p.small ? 1 : 0;
+    const t = takeoff(p, p.mot.motion);
+    if (p.mot_coma >= t) return CTX_AIR + up;
+    return p.mot_coma + 1 >= t || p.small ? CTX_TAKEOFF + up : null;
+}
+
+/*
+ * StF's flight. Its jump motions stand in place; the handler (ACT_RC_JUMP
+ * 0x13DB8) flies the body. At take-off (step 1, +0x1AA up to +0x80E) it sets
+ * vy (+0x30) to land n frames on, n the commit's +0x5BE (fighters.js flight):
+ * g (n + 1) / 2, +0x5CC's lift 0 in a jump. Each frame rob_spd_control takes
+ * g (0x50A000) off vy and adds vy to y (+0x1C). An air attack the jump's
+ * recommit plays (0x133A0) leaves the flight going. It lands when the body
+ * is down (step 2 0x1410C, w0 bit 2 clear: 0x14870), and the action goes
+ * (+0x19C = 0): what plays plays on, out of the jump.
+ * Here: the jump's drift (+0x5C4 by +0x724..+0x730) is not flown, and the
+ * landing's mk_change (+0x1A4 bit 0) does not free the fighter early.
+ */
+const GRAVITY = 0.02522222138941288;    /* 0x3CCE9ED5 */
+function fly(p) {
+    if (!p.fly && p.state === ST.JUMP && p.fighter.flies && p.mot_coma === takeoff(p, p.mot.motion))
+        p.fly = { vy: GRAVITY * (p.fighter.flight(p.small) + 1) / 2 };
+    if (!p.fly) return;
+    p.fly.vy -= GRAVITY;
+    p.pos[1] += p.fly.vy;
+    if (p.pos[1] > 0) return;
+    p.pos[1] = 0;
+    p.fly = null;
+    if (p.state === ST.JUMP) p.state = ST.MOTION;
+}
+
+/*
+ * An air attack held back. A command with bit 19 matched in a jump stores
+ * its motion's op 3 u16 at +5 in jp_next_lacoma (+0x5C0; StF 0x133C8, FV
+ * 0x13600, VF2 0x14914) and keeps the jump motion; the jump handler's
+ * flight step (StF 0x1410C, FV 0x14548, VF2 0x155CC) plays it once the
+ * frames left in the air (land_time, +0x5BC) are down to that, and clears
+ * the bit. Before take-off land_time is 0, so one there plays at once. A
+ * later press commits over it, and landing (0x14870: +0x19C = 0) drops it.
+ * Here: land_time counts down from +0x5BE at take-off, where the board
+ * works it out from the body's height and speed each frame (calc_land_time);
+ * for StF's flight the two agree, VF2's and FV's motions carry their arc.
+ */
+const HOLD = 1 << 19;
+function holdBack(p, e, press) {
+    const at = e.cmd & HOLD && p.state === ST.JUMP && p.air != null ? p.fighter.airHold?.(e.motion & MOTION_ID) : null;
+    if (at == null || p.air <= at) return false;
+    p.held = { e, press, at };
+    return true;
+}
+function airTime(fight, p) {
+    if (p.state !== ST.JUMP) { p.air = p.held = null; return; }
+    if (p.air != null) p.air = Math.max(0, p.air - 1);
+    else if (p.mot_coma === takeoff(p, p.mot.motion) && p.fighter.flight) p.air = p.fighter.flight(p.small);
+    /* the jump handler's step 1 at take-off (+0x1AA up to +0x80E) calls
+     * fix_hara: mk_air on its mot_kind (airKind) */
+    if (p.mot_coma >= takeoff(p, p.mot.motion)) p.hara = p.mot;
+    if (p.held && p.air <= p.held.at) {
+        const { e, press } = p.held;
+        p.held = null;
+        startMove(fight, p, fight.players[1 - p.side], e, press);
+    }
 }
 
 /* Commit to a move (the matcher's commit op): the motion, its timing and
@@ -306,8 +420,9 @@ function startMove(fight, p, o, e, press) {
     fight.events.push({ kind: 'move', side: p.side, id, name: p.lastMove });
 }
 
-/* Here: Sonic the Fighters' level byte is not read, so the press gives it:
- * down and anything is low, a punch high, the rest mid. */
+/* Here: for a fighter whose strikes carry no level (none of the three
+ * games'; a game brought in may), the press gives it: down and anything is
+ * low, a punch high, the rest mid. */
 function levelOf(press) {
     const last = press.hist[press.hist.length - 1] ?? 0;
     if (last & DOWN) return LOW;
@@ -321,8 +436,13 @@ function levelOf(press) {
  * and +0x26), and the two motions are made to be played together from there:
  * across games too, as a motion poses on any of the sixteen-slot bodies.
  */
+/* Here: StF's and FV's throw entries test their throw word (+0x720, +0x734)
+ * with the matcher's ops 0x34 and 0x35, which the move reader does not keep,
+ * so their throws reach 1.5 bodies; VF2's want their en_flag bits (enThrow),
+ * and the entry has had its test. */
 const THROW_RANGE = 1.5;
 function canThrow(p, o) {
+    if (p.fighter.throwRanges) return true;
     return flat(bodyPoint(p), bodyPoint(o)) < THROW_RANGE * sizeOf(p) && FREE.has(o.state) && o.state !== ST.SYAGAMI && !o.crouching;
 }
 
@@ -344,20 +464,46 @@ function throwStart(fight, p, o, id, atk) {
     setMotion(o, { rom: p.fighter.rom, motion: victim }, { state: ST.NAGERARE });
     o.action = 'thrown';
     o.attack = null; o.timing = null; o.press = null;
-    o.throwDamage = atk.damage;
+    /* op 5's damage at the throw, the victim motion's own hits at their
+     * frames (advance) */
+    o.throwHits = atk.hits ?? [];
     o.thrower = p.fighter.name;
+    throwDamage(fight, o, atk.damage ?? 0);
     p.lastMove = `throw ${id}`;
     fight.events.push({ kind: 'throw', side: p.side, id, victim: atk.victim });
 }
 
+function throwDamage(fight, o, damage) {
+    o.energy = Math.max(0, o.energy - damage);
+    fight.events.push({ kind: 'thrown', side: o.side, damage });
+}
+
 /* ---- playback ------------------------------------------------------------ */
 
+/*
+ * The lying: the knock-down's stun (fighters.js downStun, +0x5DE), then the
+ * rise handler's wait (riseWait, +0x1AE) or a get-up picked, then the rise.
+ * Here: the stun starts with the lying motion, where the board's rise
+ * handler lays it a frame or two after the fall's length; a rise command's
+ * mashing (+0x194 into +0x5DC, 4 frames off the stun each) is not read;
+ * a throw's victim, and a knock-down by Shenmue's blows, lie the engine's
+ * own DOWN_STUN, where the board's play ops 8 and 18 set a throw's stun.
+ */
 function advance(fight, p) {
+    airTime(fight, p);
+    fly(p);
     const m = p.mot.motion;
     if (p.state === ST.DOWN && p.action === 'down') {
-        if (++p.downFor > DOWN_FRAMES && p.energy > 0) { p.downFor = 0; setAct(p, 'rise'); return; }
+        ++p.downFor;
+        const stun = p.downStun ?? DOWN_STUN;
+        if (p.riseKick && p.downFor > stun && p.energy > 0) return riseKick(fight, p);
+        if (p.downFor > stun + riseWait(p.fighter.game, p.fighter.entry?.index ?? 0) && p.energy > 0) { p.downFor = 0; setAct(p, 'rise'); return; }
     }
-    if (p.mot_coma < m.frames) { p.mot_coma++; return; }
+    if (p.mot_coma < m.frames) {
+        p.mot_coma++;
+        if (p.state === ST.NAGERARE) for (const h of p.throwHits ?? []) if (h.frame === p.mot_coma) throwDamage(fight, p, h.damage);
+        return;
+    }
     if (p.loop) {
         const a = rootAt(p.mot.rom, m, m.frames), b = rootAt(p.mot.rom, m, 1);
         carry(p, a[0] - b[0], a[2] - b[2]);
@@ -368,13 +514,61 @@ function advance(fight, p) {
     ended(fight, p);
 }
 
+/*
+ * The hit combo's end: action_after (StF 0x18400, FV 0x18B58, VF2 0x18128),
+ * each frame after the motion plays, clears hit_combo when the fighter's
+ * mot_kind has no bit 0 (mk_change: its strikes, reactions, falls, lying and
+ * rise carry it; stance, crouch, walk, guard and jump do not) and +0 bit 4
+ * is clear (set while the guard, yarare, ukemi and down handlers hold their
+ * stun); StF's and FV's also not in ukemi (+0x70C, +0x720 bit 2). Here: the
+ * stun is the engine's reaction playing out (ST.YARARE), where yarare frees
+ * the fighter when +0x5DE runs out (StF 0x13BF8 clears bit 0); a fighter
+ * with no mot_kind (Shenmue), or in another game's motion, keeps it until
+ * it is free.
+ */
+const MK_CHANGE = 1 << 0;
+function comboEnd(p) {
+    if (!p.hit_combo || p.state === ST.YARARE) return;
+    const id = p.mot?.motion?.index;
+    const own = id != null && p.mot.rom === p.fighter.rom && p.fighter.motKind;
+    if (own ? !(kindAt(p) & MK_CHANGE) : FREE.has(p.state)) p.hit_combo = 0;
+}
+
+/*
+ * Attacks while getting up. VF2's decoder in the rise (0x1BD38, state 0xD)
+ * turns a new kick into the rise's sub-kind: 4, or 3 with down held, 8 with
+ * down and back, 9 with down and forward; the rise handler (0x157DC) waits
+ * out the lying (its phase 3: +0x1AE to 40 with no pick) or plays the pick
+ * at once, the action table's get-up kicks, 57 mid and 61, 69, 65 low
+ * (their first variants: the lying face up, +0x5B8 bit 0 clear).
+ * FV's and StF's rise has no get-up attacks of its own: P or K held in the
+ * mk_rise motion's last frames (fighters.js riseWindow) ends the rise (StF
+ * 0x1D864, FV 0x1D634), and the press is the ground table's.
+ */
+function getUp(p) {
+    const v = p.pad;
+    if (p.state === ST.DOWN && p.action === 'down' && p.fighter.act('riseKick')?.motion && v & ~p.padOld & K) {
+        p.riseKick = !(v & DOWN) ? 'riseKick' : v & BACK ? 'riseLowBack' : v & FWD ? 'riseLowFwd' : 'riseLow';
+        return false;
+    }
+    if (p.state !== ST.RISE || !(v & (P | K))) return false;
+    const w = p.fighter.riseWindow?.(p.mot.motion.index);
+    if (!w || w.cancel - p.mot_coma > w.window) return false;
+    setAct(p, 'stance');
+    return true;
+}
+function riseKick(fight, p) {
+    const name = p.riseKick, id = p.fighter.act(name).motion.index;
+    p.riseKick = null; p.downFor = 0;
+    startMove(fight, p, null, { motion: id, name: `get-up ${id}` }, { btn: K, hist: [name === 'riseKick' ? 0 : DOWN] });
+}
+
 /* A motion ran out: what the action code plays next. */
 function ended(fight, p) {
     switch (p.state) {
     case ST.NAGERARE:
-        p.energy = Math.max(0, p.energy - (p.throwDamage ?? 0));
-        fight.events.push({ kind: 'thrown', side: p.side, damage: p.throwDamage });
-        p.downFor = 0;
+        p.throwHits = null;
+        p.downFor = 0; p.downStun = null;
         return setAct(p, 'down');
     case ST.YARARE:
         if (p.knocked || p.energy <= 0) { p.knocked = false; p.downFor = 0; return setAct(p, 'down'); }
@@ -390,37 +584,99 @@ function ended(fight, p) {
 
 /* ---- strikes --------------------------------------------------------------
  *
- * Here: the board tests each strike against the other's body by the moving
- * part its setup names; this engine takes the end of a limb that is furthest
- * forward (hands, feet, head) through the active frames, hit to the later of
- * cancel and hit + 2, against a capsule from the floor to the head. The limb
- * from its inner joint (elbow, knee, chest) to that end is tested, not the
- * end alone, so a blow that reaches past the body still lands.
+ * The board tests a strike by the attack part its setup names (op 4 byte 1,
+ * +0x820): a mask of the rig's slots (fighters.js partMask). Each slot in it
+ * is tested as the limb it moves: from its origin to its one child's, or,
+ * for an end (hand, foot, head) or a branch (the chest), from its parent's
+ * origin to its own, through its active frames (fighters.js strikeActive).
+ * Here: the limbs are tested against a capsule from the floor to the head (the board's own hit volumes are the coprocessor's), and a
+ * strike with no part (a game brought in) uses the limb end that is
+ * furthest forward (hands, feet, head) from its inner joint.
  */
 const EFFECTORS = [S.LHAND, S.RHAND, S.LFOOT, S.RFOOT, S.HEAD];
 const INNER = { [S.LHAND]: S.LHAND - 1, [S.RHAND]: S.RHAND - 1, [S.LFOOT]: S.LFOOT - 1, [S.RFOOT]: S.RFOOT - 1, [S.HEAD]: S.CHEST };
-function strike(fight, p, o) {
-    if (p.state !== ST.MOTION || !p.attack || p.hitDone || !p.timing) return;
-    const { hit, cancel } = p.timing;
-    if (p.mot_coma < hit || p.mot_coma > Math.max(hit + 2, cancel)) return;
+const CHILDREN = SLOT_PARENT.map((_, s) => SLOT_PARENT.flatMap((q, c) => (q === s ? [c] : [])));
+function limbOf(s) {
+    const kids = CHILDREN[s];
+    if (kids.length === 1) return [s, kids[0]];
+    return SLOT_PARENT[s] >= 0 ? [SLOT_PARENT[s], s] : [s, kids[0]];
+}
+function limbs(p, a) {
+    const out = [];
+    for (let s = 0; s < SLOT_PARENT.length; s++) if (a.mask & (1 << s)) out.push(limbOf(s));
+    if (out.length) return out;
     const fwd = [Math.cos(p.yang), 0, -Math.sin(p.yang)];
     const base = bodyPoint(p);
     let best = null, reach = -Infinity;
     for (const s of EFFECTORS) {
-        const w = slotWorld(p, s);
-        const r = dot(sub(w, base), fwd);
+        const r = dot(sub(slotWorld(p, s), base), fwd);
         if (r > reach) { reach = r; best = s; }
     }
-    if (o.state === ST.NAGERARE || o.state === ST.DOWN || o.state === ST.RISE) return;
+    return [[INNER[best], best]];
+}
+/* en_flag's en_down_attack for p (fighters.js enFlag): from the other's
+ * motion's mot_kind, so a knock-down's fall counts as well as the lying; and
+ * in VF2 its throw bits (enThrow). */
+function enOf(p, o) {
+    const id = o.mot?.motion?.index;
+    const kind = o.fighter.motKind && id != null ? o.fighter.motKind(id) : null;
+    return enFlag(p.fighter.game, { kind, lying: o.state === ST.DOWN, inAir: !!p.air }) | enThrow(p, o);
+}
+
+/* VF2's throw bits for p (fighters.js throwFlags), from the bodies, the two
+ * facings and the other's mot_kind. Here: the throw timer (0x50A0B6) and the
+ * other's +0x844 bit 27 with mot_kind bit 1 (a throw at any distance) are not
+ * followed; a fighter with no mot_kind (Shenmue's) counts as standing to be
+ * thrown while it is free. */
+const MK_KAMAE = 1 << 9;
+function enThrow(p, o) {
+    const ranges = p.fighter.throwRanges;
+    if (!ranges) return 0;
+    const d = sub(bodyPoint(o), bodyPoint(p));
+    const way = Math.atan2(-d[2], d[0]);
+    const kind = o.fighter.motKind ? airKind(o) : FREE.has(o.state) ? MK_KAMAE : 0;
+    return throwFlags({
+        off: way - p.yang, turn: way - o.yang, dist: Math.hypot(d[0], d[2]), kind, ownKind: airKind(p),
+        crouch: o.crouching || o.state === ST.SYAGAMI || o.action === 'crouchGuard', ranges,
+    });
+}
+
+/* en_flag's en_from_behind for p (fighters.js fromBehind), from the bodies
+ * and p's facing. Here: the engine's motions do not turn the facing (+0x812),
+ * get_en_info's way to the other when the two are within 0.4 and one is in
+ * the air (it takes the mover's speed), and StF's and FV's hold while the
+ * coprocessor's collision has them together, are not followed. */
+function enBehind(p, o) {
+    const d = sub(bodyPoint(o), bodyPoint(p));
+    return fromBehind(p.fighter.game, {
+        off: Math.atan2(-d[2], d[0]) - p.yang, dist: Math.hypot(d[0], d[2]),
+        was: p.en_behind, air: !!((airKind(p) | airKind(o)) & MK_AIR),
+    });
+}
+
+/* A down attack (fighters.js hitsDown) lands on a fighter lying down, the
+ * rest pass over it; StF's level 8 does half (its attack_hit's tetsu path). */
+const STF_DOWN_HALF = 8;
+function strike(fight, p, o) {
+    if (p.state !== ST.MOTION || !p.attack || p.hitDone || !p.timing) return;
+    /* fighters.js strikeActive: hit to the frame before the cancel */
+    if (!strikeActive(p.fighter.motKind ? kindAt(p) : null, p.mot_coma, p.timing)) return;
+    if (o.state === ST.NAGERARE || o.state === ST.RISE) return;
+    const lying = o.state === ST.DOWN;
+    if (lying && !p.attack.down) return;
+    const fwd = [Math.cos(p.yang), 0, -Math.sin(p.yang)];
     const head = slotWorld(o, S.HEAD), pel = slotWorld(o, S.PELVIS);
-    const foot = [pel[0], 0.1, pel[2]];
-    const tip = slotWorld(p, best), inner = slotWorld(p, INNER[best]);
+    const foot = lying ? pel : [pel[0], 0.1, pel[2]];
     let d = Infinity;
-    for (let k = 0; k <= 4; k++) {
-        const t = k / 4, at = [inner[0] + (tip[0] - inner[0]) * t, inner[1] + (tip[1] - inner[1]) * t, inner[2] + (tip[2] - inner[2]) * t];
-        d = Math.min(d, segDist(at, foot, head));
+    for (const [i, j] of limbs(p, p.attack)) {
+        const inner = slotWorld(p, i), tip = slotWorld(p, j);
+        for (let k = 0; k <= 4; k++) {
+            const t = k / 4, at = [inner[0] + (tip[0] - inner[0]) * t, inner[1] + (tip[1] - inner[1]) * t, inner[2] + (tip[2] - inner[2]) * t];
+            d = Math.min(d, segDist(at, foot, head));
+        }
     }
     if (d > BODY_RADIUS * sizeOf(o) + HIT_RADIUS * sizeOf(p)) return;
+    if (lying) return downHit(fight, p, o);
     const a = p.attack;
     /* A high blow goes over a crouch (the board's yarare test does the same
      * by height). */
@@ -428,22 +684,69 @@ function strike(fight, p, o) {
     p.hitDone = true;
     const facingAway = dot([Math.cos(o.yang), 0, -Math.sin(o.yang)], fwd) > 0.3;
     const how = { ...a, crouch: o.crouching, behind: facingAway };
-    if (o.state === ST.GUARD && !facingAway && (o.crouching ? a.level !== HIGH : a.level !== LOW)) {
+    /* attack_hit guards only with en_from_behind clear (enBehind) */
+    if (o.state === ST.GUARD && !o.en_behind && (o.crouching ? a.level !== HIGH : a.level !== LOW)) {
         react(fight, o, how, 'guard');
         fight.events.push({ kind: 'guard', side: p.side });
         return;
     }
-    const counter = o.state === ST.MOTION && o.timing && o.mot_coma < o.timing.hit;
-    const damage = Math.round(a.damage * (counter ? COUNTER : 1));
+    const counter = counterOn(o), kind = kindAt(o), aKind = airKind(o);
+    const down = counter ? null : downDamage(p.fighter.game, a, kind);
+    const air = counter || down != null ? null : airDamage(p.fighter.game, a, aKind);
+    const damage = counter ? counterDamage(p.fighter.game, a, counter.own) : down ?? air ?? a.damage;
     o.energy = Math.max(0, o.energy - damage);
-    /* counted on the fighter hit, as the games count it (hit_combo); a
-     * second without a hit ends it here */
-    o.hit_combo = (fight.tick - (o.comboAt ?? -99) < 60) ? o.hit_combo + 1 : 1;
-    o.comboAt = fight.tick;
-    o.knocked = o.energy <= 0 || damage >= 40;
+    /* counted on the fighter hit, as the games count it (hit_combo,
+     * attack_hit StF 0x2B018, FV 0x26254, VF2 0x22918); comboEnd ends it */
+    o.hit_combo++;
+    /* Here: attack_hit's other changes to the damage (tender, multi, ukemi)
+     * are not read. */
+    o.knocked = o.energy <= 0 || knocksDown(p.fighter.game, a, damage, kind | (aKind & MK_AIR), o.crouching);
+    if (o.knocked) o.downStun = downStun(p.fighter.game, blowUnits(p.fighter.game, a, damage, { counter, down: down != null, air: air != null }));
     if (o.energy <= 0 && finishes(p, a)) o.finished = true;
     react(fight, o, how, o.knocked ? 'down' : counter ? 'counter' : 'hit');
-    fight.events.push({ kind: 'hit', side: p.side, damage, counter, level: a.level });
+    fight.events.push({ kind: 'hit', side: p.side, damage, counter: !!counter, air: air != null, fall: down != null, level: a.level });
+}
+
+/* A counter (fighters.js isCounter): o is playing its own move, before its
+ * cancel; `own` its motd_damage, for StF's. Here: a throw (whose timing the
+ * engine makes up) is never countered. */
+function counterOn(o) {
+    if (o.action !== 'move' || o.moveId == null) return null;
+    const kind = o.fighter.motKind ? o.fighter.motKind(o.moveId) : null;
+    if (!isCounter(kind, o.mot_coma, o.timing)) return null;
+    return { own: o.fighter.attack(o.moveId)?.raw ?? null };
+}
+
+/* o's mot_kind for attack_hit (fighters.js airDamage): its motion's
+ * motd_kind, with mk_air from the jump's take-off on (p.hara, airTime) till
+ * its next motion. Here: play ops that change mot_kind mid-motion, and
+ * StF's mk_air at the stage's edge (rob_check_stage), are not followed. */
+function airKind(o) {
+    const id = o.mot?.motion?.index;
+    const kind = o.fighter.motKind && id != null && o.mot.rom === o.fighter.rom ? o.fighter.motKind(id) : 0;
+    return o.hara && o.hara === o.mot ? kind | MK_AIR : kind;
+}
+
+/* o's mot_kind at its frame, for StF's down (fighters.js downDamage): StF's
+ * own motions followed frame by frame (stfKindAt). Here: another game's
+ * fighter hit by StF's has its motion's motd_kind. */
+function kindAt(o) {
+    const id = o.mot?.motion?.index;
+    if (id == null || o.mot.rom !== o.fighter.rom || !o.fighter.motKind) return 0;
+    return o.fighter.kindAt ? o.fighter.kindAt(id, o.mot_coma, o.mot.motion.frames) : o.fighter.motKind(id);
+}
+
+/* A blow on a fighter lying down: the damage, and the lie starts over. */
+function downHit(fight, p, o) {
+    const a = p.attack;
+    p.hitDone = true;
+    const tetsu = p.fighter.game === 'stf' && a.ap === STF_DOWN_HALF;
+    const damage = tetsu ? Math.round(a.damage / 2) : a.damage;
+    o.energy = Math.max(0, o.energy - damage);
+    o.downStun = downStun(p.fighter.game, blowUnits(p.fighter.game, a, damage, { tetsu }));
+    o.hit_combo++;
+    o.downFor = 0;
+    fight.events.push({ kind: 'hit', side: p.side, damage, counter: false, level: a.level, down: true });
 }
 
 function react(fight, o, how, kind) {
@@ -460,7 +763,8 @@ function react(fight, o, how, kind) {
 /* ---- the arena ----------------------------------------------------------- */
 
 function separate(fight, a, b) {
-    if (a.state === ST.NAGERARE || b.state === ST.NAGERARE) return;
+    /* one thrown, or lying down, is stood over (a pounce lands on it) */
+    if ([a, b].some((p) => p.state === ST.NAGERARE || p.state === ST.DOWN)) return;
     const pa = bodyPoint(a), pb = bodyPoint(b);
     const d = flat(pa, pb), apart = PUSH_APART * (sizeOf(a) + sizeOf(b)) / 2;
     if (d >= apart || d < 1e-6) return;

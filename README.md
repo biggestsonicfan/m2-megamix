@@ -83,12 +83,126 @@ struct dump, F2 pauses and F3 steps one frame.
 The engine is written from what the three games share, so some parts are
 approximations. Each is marked `Here:` in `js/engine.js`:
 
-- Hits are tested from the forward-most hand, foot or head (the limb up to
-  its elbow, knee or chest) against a capsule, not from the part the setup
-  record names.
-- StF's strike level is not read. The input decides it.
+- Strikes hit with the part their setup record names (op 4's attack part,
+  the slot masks at StF 0xCE020, VF2 0x02007ACA, FV 0x0640E72E), each slot
+  as a limb, against a capsule from the floor to the head; the board's own
+  hit volumes are the coprocessor's.
+- The level is op 4's byte 2 in all three games. Guarding is judged on the
+  coprocessor, so here the levels beyond high, mid and low guard as a mid
+  (FV's slide as a low).
+- Counters: a strike on a fighter whose own strike has not reached its
+  cancel counts, as attack_hit does (StF 0x2B1A4, FV 0x2633C, VF2 0x22A28):
+  mot_kind's mk_attack, which every strike carries and play_motion clears
+  at follow1, +0x80A (StF 0x1BEA0, FV 0x1C1D8, VF2 0x1AC50). VF2 and FV deal
+  half again; StF half again of the damage plus a quarter of the countered
+  move's. Here: StF's smaller counter on a limb (smlcntr, by the part the
+  coprocessor says was struck) is not told apart, so every StF counter is
+  the full one, and a throw is never countered.
+- In the air: a blow on a fighter whose mot_kind has mk_air and not mk_down
+  deals half again in StF and FV (attack_hit's "air", StF 0x2B298, FV
+  0x26380), after a counter. mot_kind is the motion's own kind, and the
+  jump handler adds mk_air at take-off (fix_hara: StF 0x140CC, FV 0x14508)
+  till the next motion. Here: VF2's (0x22B6C) gives way on a combo's first
+  hit to a quarter more that needs the struck part, so VF2's is not read;
+  play ops that change mot_kind mid-motion are not followed.
+- Going down: StF takes a quarter off a blow on a fighter whose mot_kind
+  has mk_down and not mk_down_pose (attack_hit's "down", 0x2B238): a fall
+  before its play op 5 makes it lie (Sonic's at frame 64). The mot_kind is
+  followed frame by frame: set_mot_dat's load, play_motion's clears at the
+  hit frame and follow1 (0x1BE78, 0x1BEA0), play ops 5 to 7. FV and VF2
+  have no such step.
+- Down attacks (level 4, and StF's 8 at half damage) land on a fighter lying
+  down. Their entries want en_flag's en_down_attack (+0x5B8 bit 5; bit 11
+  in VF2), which get_en_info sets from the other's mot_kind as the board
+  does (StF 0x193DC, FV 0x19810, VF2 0x188AC): on mk_down, so on a
+  knock-down's fall as well as the lying, but not while it rises or attacks,
+  nor over a fall while this fighter is in the air. Here: the hit itself
+  still lands only on a fighter lying down, and there is no ukemi
+  (mot_kind2 bit 2).
+- Jump attacks: up let go before take-off (setup op 3's motd_jump_coma)
+  makes the jump the small one, as the board does. A press before take-off
+  waits for it and goes to context 1 (2 in a small jump), one in the air to
+  3 (4). StF's jump motions stand in place and its jump handler (0x13DB8)
+  flies the body by gravity, so the engine does too: from take-off for the
+  frames the character record's +0x20 gives (Sonic 38, small 26), with an
+  air attack playing on until it lands. FV's jump code is StF's, but its
+  motions carry the arc, as VF2's do, and the engine plays them so. An air
+  attack whose command has bit 19 is held back, in all three games: it
+  waits in the jump until the frames left in the air (+0x5BC) are down to
+  its motion's hold (setup op 3, +0x5C0), as the jump handler plays it
+  (StF 0x1410C, FV 0x14548, VF2 0x155CC). Sonic's small-jump kick comes out
+  with 4 of 26 frames left, Picky's with 9 of 24, Akira's punch with 19 of
+  32. Here: StF's jump does not drift forward or back, the frames left
+  count down from take-off (the board works them out from the body's height
+  each frame), landing does not free the fighter before the motion ends,
+  and a press made before take-off plays one frame before take-off, where
+  the board plays it at take-off.
+- Attacks while getting up: in VF2 a kick while lying picks the rise's
+  get-up kick (the decoder's sub-kind at 0x1BD38): mid, or low with down
+  held, played as soon as the lying is out (the rise handler at 0x157DC).
+  The engine plays only the face-up variants. FV and StF have no get-up
+  attacks of their own: P or K held in the rise motion's last frames (setup
+  op 23's window before op 2's cancel) ends the rise, and the press is the
+  ground table's (StF 0x1D864, FV 0x1D634).
+- Throws deal op 5's damage, then the victim motion's own hits (play op 8)
+  at their frames; many throws deal none.
+- Knock-downs: attack_hit (StF 0x2B41C, FV 0x26508, VF2 0x22C84) knocks
+  down a fighter going down, lying or in the air (VF2 also on its hands),
+  on a strike whose word (+0x828) has bit 14 (of the command lists'
+  strikes, StF 68 of 101, FV 134 of 232, VF2 23 of 107), and, unless the
+  word has bit 10, on 50 damage or more (VF2 30; StF out of its 140), on
+  ap 1 against mk_gacha, and in VF2 on bit 8 against one not crouching;
+  and on the blow that ends it. Here: ukemi, StF's ketchup in that last
+  test, and the attacker's mk_ride_on (a down hit instead) are not
+  followed; Shenmue's blows knock down at 40.
+- The hit combo: attack_hit counts it on the fighter hit (StF 0x2B018, FV
+  0x26254, VF2 0x22918), and action_after (StF 0x18400, FV 0x18B58, VF2
+  0x18128) ends it on the first frame its mot_kind has no bit 0 (strikes,
+  reactions, falls, lying and the rise have it; stance, walk, guard and
+  jump do not) and +0 bit 4 is clear (the guard, yarare, ukemi and down
+  handlers' stun); StF and FV also not in ukemi. Here: the stun is the
+  reaction playing out, not +0x5DE's count; Shenmue's ends once free.
+- A guard turned away: attack_hit (StF 0x2A9F0, FV 0x25DD0, VF2 0x226F4)
+  guards only a fighter whose en_flag has en_from_behind (+0x5B8 bit 0)
+  clear. get_en_info (StF 0x18E34, FV 0x19298, VF2 0x18738) sets it when the
+  other is more than a quarter turn off the fighter's facing; in StF and FV
+  it does not come on while the two are within 0.4 and one is in the air,
+  or the coprocessor's collision holds them. Here: that collision, the
+  motions' own turn (+0x812) and the way to the other in the air at close
+  range are not followed; a guarding fighter turns to the other each frame.
+- The throw's reach: get_en_info (StF 0x18F8C, FV 0x193E4, VF2 0x18768)
+  sets throw bits when the thrower faces the other to within 30° and the
+  other faces it (or away, for the back throws), by the distance root to
+  root against the character's ranges (StF 2.5 for all, FV 1.7, VF2 the
+  record's +0x18..+0x24, Akira 1.4), and the throw entries test them. VF2's
+  (en_flag bits 8, 9, 10, 12, 13; matcher op 7) are followed. Here: StF's
+  and FV's are in a word of their own (+0x720, +0x734) that their entries
+  test with ops 0x34 and 0x35, which the move reader does not keep, so
+  their throws still reach 1.5 bodies; VF2's throw timer (0x50A0B6) is not
+  followed.
+- StF (0x2AE40) drops a blow when the attacker has the other behind it,
+  unless +0x70C bit 20 is set; FV and VF2 have no such step there. Not
+  followed.
+- A strike's active frames: coli_attack_chk (StF 0x2A678, FV 0x25AA4, VF2
+  0x22404) tests a strike while its mot_kind has mk_attack, which
+  play_motion clears at the cancel, from the hit frame on: hit to the frame
+  before the cancel, once a motion. Here: StF's strikes without +0x860 bit
+  22 may strike again 8 frames after a hit; FV's and VF2's
+  cac_attack_cancel (0x25A84, 0x223BC) drops a few moves with
+  en_from_behind set; neither is followed. Shenmue's strikes, with no
+  mot_kind, are active from hit to the later of cancel and hit + 2.
+- The lying before the rise: attack_hit's knock-down (StF from 0x2B5E4, FV
+  0x266E8, VF2 0x22E7C) sets the stun (+0x5DE) from the blow d, in the
+  attacker's units: StF and FV (d >> 1) * 2, VF2 ((d >> 1) - 7) * 2. The
+  rise handler (StF 0x14D00, FV 0x1521C, VF2 0x157DC) counts it down in
+  the lying motion, then waits 40 frames (VF2's Shun 60) unless a get-up
+  is picked. Here: a rise command's mashing (+0x194, 4 frames off each) is
+  not read; a throw's victim (play ops 8 and 18) and Shenmue's blows lie
+  the engine's own 10 and 40.
+- Not read from the games yet, the engine's own: attack_hit's other changes
+  to the damage (StF from 0x2B0F8: tender, multi, ukemi; FV and VF2
+  have most of them, and VF2 its air).
 - The CPU player is a simple one.
-- Throws use 50 damage on VF2/FV, because their damage is not read.
 - Rounds last 40 s and need 2 wins (1–3 in the menu).
 - FV's cage breaks on a finishing KO and stays broken for the match; a
   fighter past a broken side is out (docs/FV-MAHLER.md, Breaking the cage).
