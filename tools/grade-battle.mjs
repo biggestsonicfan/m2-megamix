@@ -1,7 +1,8 @@
 /*
  * Grade a battle on the board build against the same battle in its source
  * game: two logs of tools/mame/battle.lua, the same fighters, stage and
- * input script (docs/GRADING.md).
+ * input script (docs/GRADING.md). The browser build's log
+ * (tools/js-battle.mjs) stands in for the board's the same way.
  *
  *   node tools/grade-battle.mjs <source log> <board log> [--json]
  *
@@ -161,8 +162,9 @@ export function grade(src, brd) {
     /* Another game's fighters come in on StF's bar (their damage scaled to
      * its energy, tools/vf2-guest.mjs), so against VF2 or FV the board runs
      * StF's energy and damage and energy are compared as shares of each
-     * game's bar: the source's scaled by f, the same within a point. */
-    const cross = src.setup && src.setup.game !== 'stf';
+     * game's bar: the source's scaled by f, the same within a point. The
+     * browser build (tools/js-battle.mjs) runs one bar for every game. */
+    const cross = src.setup && (src.setup.game !== 'stf' || brd.setup?.game === 'js');
     const f = cross && src.setup.energy && brd.setup?.energy ? brd.setup.energy / src.setup.energy : 1;
     const sameDmg = (a, b) => (f === 1 ? a.dmg === b.dmg : Math.abs(a.dmg * f - b.dmg) <= 1);
     if (f !== 1) report.notes.push(`energy: source ${src.setup.energy}, board ${brd.setup.energy}: the source's damage scaled by ${f.toFixed(3)}`);
@@ -272,7 +274,7 @@ const src = readLog(readFileSync(srcPath, 'utf8')), brd = readLog(readFileSync(b
  * import's guests.json maps them back (motionIds, the board's id -> his
  * game's), so his motions compare with the source's. */
 const GUESTS = new URL('../board/roms/guests.json', import.meta.url).pathname;
-if (src.setup && src.setup.game !== 'stf' && existsSync(GUESTS)) {
+if (src.setup && src.setup.game !== 'stf' && brd.setup?.game === 'board' && existsSync(GUESTS)) {
     const game = { vf2: 'VF2', fv: 'Fighting Vipers' }[src.setup.game];
     for (const g of JSON.parse(readFileSync(GUESTS, 'utf8')).guests) {
         if (g.game !== game || !g.motionIds) continue;
