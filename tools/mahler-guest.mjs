@@ -395,6 +395,8 @@ export function importMahler(R, ctx, games, { byKey }, { chr: CHR_ = CHR, obj = 
         chars, game: 'Fighting Vipers', name: Who, models: pieces.length + 1, pads: A.extras.length,
         polygons: pieces.reduce((n, q) => n + q.polys.length, 0), colours: byWord.size, balls: ballsMoved,
         moves: mv.coverage,
+        /* the board's motion id -> FV's, for tools/grade-battle.mjs */
+        motionIds: Object.fromEntries([...mv.newId, ...mv.copyId].map(([v, b]) => [b, v])),
     };
     return { report, coverage, pieces, parts, p2Parts, moves: mv };
 }
