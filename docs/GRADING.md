@@ -499,6 +499,30 @@ F to 37 F):
   Unforced, the board's fights are the same as before frame for frame:
   battle.lua, 12000 frames, Akira vs Sonic seeds 1 and 2 and Sonic vs
   Honey seed 1, old and new ROMs' traces identical.
+- rob_check_stage's tail, read in StF, g4/vf2.dis and the board side by
+  side: the board has StF's, VF2 has none, and for Akira it looks dead.
+  Every path of the board's routine ends at loc_183CC (StF 0x183CC), VF2's
+  branch too (its `ret`s branch there): unless rob+0x1E18 (last frame's
+  rob+0x1A4, stored at loc_129DC) has bit 8, a fighter with rob+0x1A4 bit 8
+  gets rob+0x760 = the halfword at [0x500828]+0x1E0 (the stage's axis,
+  which get_my_info also reads), + 0x8000 for 2P (rob+4). Its one reader
+  is StF's rob_revise_yang (board/src/stf_motion.s 7186..7192, StF 0x17CBC):
+  with rob+0x1A4 bit 8 and rob+0x821 == 4 (byte 2 of setup op 4, the
+  strike, from _uk_read_move_data) it turns him to rob+0x760 at 0x71C a
+  frame. VF2's routine ends at its last store (V 0x180B4, `ret` at
+  0x180B8), its rob_revise_yang (V 0x17710..) has no bit-8 path, and its
+  rob+0x760 is another field (a word its rob init clears, V 0x14020). StF's
+  other rob+0x1E18 bit-8 reader (loc_1B15C, frame 4 on a new bit 8) needs w0
+  bit 18, Super Sonic's. For Akira on the board both of the tail's
+  conditions are rare: no setup of his 339 sets bit 8 by play op 5 (bit 8 is
+  in STF_FLAG_BITS, so one would keep it), and only VF2 432 and 567 have
+  strike byte 2 = 4. Bit 8 could still come from a request's kind flags in
+  StF's code; that was not followed. A port would be a GAME_VF2 branch at
+  loc_183CC to its `ret` (rob+0x760 unwritten) or at rob_revise_yang's
+  bit-8 test; a MAME check: Akira vs Sonic, battle.lua seeds 1 and 2, a
+  write tap on rob+0x760 (pc of the stis at loc_183FC) and on rob+0x1A4
+  for bit 8, with rob+0x821; no hit means nothing to port. Read from the
+  code only; the board was not run.
 
 Left as they are:
 
