@@ -335,6 +335,25 @@ F to 37 F):
   keeps its height on the board where VF2 would sink it. The glance
   before this item was right. Read from the code only; the board was not
   run.
+- VF2's × 0.5 slow-motion add, read in StF, g4/vf2.dis and the board side
+  by side: VF2 has it, StF and the board do not. After the move of rob+0x18..
+  by rob+0x2C..0x34 (which all three add in full), VF2 loads [0x500068] at
+  0x17ADC and tests bit 20 (0x17AE4): set, rob+0x18 and rob+0x20 get
+  rob+0x5C8 and rob+0x5D0 × 0.5 (0x3F000000; 0x17AE8..0x17B20); clear, they
+  get them in full (0x17B24..0x17B40). So the half is not an extra add but
+  the slow-motion form of the one add. VF2 sets bit 20 at 0x1FD5C (with
+  gravity 0.00067556 and [0x50A004] 2.0) and 0x295C4. StF's own bytes
+  (sfight.zip) keep the load (0x1818C) but no test: the full add follows
+  (0x18194..0x181B0), and no StF code sets, clears or tests bit 20 of
+  [0x500068]. The board is StF's (board/src/stf_motion.s 7485..7493, its
+  load dead too), its fight RAM starts the word with bit 20 clear
+  (fighter.c, 0x8400442C), and nothing on it sets the bit. Outside VF2's
+  slow motion the three agree. In it, a VF2 fighter's push (rob+0x5C8/
+  0x5D0) moves it half as far each frame while its own speed moves it in
+  full; on the board a VF2 guest's push always moves it in full, and the
+  board never enters that slow motion anyway. The prior note was right, with
+  the half replacing the full add rather than adding to it. Read from the
+  code only; the board was not run.
 
 Left as they are:
 
