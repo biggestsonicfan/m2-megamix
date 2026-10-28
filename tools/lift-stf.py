@@ -127,8 +127,12 @@ NATIVE_TAIL = 'cmd_native_tail', 0x1EF48, 'ld      0x1A4(g7), r15  # unreachable
 # match from the routine's label on). coli_cont_cop_g4: the line after
 # coli_cont_cop reads function 0x3B's results back (g4 the push).
 # area_coli_618: area_coli's store of the copro's 0x618 word.
+# rsc_gra_vf2, rsc_gra_done: rob_spd_control's [0x50A004] x gravity and the
+# x 0.25 after it (StF 0x17F90..0x17F9C).
 NAMED = {'coli_cont_cop_g4': ('coli_cont_cop', 'ld      (g11)[g12*1], g5'),
-         'area_coli_618': ('area_coli', 'st      r6, 0x624(g7)')}
+         'area_coli_618': ('area_coli', 'st      r6, 0x624(g7)'),
+         'rsc_gra_vf2': ('rob_spd_control', 'mulr    r13, r14, r5'),
+         'rsc_gra_done': ('rob_spd_control', 'mulr    r13, r5, r5')}
 # Tables below 0x1000 that are tables all the same (cop_initialize_end2's
 # collision-ball pointers).
 LOW_TABLES = {'off_FE8'}
@@ -317,7 +321,13 @@ INSERT_LIFTED = {
 # VF2's 0x17890 (StF's loc_17EEC); StF has no such path. After StF's own gate
 # (mod_fa_coli bit 31), before the rest of its tree. VF2's tag_yang native
 # (V 0x49040) is the debug menu's display, not a reader.
+# rob_spd_control's friction (V 0x1791C): VF2's amount is [0x50A004] x its
+# own gravity, 0x3BB4D327 in board units (ACT_RC_JUMP's rob+0x5CC), with no
+# x 0.25; StF's is [0x50A004] x [0x50A000] x 0.25, 1.143x VF2's for a guest.
 INSERT = {
+    'rsc_gra_vf2': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                    'cmpobne GAME_VF2, r14, rsc_gra_own', 'lda     0x3BB4D327, r14',
+                    'mulr    r13, r14, r5', 'b       rsc_gra_done', 'rsc_gra_own:'],
     'area_coli_618': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                       'cmpobne GAME_VF2, r14, area_coli_618_own', 'ldos    0x61A(g7), r14',
                       'shlo    16, r14, r14', 'shlo    16, r7, r7', 'shro    16, r7, r7',

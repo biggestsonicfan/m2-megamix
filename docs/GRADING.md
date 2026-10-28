@@ -603,7 +603,28 @@ F to 37 F):
   after; the board's 0.5 on 44..54 and 0 from 55 (1P is out of the jab
   reaction there, VF2's still in it). The frames whose ratio is not 1.1427
   (44, 45: 0.571, 0.490; 55..60: 0.762) have a different rob+0x5D4, not a
-  different formula. Not ported.
+  different formula.
+  Ported: after the `mulr r13, r14, r5`, a VF2 fighter (guest_char_game of
+  rob+0x1B1) takes r5 = [0x50A004] × 0x3BB4D327 (INSERT `rsc_gra_vf2`
+  in tools/lift-stf.py); StF's fighters keep
+  [0x50A004] × [0x50A000] × 0.25. The same run on the board after it
+  (VF2's own run unchanged), frames 40..60: w 79, [0x50A004] 1.0,
+  [0x50A008] 10.0, the board's gravity still 0.0252222 (it is not read
+  for a VF2 fighter now). r5:
+  - rob+0x5D4 0 (frame 40; the board's 55..60): VF2 0.0035843, the board
+    0.0072658 board units = 0.0035843 VF2 units.
+  - rob+0x5D4 0.5 (41; 46..54 on both): VF2 0.0053764, the board 0.0108987
+    = 0.0053764.
+  - rob+0x5D4 1.0 (42): VF2 0.0071685, the board 0.0145316 = 0.0071685.
+  - rob+0x5D4 1.5 (43): VF2 0.0089606, the board 0.0181645 = 0.0089607.
+  - rob+0x5D4 2.0 (44): VF2 0.0107528, the board 0.0217974 = 0.0107528.
+  The ratio is 1.0000 on every frame whose rob+0x5D4 matches (40..44,
+  46..54), and r6 is r5 × 10 on both, so the push's k matches too. 1P's
+  speed in is still the board's smaller one (0.02289 VF2 units on 41,
+  VF2's 0.03645: the knockback's difference), so the board now zeroes it
+  on frame 44 (|v| 0.00138 under r5), VF2 on 45: rob+0x5D4 differs on 45
+  (VF2 2.5, the board 0.5; ratio 0.4286) and on 55..60 (VF2 0.5, the
+  board 0; 0.6667), as before, from the knockback, not this formula.
 
 Left as they are:
 
