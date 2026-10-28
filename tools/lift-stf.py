@@ -278,6 +278,20 @@ INSERT_LIFTED = {
 # rand mixes the hardware timers (0xF00000) into G_RANDOM; two linked boards
 # (link.c, in step: link.state LS_RUN, 5) must draw the same numbers, so
 # there it steps G_RANDOM alone (an LCG, its high half).
+# rob_check_stage's bounds check (loc_18214, loc_18248): |x| or |z| at or
+# past 0x50A00C puts the fighter out (r11 1), its floor 0x50A010 (g4). FV's
+# (F 0x588C0) is StF's to the instruction but for two tests that branch
+# nowhere, so StF's and FV's fighters run StF's. A VF2 fighter runs VF2's
+# (V 0x17B68): measured at its root even with 0x1A4 bit 4 set; 0x1A4 bit 23
+# zeroes its fall and height (0x620 1 once 0x624 is); on the ground, no
+# 0x61C: 0x804 bit 4 to 0x1A4 bit 4; with 0x61C, bit 4 cleared and, 0x60E
+# clear, in bounds 0x620 and its fall and height zeroed, out of bounds the
+# landing below; in the air StF's landing test, 0x620 stored only on landing,
+# and with 0x61C, out of bounds, it lands at 0 when 0x614 is set, else on the
+# ground outside if it was low enough. The landing is VF2's 0x18B58, StF's
+# sub_1980C. Left out: VF2's 0x624 setting w0 bit 5 (ringout.c does VF2's
+# ring out), its edge stumbles (motions 0xC020182..9 and the turn to 0x61A,
+# from 0x614/0x618), and its end without StF's 0x1E18 tail (kept here).
 INSERT = {
     'rand': ['ld      _link+4, r15', 'cmpobne 5, r15, rand_own',
              'ld      stf_ram_500000+0x98, r15', 'lda     0x41C64E6D, r14',
@@ -357,6 +371,43 @@ INSERT = {
                   'cmpobe  GAME_STF, r3, loc_2B9CC_up', 'ld      0x1A4(g8), r3',
                   'bbc     3, r3, loc_2B9CC_up', 'addo    4, r9, r9',
                   'loc_2B9CC_up:'],
+    'loc_18214': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobne GAME_VF2, r14, loc_18214_own', 'ld      0x1F4(g7), r3',
+                  'ld      0x1FC(g7), r5',
+                  'loc_18214_own:'],
+    'loc_18248': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobne GAME_VF2, r14, loc_18248_own',
+                  'ld      0x1A4(g7), r15', 'bbs     0x17, r15, rcs_vf2_down',
+                  'ld      0x0(g7), r15', 'bbs     2, r15, rcs_vf2_air',
+                  'ldos    0x61C(g7), r14', 'cmpobne 0, r14, rcs_vf2_wall',
+                  'ld      0x804(g7), r15', 'bbc     4, r15, loc_183CC',
+                  'ld      0x1A4(g7), r15', 'setbit  4, r15, r15', 'st      r15, 0x1A4(g7)',
+                  'b       loc_183CC',
+                  'rcs_vf2_wall:', 'ld      0x1A4(g7), r15', 'clrbit  4, r15, r15',
+                  'st      r15, 0x1A4(g7)', 'ldos    0x60E(g7), r14', 'cmpobne 0, r14, loc_183CC',
+                  'cmpobe  0, r11, rcs_vf2_in', 'setbit  0, r10, r10', 'b       rcs_vf2_out',
+                  'rcs_vf2_in:', 'mov     0, r15', 'st      r15, 0x620(g7)', 'st      r15, 0x30(g7)',
+                  'st      r15, 0x1C(g7)', 'b       loc_183CC',
+                  'rcs_vf2_air:', 'ld      0x0(g7), r15', 'bbs     3, r15, loc_183CC',
+                  'lda     0x3CA3D70A, r13', 'addr    r13, g4, r5', 'ld      0x1C(g7), r6',
+                  'ld      0x81C(g7), r14', 'addr    r5, r14, r3', 'cmpr    r6, r3',
+                  'bge     rcs_vf2_up', 'setbit  0, r10, r10', 'ld      0x84(g7), r14',
+                  'addr    r5, r14, r3', 'cmpr    r6, r3', 'bge     rcs_vf2_up',
+                  'rcs_vf2_land:', 'ld      0x0(g7), r15', 'setbit  0xD, r15, r15',
+                  'st      r15, 0x0(g7)', 'st      g4, 0x1C(g7)', 'st      r11, 0x620(g7)',
+                  'mov     0, r15', 'st      r15, 0x30(g7)', 'call    sub_1980C', 'b       loc_183CC',
+                  'rcs_vf2_up:', 'ldos    0x61C(g7), r14', 'cmpobe  0, r14, loc_183CC',
+                  'bbs     0x1F, g4, rcs_vf2_out', 'bbs     0, r10, rcs_vf2_land', 'b       loc_183CC',
+                  'rcs_vf2_out:', 'ldos    0x614(g7), r14', 'cmpobne 0, r14, rcs_vf2_floor',
+                  'bbs     0, r10, rcs_vf2_land', 'b       loc_183CC',
+                  'rcs_vf2_floor:', 'ld      0x0(g7), r15', 'setbit  0xD, r15, r15',
+                  'st      r15, 0x0(g7)', 'mov     0, r15', 'st      r15, 0x1C(g7)',
+                  'st      r15, 0x620(g7)', 'st      r15, 0x30(g7)', 'call    sub_1980C',
+                  'b       loc_183CC',
+                  'rcs_vf2_down:', 'mov     0, r15', 'st      r15, 0x30(g7)', 'st      r15, 0x1C(g7)',
+                  'ldos    0x624(g7), r14', 'cmpobe  0, r14, loc_183CC', 'mov     1, r15',
+                  'st      r15, 0x620(g7)', 'b       loc_183CC',
+                  'loc_18248_own:'],
 }
 
 LABEL = re.compile(r'^([A-Za-z_.$][\w.$]*):')

@@ -394,6 +394,24 @@ F to 37 F):
   With rob+0x1A4 bit 4 set it is measured by rob+0x18/0x20, not its root.
   Read from the code only; the board was not run.
 
+  Since then the check goes by the fighter's game (`guest_char_game`;
+  tools/lift-stf.py, INSERT at loc_18214 and loc_18248). FV's (F 0x588C0,
+  rebuilt from `fvipers.zip`) is StF's to the instruction but for two
+  tests that branch nowhere (rob+0x7D6 in place of 0x7D2), so StF's and
+  FV's fighters keep StF's path. A VF2 fighter now runs VF2's: measured
+  at its root, rob+0x1A4 bit 23 zeroing its fall and height, rob+0x620
+  stored only where VF2 stores it, and VF2's landings (on the ground
+  outside when out of bounds, 0x17E44; at 0 when rob+0x614 is set,
+  0x17FB8), through StF's sub_1980C (VF2's 0x18B58, the same routine on
+  each game's offsets). Left out: VF2's rob+0x624 setting w0 bit 5
+  (ringout.c does VF2's ring out), its edge stumbles (motions
+  0xC020182..9 and the turn to rob+0x61A), and its end without StF's
+  rob+0x1E18 tail. Run on MAME (Akira vs Sonic, South Island): Akira
+  takes VF2's path every frame (seeds 2 and 3: its ground, wall, air and
+  landing branches hit), and with seeds 1 and 2 the logs match the build
+  before it frame for frame; none of those fights landed him out of
+  bounds, so the out-of-bounds landings are not yet seen run.
+
 Left as they are:
 
 - Honey's intro pose: StF's motion 15, the board's 507.
