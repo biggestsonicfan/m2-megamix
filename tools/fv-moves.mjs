@@ -81,6 +81,9 @@ const FV_ACTION = {
  * tools/lift-stf.py): FV's actions 5 and 6 (F 0x139C4, 0x13A60) are the same
  * walks, with these actions' motions */
 const CRAWL_ACTIONS = [6, 7, 31, 32, 33, 34];
+/* The board's slots 61..70, FV's walks' (F 0x13878, 0x13934; tools/lift-stf.py):
+ * its actions 3, 4, 27..30, then the motions it plays on rob+0 bit 10 */
+const WALK_ACTIONS = [3, 4, 27, 28, 29, 30], WALK_MOTIONS = [0x9e, 0x9d, 0x289, 0x288];
 /* StF's getting-up slots 41..51 are FV's actions 43..53 */
 const RISE_SLOT = 41, RISE_ACTION = 43, RISE_SLOTS = 11;
 /* FV's reaction kind -> StF's (VF2's numbers), by what its lists play */
@@ -234,6 +237,8 @@ export function importFvMoves(R, ctx, fv, A, { who, k, thrown, handShape = (s) =
     const want = new Set([FALL]);
     STF_ACTIONS.forEach((x, s) => { const m = slotMotion(x, s); if (m) want.add(m); });
     for (const n of CRAWL_ACTIONS) if (act(n)) want.add(act(n));
+    for (const n of WALK_ACTIONS) if (act(n)) want.add(act(n));
+    for (const m of WALK_MOTIONS) want.add(m);
     for (const f of fvKindOf.values()) for (const x of reactions[f]) if (x) want.add(x);
     const commitWord = (a) => p32(a + 1);
     for (const a of commits) {
@@ -284,12 +289,14 @@ export function importFvMoves(R, ctx, fv, A, { who, k, thrown, handShape = (s) =
             switch (op) {
             /* [4, attack, ?, damage, ...0x0D] as StF's; FV's effects (+0xE..+0x12) out, StF's float in.
              * The damage stays FV's: the board's attack_hit takes FV's knockback from it and
-             * scales what comes off the bar (tools/lift-stf.py, loc_2B898_fv, fb_bar_fv). */
+             * scales what comes off the bar (tools/lift-stf.py, loc_2B898_fv, fb_bar_fv).
+             * FV's byte 0xE (its knock-down lift) rides in the float's low byte (FV_HIT). */
             case 4:
                 o.length = 0xe;
                 o[7] = FV_KIND[b[7]] ?? b[7];
                 if (b[0xf] | b[0x10] | b[0x11] | b[0x12]) lost.strikeBytes++;
                 o.push(...f32(2.0));
+                o[0xe] = b[0xe] & 7;
                 break;
             case 5: put16(o, 1, mid(u16at(b, 1))); o[3] = damage(b[3]); break;
             case 3: o.splice(7, 4, ...f32(new DataView(b.buffer, b.byteOffset + 7, 4).getFloat32(0, true) * k)); break;
@@ -437,6 +444,9 @@ export function importFvMoves(R, ctx, fv, A, { who, k, thrown, handShape = (s) =
         actions[53 + i] = (actions[53 + i] & ~MOTION_ID) | mid(act(n));
         changed.set(53 + i, mid(act(n)));
     });
+    /* 61..66 with his flags; 67..70 flagless, as FV's lda plays them */
+    WALK_ACTIONS.forEach((n, i) => { actions[61 + i] = mid(A.actions[n]); });
+    WALK_MOTIONS.forEach((m, i) => { actions[61 + WALK_ACTIONS.length + i] = mid(m); });
     const actionsAt = alloc(u16s(actions), 'actions');
     report.push(`action slots: ${changed.size} of ${actions.length} his own`);
 

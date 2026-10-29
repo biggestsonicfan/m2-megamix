@@ -146,7 +146,8 @@ NAMED = {'coli_cont_cop_g4': ('coli_cont_cop', 'ld      (g11)[g12*1], g5'),
          'sup_fv_near': ('loc_29BD8', 'ld      0x168(g13), r3'),
          'sup_fv_jump': ('loc_29D34', 'cmpobne 0, r3, loc_29F48'),
          'en_fv_near': ('get_en_info', 'lda     0x3ECCCCCD, r3'),
-         'en_fv_far': ('loc_18D00', 'ld      en_ang_dist, r3')}
+         'en_fv_far': ('loc_18D00', 'ld      en_ang_dist, r3'),
+         'kb_fv_lift': ('loc_2B738', 'ld      (g11)[g12*1], r5')}
 # Tables below 0x1000 that are tables all the same (cop_initialize_end2's
 # collision-ball pointers).
 LOW_TABLES = {'off_FE8'}
@@ -392,6 +393,9 @@ INSERT_LIFTED = {
 # rsc_normal_gravity: a VF2 fighter in the air falls by VF2's gravity (V
 # 0x17A88, [0x50A000] 0.00272, x 2.027 for its size on the board), with no
 # StF 0x1A4 bit 14 (hit in the air) x flt_1D290.
+# An FV fighter falls by FV's (F 0x1880C, 0.00522 * K = 0x3C2EE9B2), with
+# no bit 14 either; plus rob+0x5CC, which his jump's takeoff (loc_13E2C) sets
+# to StF's gravity less FV's, so that a jump still falls by FV's.
 # ACT_RC_TA_GUARD (V 0x14E78): a VF2 fighter crouched (0x1A4 bit 3) guards
 # by VF2's slot 12 (crouch to guard, the board's slot 52, vf2-guest.mjs) at
 # the frame left (sub_1CE94), or from its start on rob+0 bit 0 or 0x810 bit
@@ -731,8 +735,70 @@ SUP_FV = {
                     *_sup_fv_turn('sup_fv_both', 2), *_sup_fv_turn('sup_fv_one', 1), 'sup_fv_jump_own:'],
 }
 
+# An FV strike knocks down as FV's does (F 0x266A8..0x26914): without the
+# motion's own numbers, the angle and factor from FV's table by kind
+# (fighter.c, fv_hit_kinds; rob+0x843), then StF's combo limit; the speed
+# (* K, kb_fv_v) lifted by FV's table by the strike's byte 0xE (FV's rob
+# 0x874; fv_hit_lift), or 3.7 up for kind 3, where StF takes its kind's
+# factors. FV's byte 0xE rides in the low byte of the strike's float, 2.0 on
+# every FV strike (fv-moves.mjs); _uk_read_move_data keeps it at rob+0x874,
+# which StF leaves alone. FV's 0x7D6 is StF's 0x7D2.
+# An FV fighter knocked down lands (FV's type 0xC, F 0x15130; StF's
+# ACT_RC_DOWN, loc_14C48) taking a quarter of the last damage (0xC54) again,
+# leaving him 1 unless he is out already (rob+0 bit 5); StF's lands free.
+def _fv_lift(at):
+    """FV's knock-down lift (F 0x26840, 0x268CC): r12 the factor, or on to
+    the store."""
+    if at == 0:
+        return ['ldob    0x874(g7), r14', 'cmpobne 3, r14, kb_fv_up_kind', 'cmpobne 0, r8, kb_fv_up_tbl',
+                'kb_fv_up_kind:', 'ldob    0x843(g7), r14', 'cmpobne 3, r14, kb_fv_up_7d2',
+                'lda     0x406CCCCD, r12', 'b       kb_fv_up_mul', 'kb_fv_up_7d2:', 'ldob    0x7D2(g7), r14',
+                'bbc     0, r14, kb_fv_up_st', 'kb_fv_up_tbl:', 'ldob    0x874(g7), r14',
+                'lda     _fv_hit_lift, r12', 'ld      (r12)[r14*8], r12', 'kb_fv_up_mul:', 'mulr    r12, r5, r5',
+                'kb_fv_up_st:']
+    return ['ldob    0x874(g7), r14', 'cmpobne 3, r14, kb_fv_al_7d2', 'cmpobne 0, r8, kb_fv_al_tbl',
+            'kb_fv_al_7d2:', 'ldob    0x7D2(g7), r14', 'bbc     0, r14, kb_fv_al_st', 'kb_fv_al_tbl:',
+            'ldob    0x874(g7), r14', 'lda     _fv_hit_lift+4, r12', 'ld      (r12)[r14*8], r12',
+            'ldob    0x7D2(g7), r14', 'bbc     0, r14, kb_fv_al_mul', 'ldob    0x874(g7), r14',
+            'cmpobne 3, r14, kb_fv_al_mul', 'lda     0x40400000, r12', 'kb_fv_al_mul:', 'mulr    r12, r5, r5',
+            'mulr    r12, r6, r6', 'kb_fv_al_st:']
+
+
+FV_HIT = {
+    'loc_14C48': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobne GAME_FV, r14, loc_14C48_own', 'ldos    0xC54(g7), g0', 'shro    2, g0, g0',
+                  'ld      0x0(g7), r15', 'bbs     5, r15, loc_14C48_dmg', 'ldis    0x1AC(g7), r14',
+                  'subi    g0, r14, r13', 'cmpibl  0, r13, loc_14C48_dmg', 'subi    1, r14, g0',
+                  'loc_14C48_dmg:', 'call    damage_calc_vf2', 'loc_14C48_own:'],
+    'loc_1B76C': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobne GAME_FV, r14, loc_1B76C_own', 'mov     0, r13', 'ldob    0xF(r11), r14',
+                  'cmpobne 0, r14, fv_strike_e', 'ldob    0x10(r11), r14', 'cmpobne 0, r14, fv_strike_e',
+                  'ldob    0x11(r11), r14', 'lda     0x40, r15', 'cmpobne r15, r14, fv_strike_e',
+                  'ldob    0xE(r11), r13', 'and     7, r13, r13', 'fv_strike_e:', 'stob    r13, 0x874(g7)',
+                  'loc_1B76C_own:'],
+    'loc_2B69C': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobne GAME_FV, r14, loc_2B69C_own', 'ldob    0x843(g7), r7', 'shlo    5, r7, r7',
+                  'lda     _fv_hit_kinds(r7), r7', 'ld      0x1A4(g8), r15', 'bbs     4, r15, kd_fv_low',
+                  'cmpobe  3, r8, kd_fv_counter', 'ldis    0x18(r7), r6', 'ld      0x8(r7), r13',
+                  'b       kd_fv_scale', 'kd_fv_counter:', 'ldis    0x1A(r7), r6', 'ld      0xC(r7), r13',
+                  'b       kd_fv_scale', 'kd_fv_low:', 'cmpobe  3, r8, kd_fv_low_counter',
+                  'ldis    0x1C(r7), r6', 'ld      0x10(r7), r13', 'b       kd_fv_scale',
+                  'kd_fv_low_counter:', 'ldis    0x1E(r7), r6', 'ld      0x14(r7), r13', 'kd_fv_scale:',
+                  'mulr    r13, r9, r9', 'b       loc_2B6E8', 'loc_2B69C_own:'],
+    'kb_fv_lift': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                   'cmpobne GAME_FV, r14, kb_fv_lift_own', *_fv_lift(0), 'st      r5, 0x5E4(g8)',
+                   'lda     0x12802525, r15', 'st      r15, (g11)[g12*1]', 'st      r6, (g11)[g12*1]',
+                   'st      r4, (g11)[g12*1]', 'ld      (g11)[g12*1], r4', 'subi    r10, 0, r12',
+                   'lda     0x12002424, r15', 'st      r15, (g11)[g12*1]', 'st      r12, (g11)[g12*1]',
+                   'st      r4, (g11)[g12*1]', 'ld      (g11)[g12*1], r5', 'lda     0x12802525, r15',
+                   'st      r15, (g11)[g12*1]', 'st      r12, (g11)[g12*1]', 'st      r4, (g11)[g12*1]',
+                   'ld      (g11)[g12*1], r6', *_fv_lift(1), 'st      r5, 0x5E0(g8)', 'st      r6, 0x5E8(g8)',
+                   'b       loc_2B898', 'kb_fv_lift_own:'],
+}
+
 INSERT = {
     **SUP_FV,
+    **FV_HIT,
     **VF2_HIT,
     **VF2_RISE,
     'loc_2F668': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
@@ -760,8 +826,11 @@ INSERT = {
                     'b       rsc_gra_guest', 'rsc_gra_fv:', 'lda     0x3C2EE9B2, r14', 'rsc_gra_guest:',
                     'mulr    r13, r14, r5', 'b       rsc_gra_done', 'rsc_gra_own:'],
     'rsc_normal_gravity': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                           'cmpobe  GAME_FV, r14, rsc_normal_gravity_fv',
                            'cmpobne GAME_VF2, r14, rsc_normal_gravity_own',
-                           'lda     0x3BB4D327, r3', 'rsc_normal_gravity_own:'],
+                           'lda     0x3BB4D327, r3', 'b       rsc_normal_gravity_own', 'rsc_normal_gravity_fv:',
+                           'ld      0x5CC(g7), r3', 'lda     0x3C2EE9B2, r13', 'addr    r13, r3, r3',
+                           'rsc_normal_gravity_own:'],
     'ACT_RC_TA_GUARD': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                         'cmpobne GAME_VF2, r14, ta_guard_own', 'ld      0x6D4(g8), r15',
                         'bbc     0, r15, ta_guard_vf2', 'call    sub_1CED4', 'ld      0x1A4(g7), r15',
@@ -788,8 +857,12 @@ INSERT = {
     # (0x810 bit 7), VF2 plays its slot 3 or 4 (the board's 59 and 60) as it
     # does a crouch walk's; StF walks on at once. rob+0 bit 10's motions not
     # ported, nor StF's rob+0 bit 29 test, VF2 not having it.
-    'ACT_RC_WALK': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14', 'cmpobne GAME_VF2, r14, walk_own', 'ld      0x1A4(g7), r7', 'ld      0x0(g7), r6', 'bbs     3, r7, vf2_walk_low', 'bbc     0xA, r7, vf2_walk_10', 'bbs     0xB, r7, vf2_walk_go', 'b       vf2_walk_23', 'vf2_walk_low:', 'ldos    0x76(g6), g0', 'ldos    0x810(g7), r14', 'bbs     7, r14, vf2_walk_set', 'call    sub_1CE94', 'ret', 'vf2_walk_10:', 'bbs     0, r6, vf2_walk_go', 'ldos    0x810(g7), r14', 'bbc     7, r14, vf2_walk_go', 'ldos    0x76(g6), g0', 'call    sub_1CEA8', 'ret', 'vf2_walk_go:', 'ldos    0x22(g6), g0', 'b       vf2_walk_set', 'vf2_walk_23:', 'bbc     0, r6, vf2_walk_ret', 'ldos    0x26(g6), g0', 'bbc     1, r7, vf2_walk_set', 'ldos    0x22(g6), g0', 'vf2_walk_set:', 'call    set_motion', 'vf2_walk_ret:', 'ret', 'walk_own:'],
-    'ACT_RC_BWALK': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14', 'cmpobne GAME_VF2, r14, bwalk_own', 'ld      0x1A4(g7), r7', 'ld      0x0(g7), r6', 'bbs     3, r7, vf2_bwalk_low', 'bbc     0xA, r7, vf2_bwalk_10', 'bbc     0xB, r7, vf2_bwalk_go', 'b       vf2_bwalk_23', 'vf2_bwalk_low:', 'ldos    0x78(g6), g0', 'ldos    0x810(g7), r14', 'bbs     7, r14, vf2_bwalk_set', 'call    sub_1CE94', 'ret', 'vf2_bwalk_10:', 'bbs     0, r6, vf2_bwalk_go', 'ldos    0x810(g7), r14', 'bbc     7, r14, vf2_bwalk_go', 'ldos    0x78(g6), g0', 'call    sub_1CEA8', 'ret', 'vf2_bwalk_go:', 'ldos    0x2A(g6), g0', 'b       vf2_bwalk_set', 'vf2_bwalk_23:', 'bbc     0, r6, vf2_bwalk_ret', 'ldos    0x2E(g6), g0', 'bbc     1, r7, vf2_bwalk_set', 'ldos    0x2A(g6), g0', 'vf2_bwalk_set:', 'call    set_motion', 'vf2_bwalk_ret:', 'ret', 'bwalk_own:'],
+    # FV's (F 0x13878, 0x13934) are VF2's with its actions 3/4, 27..30 and,
+    # on rob+0 bit 10, its motions 0x9E/0x9D, 0x289/0x288 (the board's slots
+    # 61..70, tools/fv-moves.mjs); not ported: its walk forward's run (a
+    # commit 0x0905026F on 0x50A010, 0x7D6 bit 0 and 0xA29).
+    'ACT_RC_WALK': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14', 'cmpobe  GAME_FV, r14, fv_walk', 'cmpobne GAME_VF2, r14, walk_own', 'ld      0x1A4(g7), r7', 'ld      0x0(g7), r6', 'bbs     3, r7, vf2_walk_low', 'bbc     0xA, r7, vf2_walk_10', 'bbs     0xB, r7, vf2_walk_go', 'b       vf2_walk_23', 'vf2_walk_low:', 'ldos    0x76(g6), g0', 'ldos    0x810(g7), r14', 'bbs     7, r14, vf2_walk_set', 'call    sub_1CE94', 'ret', 'vf2_walk_10:', 'bbs     0, r6, vf2_walk_go', 'ldos    0x810(g7), r14', 'bbc     7, r14, vf2_walk_go', 'ldos    0x76(g6), g0', 'call    sub_1CEA8', 'ret', 'vf2_walk_go:', 'ldos    0x22(g6), g0', 'b       vf2_walk_set', 'vf2_walk_23:', 'bbc     0, r6, vf2_walk_ret', 'ldos    0x26(g6), g0', 'bbc     1, r7, vf2_walk_set', 'ldos    0x22(g6), g0', 'vf2_walk_set:', 'call    set_motion', 'vf2_walk_ret:', 'ret', 'fv_walk:', 'ld      0x1A4(g7), r7', 'ld      0x0(g7), r6', 'bbs     3, r7, fv_walk_low', 'bbc     0xA, r7, fv_walk_10', 'bbs     0xB, r7, fv_walk_go', 'b       fv_walk_23', 'fv_walk_low:', 'ldos    0x7A(g6), g0', 'bbc     0xA, r6, fv_walk_cut', 'ldos    0x86(g6), g0', 'fv_walk_cut:', 'ldos    0x810(g7), r14', 'bbs     7, r14, fv_walk_set', 'ldos    0x7A(g6), g0', 'call    sub_1CE94', 'ret', 'fv_walk_10:', 'bbs     0, r6, fv_walk_go', 'ldos    0x810(g7), r14', 'bbc     7, r14, fv_walk_go', 'ldos    0x7A(g6), g0', 'call    sub_1CEA8', 'ret', 'fv_walk_go:', 'ldos    0x7E(g6), g0', 'bbc     0xA, r6, fv_walk_set', 'ldos    0x8A(g6), g0', 'b       fv_walk_set', 'fv_walk_23:', 'bbc     0, r6, fv_walk_ret', 'ldos    0x80(g6), g0', 'bbc     1, r7, fv_walk_set', 'ldos    0x7E(g6), g0', 'fv_walk_set:', 'call    set_motion', 'fv_walk_ret:', 'ret', 'walk_own:'],
+    'ACT_RC_BWALK': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14', 'cmpobe  GAME_FV, r14, fv_bwalk', 'cmpobne GAME_VF2, r14, bwalk_own', 'ld      0x1A4(g7), r7', 'ld      0x0(g7), r6', 'bbs     3, r7, vf2_bwalk_low', 'bbc     0xA, r7, vf2_bwalk_10', 'bbc     0xB, r7, vf2_bwalk_go', 'b       vf2_bwalk_23', 'vf2_bwalk_low:', 'ldos    0x78(g6), g0', 'ldos    0x810(g7), r14', 'bbs     7, r14, vf2_bwalk_set', 'call    sub_1CE94', 'ret', 'vf2_bwalk_10:', 'bbs     0, r6, vf2_bwalk_go', 'ldos    0x810(g7), r14', 'bbc     7, r14, vf2_bwalk_go', 'ldos    0x78(g6), g0', 'call    sub_1CEA8', 'ret', 'vf2_bwalk_go:', 'ldos    0x2A(g6), g0', 'b       vf2_bwalk_set', 'vf2_bwalk_23:', 'bbc     0, r6, vf2_bwalk_ret', 'ldos    0x2E(g6), g0', 'bbc     1, r7, vf2_bwalk_set', 'ldos    0x2A(g6), g0', 'vf2_bwalk_set:', 'call    set_motion', 'vf2_bwalk_ret:', 'ret', 'fv_bwalk:', 'ld      0x1A4(g7), r7', 'ld      0x0(g7), r6', 'bbs     3, r7, fv_bwalk_low', 'bbc     0xA, r7, fv_bwalk_10', 'bbc     0xB, r7, fv_bwalk_go', 'b       fv_bwalk_23', 'fv_bwalk_low:', 'ldos    0x7C(g6), g0', 'bbc     0xA, r6, fv_bwalk_cut', 'ldos    0x88(g6), g0', 'fv_bwalk_cut:', 'ldos    0x810(g7), r14', 'bbs     7, r14, fv_bwalk_set', 'ldos    0x7C(g6), g0', 'call    sub_1CE94', 'ret', 'fv_bwalk_10:', 'bbs     0, r6, fv_bwalk_go', 'ldos    0x810(g7), r14', 'bbc     7, r14, fv_bwalk_go', 'ldos    0x7C(g6), g0', 'call    sub_1CEA8', 'ret', 'fv_bwalk_go:', 'ldos    0x82(g6), g0', 'bbc     0xA, r6, fv_bwalk_set', 'ldos    0x8C(g6), g0', 'b       fv_bwalk_set', 'fv_bwalk_23:', 'bbc     0, r6, fv_bwalk_ret', 'ldos    0x84(g6), g0', 'bbc     1, r7, fv_bwalk_set', 'ldos    0x82(g6), g0', 'fv_bwalk_set:', 'call    set_motion', 'fv_bwalk_ret:', 'ret', 'bwalk_own:'],
     # VF2's action_after (V 0x180D4) keeps rob+0 bit 8, a low posture: set
     # while crouched, or in a crouch's (0x810 bit 7) first half; StF's hit
     # code still reads it but never sets it.

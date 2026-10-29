@@ -123,9 +123,27 @@ Honey and Eggman (1P, 2P) on South Island and Aurora Icefield:
 | Honey      | 100 A       | 100 A       | 100 A       |
 | Eggman     | 100 A       | 99 A        | 100 A       |
 
-The guests, against their own games: Akira vs Akira 32 F on Tou-rin, the
+The guests, against their own games: Akira vs Akira 100 A on Tou-rin, the
 Colosseum and the Test stage (the fights are the same on all three: no
-ring edge comes in), Mahler vs Mahler on Western (FV) 37 F (below).
+ring edge comes in), Mahler vs Mahler on Western (FV) 54 D (below).
+
+Mahler from 37 F to 54 D (sync 6, motions 76, hits 59, end 59), by FV's
+own rules for an FV fighter (tools/lift-stf.py):
+
+- **The knock-down.** An FV strike knocks down by FV's angle and factor
+  table by kind (`fv_hit_kinds`, F 0x291DC) and FV's lift by the strike's
+  byte 0xE (`fv_hit_lift`, F 0x29314), not StF's ×2 and ×5.
+- **The fall.** A knocked-down FV fighter falls by FV's gravity (0.00522
+  × K), not StF's.
+- **The walks.** FV's walk forward and back (F 0x13878, 0x13934): VF2's
+  with FV's own actions, and on rob+0 bit 10 its motions 0x9E/0x9D and
+  0x289/0x288 (the board's slots 61..70).
+- **The landing.** A knocked-down FV fighter lands taking a quarter of
+  the last damage again (F 0x15130), leaving him 1.
+
+It parts on frame 131: FV pushes 1P off the downed 2P (its +0xA68, up to
+0.037 a frame), from its copro's own push (function 0x3D, F 0x28128);
+the board's (StF's, × K) gives none there. That is next.
 
 ## What the grading found
 
