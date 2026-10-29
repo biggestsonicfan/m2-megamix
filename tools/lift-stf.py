@@ -133,7 +133,10 @@ NAMED = {'coli_cont_cop_g4': ('coli_cont_cop', 'ld      (g11)[g12*1], g5'),
          'area_coli_618': ('area_coli', 'st      r6, 0x624(g7)'),
          'rsc_gra_vf2': ('rob_spd_control', 'mulr    r13, r14, r5'),
          'rsc_gra_done': ('rob_spd_control', 'mulr    r13, r5, r5'),
-         'damage_calc_vf2': ('damage_calculation', 'call    ketchup')}
+         'damage_calc_vf2': ('damage_calculation', 'call    ketchup'),
+         'pit_vf2_1': ('loc_1DC74', 'cmpible r4, r3, loc_1DC84'),
+         'pit_vf2_2': ('loc_1DCD4', 'cmpible r4, r3, loc_1DCE4'),
+         'pit_vf2_3': ('loc_1DD80', 'subo    1, r5, r5')}
 # Tables below 0x1000 that are tables all the same (cop_initialize_end2's
 # collision-ball pointers).
 LOW_TABLES = {'off_FE8'}
@@ -334,8 +337,12 @@ INSERT_LIFTED = {
 # StF's further factors; and the damage, out of VF2's 220, scaled to StF's 140
 # bar (rounded) with no catch-up (V 0x18A54). A plain hit's stun (V 0x22CE4)
 # is 4P/5 + 6 with no cap at the attacker's frames left + 6, and it sets
-# [0x50A0B6], the frames the fighters don't turn to face (stun + [0x50A0B7]
-# + 1, or stun - 1 on a counter), which StF works out and drops.
+# [0x50A0B6], the frames the fighters don't turn to face (stun + VF2's
+# [0x50A0B7], 10 where StF's is 2, + 1, or stun - 1 on a counter), which StF
+# works out and drops. pit_vf2_*: the command decoder (sub_1D984) reads at
+# most precede_inp_time frames of a fighter's pad history it has not read
+# yet; VF2's is 12 (StF's 8), so a press in a reaction's last 12 frames
+# still starts the next move.
 VF2_HIT = {
     'loc_2A954': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                   'cmpobne GAME_VF2, r14, loc_2A954_own', 'lda     0x3D088888, r13',
@@ -355,6 +362,12 @@ VF2_HIT = {
                   'bbc     8, r15, loc_2B220', 'lda     aCounter, g0', 'lda     (r11)[r11*2], r11',
                   'shro    1, r11, r11', 'mov     3, r8', 'lda     0x10000004, r15',
                   'st      r15, 0x194(g7)', 'b       loc_2B304', 'loc_2B1A4_own:'],
+    'pit_vf2_1': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobne GAME_VF2, r14, pit_vf2_1_own', 'mov     12, r3', 'pit_vf2_1_own:'],
+    'pit_vf2_2': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobne GAME_VF2, r14, pit_vf2_2_own', 'mov     12, r3', 'pit_vf2_2_own:'],
+    'pit_vf2_3': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobne GAME_VF2, r14, pit_vf2_3_own', 'mov     12, r5', 'pit_vf2_3_own:'],
     'loc_2B488': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                   'cmpobne GAME_VF2, r14, loc_2B488_own', 'and     0x1F, r8, g0', 'call    sub_2B94C',
                   'shlo    0x18, 0xB, r14', 'addi    g0, r14, r15', 'st      r15, 0x198(g8)',
@@ -362,7 +375,7 @@ VF2_HIT = {
                   'ldob    0x85E(g7), r3', 'loc_2B488_vf2_set:', 'cmpobne 0, r3, loc_2B488_vf2_stun',
                   'mulo    4, r11, r3', 'divo    5, r3, r3', 'ldob    byte_2BA7B, r13',
                   'addi    r13, r3, r3', 'loc_2B488_vf2_stun:', 'stos    r3, 0x5DE(g8)',
-                  'ldob    stf_ram_50A000+0xB7, r13', 'addi    r13, r3, r4', 'addo    0x1F, 3, r13',
+                  'mov     10, r13', 'addi    r13, r3, r4', 'addo    0x1F, 3, r13',
                   'cmpobe  r13, r8, loc_2B488_vf2_short', 'cmpobne 3, r8, loc_2B488_vf2_turn',
                   'loc_2B488_vf2_short:', 'subi    2, r3, r4', 'loc_2B488_vf2_turn:', 'addo    1, r4, r4',
                   'stob    r4, stf_ram_50A000+0xB6', 'mov     0, r6', 'b       loc_2B738',
