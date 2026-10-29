@@ -148,7 +148,9 @@ NAMED = {'coli_cont_cop_g4': ('coli_cont_cop', 'ld      (g11)[g12*1], g5'),
          'en_fv_near': ('get_en_info', 'lda     0x3ECCCCCD, r3'),
          'en_fv_far': ('loc_18D00', 'ld      en_ang_dist, r3'),
          'kb_fv_lift': ('loc_2B738', 'ld      (g11)[g12*1], r5'),
-         'look_fv': ('loc_30804', 'stob    r15, 0x7D3(g7)')}
+         'look_fv': ('loc_30804', 'stob    r15, 0x7D3(g7)'),
+         'land_fv': ('loc_18364', 'addr    r13, g4, r5'),
+         'land_time_fv': ('loc_19930', 'lda     0x3CA3D70A, r13')}
 # Tables below 0x1000 that are tables all the same (cop_initialize_end2's
 # collision-ball pointers).
 LOW_TABLES = {'off_FE8'}
@@ -777,6 +779,20 @@ def _fv_lift(at):
 
 
 FV_HIT = {
+    # calc_land_time (F 0x19C7C): FV's gravity, as rsc_normal_gravity's (FV
+    # has no bit 14 x flt_1D290); StF's 0x50A000 less 0x5CC is FV's only
+    # until the jump's next set_motion clears 0x5CC.
+    'loc_19930': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobne GAME_FV, r14, loc_19930_own', 'ld      0x5CC(g7), r3',
+                  'lda     0x3C2EE9B2, r13', 'addr    r13, r3, r3', 'loc_19930_own:'],
+    # The landing's margin, 0.02 above the floor (F 0x18A4C, and
+    # calc_land_time's), in FV's units: * K (0x3D277842).
+    'land_fv': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                'cmpobne GAME_FV, r14, land_fv_own', 'lda     0x3D277842, r13',
+                'addr    r13, g4, r5', 'land_fv_own:'],
+    'land_time_fv': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                     'cmpobne GAME_FV, r14, land_time_fv_own', 'lda     0x3D277842, r13',
+                     'land_time_fv_own:'],
     # FV's look block (F 0x2B274): no camera paths, skipped while the
     # frame counter is under 0x81 or rob+0 bit 8 is set, and the target is
     # seen from the fighter's own angle (StF turns it a quarter toward the
