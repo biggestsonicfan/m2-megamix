@@ -720,12 +720,13 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
     const recs = [];
     /* his 52 action slots (Knuckles' flag bits), the motions under mid, and
      * slot 52, VF2's 12 (crouch to guard), which the board's TA_GUARD plays
-     * for a VF2 fighter as VF2's does (tools/lift-stf.py) */
+     * for a VF2 fighter as VF2's does, 53..58, VF2's 6, 7, 24..27, its
+     * crouch walks', and 59/60, VF2's 3/4, its walks' (tools/lift-stf.py) */
     const actionsOf = (mid) => {
         const out = [];
         for (let i = 0; i < 52; i++) out.push(program.u16(knuxActions + i * 2));
         STF_ACTIONS.forEach((x, s) => { out[s] = (out[s] & ~MOTION_ID) | mid(actionMotion(x)); });
-        out.push(mid(A.actions[12]));
+        for (const v of [12, 6, 7, 24, 25, 26, 27, 3, 4]) out.push(mid(A.actions[v]));
         return out;
     };
     const actions = actionsOf(mid);
