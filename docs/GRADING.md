@@ -329,10 +329,31 @@ F to 37 F):
   (20.0), and it also sets [0x50FE00] = 0x4006, which sends the hit to
   `loc_2B5E4`. The multiply is skipped when r8 is 0 or in the attacker's
   rob+0x0 bit 18 case.
-  The victim's rob+0x0 bit 29 was not observed at the hit; it is the one
-  missing observation. So the factor for this jab (1.0 or 20.0) is still
-  unknown, and the written |v| is not proven to hold. The three-way split
-  stays unproven, and the knockback item stays open (nothing ported).
+  The victim's rob+0x0 bit 29 was not observed at the hit; the next item
+  settles it from the source (clear, so the factor is 1.0). The three-way
+  split stays unproven, and the knockback item stays open (nothing
+  ported).
+- **Frame 41: the victim's rob+0x0 bit 29 is clear at the hit (source).**
+  `rob_init` zeroes the block and writes rob+0x0 = 0x84000080 (1P) or
+  0x84000082 (2P), bit 29 clear (board/src/fighter.c 217, 221). The one
+  setter is play op 0x20 (`loc_1C748`, stf_motion.s 11058..11061), and
+  only when rob+0x84C = 2. +0x84C is written by `rob_init` (0xFF) and by
+  `set_mot_dat` from setup head byte 12 (stf_motion.s 9842), and
+  `convertSetup` writes byte 12 = 0 for every VF2 Akira setup
+  (tools/vf2-guest.mjs 547). StF's own setups with byte 12 = 2 are
+  motions 215..221; Akira gets none of them: his 52 action slots and
+  reaction positions 0..40 are his VF2 ids (vf2-guest.mjs 721, 738), the
+  kept tails 41..43 are StF's 0 or 59, and set_motion's remap
+  (`loc_1B044`) turns StF ids in those places into his. The other
+  writers of rob+0x0 change other bits and keep bit 29 (stf_motion.s
+  1822, 9301 and the alterbit/notbit stores; armour.c 48 ORs bit 28;
+  `rob_start` restores the word). So at this jab's `attack_hit`
+  [0x50FE02] stays the attacker's +0x843 = 0, [0x50FE00] is not forced
+  to 0x4006, the `ld 0(r7)` factor is 1.0, the stored +0x5E0/+0x5E8
+  vector is unchanged, and the written |v| holds. Bit 29 is not the
+  missing observation. This does not by itself prove `loc_2B488`; the
+  three-way split stays unproven and the knockback item open (nothing
+  ported).
 - **Frame 41: one slowdown.** StF's `rob_spd_control` (the block after
   `rsc_fric_end`) is the board's only slowdown, and VF2's constant-k
   slowdown is not on the board.
