@@ -125,7 +125,7 @@ Honey and Eggman (1P, 2P) on South Island and Aurora Icefield:
 
 The guests, against their own games: Akira vs Akira 100 A on Tou-rin, the
 Colosseum and the Test stage (the fights are the same on all three: no
-ring edge comes in), Mahler vs Mahler on Western (FV) 54 D (below).
+ring edge comes in), Mahler vs Mahler on Western (FV) 97 A (below).
 
 Mahler from 37 F to 54 D (sync 6, motions 76, hits 59, end 59), by FV's
 own rules for an FV fighter (tools/lift-stf.py):
@@ -141,9 +141,35 @@ own rules for an FV fighter (tools/lift-stf.py):
 - **The landing.** A knocked-down FV fighter lands taking a quarter of
   the last damage again (F 0x15130), leaving him 1.
 
-It parts on frame 131: FV pushes 1P off the downed 2P (its +0xA68, up to
-0.037 a frame), from its copro's own push (function 0x3D, F 0x28128);
-the board's (StF's, × K) gives none there. That is next.
+Then to 88 B: FV's down flag (rob+0 bit 16) and its hit damage (armour
+× 0.75, FV's counter, air and chain rules), its low-posture bit and look
+block, and its guard action and guard stun.
+
+Then to 97 A (sync 87, motions 100, hits 100, end 100):
+
+- **The land time.** calc_land_time (F 0x19C7C) under FV's gravity, and
+  the landing's margin (0.02 over the floor, F 0x18A4C) × K. 91 A.
+- **The follow-ups.** FV's follow-up tables end in op 0x36 (park the table,
+  try again next frame); tools/fv-moves.mjs keeps that tail. FV's hit sets
+  no multi-hit flag and halves nothing (StF's loc_2B304; FV's rob+0 bit 16
+  is its down). 93 A.
+- **The reactions.** StF's 30 kinds merge some of FV's 22 (FV's 5 and 10
+  are both StF's 11). An FV strike carries FV's own kind (rob+0x875, above
+  the lift in byte 0xE), and an FV victim picks from FV's own lists
+  (F 0x26978), which follow StF's 30 in his kind table. 94 A.
+- **The guard.** An FV strike is guarded as FV's attack_hit decides
+  (F 0x25DD0): a low (0x821 kind 2, 5 or 6) goes through a standing guard,
+  as VF2's; StF reads only the strike's flags. 96 A.
+- **The bar.** FV's damage × 25/28 carries its remainder on the victim
+  (rob+0x87D), so the board's bar is out only when FV's is: rounding each
+  hit had the board's 1P out a hit early. 97 A.
+
+Round 1 is in step to its last frames. Round 2 parts on frame 1206 (sync
+74): FV's round 2 is not round 1 turned 90 degrees. Its yaws are a unit off
+by frame 70 (16383, not 16384), which moves a push (F 0x25244) a frame
+later on frame 83, and on frame 1206 2P's atan target (F 0x190CC) stops
+150 short. That is the TGP's own sine, cosine and atan; the board's SHARC
+(StF's program) gives an exact turn. Next: FV's TGP trig for FV fighters.
 
 ## What the grading found
 
