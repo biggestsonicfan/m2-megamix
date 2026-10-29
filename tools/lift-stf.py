@@ -351,6 +351,13 @@ INSERT_LIFTED = {
 # rsc_normal_gravity: a VF2 fighter in the air falls by VF2's gravity (V
 # 0x17A88, [0x50A000] 0.00272, x 2.027 for its size on the board), with no
 # StF 0x1A4 bit 14 (hit in the air) x flt_1D290.
+# ACT_RC_TA_GUARD (V 0x14E78): a VF2 fighter crouched (0x1A4 bit 3) guards
+# by VF2's slot 12 (crouch to guard, the board's slot 52, vf2-guest.mjs) at
+# the frame left (sub_1CE94), or from its start on rob+0 bit 0 or 0x810 bit
+# 7; standing with 0x810 bit 7 (and no 0x804 bit 13 or rob+0 bit 0), by the
+# same slot at the frame it is at (sub_1CEA8). StF guards by slot 5 from its
+# start. Not ported: VF2's first test of the foe's 0x6B4 bit 0 (V 0x1B694),
+# whose fields StF lays out elsewhere.
 # contact_lag: VF2's collision (V 0x2357C) tests the contacts the TGP worked
 # out the frame before; StF's this frame's. With two VF2 fighters the copro's
 # contact table (0x90F600, 16 words) is swapped with last frame's (fighter.c,
@@ -464,6 +471,15 @@ INSERT = {
     'rsc_normal_gravity': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                            'cmpobne GAME_VF2, r14, rsc_normal_gravity_own',
                            'lda     0x3BB4D327, r3', 'rsc_normal_gravity_own:'],
+    'ACT_RC_TA_GUARD': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                        'cmpobne GAME_VF2, r14, ta_guard_own', 'ld      0x1A4(g7), r7',
+                        'ld      0x0(g7), r6', 'ldos    0x68(g6), g0', 'bbs     3, r7, ta_guard_low',
+                        'ld      0x804(g7), r15', 'bbs     0xD, r15, ta_guard_own',
+                        'bbs     0, r6, ta_guard_own', 'ldos    0x810(g7), r14',
+                        'bbc     7, r14, ta_guard_own', 'call    sub_1CEA8', 'ret',
+                        'ta_guard_low:', 'bbs     0, r6, ta_guard_set', 'ldos    0x810(g7), r14',
+                        'bbs     7, r14, ta_guard_set', 'call    sub_1CE94', 'ret',
+                        'ta_guard_set:', 'call    set_motion', 'ret', 'ta_guard_own:'],
     'area_coli_618': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                       'cmpobne GAME_VF2, r14, area_coli_618_own', 'ldos    0x61A(g7), r14',
                       'shlo    16, r14, r14', 'shlo    16, r7, r7', 'shro    16, r7, r7',
