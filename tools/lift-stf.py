@@ -132,7 +132,8 @@ NATIVE_TAIL = 'cmd_native_tail', 0x1EF48, 'ld      0x1A4(g7), r15  # unreachable
 NAMED = {'coli_cont_cop_g4': ('coli_cont_cop', 'ld      (g11)[g12*1], g5'),
          'area_coli_618': ('area_coli', 'st      r6, 0x624(g7)'),
          'rsc_gra_vf2': ('rob_spd_control', 'mulr    r13, r14, r5'),
-         'rsc_gra_done': ('rob_spd_control', 'mulr    r13, r5, r5')}
+         'rsc_gra_done': ('rob_spd_control', 'mulr    r13, r5, r5'),
+         'damage_calc_vf2': ('damage_calculation', 'call    ketchup')}
 # Tables below 0x1000 that are tables all the same (cop_initialize_end2's
 # collision-ball pointers).
 LOW_TABLES = {'off_FE8'}
@@ -324,7 +325,73 @@ INSERT_LIFTED = {
 # rob_spd_control's friction (V 0x1791C): VF2's amount is [0x50A004] x its
 # own gravity, 0x3BB4D327 in board units (ACT_RC_JUMP's rob+0x5CC), with no
 # x 0.25; StF's is [0x50A004] x [0x50A000] x 0.25, 1.143x VF2's for a guest.
+# A VF2 fighter's strike (the attacker g7 VF2's; its +0x822 is VF2's own
+# damage, tools/vf2-guest.mjs) hits as VF2's attack_hit does (V 0x2260C..
+# 0x2309C): the knockback s = sqrt(P / 30) x 30 x 0.0025 (VF2's list word is
+# 1.0), the attacker's speed x 0.5 where StF's is x 0.8; a counter (the
+# victim's 0x1A4 bit 8) P x 3/2 (V 0x22A28); |v| = sqrt(2s / (60 + 0.6 (w -
+# 60))) in board units (x 2.02714, VF2's size on the board), with none of
+# StF's further factors; and the damage, out of VF2's 220, scaled to StF's 140
+# bar (rounded) with no catch-up (V 0x18A54). A plain hit's stun (V 0x22CE4)
+# is 4P/5 + 6 with no cap at the attacker's frames left + 6, and it sets
+# [0x50A0B6], the frames the fighters don't turn to face (stun + [0x50A0B7]
+# + 1, or stun - 1 on a counter), which StF works out and drops.
+VF2_HIT = {
+    'loc_2A954': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobne GAME_VF2, r14, loc_2A954_own', 'lda     0x3D088888, r13',
+                  'mulr    r13, r9, r9', 'lda     0xD001A1A, r15', 'st      r15, (g11)[g12*1]',
+                  'st      r9, (g11)[g12*1]', 'ld      (g11)[g12*1], r9', 'lda     0x41F00000, r13',
+                  'mulr    r13, r9, r9', 'ld      flt_2BA68, r13', 'mulr    r13, r9, r9',
+                  'ldob    stf_ram_50FE00+0x2, r7', 'addo    0x1F, 9, r13', 'mulo    r13, r7, r7',
+                  'lda     stf_ram_50A000+0x800(r7), r7',
+                  'ld      0x1A4(g7), r15', 'bbc     4, r15, loc_2A9F0', 'bbc     0xC, r15, loc_2A9F0',
+                  'ldis    0x5C2(g7), r3', 'subi    r3, r10, r3', 'shlo    0xE, 1, r13',
+                  'addi    r13, r3, r3', 'bbs     0xF, r3, loc_2A9F0', 'lda     0x3F000000, r3',
+                  'ld      0x2C(g7), r14', 'mulr    r3, r14, r15', 'st      r15, 0x2C(g7)',
+                  'ld      0x34(g7), r14', 'mulr    r3, r14, r15', 'st      r15, 0x34(g7)',
+                  'b       loc_2A9F0', 'loc_2A954_own:'],
+    'loc_2B1A4': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobne GAME_VF2, r14, loc_2B1A4_own', 'ld      0x1A4(g8), r15',
+                  'bbc     8, r15, loc_2B220', 'lda     aCounter, g0', 'lda     (r11)[r11*2], r11',
+                  'shro    1, r11, r11', 'mov     3, r8', 'lda     0x10000004, r15',
+                  'st      r15, 0x194(g7)', 'b       loc_2B304', 'loc_2B1A4_own:'],
+    'loc_2B488': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobne GAME_VF2, r14, loc_2B488_own', 'and     0x1F, r8, g0', 'call    sub_2B94C',
+                  'shlo    0x18, 0xB, r14', 'addi    g0, r14, r15', 'st      r15, 0x198(g8)',
+                  'ldob    0x85D(g7), r3', 'cmpobne 3, r8, loc_2B488_vf2_set',
+                  'ldob    0x85E(g7), r3', 'loc_2B488_vf2_set:', 'cmpobne 0, r3, loc_2B488_vf2_stun',
+                  'mulo    4, r11, r3', 'divo    5, r3, r3', 'ldob    byte_2BA7B, r13',
+                  'addi    r13, r3, r3', 'loc_2B488_vf2_stun:', 'stos    r3, 0x5DE(g8)',
+                  'ldob    stf_ram_50A000+0xB7, r13', 'addi    r13, r3, r4', 'addo    0x1F, 3, r13',
+                  'cmpobe  r13, r8, loc_2B488_vf2_short', 'cmpobne 3, r8, loc_2B488_vf2_turn',
+                  'loc_2B488_vf2_short:', 'subi    2, r3, r4', 'loc_2B488_vf2_turn:', 'addo    1, r4, r4',
+                  'stob    r4, stf_ram_50A000+0xB6', 'mov     0, r6', 'b       loc_2B738',
+                  'loc_2B488_own:'],
+    'loc_2B738': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobne GAME_VF2, r14, loc_2B738_own', 'ld      0x5D8(g8), r4',
+                  'lda     0x42700000, r3', 'subr    r3, r4, r4', 'lda     0x3F19999A, r13',
+                  'mulr    r13, r4, r4', 'addr    r3, r4, r4', 'divr    r4, r9, r4',
+                  'lda     0x40000000, r13', 'mulr    r13, r4, r4', 'lda     0xD001A1A, r15',
+                  'st      r15, (g11)[g12*1]', 'st      r4, (g11)[g12*1]', 'ld      (g11)[g12*1], r4',
+                  'lda     0x4001BCB9, r13', 'mulr    r13, r4, r4',
+                  'lda     0x12002424, r15', 'st      r15, (g11)[g12*1]', 'st      r6, (g11)[g12*1]',
+                  'st      r4, (g11)[g12*1]', 'ld      (g11)[g12*1], r5', 'st      r5, 0x5E4(g8)',
+                  'lda     0x12802525, r15', 'st      r15, (g11)[g12*1]', 'st      r6, (g11)[g12*1]',
+                  'st      r4, (g11)[g12*1]', 'ld      (g11)[g12*1], r4', 'subi    r10, 0, r12',
+                  'lda     0x12002424, r15', 'st      r15, (g11)[g12*1]', 'st      r12, (g11)[g12*1]',
+                  'st      r4, (g11)[g12*1]', 'ld      (g11)[g12*1], r5', 'lda     0x12802525, r15',
+                  'st      r15, (g11)[g12*1]', 'st      r12, (g11)[g12*1]', 'st      r4, (g11)[g12*1]',
+                  'ld      (g11)[g12*1], r6', 'st      r5, 0x5E0(g8)', 'st      r6, 0x5E8(g8)',
+                  'b       loc_2B898', 'loc_2B738_own:'],
+    'loc_2B898': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobne GAME_VF2, r14, loc_2B898_own', 'ldis    stf_ram_500000+0x28, r14',
+                  'cmpibge 0, r14, loc_2B8C4', 'mov     g8, r15', 'mov     g7, g8', 'mov     r15, g7',
+                  'mulo    14, r11, g0', 'addo    11, g0, g0', 'divo    22, g0, g0',
+                  'call    damage_calc_vf2', 'mov     g8, r15', 'mov     g7, g8', 'mov     r15, g7',
+                  'b       loc_2B8C4', 'loc_2B898_own:'],
+}
 INSERT = {
+    **VF2_HIT,
     'rsc_gra_vf2': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                     'cmpobne GAME_VF2, r14, rsc_gra_own', 'lda     0x3BB4D327, r14',
                     'mulr    r13, r14, r5', 'b       rsc_gra_done', 'rsc_gra_own:'],

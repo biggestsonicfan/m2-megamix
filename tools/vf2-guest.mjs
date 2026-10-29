@@ -206,8 +206,12 @@ export function scaleMotion(b, k = [SCALE, SCALE, SCALE]) {
 /* The bits of a rob's flags StF's own play op 5 sets. */
 const STF_FLAG_BITS = new Set([0, 1, 3, 4, 7, 8, 9, 10, 11, 13, 15, 23, 25, 29, 30]);
 export const THROWN = [SCALE, 1.07, SCALE];
-/* Damage (setup op 4, a strike, and op 5, a throw: byte +3; play op 8: byte
- * +3) is out of VF2's 200 energy; StF's fighters have 140. */
+/* Damage (op 5, a throw: byte +3; play op 8: byte +3) is out of VF2's 220
+ * energy; StF's fighters have 140. A strike's (op 4, byte +3) stays VF2's:
+ * the board's attack_hit takes VF2's knockback, counter and hit-stun from it
+ * and scales only what comes off the bar (tools/lift-stf.py, VF2_HIT).
+ * DAMAGE is the other guests' scale (FM's and FV's moves). */
+const VF2_DAMAGE = 140 / 220;
 export const DAMAGE = 140 / 200;
 /* Fighting Vipers' armour: a strike this strong (the board's damage) breaks
  * a damaged piece for a fighter whose game has no armour (setup head byte 4
@@ -522,7 +526,7 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
     const put16 = (a, o, v) => { a[o] = v & 0xff; a[o + 1] = (v >> 8) & 0xff; };
     const damages = new Map();
     const damage = (v) => {
-        const d = v && Math.max(1, Math.round(v * DAMAGE));
+        const d = v && Math.max(1, Math.round(v * VF2_DAMAGE));
         damages.set(v, d);
         return d;
     };
@@ -556,7 +560,7 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
         for (const { op, b } of s.setup) {
             let o;
             switch (op) {
-            case 4: o = [4, b[1], b[2], damage(b[3]), 0, ...b.subarray(8, 17), ...f32(2.0)]; if (b.subarray(4, 8).some((x) => x)) lost.strikeBytes += !quiet; break;
+            case 4: o = [4, b[1], b[2], b[3], 0, ...b.subarray(8, 17), ...f32(2.0)]; if (b.subarray(4, 8).some((x) => x)) lost.strikeBytes += !quiet; break;
             case 5: o = [...b, 0, 0, 0, 0]; put16(o, 1, mid(b[1] | (b[2] << 8))); o[3] = damage(b[3]); break;
             /* Op 3's float at +7 is 0x81C, the height a jump lands at: VF2's units. */
             case 3: o = [...b]; o.splice(7, 4, ...f32(new DataView(b.buffer, b.byteOffset + 7, 4).getFloat32(0, true) * SCALE)); break;
