@@ -125,19 +125,20 @@ function lcs(a, b) {
 
 /* The hits: every frame a fighter's energy drops. A round's last blow
  * can land on the frame it is judged, which the board logs no frame of:
- * the end line's energy has it. */
+ * the end line's energy has it. A knock-out takes what is left of the
+ * bar, whatever the blow's damage (ko). */
 function hits(frames, end) {
     const out = [];
     for (let i = 1; i < frames.length; i++)
         for (const p of [0, 1]) {
             const d = frames[i - 1].p[p].energy - frames[i].p[p].energy;
-            if (d > 0) out.push({ k: frames[i].k, p, dmg: d, by: frames[i].p[1 - p].mot });
+            if (d > 0) out.push({ k: frames[i].k, p, dmg: d, by: frames[i].p[1 - p].mot, ko: frames[i].p[p].energy <= 0 });
         }
     const last = frames[frames.length - 1];
     if (end && last)
         for (const p of [0, 1]) {
             const d = last.p[p].energy - Math.max(0, end.energy[p]);
-            if (d > 0) out.push({ k: end.k, p, dmg: d, by: last.p[1 - p].mot });
+            if (d > 0) out.push({ k: end.k, p, dmg: d, by: last.p[1 - p].mot, ko: end.energy[p] <= 0 });
         }
     return out;
 }
@@ -180,11 +181,12 @@ export function grade(src, brd) {
     /* Another game's fighters come in on StF's bar (their damage scaled to
      * its energy, tools/vf2-guest.mjs), so against VF2 or FV the board runs
      * StF's energy and damage and energy are compared as shares of each
-     * game's bar: the source's scaled by f, the same within a point. The
+     * game's bar: the source's scaled by f, the same within a point, or
+     * both knock-outs (each takes the rest of its bar). The
      * browser build (tools/js-battle.mjs) runs one bar for every game. */
     const cross = src.setup && (src.setup.game !== 'stf' || brd.setup?.game === 'js');
     const f = cross && src.setup.energy && brd.setup?.energy ? brd.setup.energy / src.setup.energy : 1;
-    const sameDmg = (a, b) => (f === 1 ? a.dmg === b.dmg : Math.abs(a.dmg * f - b.dmg) <= 1);
+    const sameDmg = (a, b) => (f === 1 ? a.dmg === b.dmg : (a.ko && b.ko) || Math.abs(a.dmg * f - b.dmg) <= 1);
     if (f !== 1) report.notes.push(`energy: source ${src.setup.energy}, board ${brd.setup.energy}: the source's damage scaled by ${f.toFixed(3)}`);
     toSourceUnits(src, brd, report);
     for (const key of cross ? ['wins_needed', 'time'] : ['energy', 'wins_needed', 'time'])
