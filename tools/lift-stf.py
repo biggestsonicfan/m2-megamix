@@ -217,7 +217,8 @@ GUEST_BASE = 0x02E00000
 # them.
 # edge_motion is the board's own: a pointer by character (rob+0x1B1, 26) to
 # a VF2 fighter's ten edge motions, VF2's 0x182..0x18B as its board ids (0:
-# none; rob_check_stage then plays none).
+# none; rob_check_stage then plays none), then his action slots 31..80
+# (VF2_RISE).
 GUESTS = [('CHAR_PARTS', 0x100, 52 * 4), ('SKELETON_TYPE_DATA', 0x400, 4 * 4),
           ('MOVESET_ARRAY', 0x100, 24 * 4), ('player_hand_animations', 0x100, 52 * 4),
           ('player_foot_animation', 0x100, 52 * 4), ('player_body_animation', 0x100, 52 * 4),
@@ -484,8 +485,113 @@ VF2_HIT = {
                   'kd_vf2_low_counter:', 'ldis    0x1E(r7), r6', 'ld      0x14(r7), r13', 'kd_vf2_scale:',
                   'mulr    r13, r9, r9', 'b       loc_2B6E8', 'loc_2B5E4_own:'],
 }
+# Getting up, VF2's way for a VF2 fighter. Lying down (StF's state 9, VF2's
+# 0xD) his input (V 0x1BD38) picks one of VF2's rise kinds (0x19E, 2..12):
+# kicks and punches, rolls, a direction by the camera (V 0x1D1DC), where
+# StF's (loc_1D774) knows only 5, 6, 9 and 10. ACT_RC_RISE then plays VF2's
+# (V 0x157DC): by kind, face up or down (0x1A4 bit 11) and side (0x5B8 bit
+# 0), the rolls checked against the ring's edge (0x50A00C, VF2's lengths *
+# SCALE). The motions are his action slots 31..80, after his ten edge
+# motions in edge_motion (tools/vf2-guest.mjs). Not ported: VF2's longer
+# wait for its character 8 (V 0x158B8).
+def _vf2_rise_at(off):
+    return f'lda     {off - 0x2A:#X}, r13'.replace('0X', '0x')
+def _vf2_rise_pick(name, bit_a, bit_b, a, b, c, d):
+    """a/b: bit_a clear and bit_b clear/set; c/d: bit_a set and bit_b set/clear,
+    VF2's order (bits as 'b r' strings: '0xB, r7' or '0, r6')."""
+    return [f'{name}:', f'bbs     {bit_a}, {name}_set', _vf2_rise_at(a), f'bbc     {bit_b}, rise_vf2_play',
+            _vf2_rise_at(b), 'b       rise_vf2_play', f'{name}_set:', _vf2_rise_at(c),
+            f'bbs     {bit_b}, rise_vf2_play', _vf2_rise_at(d), 'b       rise_vf2_play']
+def _vf2_rise_side(name, a, b, c, d):
+    """VF2's kinds 3, 4, 5, 8, 9: side first, then face up or down."""
+    return [f'{name}:', 'bbs     0, r6, ' + name + '_set', _vf2_rise_at(a), 'bbc     0xB, r7, rise_vf2_play',
+            _vf2_rise_at(b), 'b       rise_vf2_play', f'{name}_set:', _vf2_rise_at(c),
+            'bbc     0xB, r7, rise_vf2_play', _vf2_rise_at(d), 'b       rise_vf2_play']
+def _vf2_rise_ring(res, skip):
+    """res: the distance (copro 0x16802D2D) to the point 1 ahead (r4, r5) of
+    0x1F4, unless that from 0x200 or 0x284 is past the ring's edge."""
+    out = [f'lda     0x461C4000, {res}']
+    for a, b in (('r8', 'r9'), ('r10', 'r11')):
+        for v, w in (('r4', a), ('r5', b)):
+            out += [f'addr    {v}, {w}, r3', 'clrbit  0x1F, r3, r3', 'lda     0x3ECF945B, r14',
+                    'addr    r14, r3, r3', 'ld      stf_ram_50A000+0xC, r14', f'cmpibg  r3, r14, {skip}']
+    return out + ['addr    r4, r12, g0', 'addr    r5, r13, g1', 'lda     0x16802D2D, r15',
+                  'st      r15, (g11)[g12*1]', 'st      g0, (g11)[g12*1]', 'st      g1, (g11)[g12*1]',
+                  f'ld      (g11)[g12*1], {res}', f'{skip}:']
+def _vf2_down_kind(k):
+    return [f'lda     {0x9000000 | k << 16:#X}, r14'.replace('0X', '0x'), 'b       down_vf2_put']
+VF2_RISE = {
+    'loc_1D774': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobne GAME_VF2, r14, loc_1D774_own', 'ld      0x0(g7), r15', 'clrbit  0xF, r15, r15',
+                  'st      r15, 0x0(g7)', 'ldob    0x19F(g7), r14', 'cmpobne 9, r14, loc_1D890',
+                  'ld      0x1218(g7), r14', 'cmpobne 0, r14, loc_1D890', 'mov     0, r5',
+                  'cmpobe  0, r9, down_vf2_any', 'mov     1, r5', 'down_vf2_any:', 'bbc     2, r9, down_vf2_k',
+                  'bbs     1, r9, down_vf2_a', 'lda     0xF0, r3', 'and     r8, r3, r3',
+                  'cmpobe  0, r3, down_vf2_2', 'shro    4, r3, r3', 'ldis    down_vf2_angle[r3*2], r4',
+                  'ld      stf_ram_500000+0x814, r15', 'ldis    0x26(r15), r12', 'ldis    0x5B4(g7), r13',
+                  'subi    r12, r13, r13', 'subi    r13, r4, r4', 'bbs     0xF, r4, down_vf2_c',
+                  *_vf2_down_kind(0xB), 'down_vf2_c:', *_vf2_down_kind(0xC), 'down_vf2_2:', *_vf2_down_kind(2),
+                  'down_vf2_a:', *_vf2_down_kind(0xA), 'down_vf2_k:', 'bbc     1, r9, down_vf2_dir',
+                  'bbs     4, r8, down_vf2_kd', *_vf2_down_kind(4), 'down_vf2_kd:', 'bbs     r7, r8, down_vf2_8',
+                  'bbs     r6, r8, down_vf2_9', *_vf2_down_kind(3), 'down_vf2_8:', *_vf2_down_kind(8),
+                  'down_vf2_9:', *_vf2_down_kind(9), 'down_vf2_dir:', 'mov     r8, r4', 'ldob    0x19E(g7), r14',
+                  'cmpobe  0, r14, down_vf2_held', 'mov     r9, r4', 'down_vf2_held:', 'bbs     4, r4, loc_1D848',
+                  'bbc     5, r4, down_vf2_6', *_vf2_down_kind(5), 'down_vf2_6:', 'bbc     r7, r4, down_vf2_7',
+                  *_vf2_down_kind(6), 'down_vf2_7:', 'bbc     r6, r4, loc_1D848', *_vf2_down_kind(7),
+                  'down_vf2_put:', 'addi    r5, r14, r15', 'st      r15, 0x194(g7)', 'b       loc_1E160',
+                  'down_vf2_angle:', *['.short  ' + v for v in ('0', '0x8000', '0', '0', '0xC000', '0xA000',
+                  '0xE000', '0xC000', '0x4000', '0x6000', '0x2000', '0x4000', '0', '0x8000', '0', '0')],
+                  'loc_1D774_own:'],
+    'loc_14D54': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobne GAME_VF2, r14, loc_14D54_own', 'ld      0x0(g7), r3', 'bbc     0, r3, loc_14EBC',
+                  'bbs     5, r3, loc_14EC8', 'ldis    0x1AC(g7), r14', 'cmpibge 0, r14, loc_14EC8',
+                  'ldos    (0x30+0x20)(g6), g0', 'bbc     0xB, r7, rise_vf2_lie', _vf2_rise_at(0x40),
+                  'ldob    0x1B1(g7), r14', 'ld      guest_edge_motion[r14*4], r14', 'addo    r14, r13, r14',
+                  'ldos    (r14), g0', 'rise_vf2_lie:', 'ldob    0x1B2(g7), r14', 'addi    1, r14, r15',
+                  'stob    r15, 0x1B2(g7)', 'b       loc_14D7C', 'loc_14D54_own:'],
+    'loc_14DD8': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobne GAME_VF2, r14, loc_14DD8_own', 'ld      0x0(g7), r15', 'clrbit  0x1D, r15, r15',
+                  'st      r15, 0x0(g7)', 'ldob    0x1B2(g7), r14', 'addi    1, r14, r15',
+                  'stob    r15, 0x1B2(g7)', 'ld      0x0(g7), r14', 'clrbit  6, r14, r15', 'st      r15, 0x0(g7)',
+                  'cmpobe  3, r10, rise_vf2_3', 'cmpobe  4, r10, rise_vf2_4', 'cmpobe  5, r10, rise_vf2_5',
+                  'cmpobe  7, r10, rise_vf2_7', 'cmpobe  6, r10, rise_vf2_6', 'cmpobe  9, r10, rise_vf2_9',
+                  'cmpobe  8, r10, rise_vf2_8', 'ld      0x1F4(g7), r12', 'ld      0x1FC(g7), r13',
+                  'ld      0x200(g7), r8', 'ld      0x208(g7), r9', 'ld      0x284(g7), r10',
+                  'ld      0x28C(g7), r11', 'lda     0x2D805B5B, r15', 'st      r15, (g11)[g12*1]',
+                  'ldis    0x26(g7), r15', 'st      r15, (g11)[g12*1]', 'lda     0x4001BCB9, r15',
+                  'st      r15, (g11)[g12*1]', 'mov     0, r15', 'st      r15, (g11)[g12*1]',
+                  'ld      (g11)[g12*1], r4', 'ld      (g11)[g12*1], r5', *_vf2_rise_ring('g2', 'rise_vf2_ahead'),
+                  'notbit  0x1F, r4, r4', 'notbit  0x1F, r5, r5', *_vf2_rise_ring('g3', 'rise_vf2_behind'),
+                  'ldob    0x19E(g7), r10', 'lda     0x461C4000, r3', 'cmpobe  0xB, r10, rise_vf2_b',
+                  'cmpobe  0xC, r10, rise_vf2_c', 'cmpobe  2, r10, rise_vf2_2', 'cmpobe  0xA, r10, rise_vf2_a',
+                  'b       rise_vf2_def', 'rise_vf2_c:', 'cmpibge g2, r3, rise_vf2_c2', 'b       rise_vf2_side',
+                  'rise_vf2_b:', 'cmpibge g3, r3, rise_vf2_b2', 'b       rise_vf2_fore', 'rise_vf2_2:',
+                  'cmpibl  g3, g2, rise_vf2_c2', 'rise_vf2_b2:', 'cmpibge g2, r3, rise_vf2_def',
+                  'b       rise_vf2_side', 'rise_vf2_c2:', 'cmpibge g3, r3, rise_vf2_def', 'b       rise_vf2_fore',
+                  'rise_vf2_a:', 'cmpibl  g3, g2, rise_vf2_a2', 'cmpibge g2, r3, rise_vf2_4',
+                  'b       rise_vf2_roll', 'rise_vf2_a2:', 'cmpibge g3, r3, rise_vf2_def', 'b       rise_vf2_roll2',
+                  *_vf2_rise_pick('rise_vf2_side', '0xB, r7', '0, r6', 0x5A, 0x5C, 0x5E, 0x60),
+                  *_vf2_rise_pick('rise_vf2_fore', '0xB, r7', '0, r6', 0x52, 0x54, 0x56, 0x58),
+                  *_vf2_rise_pick('rise_vf2_roll', '0xB, r7', '0, r6', 0x94, 0x98, 0x9A, 0x9E),
+                  *_vf2_rise_pick('rise_vf2_roll2', '0xB, r7', '0, r6', 0x92, 0x96, 0x9C, 0xA0),
+                  *_vf2_rise_side('rise_vf2_3', 0x7A, 0x80, 0x7E, 0x7C),
+                  *_vf2_rise_side('rise_vf2_4', 0x72, 0x78, 0x76, 0x74),
+                  *_vf2_rise_side('rise_vf2_5', 0x6A, 0x70, 0x6E, 0x6C),
+                  *_vf2_rise_side('rise_vf2_9', 0x82, 0x88, 0x86, 0x84),
+                  *_vf2_rise_side('rise_vf2_8', 0x8A, 0x90, 0x8E, 0x8C),
+                  'rise_vf2_7:', 'bbc     0, r6, rise_vf2_def', 'lda     0x40A22BE7, r3', 'ld      0x5F8(g7), r13',
+                  'cmpibl  r13, r3, rise_vf2_def', _vf2_rise_at(0x62), 'bbc     0xB, r7, rise_vf2_play',
+                  _vf2_rise_at(0x64), 'b       rise_vf2_play',
+                  'rise_vf2_6:', 'bbs     0, r6, rise_vf2_def', 'lda     0x40A22BE7, r3', 'ld      0x5FC(g7), r13',
+                  'cmpibl  r13, r3, rise_vf2_def', _vf2_rise_at(0x66), 'bbc     0xB, r7, rise_vf2_play',
+                  _vf2_rise_at(0x68), 'b       rise_vf2_play',
+                  *_vf2_rise_pick('rise_vf2_def', '0xB, r7', '0, r6', 0x42, 0x4A, 0x48, 0x50),
+                  'rise_vf2_play:', 'ldob    0x1B1(g7), r14', 'ld      guest_edge_motion[r14*4], r14',
+                  'addo    r14, r13, r14', 'ldos    (r14), g0', 'b       loc_14E90', 'loc_14DD8_own:'],
+}
 INSERT = {
     **VF2_HIT,
+    **VF2_RISE,
     'rsc_gra_vf2': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                     'cmpobne GAME_VF2, r14, rsc_gra_own', 'lda     0x3BB4D327, r14',
                     'mulr    r13, r14, r5', 'b       rsc_gra_done', 'rsc_gra_own:'],

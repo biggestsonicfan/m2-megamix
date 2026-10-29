@@ -731,8 +731,10 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
     };
     const actions = actionsOf(mid);
     const actionsAt = alloc(u16s(actions), 'actions');
-    /* edge_motion: his edge stumbles, under mid */
-    const edgeAt = alloc(u16s(EDGE_MOTIONS.map(mid)), 'edge motions');
+    /* edge_motion: his edge stumbles, then his action slots 31..80 (the
+     * getting up the board's lift plays VF2's way, tools/lift-stf.py), under mid */
+    const edgeOf = (m) => [...EDGE_MOTIONS, ...A.actions.slice(31, 81)].map(m);
+    const edgeAt = alloc(u16s(edgeOf(mid)), 'edge motions');
     T.edge_motion.view.setUint32(CHR * 4, edgeAt, true);
 
     /* ptr_DA0B4[character] (sub_2B94C): his 30 lists, each VF2's 40, then
@@ -995,7 +997,7 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
             actions: alloc(u16s(actionsOf(gid)), 'actions', 4, who),
             kinds: kindsOf(gid, who),
             remap: alloc(u16s(remapOf(gid)), 'motion remap', 4, who),
-            edge: alloc(u16s(EDGE_MOTIONS.map(gid)), 'edge motions', 4, who),
+            edge: alloc(u16s(edgeOf(gid)), 'edge motions', 4, who),
         };
     }
 
