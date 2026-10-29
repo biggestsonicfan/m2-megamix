@@ -367,8 +367,21 @@ F to 37 F):
   (not 0x4006: bit 29 is clear). Bits 14 and 10 are clear, so the
   [0x50FE00] bit-14 entry to `loc_2B5E4` is out and the hit goes on to
   the r11 ≥ 50 check. +0x821 is VF2's byte 2 = 0, so the bit-24 case is
-  out too. Not ruled out, all of it the victim's state at the hit, which
-  the source does not fix: its rob+0x1A4 bits 13 (the guard), 16
+  out too. The victim's rob+0x1A4 bit 13 (the guard) is clear at the
+  hit. Its setters are `set_mot_dat` (9861, a setup's kind word), play
+  ops 5/7 (`loc_1C29C`/`loc_1C2CC`) and the armour-break replay restore
+  (24757/24896). No VF2 setup has a play op 5/7 on bit 13. VF2 Akira's
+  bit-13 setups are guard stances and guard reactions only. They are
+  reached through action slot 5 (VF2 action 8, setup 241) in
+  `ACT_RC_TA_GUARD`/`ACT_RC_GUARD` (2845/2898), or through
+  guard-category reactions (`sub_2B94C` g0 = 0/1). Those are entered
+  only by the pad's guard bit (`sub_1D984`, 12219) or by guarded-hit
+  stores that sit behind a bit-13 test (15813/15867/15931, 17244). No
+  command commit, native, or setup/play reference leads to one.
+  battle.lua's seed-1 script gives 1P no G before script frame 57 (round
+  frame 87), and the jab is the round's first hit. So this entry no
+  longer opens `loc_2B738`. Not ruled out, all of it the victim's state
+  at the hit, which the source does not fix: its rob+0x1A4 bits 16
   (`loc_2B560`, or `loc_2B5E4` without the attacker's bit 22), 14 and 4
   (`loc_2B5E4`); its rob+0x70C bit 2 (`loc_2B594`, then `loc_2B5E4`);
   the counter, which with the victim's bit 8 set (it is set in the 0x121
