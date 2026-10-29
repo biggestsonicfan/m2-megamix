@@ -151,7 +151,8 @@ NAMED = {'coli_cont_cop_g4': ('coli_cont_cop', 'ld      (g11)[g12*1], g5'),
          'look_fv': ('loc_30804', 'stob    r15, 0x7D3(g7)'),
          'ah_fv_done': ('loc_2B318', 'st      r15, 0x0(g7)'),
          'land_fv': ('loc_18364', 'addr    r13, g4, r5'),
-         'land_time_fv': ('loc_19930', 'lda     0x3CA3D70A, r13')}
+         'land_time_fv': ('loc_19930', 'lda     0x3CA3D70A, r13'),
+         'kind_fv': ('sub_2B94C', 'ldob    0x50FE00, r3')}
 # Tables below 0x1000 that are tables all the same (cop_initialize_end2's
 # collision-ball pointers).
 LOW_TABLES = {'off_FE8'}
@@ -430,6 +431,10 @@ INSERT_LIFTED = {
 # (r8 1), and a crouched kind 1 for 3/4. StF's test reads its own attack table
 # (stf_ram_50FE00) with no crouch test. Not ported: VF2's 0x844 bit 30 catch
 # (V 0x227DC) and the bit-13 guard's own reaction (g0 1, V 0x227C4).
+# An FV strike likewise as FV's (F 0x25DD0..0x25E74): VF2's, but crouched
+# kind 4 is guarded too, and 0x828 bit 12 standing or bit 13 crouched takes
+# the guard's own reaction (F 0x25E78; StF's loc_2AB54, its nearest), not
+# half. Not ported: FV's 0x844 bit 30 catch (F 0x25F64).
 VF2_HIT = {
     'loc_2A954': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                   'cmpobne GAME_FV, r14, loc_2A954_vf2', 'addo    3, r11, r3', 'shro    2, r3, r3',
@@ -518,15 +523,18 @@ VF2_HIT = {
                   'call    damage_calc_vf2', 'mov     g8, r15', 'mov     g7, g8', 'mov     r15, g7',
                   'b       loc_2B8C4', 'loc_2B898_fv:', 'ldis    stf_ram_500000+0x28, r14',
                   'cmpibge 0, r14, loc_2B8C4', 'mov     g8, r15', 'mov     g7, g8', 'mov     r15, g7',
-                  'mulo    25, r11, g0', 'addo    14, g0, g0', 'divo    28, g0, g0',
+                  'mulo    25, r11, g0', 'ldob    0x87D(g7), r13', 'addo    r13, g0, g0', 'remo    28, g0, r13',
+                  'stob    r13, 0x87D(g7)', 'divo    28, g0, g0',
                   'call    damage_calc_vf2', 'mov     g8, r15', 'mov     g7, g8', 'mov     r15, g7',
                   'b       loc_2B8C4', 'loc_2B898_own:'],
     'kb_fv_v': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                 'cmpobne GAME_FV, r14, kb_fv_v_own', 'lda     0x4002D5F4, r13',
                 'mulr    r13, r4, r4', 'kb_fv_v_own:'],
+    # FV's damage off the board's bar x 25/28, the remainder carried on the
+    # victim (rob+0x87D, which StF leaves alone): out of FV's bar only as FV's.
     'fb_bar_fv': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
-                  'cmpobne GAME_FV, r14, fb_bar_fv_own', 'mulo    25, g0, g0', 'addo    14, g0, g0',
-                  'divo    28, g0, g0', 'fb_bar_fv_own:'],
+                  'cmpobne GAME_FV, r14, fb_bar_fv_own', 'mulo    25, g0, g0', 'ldob    0x87D(g8), r13',
+                  'addo    r13, g0, g0', 'divo    28, g0, g0', 'fb_bar_fv_own:'],
     'smooth_ang_fv': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                       'cmpobne GAME_FV, r14, smooth_ang_fv_own', 'cmpobne 8, r11, smooth_ang_fv_n',
                       'cmpibge 0, g0, smooth_ang_fv_n', 'shri    r8, g0, g0', 'b       smooth_ang_fv_1',
@@ -570,6 +578,7 @@ VF2_HIT = {
                   'cmpr    r3, r4', 'bg      sub_2BA44_vf2', 'ldos    0x7C(r14), g0', 'sub_2BA44_vf2:', 'ret',
                   'sub_2BA44_own:'],
     'loc_2A9F0': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobe  GAME_FV, r14, gd_fv',
                   'cmpobne GAME_VF2, r14, loc_2A9F0_own', 'ld      0x1A4(g8), r15',
                   'bbc     0xD, r15, loc_2AE40', 'ld      0x5B8(g8), r15', 'bbs     0, r15, loc_2AE40',
                   'ld      0x1A4(g8), r15', 'ldob    0x821(g7), r14', 'ldos    0x828(g7), r13',
@@ -585,7 +594,17 @@ VF2_HIT = {
                   'b       loc_2AE40', 'gd_vf2_half:', 'shro    1, r11, r11',
                   'lda     0x3F000000, r13', 'mulr    r13, r9, r9', 'mov     1, r8',
                   'ld      0x70C(g7), r15', 'bbs     0x14, r15, loc_2AE54', 'ld      0x5B8(g7), r15',
-                  'bbs     0, r15, loc_2B8C8', 'b       loc_2AE54', 'loc_2A9F0_own:'],
+                  'bbs     0, r15, loc_2B8C8', 'b       loc_2AE54',
+                  # FV's (F 0x25DD0)
+                  'gd_fv:', 'ld      0x1A4(g8), r15', 'bbc     0xD, r15, loc_2AE40', 'ld      0x5B8(g8), r15',
+                  'bbs     0, r15, loc_2AE40', 'ld      0x1A4(g8), r15', 'ldob    0x821(g7), r14',
+                  'ldos    0x828(g7), r13', 'bbs     3, r15, gd_fv_low', 'cmpobe  2, r14, loc_2AE40',
+                  'cmpobe  5, r14, loc_2AE40', 'cmpobe  6, r14, loc_2AE40', 'bbs     0xC, r13, loc_2AB54',
+                  'bbc     9, r13, loc_2AC74', 'b       loc_2AE40', 'gd_fv_low:', 'cmpobe  2, r14, gd_fv_9',
+                  'cmpobe  4, r14, gd_fv_9', 'cmpobe  5, r14, gd_fv_9', 'cmpobe  6, r14, gd_fv_9',
+                  'bbs     0xD, r13, loc_2AB54', 'cmpobne 1, r14, loc_2AE40', 'shro    2, r11, r15',
+                  'subo    r15, r11, r11', 'lda     0x3F400000, r13', 'mulr    r13, r9, r9', 'b       loc_2AE40',
+                  'gd_fv_9:', 'bbc     9, r13, loc_2AC74', 'b       loc_2AE40', 'loc_2A9F0_own:'],
 }
 # Getting up, VF2's way for a VF2 fighter. Lying down (StF's state 9, VF2's
 # 0xD) his input (V 0x1BD38) picks one of VF2's rise kinds (0x19E, 2..12):
@@ -834,8 +853,15 @@ FV_HIT = {
                   'cmpobne GAME_FV, r14, loc_1B76C_own', 'mov     0, r13', 'ldob    0xF(r11), r14',
                   'cmpobne 0, r14, fv_strike_e', 'ldob    0x10(r11), r14', 'cmpobne 0, r14, fv_strike_e',
                   'ldob    0x11(r11), r14', 'lda     0x40, r15', 'cmpobne r15, r14, fv_strike_e',
-                  'ldob    0xE(r11), r13', 'and     7, r13, r13', 'fv_strike_e:', 'stob    r13, 0x874(g7)',
-                  'loc_1B76C_own:'],
+                  'ldob    0xE(r11), r13', 'fv_strike_e:', 'shro    3, r13, r14', 'stob    r14, 0x875(g7)',
+                  'and     7, r13, r13', 'stob    r13, 0x874(g7)', 'loc_1B76C_own:'],
+    # An FV strike on an FV fighter picks from FV's own 22 lists (F 0x26978):
+    # FV's kind + 1 rides above the lift (rob+0x875); his kind table has
+    # them after StF's 30 (fv-moves.mjs). StF's kinds merge FV's 5 and 10.
+    'kind_fv': ['ldob    0x1B1(g8), r14', 'ldob    guest_char_game[r14], r14', 'cmpobne GAME_FV, r14, kind_fv_own',
+                'ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14', 'cmpobne GAME_FV, r14, kind_fv_own',
+                'ldob    0x828(g7), r14', 'cmpobne r14, r3, kind_fv_own', 'ldob    0x875(g7), r14',
+                'cmpobe  0, r14, kind_fv_own', 'addo    29, r14, r3', 'kind_fv_own:'],
     'loc_2B69C': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                   'cmpobne GAME_FV, r14, loc_2B69C_own', 'ldob    0x843(g7), r7', 'shlo    5, r7, r7',
                   'lda     _fv_hit_kinds(r7), r7', 'ld      0x1A4(g8), r15', 'bbs     4, r15, kd_fv_low',

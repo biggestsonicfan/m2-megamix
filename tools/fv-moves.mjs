@@ -251,7 +251,7 @@ export function importFvMoves(R, ctx, fv, A, { who, k, thrown, handShape = (s) =
     for (const n of WALK_ACTIONS) if (act(n)) want.add(act(n));
     for (const m of WALK_MOTIONS) want.add(m);
     for (const n of GUARD_ACTIONS) if (act(n)) want.add(act(n));
-    for (const f of fvKindOf.values()) for (const x of reactions[f]) if (x) want.add(x);
+    for (const r of reactions) for (const x of r) if (x) want.add(x);
     const commitWord = (a) => p32(a + 1);
     for (const a of commits) {
         const w = commitWord(a), type = w >>> 24;
@@ -308,7 +308,8 @@ export function importFvMoves(R, ctx, fv, A, { who, k, thrown, handShape = (s) =
                 o[7] = FV_KIND[b[7]] ?? b[7];
                 if (b[0xf] | b[0x10] | b[0x11] | b[0x12]) lost.strikeBytes++;
                 o.push(...f32(2.0));
-                o[0xe] = b[0xe] & 7;
+                /* and above it FV's own kind + 1: an FV victim's list of FV's (lift-stf.py, kind_fv) */
+                o[0xe] = (b[0xe] & 7) | ((b[7] + 1) << 3);
                 break;
             case 5: put16(o, 1, mid(u16at(b, 1))); o[3] = damage(b[3]); break;
             case 3: o.splice(7, 4, ...f32(new DataView(b.buffer, b.byteOffset + 7, 4).getFloat32(0, true) * k)); break;
@@ -473,6 +474,9 @@ export function importFvMoves(R, ctx, fv, A, { who, k, thrown, handShape = (s) =
         own.set(kk, list);
         return alloc(u32s(list), `reactions ${kk}`);
     });
+    /* then FV's 22 by FV's kind, StF's 30 on: an FV strike on him picks these
+     * (FV's kinds 5 and 10 are both StF's 11, and so on) */
+    reactions.forEach((r, f) => kinds.push(alloc(u32s([...r.map(mid), mid(r[16]), ...tail(FV_KIND[f])]), `fv reactions ${f}`)));
     const kindsAt = alloc(u32s(kinds), 'reaction kinds');
     report.push(`reactions: ${own.size} of ${kinds.length} kinds his own`);
 
