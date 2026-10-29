@@ -53,8 +53,11 @@ const PLAY_TO = {
     0x18: null, 0x19: null, 0x1a: null, 0x1b: null, 0x1c: null, 0x1d: null, 0x1e: null,
 };
 const PLAY_MOTION = { 0x0a: 5, 0x0b: 5, 0x17: 4 };
-/* The bits of a rob's flags StF's own play op 5 sets (vf2-guest.mjs). */
-const STF_FLAG_BITS = new Set([0, 1, 3, 4, 7, 8, 9, 10, 11, 13, 15, 23, 25, 29, 30]);
+/* The bits of a rob's flags StF's own play op 5 sets (vf2-guest.mjs), and
+ * FV's bit 16: he is down. StF's code reads it as FV's does (its
+ * decide_coli_kind: a fighter standing over one down is pushed off him, FIX),
+ * though no StF fighter sets it. */
+const STF_FLAG_BITS = new Set([0, 1, 3, 4, 7, 8, 9, 10, 11, 13, 15, 16, 23, 25, 29, 30]);
 /* StF's and FV's command matcher (noclip js/moves.js OP_LENGTH). */
 const OP_LENGTH = [
     3, 3, 2, 4, 2, 9, 5, 2, 2, 2, 2, 2, 2, 5, 7, 5,
