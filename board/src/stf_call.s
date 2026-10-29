@@ -48,6 +48,23 @@ vf2_coli_push:
                 mov     r11, g13
                 mov     r12, g14
                 ret
+# vf2_coli_contacts, from lift-stf.py's contact_lag: VF2's contact table
+# (push.c, vf2_contacts) over the copro's at 0x90F600, for the robs in g0
+# and g1; every global but g8..g12 kept.
+                .globl  vf2_coli_contacts
+vf2_coli_contacts:
+                movq    g0, r4
+                movq    g4, r8
+                mov     g13, r12
+                mov     g14, r13
+                lda     0x90F600, g2
+                mov     0, g14
+                call    _vf2_contacts
+                movq    r4, g0
+                movq    r8, g4
+                mov     r12, g13
+                mov     r13, g14
+                ret
 _stf_call_g3:
                 mov     g8, r4
                 mov     g9, r5

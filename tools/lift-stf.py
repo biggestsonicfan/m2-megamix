@@ -359,11 +359,10 @@ INSERT_LIFTED = {
 # same slot at the frame it is at (sub_1CEA8). StF guards by slot 5 from its
 # start. Not ported: VF2's first test of the foe's 0x6B4 bit 0 (V 0x1B694),
 # whose fields StF lays out elsewhere.
-# contact_lag: VF2's collision (V 0x2357C) tests the contacts the TGP worked
-# out the frame before; StF's this frame's. With two VF2 fighters the copro's
-# contact table (0x90F600, 16 words) is swapped with last frame's (fighter.c,
-# vf2_last_contacts) before the hit checks read it, so a strike lands on
-# VF2's frame.
+# contact_lag: with two VF2 fighters the copro's contact table (0x90F600, 16
+# words), StF's SHARC pairing, is replaced by VF2's own (push.c,
+# vf2_contacts): the TGP's ball pairing and its swept test of attack balls,
+# on the balls made before the fighters step, as VF2's TGP has them.
 # ah_not_finish_blow, loc_2B5E4: a VF2 strike knocks down as VF2's does (V
 # 0x22C84..0x22CE0, 0x22E24..0x22F28): at 30 of VF2's damage where StF's is
 # 50, or the 0x828 bit 8 kind on a victim without 0x1A4 bit 3, or when the
@@ -392,7 +391,7 @@ VF2_HIT = {
                   'bbc     8, r15, loc_2B220', 'lda     aCounter, g0', 'lda     (r11)[r11*2], r11',
                   'shro    1, r11, r11', 'mov     3, r8', 'lda     0x10000004, r15',
                   'st      r15, 0x194(g7)', 'b       loc_2B304', 'loc_2B1A4_own:'],
-    'contact_lag': ['ldob    0x1B1(r7), r14', 'ldob    guest_char_game[r14], r14', 'cmpobne GAME_VF2, r14, contact_lag_own', 'ldob    0x1B1(r8), r14', 'ldob    guest_char_game[r14], r14', 'cmpobne GAME_VF2, r14, contact_lag_own', 'lda     0x90F600, r4', 'lda     _vf2_last_contacts, r3', 'mov     0, r5', 'contact_lag_swap:', 'ldl     (r4), r10', 'ldl     (r3), r12', 'stl     r12, (r4)', 'stl     r10, (r3)', 'addo    8, r4, r4', 'addo    8, r3, r3', 'cmpinco 7, r5, r5', 'bne     contact_lag_swap', 'contact_lag_own:'],
+    'contact_lag': ['ldob    0x1B1(r7), r14', 'ldob    guest_char_game[r14], r14', 'cmpobne GAME_VF2, r14, contact_lag_own', 'ldob    0x1B1(r8), r14', 'ldob    guest_char_game[r14], r14', 'cmpobne GAME_VF2, r14, contact_lag_own', 'mov     g0, r4', 'mov     g1, r5', 'mov     r7, g0', 'mov     r8, g1', 'call    vf2_coli_contacts', 'mov     r4, g0', 'mov     r5, g1', 'contact_lag_own:'],
     'pit_vf2_1': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                   'cmpobne GAME_VF2, r14, pit_vf2_1_own', 'mov     12, r3', 'pit_vf2_1_own:'],
     'pit_vf2_2': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
@@ -495,6 +494,10 @@ INSERT = {
     # ported, nor StF's rob+0 bit 29 test, VF2 not having it.
     'ACT_RC_WALK': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14', 'cmpobne GAME_VF2, r14, walk_own', 'ld      0x1A4(g7), r7', 'ld      0x0(g7), r6', 'bbs     3, r7, vf2_walk_low', 'bbc     0xA, r7, vf2_walk_10', 'bbs     0xB, r7, vf2_walk_go', 'b       vf2_walk_23', 'vf2_walk_low:', 'ldos    0x76(g6), g0', 'ldos    0x810(g7), r14', 'bbs     7, r14, vf2_walk_set', 'call    sub_1CE94', 'ret', 'vf2_walk_10:', 'bbs     0, r6, vf2_walk_go', 'ldos    0x810(g7), r14', 'bbc     7, r14, vf2_walk_go', 'ldos    0x76(g6), g0', 'call    sub_1CEA8', 'ret', 'vf2_walk_go:', 'ldos    0x22(g6), g0', 'b       vf2_walk_set', 'vf2_walk_23:', 'bbc     0, r6, vf2_walk_ret', 'ldos    0x26(g6), g0', 'bbc     1, r7, vf2_walk_set', 'ldos    0x22(g6), g0', 'vf2_walk_set:', 'call    set_motion', 'vf2_walk_ret:', 'ret', 'walk_own:'],
     'ACT_RC_BWALK': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14', 'cmpobne GAME_VF2, r14, bwalk_own', 'ld      0x1A4(g7), r7', 'ld      0x0(g7), r6', 'bbs     3, r7, vf2_bwalk_low', 'bbc     0xA, r7, vf2_bwalk_10', 'bbc     0xB, r7, vf2_bwalk_go', 'b       vf2_bwalk_23', 'vf2_bwalk_low:', 'ldos    0x78(g6), g0', 'ldos    0x810(g7), r14', 'bbs     7, r14, vf2_bwalk_set', 'call    sub_1CE94', 'ret', 'vf2_bwalk_10:', 'bbs     0, r6, vf2_bwalk_go', 'ldos    0x810(g7), r14', 'bbc     7, r14, vf2_bwalk_go', 'ldos    0x78(g6), g0', 'call    sub_1CEA8', 'ret', 'vf2_bwalk_go:', 'ldos    0x2A(g6), g0', 'b       vf2_bwalk_set', 'vf2_bwalk_23:', 'bbc     0, r6, vf2_bwalk_ret', 'ldos    0x2E(g6), g0', 'bbc     1, r7, vf2_bwalk_set', 'ldos    0x2A(g6), g0', 'vf2_bwalk_set:', 'call    set_motion', 'vf2_bwalk_ret:', 'ret', 'bwalk_own:'],
+    # VF2's action_after (V 0x180D4) keeps rob+0 bit 8, a low posture: set
+    # while crouched, or in a crouch's (0x810 bit 7) first half; StF's hit
+    # code still reads it but never sets it.
+    'action_after': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14', 'cmpobne GAME_VF2, r14, action_after_own', 'ld      0x1A4(g7), r15', 'ldos    0x810(g7), r14', 'ldos    0x800(g7), r3', 'shro    1, r3, r3', 'ldos    0x1AA(g7), r13', 'bbs     3, r15, vf2_low_crouch', 'bbc     7, r14, vf2_low_clr', 'cmpoble r13, r3, vf2_low_set', 'b       vf2_low_clr', 'vf2_low_crouch:', 'bbs     7, r14, vf2_low_set', 'cmpoble r13, r3, vf2_low_clr', 'vf2_low_set:', 'ld      0x0(g7), r15', 'setbit  8, r15, r15', 'st      r15, 0x0(g7)', 'b       action_after_own', 'vf2_low_clr:', 'ld      0x0(g7), r15', 'clrbit  8, r15, r15', 'st      r15, 0x0(g7)', 'action_after_own:'],
     'area_coli_618': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                       'cmpobne GAME_VF2, r14, area_coli_618_own', 'ldos    0x61A(g7), r14',
                       'shlo    16, r14, r14', 'shlo    16, r7, r7', 'shro    16, r7, r7',

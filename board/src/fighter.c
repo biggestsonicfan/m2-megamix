@@ -79,11 +79,6 @@ const u32 vf2_hit_kinds[40] = {
     0x3F800000u, 0x3F800000u, 0x3FA66666u, 0x3F99999Au, 0x3F99999Au, 0x3F99999Au, 0x2E001200u, 0x26001000u,
 };
 
-/* The copro's contact table (0x90F600) of the frame before: VF2's collision
- * tests last frame's contacts, StF's this frame's (lift-stf.py, contact_lag,
- * swaps them in when both fighters are VF2's). Longs: the swap is by ldl. */
-u32 vf2_last_contacts[16] __attribute__((aligned(8)));
-
 /* pose_anims is poses.h's (static, baked): the one copy lives here */
 const pose_anim_t *pose_anim(u32 n) { return &pose_anims[n]; }
 

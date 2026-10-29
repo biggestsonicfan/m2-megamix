@@ -106,3 +106,120 @@ u32 vf2_push(const u8 *rob0, const u8 *rob1, const u8 *task) {
     out.f = best;
     return out.u;
 }
+
+/* The contacts VF2's collision reads (its 0x238F8): the TGP's matrix of
+ * every pair (1P's ball i, 2P's ball o) that meets, TGP-paired as above,
+ * folded to units, table[UNIT[i]] bit UNIT[o]. A pair with 2P's ball in 2P's
+ * attack mask, or 1P's in 1P's, is swept (TGP 0x8A5): it meets if the line
+ * from last frame's R (2P's ball less 1P's) to this frame's passes within
+ * r_i + r_o of 0; any other pair meets if this frame's |R| is under it.
+ * StF's SHARC table pairs the balls its own way and puts a jab on a leg
+ * where VF2 has none. VF2's TGP works on the balls of the step before; so
+ * does the board here, its balls made before the fighters step.
+ *
+ * 900 pairs in floating point cost the i960 frames, so each pair is first
+ * tried in whole numbers (1/1024 of a unit, a unit's slack each way): an
+ * axis that keeps the two apart drops it. */
+static float last_balls[2][BALLS][3];
+
+/* |the point nearest 0 on the line from a to a + v|, squared (TGP 0x8A5). */
+static float line_d2(const float *a, const float *v) {
+    float av = a[0] * v[0] + a[1] * v[1] + a[2] * v[2];
+    float vv = v[0] * v[0] + v[1] * v[1] + v[2] * v[2], t, p[3];
+    u32 k;
+    if (av >= 0.0f) t = 0.0f;
+    else if (vv <= -av) t = 1.0f;
+    else t = -av / vv;
+    for (k = 0; k < 3; k++) p[k] = a[k] + t * v[k];
+    return p[0] * p[0] + p[1] * p[1] + p[2] * p[2];
+}
+
+/* A fighter's TGP balls in whole numbers: lo and hi on each axis over this
+ * frame's place and last frame's (sw), this frame's alone (st), the radius;
+ * and each unit's box (its balls' sw boxes, each grown by its radius). */
+typedef struct { int sw[2][3], st[2][3], r; } fix_ball;
+typedef struct { fix_ball b[BALLS]; int u[16][2][3]; } fix_rob;
+static fix_rob fx[2];   /* not on StF's stack: it is small */
+/* The first TGP ball of each unit (1..15) and one past its last. */
+static const u8 UNIT_FROM[17] = { 0, 0, 2, 3, 5, 7, 8, 10, 12, 13, 14, 17, 20, 22, 25, 28, 30 };
+
+/* v x 1024 in whole numbers (toward 0), from the float's bits: the i960's
+ * own conversion, with its constants in fp0..fp2, cost the board frames.
+ * Out of range (or not a number) it is held at +-2^20. */
+static int fix(float v) {
+    union { float f; u32 u; } b;
+    u32 e, m;
+    int x;
+    b.f = v, e = b.u >> 23 & 0xFFu, m = (b.u & 0x7FFFFFu) | 0x800000u;
+    if (e >= 137u) x = 1 << 20;
+    else if (e < 117u) x = 0;
+    else x = (int)(m >> (140u - e));   /* v = m x 2^(e - 150) */
+    return b.u >> 31 ? -x : x;
+}
+
+static void fix_balls(const float (*b)[4], const float (*l)[3], fix_rob *f) {
+    u32 k, a, u;
+    for (u = 1; u < 16; u++)
+        for (a = 0; a < 3; a++) f->u[u][0][a] = 0x7FFFFFFF, f->u[u][1][a] = -0x7FFFFFFF;
+    for (k = 0; k < BALLS; k++) {
+        const float *p = b[SENT[k]], *q = l[SENT[k]];
+        fix_ball *x = &f->b[k];
+        int (*bx)[3] = f->u[UNIT[k]];
+        x->r = fix(b[k][3]) + 1;
+        for (a = 0; a < 3; a++) {
+            int c = fix(p[a]), d = fix(q[a]);
+            x->st[0][a] = c - 1, x->st[1][a] = c + 1;
+            x->sw[0][a] = (c < d ? c : d) - 1, x->sw[1][a] = (c < d ? d : c) + 1;
+            if (x->sw[0][a] - x->r < bx[0][a]) bx[0][a] = x->sw[0][a] - x->r;
+            if (x->sw[1][a] + x->r > bx[1][a]) bx[1][a] = x->sw[1][a] + x->r;
+        }
+    }
+}
+
+/* Whether boxes x and y, each grown by part of ir, can meet. */
+static int boxes_meet(const int (*x)[3], const int (*y)[3], int ir) {
+    return y[0][0] - x[1][0] < ir && x[0][0] - y[1][0] < ir &&
+           y[0][1] - x[1][1] < ir && x[0][1] - y[1][1] < ir &&
+           y[0][2] - x[1][2] < ir && x[0][2] - y[1][2] < ir;
+}
+
+/* Whether 1P's ball i meets 2P's ball o (see above). */
+static int balls_meet(const float (*b0)[4], const float (*b1)[4], u32 i, u32 o, u32 swept) {
+    const float *p = b0[SENT[i]], *q = b1[SENT[o]];
+    float rel[3], v[3], r = b0[i][3] + b1[o][3], d2;
+    u32 a;
+    for (a = 0; a < 3; a++) rel[a] = q[a] - p[a];
+    if (swept) {
+        const float *lp = last_balls[0][SENT[i]], *lq = last_balls[1][SENT[o]];
+        for (a = 0; a < 3; a++) v[a] = rel[a], rel[a] = lq[a] - lp[a], v[a] -= rel[a];
+        d2 = line_d2(rel, v);
+    } else d2 = rel[0] * rel[0] + rel[1] * rel[1] + rel[2] * rel[2];
+    return d2 < r * r;
+}
+
+void vf2_contacts(const u8 *rob0, const u8 *rob1, u32 *table) {
+    const float (*b0)[4] = (const float (*)[4])(rob0 + 0xD00);
+    const float (*b1)[4] = (const float (*)[4])(rob1 + 0xD00);
+    u32 m0 = attack_mask(rob0), m1 = attack_mask(rob1), i, o, u, w, a;
+    for (i = 0; i < 16; i++) table[i] = 0u;
+    fix_balls(b0, (const float (*)[3])last_balls[0], &fx[0]);
+    fix_balls(b1, (const float (*)[3])last_balls[1], &fx[1]);
+    for (u = 1; u < 16; u++)
+        for (w = 1; w < 16; w++) {
+            if (!boxes_meet((const int (*)[3])fx[0].u[u], (const int (*)[3])fx[1].u[w], 0)) continue;
+            for (i = UNIT_FROM[u]; i < UNIT_FROM[u + 1]; i++)
+                for (o = UNIT_FROM[w]; o < UNIT_FROM[w + 1]; o++) {
+                    u32 swept = (m1 >> o & 1u) | (m0 >> i & 1u);
+                    const fix_ball *x = &fx[0].b[i], *y = &fx[1].b[o];
+                    if (!boxes_meet(swept ? (const int (*)[3])x->sw : (const int (*)[3])x->st,
+                                    swept ? (const int (*)[3])y->sw : (const int (*)[3])y->st,
+                                    x->r + y->r) ||
+                        !balls_meet(b0, b1, i, o, swept)) continue;
+                    table[u] |= 1u << w;
+                    goto next_unit;
+                }
+        next_unit:;
+        }
+    for (i = 0; i < BALLS; i++)
+        for (a = 0; a < 3; a++) last_balls[0][i][a] = b0[i][a], last_balls[1][i][a] = b1[i][a];
+}
