@@ -406,7 +406,8 @@ end
 -- the countdown both games have run the same tasks of their step (the
 -- collision, get_game_info, the camera: StF's task list, which the board
 -- keeps) and none of the fighters' own: the state is the last step's, the
--- timer's value before the write that step's.
+-- timer's value before the write that step's. A frame the game steps
+-- twice in (the board, catching up) logs both.
 local snap
 _G.BT_SNAP = sp:install_write_tap(G(0x500028) & ~3, (G(0x500028) & ~3) + 3, "bt_snap", function(o, d, mk)
   local sh = (G(0x500028) & 3) * 8
@@ -414,11 +415,11 @@ _G.BT_SNAP = sp:install_write_tap(G(0x500028) & ~3, (G(0x500028) & ~3) + 3, "bt_
   local old = sp:read_u16(G(0x500028))
   if (d >> sh) & 0xFFFF == old then return nil end
   local r0, r1 = rob(0), rob(1)
-  if r0 ~= 0 and r1 ~= 0 then snap = { old, fighter(r0), fighter(r1) } end
+  if r0 ~= 0 and r1 ~= 0 then snap = snap or {}; snap[#snap + 1] = { old, fighter(r0), fighter(r1) } end
 end)
 
 local si = 1
-local round, k, t0, in_round, prev_timer, still = 0, 0, 0, false, 0, 0
+local round, k, t0, in_round, prev_timer, still, lagged = 0, 0, 0, false, 0, 0, false
 local logged_setup = false
 local logged_k
 local function finish()
@@ -447,7 +448,7 @@ frame = function()
       -- round's start (time << 6), so a game that steps twice in a frame
       -- (the board, catching up after a round's setup) keeps in step
       in_round, still = true, 0
-      t0, k, logged_k = (prev_timer + 63) // 64 * 64, nil, nil
+      t0, k, logged_k, lagged = (prev_timer + 63) // 64 * 64, nil, nil, false
       round = round + 1
       if TRACE_PAD and not _G.BT_PADTAP then trace_pad(rob(0) + 0x1200) end
       if not logged_setup then
@@ -459,22 +460,34 @@ frame = function()
     end
   end
   if in_round then
-    k = k and math.max(k + 1, t0 - timer - 1) or t0 - timer - 1
-    local e = script_at(k, round)
-    pad("P1", e[2]); pad("P2", e[3])
-    record_at(round, k, e)
-    -- the last countdown's state, as step t0 - old - 1; once the clock
-    -- stops (the KO), the frame's own
-    if snap then
-      local ks = t0 - snap[1] - 1
-      if ks >= 0 and ks > (logged_k or -1) then
-        out:write(string.format("r%d %d %d | %s | %s\n", round, ks, snap[1], snap[2], snap[3]))
-        logged_k = ks
+    -- a frame the game did not step (the board's, running long): the clock
+    -- ran the frame before and both fighters stand, so it has not stopped.
+    -- k and the pads wait for the step, which reads the last step's pads,
+    -- and nothing is logged. Still stopped the next frame, k makes it up.
+    local lag = k and timer == prev_timer and still == 0 and not judge
+      and sp:read_i16(rob(0) + 0x1AC) > 0 and sp:read_i16(rob(1) + 0x1AC) > 0
+    if not lag then
+      if lagged and timer == prev_timer then k = k + 1 end
+      k = k and math.max(k + 1, t0 - timer - 1) or t0 - timer - 1
+      local e = script_at(k, round)
+      pad("P1", e[2]); pad("P2", e[3])
+      record_at(round, k, e)
+      -- the last countdown's state, as step t0 - old - 1; once the clock
+      -- stops (the KO), the frame's own
+      if snap then
+        for _, sn in ipairs(snap) do
+          local ks = t0 - sn[1] - 1
+          if ks >= 0 and ks > (logged_k or -1) then
+            out:write(string.format("r%d %d %d | %s | %s\n", round, ks, sn[1], sn[2], sn[3]))
+            logged_k = ks
+          end
+        end
+      elseif k > (logged_k or -1) then
+        out:write(string.format("r%d %d %d | %s | %s\n", round, k, timer, fighter(rob(0)), fighter(rob(1))))
+        logged_k = k
       end
-    elseif k > (logged_k or -1) then
-      out:write(string.format("r%d %d %d | %s | %s\n", round, k, timer, fighter(rob(0)), fighter(rob(1))))
-      logged_k = k
     end
+    lagged = lag
     still = timer == prev_timer and still + 1 or 0
     if judge or still > 30 then
       pad("P1", ""); pad("P2", "")
