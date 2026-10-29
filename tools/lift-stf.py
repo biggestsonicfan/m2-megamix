@@ -291,7 +291,8 @@ INSERT_LIFTED = {
 # to 0.3 a frame (FV's * K, 0x3F1D00BE); VF2 does not.
 # coli_cont_cop_g4: the push between two VF2 guests is VF2's TGP's (its
 # function 0x3B), not StF's SHARC's: vf2_coli_push (stf_call.s, push.c) puts
-# it in g4 in place of the one read back.
+# it in g4 in place of the one read back, and the pairs that meet in r13
+# (+0x164, which coli_recalc_pos pushes on).
 # rand mixes the hardware timers (0xF00000) into G_RANDOM; two linked boards
 # (link.c, in step: link.state LS_RUN, 5) must draw the same numbers, so
 # there it steps G_RANDOM alone (an LCG, its high half).
@@ -770,7 +771,7 @@ INSERT = {
                          'cmpobne GAME_VF2, r3, coli_cont_cop_g4_own',
                          'ldob    0x1B1(g8), r3', 'ldob    guest_char_game[r3], r3',
                          'cmpobne GAME_VF2, r3, coli_cont_cop_g4_own', 'call    vf2_coli_push',
-                         'coli_cont_cop_g4_own:'],
+                         'ld      _vf2_push_pairs, r13', 'coli_cont_cop_g4_own:'],
     'loc_2B9CC': ['ldob    0x1B1(g8), r3', 'ldob    guest_char_game[r3], r3',
                   'cmpobe  GAME_STF, r3, loc_2B9CC_up', 'ld      0x1A4(g8), r3',
                   'bbc     3, r3, loc_2B9CC_up', 'addo    4, r9, r9',
@@ -830,7 +831,7 @@ INSERT = {
                   'mov     0, r5', 'b       rcs_vf2_turn', 'rcs_vf2_slip_back_b:', 'ldos    6(r4), r15',
                   'lda     0x8020000, r13', 'or      r13, r15, r15', 'st      r15, 0x198(g7)',
                   'shlo    15, 1, r5', 'b       rcs_vf2_turn', 'rcs_vf2_air:', 'ld      0x0(g7), r15',
-                  'bbs     3, r15, loc_183CC', 'lda     0x3CA3D70A, r13', 'addr    r13, g4, r5',
+                  'bbs     3, r15, loc_183CC', 'lda     0x3D261049, r13', 'addr    r13, g4, r5',
                   'ld      0x1C(g7), r6', 'ld      0x81C(g7), r14', 'addr    r5, r14, r3', 'cmpr    r6, r3',
                   'bge     rcs_vf2_up', 'setbit  0, r10, r10', 'ld      0x84(g7), r14', 'addr    r5, r14, r3',
                   'cmpr    r6, r3', 'bge     rcs_vf2_up', 'rcs_vf2_land:', 'ld      0x0(g7), r15',

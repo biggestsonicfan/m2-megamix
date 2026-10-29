@@ -8,7 +8,11 @@
  * o) not in an attack (bit i of 1P's attack mask, bit o of 2P's) pushes by
  * r_i + r_o - |p_i - p_o|, the largest of them; a pair in both of the
  * kind's masks (VF2's +0xB4 bit i, +0xB8 bit o) is multiplied by the TGP's
- * program word 0xE, which is 0. Kinds 4 and 5 (+0x88) give none.
+ * program word 0xE, which is 0. Kinds 4 and 5 (+0x88) give none. Its
+ * other answer (VF2's task +0x148, StF's +0x164) is how many such pairs
+ * meet, those multiplied by 0 too: coli_recalc_pos pushes the two apart
+ * when it is over 0, by g4 or by how far they are inside each other's
+ * reach (VF2 0x236AC). vf2_push leaves it in vf2_push_pairs.
  *
  * The attack mask is VF2's calc_attack_flag's, not StF's (+0x768): VF2 maps
  * ball to unit with its own bytes (UNIT, VF2's 0x23284), where the guest's
@@ -75,6 +79,8 @@ static u32 near(const float (*b)[4], u32 mask, const float *lo, const float *hi)
     return out;
 }
 
+u32 vf2_push_pairs;
+
 /* The board does it on the i960, not a DSP: the 900 pairs every frame cost
  * it frames, so only the balls near the other fighter are paired (the same
  * result). */
@@ -82,10 +88,9 @@ u32 vf2_push(const u8 *rob0, const u8 *rob1, const u8 *task) {
     const float (*b0)[4] = (const float (*)[4])(rob0 + 0xD00);
     const float (*b1)[4] = (const float (*)[4])(rob1 + 0xD00);
     u32 kind = *(const u32 *)(task + 0x88);
-    u32 z = kind == 3u ? 0xFFFFDFFCu : 0u, n0, n1, i, o;
+    u32 z = kind == 3u ? 0xFFFFDFFCu : 0u, n0, n1, i, o, pairs = 0u;
     float lo0[3], hi0[3], lo1[3], hi1[3], best = 0.0f;
     union { float f; u32 u; } out;
-    if (kind == 4u || kind == 5u) return 0u;
     n0 = attack_mask(rob0), n1 = attack_mask(rob1);
     bounds(b0, n0, lo0, hi0), bounds(b1, n1, lo1, hi1);
     n0 = near(b0, n0, lo1, hi1), n1 = near(b1, n1, lo0, hi0);
@@ -99,11 +104,13 @@ u32 vf2_push(const u8 *rob0, const u8 *rob1, const u8 *task) {
             dx = p[0] - q[0], dy = p[1] - q[1], dz = p[2] - q[2];
             r = b0[i][3] + b1[o][3], d2 = dx * dx + dy * dy + dz * dz;
             if (d2 >= r * r) continue;
+            pairs++;
             ov = (z >> i & 1u) && (z >> o & 1u) ? 0.0f : r - sqrt_r(d2);
             if (ov > best) best = ov;
         }
     }
-    out.f = best;
+    vf2_push_pairs = pairs;
+    out.f = kind == 4u || kind == 5u ? 0.0f : best;
     return out.u;
 }
 
