@@ -316,10 +316,11 @@ export function fitBalls(ctx, vf2, partBox, k, alloc) {
  * Akira's moves, actions, reactions, remap and edge motions (ctx), unless
  * moves, actions, kinds, remap or edge name his own (ctx.ownMoveset; edge 0:
  * none), and his jump block (record
- * +0x20) if jump names one; his skeleton, pose bones,
+ * +0x20) if jump names one, his weight (record +0x14) by player if
+ * weights names them; his skeleton, pose bones,
  * balls, seams, afterimage, hands, head and game. Returns the two
  * characters. */
-export function seatGuest(R, ctx, { chr: CHR, parts, skel, rigAt, ballRec, seamList, game, moves = ctx.newRoot, actions = ctx.actionsAt, kinds = ctx.kindsAt, remap = ctx.ownAt, edge = ctx.edgeAt, p2Parts = parts, jump }, alloc) {
+export function seatGuest(R, ctx, { chr: CHR, parts, skel, rigAt, ballRec, seamList, game, moves = ctx.newRoot, actions = ctx.actionsAt, kinds = ctx.kindsAt, remap = ctx.ownAt, edge = ctx.edgeAt, p2Parts = parts, jump, weights }, alloc) {
     const T = R.guest.tables;
     const { u32s, u16s } = ctx;
     const lists = [parts, p2Parts].map((l, p) => (p && l === parts ? null : alloc(u32s([...l, ...l]), p ? 'parts P2' : 'parts')));
@@ -327,6 +328,7 @@ export function seatGuest(R, ctx, { chr: CHR, parts, skel, rigAt, ballRec, seamL
         const rec = Uint8Array.from(src), rv = new DataView(rec.buffer), list = lists[p] ?? lists[0];
         rv.setUint32(0, list, true); rv.setUint32(4, skel, true); rv.setUint32(8, list, true); rv.setUint32(0xc, actions, true);
         if (jump) rv.setUint32(0x20, jump, true);
+        if (weights) rv.setFloat32(0x14, weights[p], true);
         T.CHAR_PARTS.view.setUint32((CHR + p * PLAYER2) * 4, alloc(rec, `record ${p ? 'P2' : 'P1'}`), true);
     });
     T.MOVESET_ARRAY.view.setUint32(CHR * 4, moves, true);

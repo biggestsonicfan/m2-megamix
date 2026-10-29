@@ -277,10 +277,11 @@ export function importFvMoves(R, ctx, fv, A, { who, k, thrown, handShape = (s) =
         for (const { op, b } of s.setup) {
             const o = [...b];
             switch (op) {
-            /* [4, attack, ?, damage, ...0x0D] as StF's; FV's effects (+0xE..+0x12) out, StF's float in */
+            /* [4, attack, ?, damage, ...0x0D] as StF's; FV's effects (+0xE..+0x12) out, StF's float in.
+             * The damage stays FV's: the board's attack_hit takes FV's knockback from it and
+             * scales what comes off the bar (tools/lift-stf.py, loc_2B898_fv, fb_bar_fv). */
             case 4:
                 o.length = 0xe;
-                o[3] = damage(b[3]);
                 o[7] = FV_KIND[b[7]] ?? b[7];
                 if (b[0xf] | b[0x10] | b[0x11] | b[0x12]) lost.strikeBytes++;
                 o.push(...f32(2.0));

@@ -138,7 +138,9 @@ NAMED = {'coli_cont_cop_g4': ('coli_cont_cop', 'ld      (g11)[g12*1], g5'),
          'pit_vf2_2': ('loc_1DCD4', 'cmpible r4, r3, loc_1DCE4'),
          'pit_vf2_3': ('loc_1DD80', 'subo    1, r5, r5'),
          'contact_lag': ('loc_29428', 'call    coli_cont_cop'),
-         'vf2_down_pick': ('loc_1E0A0', 'bbc     4, r8, loc_1E0E4')}
+         'vf2_down_pick': ('loc_1E0A0', 'bbc     4, r8, loc_1E0E4'),
+         'kb_fv_v': ('loc_2B738', 'ld      (g11)[g12*1], r4'),
+         'fb_bar_fv': ('loc_2B474', 'mov     r11, g0')}
 # Tables below 0x1000 that are tables all the same (cop_initialize_end2's
 # collision-ball pointers).
 LOW_TABLES = {'off_FE8'}
@@ -341,6 +343,8 @@ INSERT_LIFTED = {
 # rob_spd_control's friction (V 0x1791C): VF2's amount is [0x50A004] x its
 # own gravity, 0x3BB4D327 in board units (ACT_RC_JUMP's rob+0x5CC), with no
 # x 0.25; StF's is [0x50A004] x [0x50A000] x 0.25, 1.143x VF2's for a guest.
+# FV's (F 0x18680) is VF2's way too: [0x50A004] x FV's gravity, 0x3C2EE9B2
+# at an FV guest's size.
 # A VF2 fighter's strike (the attacker g7 VF2's; its +0x822 is VF2's own
 # damage, tools/vf2-guest.mjs) hits as VF2's attack_hit does (V 0x2260C..
 # 0x2309C): the knockback s = sqrt(P / 30) x 30 x 0.0025 (VF2's list word is
@@ -465,11 +469,22 @@ VF2_HIT = {
                   'ld      (g11)[g12*1], r6', 'st      r5, 0x5E0(g8)', 'st      r6, 0x5E8(g8)',
                   'b       loc_2B898', 'loc_2B738_own:'],
     'loc_2B898': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobe  GAME_FV, r14, loc_2B898_fv',
                   'cmpobne GAME_VF2, r14, loc_2B898_own', 'ldis    stf_ram_500000+0x28, r14',
                   'cmpibge 0, r14, loc_2B8C4', 'mov     g8, r15', 'mov     g7, g8', 'mov     r15, g7',
                   'mulo    14, r11, g0', 'addo    11, g0, g0', 'divo    22, g0, g0',
                   'call    damage_calc_vf2', 'mov     g8, r15', 'mov     g7, g8', 'mov     r15, g7',
+                  'b       loc_2B8C4', 'loc_2B898_fv:', 'ldis    stf_ram_500000+0x28, r14',
+                  'cmpibge 0, r14, loc_2B8C4', 'mov     g8, r15', 'mov     g7, g8', 'mov     r15, g7',
+                  'mulo    7, r11, g0', 'addo    5, g0, g0', 'divo    10, g0, g0',
+                  'call    damage_calc_vf2', 'mov     g8, r15', 'mov     g7, g8', 'mov     r15, g7',
                   'b       loc_2B8C4', 'loc_2B898_own:'],
+    'kb_fv_v': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                'cmpobne GAME_FV, r14, kb_fv_v_own', 'lda     0x4002D5F4, r13',
+                'mulr    r13, r4, r4', 'kb_fv_v_own:'],
+    'fb_bar_fv': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobne GAME_FV, r14, fb_bar_fv_own', 'mulo    7, g0, g0', 'addo    5, g0, g0',
+                  'divo    10, g0, g0', 'fb_bar_fv_own:'],
     'ah_not_finish_blow': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                   'cmpobne GAME_VF2, r14, ah_not_finish_blow_own', 'ld      0x1A4(g8), r15',
                   'bbs     0x10, r15, loc_2B560', 'bbs     0xE, r15, loc_2B594', 'bbs     4, r15, loc_2B5E4',
@@ -649,7 +664,9 @@ INSERT = {
                   'cmpobe  8, r8, loc_2F728', 'cmpobe  4, r8, loc_2F730', 'mov     1, r8', 'b       loc_2F734',
                   'loc_2F668_own:'],
     'rsc_gra_vf2': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                    'cmpobe  GAME_FV, r14, rsc_gra_fv',
                     'cmpobne GAME_VF2, r14, rsc_gra_own', 'lda     0x3BB4D327, r14',
+                    'b       rsc_gra_guest', 'rsc_gra_fv:', 'lda     0x3C2EE9B2, r14', 'rsc_gra_guest:',
                     'mulr    r13, r14, r5', 'b       rsc_gra_done', 'rsc_gra_own:'],
     'rsc_normal_gravity': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                            'cmpobne GAME_VF2, r14, rsc_normal_gravity_own',

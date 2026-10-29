@@ -58,6 +58,10 @@ const HANDS = 0x0640ebf4, SHAPES = 4;
  * word: parts 1..15, 8 bytes each, ball * 4) and a count by part (16). StF's
  * record, the same four. */
 const FV_BALLS = { points: 0x0640e4fc, part: 0x0640e7dc, lists: 0x0640e860, counts: 0x0640e914 };
+/* His weight: FV's record +0x1C (record 21's is record 8's), and his armour's
+ * pieces by record (8, and 21 his second player's): 16 slots of [4 counts, pieces], 0x28 bytes a piece,
+ * its weight at +0x14. */
+const WEIGHT = 0x1c, ARMOUR = 0x0640edac, RECORDS = [8, 21];
 const MIDRIFF = { model: 8, ring: 0x70, ringPoints: 8, count: 0xd0, links: 0xd4, link: 10, first: 8 };
 const POLY_RUN_END = 0xec2578 + 0x13da88;
 const TEX_RUN_END = 0x78bdb8 + 0x74248;
@@ -391,8 +395,22 @@ export function importMahler(R, ctx, games, { byKey }, { chr: CHR_ = CHR, obj = 
     jump[0] = M.d8(jumpAt); jump[1] = M.d8(jumpAt + 1);
     for (let i = 4; i < 0x14; i += 4) jv.setFloat32(i, M.f32(jumpAt + i) * k, true);
     report.push(`jump: ${jump[0]}, ${jump[1]} frames, reach ${[4, 8, 12, 16].map((i) => jv.getFloat32(i, true).toFixed(3)).join(' ')}`);
+    /* His weight (record +0x14: rob+0x7DC, and with sub_3261C's pieces
+     * rob+0x5D8, which hits' knockback is divided by): FV's init (F 0x12900)
+     * takes record +0x1C and adds its armour's pieces (F 0x2D84C, StF's
+     * sub_3261C), which the board has none of for him, so both go in here. */
+    const weights = RECORDS.map((r) => {
+        let w = M.f32(A.root + WEIGHT);
+        const at = M.d32(ARMOUR + r * 4);
+        for (let s = 0; s < 16; s++) {
+            const n = [0, 1, 2, 3].reduce((t, i) => t + M.d8(at + s * 8 + i), 0), p = M.d32(at + s * 8 + 4);
+            if (p) for (let i = 0; i < n; i++) w += M.f32(p + i * 0x28 + 0x14);
+        }
+        return w;
+    });
+    report.push(`weight: ${weights.map((w) => w.toFixed(3)).join(', ')} (FV's record and armour)`);
     const chars = seatGuest(R, ctx, { chr: CHR_, parts, p2Parts, skel, rigAt, ballRec, seamList, game: R.guest.games.FV,
-        jump: alloc(jump, 'jump', 4), moves: mv.moves, kinds: mv.kindsAt, remap: mv.remapAt, actions: mv.actionsAt }, alloc);
+        jump: alloc(jump, 'jump', 4), weights, moves: mv.moves, kinds: mv.kindsAt, remap: mv.remapAt, actions: mv.actionsAt }, alloc);
     /* his hands (FV's four shapes a hand, the first again past them) and midriff, by player */
     chars.forEach((c, p) => {
         const hands = M.hands.flatMap((l) => Array.from({ length: 16 }, (_, i) => modelOf(l[i < SHAPES ? i : 0], p)));
