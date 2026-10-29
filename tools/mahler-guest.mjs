@@ -26,7 +26,7 @@
  *     which the board fills with FV's player 2 colours, the same as player
  *     1's: both players look alike, as in FV;
  *   - his skeleton and pose bones (record +4, VF2's layout, at his size);
- *   - his collision balls, Akira's fitted to his parts;
+ *   - his collision balls: FV's, one set for its whole cast (FV_BALLS);
  *   - his moves: FV's own (tools/fv-moves.mjs).
  */
 import { readFighters } from '../vendor/noclip/js/vf2fighters.js';
@@ -38,7 +38,7 @@ import { buildTexram } from '../vendor/noclip/js/texture.js';
 import { SHEET_H, SHEET_BYTES, texelByte, levelOrigin } from '../vendor/noclip/js/atlas.js';
 import { readObject, encodeObject } from './daytona-hornet.mjs';
 import { SCALE, THROWN } from './vf2-guest.mjs';
-import { pointBox, fitBalls, seatGuest } from './ryo-guest.mjs';
+import { seatGuest } from './ryo-guest.mjs';
 import { importFvMoves } from './fv-moves.mjs';
 
 /* StF's character 18: not one the code checks by number, nor a bit of the
@@ -52,6 +52,12 @@ export const K = 2.676 / 1.309;
 /* FV's record: +4 the skeleton, +0x24 the midriff; the hand list */
 const SKELETON = 4, SKELETON_BYTES = 15 * 12, MIDRIFF_AT = 0x24, JUMP = 0x34;
 const HANDS = 0x0640ebf4, SHAPES = 4;
+/* The collision balls, one set for FV's whole cast (main_data, copied to
+ * 0x506000 by 0x1950): their points (32: x, y, z in the part's frame, r),
+ * the part each rides (32 words), a pointer to each part's list (the second
+ * word: parts 1..15, 8 bytes each, ball * 4) and a count by part (16). StF's
+ * record, the same four. */
+const FV_BALLS = { points: 0x0640e4fc, part: 0x0640e7dc, lists: 0x0640e860, counts: 0x0640e914 };
 const MIDRIFF = { model: 8, ring: 0x70, ringPoints: 8, count: 0xd0, links: 0xd4, link: 10, first: 8 };
 const POLY_RUN_END = 0xec2578 + 0x13da88;
 const TEX_RUN_END = 0x78bdb8 + 0x74248;
@@ -169,7 +175,7 @@ const midriffRecs = (fv, m) => streamsOf(fv, m).recs;
  * stay FV's. Its faces' tiles must be his (mahlerTiles). */
 export function importMahler(R, ctx, games, { byKey }, { chr: CHR_ = CHR, obj = null } = {}) {
     const { main, polygons, textures } = R;
-    const fv = games.fv.rom, vf2 = games.vf2.rom;
+    const fv = games.fv.rom;
     const Who = 'Mahler';
     const report = [];
     const alloc = (b, label, align = 4) => ctx.alloc(b, label, align, Who);
@@ -349,12 +355,27 @@ export function importMahler(R, ctx, games, { byKey }, { chr: CHR_ = CHR, obj = 
     const rigAt = alloc(rigBytes, 'bones');
 
     /* ---- balls, moves, records and the guest tables ---- */
-    const partBox = (s) => {
-        const q = pieces.find((x) => x.slot === s);
-        return q ? pointBox(q.polys.flatMap((p) => (p.quad ? p.p : p.p.slice(0, 3)))) : null;
-    };
-    const { ballRec, moved: ballsMoved } = fitBalls(ctx, vf2, partBox, k, alloc);
-    report.push(`${ballsMoved} collision balls fitted to his parts`);
+    /* his balls: FV's, at his size (VF2's, fitted to his parts, pushed him
+     * off on a jab's contact: FV's radii are smaller) */
+    let ballRec;
+    const ballsMoved = (() => {
+        const take = (a, len) => { const x = M.res(a); return Uint8Array.from(x.data.subarray(x.off, x.off + len)); };
+        const pts = take(FV_BALLS.points, 32 * 16), pv = new DataView(pts.buffer);
+        for (let i = 0; i < 32 * 4; i++) pv.setFloat32(i * 4, pv.getFloat32(i * 4, true) * k, true);
+        const part = Array.from({ length: 32 }, (_, i) => M.d32(FV_BALLS.part + i * 4));
+        const lists = new Uint8Array(16 * 8);
+        lists.set(take(M.d32(FV_BALLS.lists), 15 * 8), 8);
+        const counts = take(FV_BALLS.counts, 16);
+        for (let s = 0; s < 16; s++)
+            for (let j = 0; j < counts[s]; j++)
+                if (part[lists[s * 8 + j] >> 2] !== s) throw new Error(`${Who}: ball ${lists[s * 8 + j] >> 2} is not part ${s}'s`);
+        ballRec = alloc(u32s([
+            alloc(pts, 'balls', 16), alloc(u32s(part), 'ball parts', 16),
+            alloc(lists, 'part balls', 16), alloc(counts, 'part ball counts', 16),
+        ]), 'ball record', 16);
+        return counts.reduce((n, c) => n + c, 0);
+    })();
+    report.push(`${ballsMoved} collision balls, FV's`);
     const seamList = alloc(u32s([0]), 'seams');
     const shapes = {};
     const mv = importFvMoves(R, ctx, fv, A, {
