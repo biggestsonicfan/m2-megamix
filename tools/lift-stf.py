@@ -386,6 +386,14 @@ INSERT_LIFTED = {
 # 0xA7 with 0x1F8 at or under 0.9, 0x2CF at or under 0.6 (V 0x23238, * SCALE;
 # sub_2BA44, his ids after the rises in edge_motion). Not ported: VF2's
 # character-4 extra angle (V 0x22F28).
+# loc_2A9F0: a VF2 strike on a guarding victim is guarded as VF2's attack_hit
+# decides (V 0x226F4..0x22914), by the strike's kind (0x821) and flags (0x828)
+# against the victim's crouch (0x1A4 bit 3). Standing, kinds 2, 5 and 6 go
+# through and the rest are guarded unless 0x828 bit 9; crouched, only those
+# kinds are guarded (bit 9 clear), or any with bit 13. Bit 12 hits for half
+# (r8 1), and a crouched kind 1 for 3/4. StF's test reads its own attack table
+# (stf_ram_50FE00) with no crouch test. Not ported: VF2's 0x844 bit 30 catch
+# (V 0x227DC) and the bit-13 guard's own reaction (g0 1, V 0x227C4).
 VF2_HIT = {
     'loc_2A954': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                   'cmpobne GAME_VF2, r14, loc_2A954_own', 'lda     0x3D088888, r13',
@@ -498,6 +506,23 @@ VF2_HIT = {
                   'cmpr    r3, r4', 'bg      sub_2BA44_vf2', 'ldos    0x7A(r14), g0', 'lda     0x3F9BAF44, r4',
                   'cmpr    r3, r4', 'bg      sub_2BA44_vf2', 'ldos    0x7C(r14), g0', 'sub_2BA44_vf2:', 'ret',
                   'sub_2BA44_own:'],
+    'loc_2A9F0': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobne GAME_VF2, r14, loc_2A9F0_own', 'ld      0x1A4(g8), r15',
+                  'bbc     0xD, r15, loc_2AE40', 'ld      0x5B8(g8), r15', 'bbs     0, r15, loc_2AE40',
+                  'ld      0x1A4(g8), r15', 'ldob    0x821(g7), r14', 'ldos    0x828(g7), r13',
+                  'bbs     3, r15, gd_vf2_low', 'cmpobe  2, r14, gd_vf2_under',
+                  'cmpobe  5, r14, gd_vf2_under', 'cmpobe  6, r14, gd_vf2_under',
+                  'bbc     9, r13, loc_2AC74', 'gd_vf2_under:', 'bbs     0xC, r13, gd_vf2_half',
+                  'b       loc_2AE40', 'gd_vf2_low:', 'cmpobe  2, r14, gd_vf2_over',
+                  'cmpobe  5, r14, gd_vf2_over', 'cmpobe  6, r14, gd_vf2_over',
+                  'bbs     0xD, r13, loc_2AC74', 'bbs     0xC, r13, gd_vf2_half',
+                  'cmpobne 1, r14, loc_2AE40', 'shro    2, r11, r15', 'subo    r15, r11, r11',
+                  'lda     0x3F400000, r13', 'mulr    r13, r9, r9', 'b       loc_2AE40',
+                  'gd_vf2_over:', 'bbc     9, r13, loc_2AC74', 'bbs     0xC, r13, gd_vf2_half',
+                  'b       loc_2AE40', 'gd_vf2_half:', 'shro    1, r11, r11',
+                  'lda     0x3F000000, r13', 'mulr    r13, r9, r9', 'mov     1, r8',
+                  'ld      0x70C(g7), r15', 'bbs     0x14, r15, loc_2AE54', 'ld      0x5B8(g7), r15',
+                  'bbs     0, r15, loc_2B8C8', 'b       loc_2AE54', 'loc_2A9F0_own:'],
 }
 # Getting up, VF2's way for a VF2 fighter. Lying down (StF's state 9, VF2's
 # 0xD) his input (V 0x1BD38) picks one of VF2's rise kinds (0x19E, 2..12):
