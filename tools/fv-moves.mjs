@@ -77,6 +77,10 @@ const FV_ACTION = {
     0: 0, 1: 1, 2: 2, 5: 5, 8: 8, 9: 11, 14: 18, 15: 20, 16: 27, 17: 29, 20: 28, 21: 19, 22: 30, 23: 21, 24: 21,
     28: 39, 29: 40, 30: 40, 31: 42, 81: 35, 82: 36, 83: 37,
 };
+/* The board's slots 53..58, VF2's crouch walks' (actions 0x60/0x61,
+ * tools/lift-stf.py): FV's actions 5 and 6 (F 0x139C4, 0x13A60) are the same
+ * walks, with these actions' motions */
+const CRAWL_ACTIONS = [6, 7, 31, 32, 33, 34];
 /* StF's getting-up slots 41..51 are FV's actions 43..53 */
 const RISE_SLOT = 41, RISE_ACTION = 43, RISE_SLOTS = 11;
 /* FV's reaction kind -> StF's (VF2's numbers), by what its lists play */
@@ -229,6 +233,7 @@ export function importFvMoves(R, ctx, fv, A, { who, k, thrown, handShape = (s) =
     FV_KIND.forEach((v, f) => { if (!fvKindOf.has(v)) fvKindOf.set(v, f); });
     const want = new Set([FALL]);
     STF_ACTIONS.forEach((x, s) => { const m = slotMotion(x, s); if (m) want.add(m); });
+    for (const n of CRAWL_ACTIONS) if (act(n)) want.add(act(n));
     for (const f of fvKindOf.values()) for (const x of reactions[f]) if (x) want.add(x);
     const commitWord = (a) => p32(a + 1);
     for (const a of commits) {
@@ -426,6 +431,11 @@ export function importFvMoves(R, ctx, fv, A, { who, k, thrown, handShape = (s) =
         if (!m) return;
         actions[s] = (actions[s] & ~MOTION_ID) | mid(m);
         changed.set(s, mid(m));
+    });
+    CRAWL_ACTIONS.forEach((n, i) => {
+        if (!act(n)) return;
+        actions[53 + i] = (actions[53 + i] & ~MOTION_ID) | mid(act(n));
+        changed.set(53 + i, mid(act(n)));
     });
     const actionsAt = alloc(u16s(actions), 'actions');
     report.push(`action slots: ${changed.size} of ${actions.length} his own`);

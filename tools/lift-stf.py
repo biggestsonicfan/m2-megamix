@@ -144,7 +144,9 @@ NAMED = {'coli_cont_cop_g4': ('coli_cont_cop', 'ld      (g11)[g12*1], g5'),
          'smooth_ang_fv': ('loc_2F788', 'ldis    (g11)[g12*1], g2'),
          'sup_fv_seed': ('support_rob_position', 'or      r13, r3, r3'),
          'sup_fv_near': ('loc_29BD8', 'ld      0x168(g13), r3'),
-         'sup_fv_jump': ('loc_29D34', 'cmpobne 0, r3, loc_29F48')}
+         'sup_fv_jump': ('loc_29D34', 'cmpobne 0, r3, loc_29F48'),
+         'en_fv_near': ('get_en_info', 'lda     0x3ECCCCCD, r3'),
+         'en_fv_far': ('loc_18D00', 'ld      en_ang_dist, r3')}
 # Tables below 0x1000 that are tables all the same (cop_initialize_end2's
 # collision-ball pointers).
 LOW_TABLES = {'off_FE8'}
@@ -295,6 +297,8 @@ INSERT_LIFTED = {
 # taken to the guests' size for a pair from one other game: VF2's always
 # 0.3 * SCALE (0x3F1BAF44), FV's StF's factors * K. StF and FV hold the push
 # to 0.3 a frame (FV's * K, 0x3F1D00BE); VF2 does not.
+# get_en_info (F 0x19078): FV's turns 0x5B6 to the other only past 0.4 or
+# [0x50A028] apart, FV's distances; a pair of FV guests' is * K, so are those.
 # support_rob_position: FV's (F 0x24CE4) turns the pair, or one
 # about the other, back onto the line between their bodies when none of its
 # checks stops it (+0x1B0 bits 1..8 all clear; the case by 0x1A4 bit 5 of
@@ -356,6 +360,9 @@ INSERT_LIFTED = {
 # 0x804 and 0x860 turns (0x804 bit 15 turned a VF2 fighter getting up), and
 # turns at 0x38E where StF's 0x1A4 bit 13/17/14 turns are 0x71C. VF2's tag_yang native
 # (V 0x49040) is the debug menu's display, not a reader.
+# FV's (F 0x18394) is StF's into the same tails, less StF's 0x860, 0x1A4
+# bit 31 and bit 17 turns, its 0x804 bit 15 turn ahead of bit 14's return;
+# FV 0x774/0x720 are StF's 0x760/0x70C.
 # rob_spd_control's friction (V 0x1791C): VF2's amount is [0x50A004] x its
 # own gravity, 0x3BB4D327 in board units (ACT_RC_JUMP's rob+0x5CC), with no
 # x 0.25; StF's is [0x50A004] x [0x50A000] x 0.25, 1.143x VF2's for a guest.
@@ -715,6 +722,8 @@ SUP_FV = {
                     'st      r12, 0x1D0(g13)', 'st      r13, 0x1D4(g13)', 'sup_fv_seed_own:'],
     'sup_fv_near': [*_fv_pair('sup_fv_near_own'), 'lda     0x4002D5F4, r15', 'mulr    r15, r4, r4',
                     'sup_fv_near_own:'],
+    'en_fv_near': [*_fv_pair('en_fv_near_own'), 'lda     0x4002D5F4, r15', 'mulr    r15, r3, r3', 'en_fv_near_own:'],
+    'en_fv_far': [*_fv_pair('en_fv_far_own'), 'lda     0x4002D5F4, r15', 'mulr    r15, r3, r3', 'en_fv_far_own:'],
     'sup_fv_jump': ['ld      sup_fv_cases[g0*16], r5', 'bx      (r5)', '.align  4', 'sup_fv_cases:',
                     *[l for t, n, w in _SUP_FV_CASES for l in
                       (f'.long   {("loc_29F48", "sup_fv_one", "sup_fv_both")[t]}', f'.long   {n:#x}', f'.long   {w}',
@@ -770,7 +779,9 @@ INSERT = {
     # board's 0x60 and 0x61, past StF's table, dispatched here, their motions
     # VF2's slots 6/7, 24..27 (the board's 53..58, tools/vf2-guest.mjs). Not
     # ported: rob+0 bit 10's motions 0x46A/0x46B, VF2's states 29/30.
-    'vf2_down_pick': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14', 'cmpobne GAME_VF2, r14, vf2_down_own', 'bbc     r6, r8, vf2_down_back', 'lda     0x60000000, r15', 'st      r15, 0x194(g7)', 'b       loc_1E1A0', 'vf2_down_back:', 'bbc     r7, r8, vf2_down_own', 'ld      0x5B8(g7), r15', 'bbs     0, r15, vf2_down_dash', 'lda     0x61000000, r15', 'st      r15, 0x194(g7)', 'b       loc_1E1A0', 'vf2_down_dash:', 'shlo    0x18, 5, r15', 'st      r15, 0x194(g7)', 'b       loc_1E180', 'vf2_down_own:'],
+    # FV's (F 0x1DD6C, 0x139C4, 0x13A60) are the same, its actions 5 and 6
+    # (tools/fv-moves.mjs CRAWL_ACTIONS); not ported: its 0xAE/0xAD.
+    'vf2_down_pick': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14', 'cmpobe  GAME_FV, r14, vf2_down_go', 'cmpobne GAME_VF2, r14, vf2_down_own', 'vf2_down_go:', 'bbc     r6, r8, vf2_down_back', 'lda     0x60000000, r15', 'st      r15, 0x194(g7)', 'b       loc_1E1A0', 'vf2_down_back:', 'bbc     r7, r8, vf2_down_own', 'ld      0x5B8(g7), r15', 'bbs     0, r15, vf2_down_dash', 'lda     0x61000000, r15', 'st      r15, 0x194(g7)', 'b       loc_1E1A0', 'vf2_down_dash:', 'shlo    0x18, 5, r15', 'st      r15, 0x194(g7)', 'b       loc_1E180', 'vf2_down_own:'],
     'exec_command': ['ldob    0x197(g7), r3', 'lda     0x60, r4', 'cmpobg  r4, r3, exec_command_own', 'ld      0x194(g7), r11', 'b       loc_13120', 'exec_command_own:'],
     'exec_action': ['ldob    0x19F(g7), r3', 'lda     0x60, r4', 'cmpobe  r4, r3, vf2_cwalk_f', 'addo    1, r4, r4', 'cmpobe  r4, r3, vf2_cwalk_b', 'b       exec_action_own', 'vf2_cwalk_f:', 'ld      0x1A4(g7), r7', 'ld      0x0(g7), r6', 'bbc     3, r7, vf2_cwf_stand', 'bbc     0xA, r7, vf2_cwf_low', 'bbs     0xB, r7, vf2_cwf_back', 'b       vf2_cwf_rise', 'vf2_cwf_stand:', 'ldos    0x6A(g6), g0', 'ldos    0x810(g7), r14', 'bbs     7, r14, vf2_cwf_cut', 'call    set_motion', 'b       syagami_yoke', 'vf2_cwf_cut:', 'call    sub_1CE94', 'b       syagami_yoke', 'vf2_cwf_low:', 'bbs     0, r6, vf2_cwf_back', 'ldos    0x810(g7), r14', 'bbs     7, r14, vf2_cwf_back', 'ldos    0x6A(g6), g0', 'call    sub_1CEA8', 'b       syagami_yoke', 'vf2_cwf_back:', 'ldos    0x6E(g6), g0', 'b       vf2_cwf_set', 'vf2_cwf_rise:', 'bbs     0, r6, vf2_cwf_up', 'ldos    0x810(g7), r14', 'bbc     7, r14, syagami_yoke', 'ret', 'vf2_cwf_up:', 'ldos    0x70(g6), g0', 'bbc     1, r7, vf2_cwf_set', 'ldos    0x6E(g6), g0', 'vf2_cwf_set:', 'call    set_motion', 'ret', 'vf2_cwalk_b:', 'ld      0x1A4(g7), r7', 'ld      0x0(g7), r6', 'bbc     3, r7, vf2_cwb_stand', 'bbc     0xA, r7, vf2_cwb_low', 'bbs     0xB, r7, vf2_cwb_back', 'b       vf2_cwb_rise', 'vf2_cwb_stand:', 'ldos    0x6C(g6), g0', 'ldos    0x810(g7), r14', 'bbs     7, r14, vf2_cwb_cut', 'call    set_motion', 'b       syagami_yoke', 'vf2_cwb_cut:', 'call    sub_1CE94', 'b       syagami_yoke', 'vf2_cwb_low:', 'bbs     0, r6, vf2_cwb_back', 'ldos    0x810(g7), r14', 'bbs     7, r14, vf2_cwb_back', 'ldos    0x6C(g6), g0', 'call    sub_1CEA8', 'b       syagami_yoke', 'vf2_cwb_back:', 'ldos    0x72(g6), g0', 'b       vf2_cwb_set', 'vf2_cwb_rise:', 'bbs     0, r6, vf2_cwb_up', 'ldos    0x810(g7), r14', 'bbc     7, r14, syagami_yoke', 'ret', 'vf2_cwb_up:', 'ldos    0x74(g6), g0', 'bbc     1, r7, vf2_cwb_set', 'ldos    0x72(g6), g0', 'vf2_cwb_set:', 'call    set_motion', 'ret', 'exec_action_own:'],
     # VF2's walks (V 0x14B54, 0x14BE4): from a crouch, or from a guard
@@ -789,6 +800,7 @@ INSERT = {
                       'or      r14, r7, r7', 'area_coli_618_own:'],
     'rob_revise_yang': ['ldob    0x1B1(g7), r14',
                         'ldob    guest_char_game[r14], r14',
+                        'cmpobe  GAME_FV, r14, ryang_fv',
                         'cmpobne GAME_VF2, r14, rob_revise_yang_own',
                         'ld      stf_ram_500000+0x828, r3',
                         'ld      0x0(r3), r15',
@@ -845,6 +857,56 @@ INSERT = {
                         'b       loc_17E00',
                         'rob_revise_yang_6:',
                         'bbc     0x1E, r7, loc_17F74',
+                        'b       loc_17E00',
+                        'ryang_fv:',
+                        'ld      stf_ram_500000+0x828, r3',
+                        'ld      0x0(r3), r15',
+                        'bbc     0x1F, r15, loc_17F74',
+                        'ldis    0x5B6(g7), r9',
+                        'ld      0x1A4(g7), r7',
+                        'ld      0x1A4(g8), r8',
+                        'bbc     8, r7, ryang_fv_1',
+                        'ldob    0x821(g7), r3',
+                        'cmpobne 4, r3, ryang_fv_1',
+                        'ldos    0x760(g7), r9',
+                        'b       loc_17E90',
+                        'ryang_fv_1:',
+                        'ld      0x0(g7), r15',
+                        'bbc     9, r15, ryang_fv_2',
+                        'ldos    0x61A(g7), r9',
+                        'ryang_fv_2:',
+                        'ld      0x70C(g7), r15',
+                        'bbs     2, r15, loc_17EAC',
+                        'bbs     0x19, r7, loc_17F74',
+                        'ld      0x0(g7), r15',
+                        'bbs     0x16, r15, loc_17F74',
+                        'ld      0x804(g7), r15',
+                        'bbs     0xF, r15, loc_17E58',
+                        'bbs     0xE, r7, loc_17F74',
+                        'bbc     0x10, r7, ryang_fv_3',
+                        'bbs     8, r7, ryang_fv_3',
+                        'bbc     8, r8, ryang_fv_3',
+                        'bbs     4, r8, loc_17F74',
+                        'ryang_fv_3:',
+                        'bbs     0xD, r7, loc_17DE8',
+                        'bbc     0x12, r7, ryang_fv_4',
+                        'bbs     1, r7, loc_17DD8',
+                        'b       loc_17F74',
+                        'ryang_fv_4:',
+                        'bbs     2, r7, loc_17E3C',
+                        'bbs     0xA, r7, loc_17DE8',
+                        'lda     0x1010, r13',
+                        'and     r13, r7, r3',
+                        'shlo    0xC, 1, r13',
+                        'cmpobe  r13, r3, loc_17DE8',
+                        'lda     0x4010, r3',
+                        'and     r3, r8, r4',
+                        'cmpobe  r3, r4, loc_17E3C',
+                        'bbc     1, r7, ryang_fv_5',
+                        'bbs     0xF, r8, loc_17F74',
+                        'b       loc_17E00',
+                        'ryang_fv_5:',
+                        'bbc     0x1C, r7, loc_17F74',
                         'b       loc_17E00',
                         'rob_revise_yang_own:'],
     'rand': ['ld      _link+4, r15', 'cmpobne 5, r15, rand_own',
