@@ -218,7 +218,7 @@ GUEST_BASE = 0x02E00000
 # edge_motion is the board's own: a pointer by character (rob+0x1B1, 26) to
 # a VF2 fighter's ten edge motions, VF2's 0x182..0x18B as its board ids (0:
 # none; rob_check_stage then plays none), then his action slots 31..80
-# (VF2_RISE).
+# (VF2_RISE) and reaction 0x2CE's swaps (VF2_HIT's sub_2BA44).
 GUESTS = [('CHAR_PARTS', 0x100, 52 * 4), ('SKELETON_TYPE_DATA', 0x400, 4 * 4),
           ('MOVESET_ARRAY', 0x100, 24 * 4), ('player_hand_animations', 0x100, 52 * 4),
           ('player_foot_animation', 0x100, 52 * 4), ('player_body_animation', 0x100, 52 * 4),
@@ -376,9 +376,10 @@ INSERT_LIFTED = {
 # board's (scaled) damage takes the rest of the bar; no StF 0x70C bit 2. The
 # knock-down's stun is (P/2 - 7) x 2, and its angle and factor come from
 # VF2's table by kind (fighter.c, vf2_hit_kinds), then StF's combo limit
-# (loc_2B6E8, the same as VF2's). Not ported: VF2's swap of reaction 0x2CE
-# for 0x2CF/0xA7 on a low 0x1F8 (V 0x23238), whose motions the board lacks,
-# and VF2's character-4 extra angle (V 0x22F28).
+# (loc_2B6E8, the same as VF2's). A VF2 defender's reaction 0x2CE becomes
+# 0xA7 with 0x1F8 at or under 0.9, 0x2CF at or under 0.6 (V 0x23238, * SCALE;
+# sub_2BA44, his ids after the rises in edge_motion). Not ported: VF2's
+# character-4 extra angle (V 0x22F28).
 VF2_HIT = {
     'loc_2A954': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                   'cmpobne GAME_VF2, r14, loc_2A954_own', 'lda     0x3D088888, r13',
@@ -484,6 +485,13 @@ VF2_HIT = {
                   'ldis    0x1C(r7), r6', 'ld      0x10(r7), r13', 'b       kd_vf2_scale',
                   'kd_vf2_low_counter:', 'ldis    0x1E(r7), r6', 'ld      0x14(r7), r13', 'kd_vf2_scale:',
                   'mulr    r13, r9, r9', 'b       loc_2B6E8', 'loc_2B5E4_own:'],
+    'sub_2BA44': ['ldob    0x1B1(g8), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobne GAME_VF2, r14, sub_2BA44_own', 'ldob    0x1B1(g8), r14',
+                  'ld      guest_edge_motion[r14*4], r14', 'ldos    0x78(r14), r13',
+                  'cmpobne r13, g0, sub_2BA44_own', 'ld      0x1F8(g8), r3', 'lda     0x3FE986E6, r4',
+                  'cmpr    r3, r4', 'bg      sub_2BA44_vf2', 'ldos    0x7A(r14), g0', 'lda     0x3F9BAF44, r4',
+                  'cmpr    r3, r4', 'bg      sub_2BA44_vf2', 'ldos    0x7C(r14), g0', 'sub_2BA44_vf2:', 'ret',
+                  'sub_2BA44_own:'],
 }
 # Getting up, VF2's way for a VF2 fighter. Lying down (StF's state 9, VF2's
 # 0xD) his input (V 0x1BD38) picks one of VF2's rise kinds (0x19E, 2..12):

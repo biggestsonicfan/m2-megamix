@@ -111,6 +111,9 @@ const COMMIT_ACTION = { 7: 18, 8: 19, 0x12: 14, 0x13: 15, 0x1d: 16, 0x1e: 17 };
  * 0x182..0x185, the falls off 0x186..0x189, the teeters 0x18A, 0x18B; the
  * board's lift plays them by place from edge_motion (tools/lift-stf.py). */
 export const EDGE_MOTIONS = Array.from({ length: 10 }, (_, k) => 0x182 + k);
+/* VF2's reaction 0x2CE, and what it becomes on a low 0x1F8: 0xA7, 0x2CF
+ * (V 0x23238; the board's lift, sub_2BA44). */
+export const SWAP_MOTIONS = [0x2ce, 0xa7, 0x2cf];
 
 /* StF's 52 action slots, each played with one of VF2's (its number) or a VF2
  * motion ({ motion }), matched by what the motion does: stance, crouch,
@@ -410,7 +413,7 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
         for (let i = 0; i < 40; i++) { const x = d32(t + i * 4); if (!x && k) kind0++; r.push(x || reactions[0][i]); }
         reactions.push(r);
     }
-    const want = new Set([...A.actions, ...STF_ACTIONS.map(actionMotion), ...reactions.flat().map((x) => x & MOTION_ID), ...EDGE_MOTIONS].filter((x) => x));
+    const want = new Set([...A.actions, ...STF_ACTIONS.map(actionMotion), ...reactions.flat().map((x) => x & MOTION_ID), ...EDGE_MOTIONS, ...SWAP_MOTIONS].filter((x) => x));
     const commitWord = (a) => p32(a + 1);
     for (const a of commits) {
         const w = commitWord(a), type = w >>> 24;
@@ -732,8 +735,9 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
     const actions = actionsOf(mid);
     const actionsAt = alloc(u16s(actions), 'actions');
     /* edge_motion: his edge stumbles, then his action slots 31..80 (the
-     * getting up the board's lift plays VF2's way, tools/lift-stf.py), under mid */
-    const edgeOf = (m) => [...EDGE_MOTIONS, ...A.actions.slice(31, 81)].map(m);
+     * getting up the board's lift plays VF2's way, tools/lift-stf.py) and
+     * SWAP_MOTIONS, under mid */
+    const edgeOf = (m) => [...EDGE_MOTIONS, ...A.actions.slice(31, 81), ...SWAP_MOTIONS].map(m);
     const edgeAt = alloc(u16s(edgeOf(mid)), 'edge motions');
     T.edge_motion.view.setUint32(CHR * 4, edgeAt, true);
 
