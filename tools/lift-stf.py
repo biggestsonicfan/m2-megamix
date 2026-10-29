@@ -136,7 +136,8 @@ NAMED = {'coli_cont_cop_g4': ('coli_cont_cop', 'ld      (g11)[g12*1], g5'),
          'damage_calc_vf2': ('damage_calculation', 'call    ketchup'),
          'pit_vf2_1': ('loc_1DC74', 'cmpible r4, r3, loc_1DC84'),
          'pit_vf2_2': ('loc_1DCD4', 'cmpible r4, r3, loc_1DCE4'),
-         'pit_vf2_3': ('loc_1DD80', 'subo    1, r5, r5')}
+         'pit_vf2_3': ('loc_1DD80', 'subo    1, r5, r5'),
+         'contact_lag': ('loc_29428', 'call    coli_cont_cop')}
 # Tables below 0x1000 that are tables all the same (cop_initialize_end2's
 # collision-ball pointers).
 LOW_TABLES = {'off_FE8'}
@@ -320,10 +321,14 @@ INSERT_LIFTED = {
 # The turn takes effect as VF2's does: area_coli_618, StF's area_coli stores
 # 0x618 as a word, which clears 0x61A each frame; VF2's (V 0x1419C) is a
 # short, so a VF2 fighter's 0x61A is kept in the word's high half. And
-# rob_revise_yang (V 0x17710): with 0x1A4 bit 23 (the stumbles' motions set
-# it) VF2 turns 0x26 toward 0x61A at 0x38E (5 degrees) a frame, no window, at
-# VF2's 0x17890 (StF's loc_17EEC); StF has no such path. After StF's own gate
-# (mod_fa_coli bit 31), before the rest of its tree. VF2's tag_yang native
+# rob_revise_yang (V 0x17710): a VF2 fighter turns by VF2's tree, after
+# StF's own gate (mod_fa_coli bit 31), into StF's tails where they are the
+# same (V 0x17854 = loc_17E3C, 0x17800 = loc_17DE8, 0x17818 = loc_17E00,
+# 0x177F0 = loc_17DD8, 0x17890 = loc_17EEC). With 0x1A4 bit 23 (the
+# stumbles' motions set it) VF2 turns 0x26 toward 0x61A at 0x38E (5 degrees)
+# a frame, no window; StF has no such path. VF2's has none of StF's 0x70C,
+# 0x804 and 0x860 turns (0x804 bit 15 turned a VF2 fighter getting up), and
+# turns at 0x38E where StF's 0x1A4 bit 13/17/14 turns are 0x71C. VF2's tag_yang native
 # (V 0x49040) is the debug menu's display, not a reader.
 # rob_spd_control's friction (V 0x1791C): VF2's amount is [0x50A004] x its
 # own gravity, 0x3BB4D327 in board units (ACT_RC_JUMP's rob+0x5CC), with no
@@ -343,6 +348,23 @@ INSERT_LIFTED = {
 # most precede_inp_time frames of a fighter's pad history it has not read
 # yet; VF2's is 12 (StF's 8), so a press in a reaction's last 12 frames
 # still starts the next move.
+# rsc_normal_gravity: a VF2 fighter in the air falls by VF2's gravity (V
+# 0x17A88, [0x50A000] 0.00272, x 2.027 for its size on the board), with no
+# StF 0x1A4 bit 14 (hit in the air) x flt_1D290.
+# contact_lag: VF2's collision (V 0x2357C) tests the contacts the TGP worked
+# out the frame before; StF's this frame's. With two VF2 fighters the copro's
+# contact table (0x90F600, 16 words) is swapped with last frame's (fighter.c,
+# vf2_last_contacts) before the hit checks read it, so a strike lands on
+# VF2's frame.
+# ah_not_finish_blow, loc_2B5E4: a VF2 strike knocks down as VF2's does (V
+# 0x22C84..0x22CE0, 0x22E24..0x22F28): at 30 of VF2's damage where StF's is
+# 50, or the 0x828 bit 8 kind on a victim without 0x1A4 bit 3, or when the
+# board's (scaled) damage takes the rest of the bar; no StF 0x70C bit 2. The
+# knock-down's stun is (P/2 - 7) x 2, and its angle and factor come from
+# VF2's table by kind (fighter.c, vf2_hit_kinds), then StF's combo limit
+# (loc_2B6E8, the same as VF2's). Not ported: VF2's swap of reaction 0x2CE
+# for 0x2CF/0xA7 on a low 0x1F8 (V 0x23238), whose motions the board lacks,
+# and VF2's character-4 extra angle (V 0x22F28).
 VF2_HIT = {
     'loc_2A954': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                   'cmpobne GAME_VF2, r14, loc_2A954_own', 'lda     0x3D088888, r13',
@@ -362,6 +384,7 @@ VF2_HIT = {
                   'bbc     8, r15, loc_2B220', 'lda     aCounter, g0', 'lda     (r11)[r11*2], r11',
                   'shro    1, r11, r11', 'mov     3, r8', 'lda     0x10000004, r15',
                   'st      r15, 0x194(g7)', 'b       loc_2B304', 'loc_2B1A4_own:'],
+    'contact_lag': ['ldob    0x1B1(r7), r14', 'ldob    guest_char_game[r14], r14', 'cmpobne GAME_VF2, r14, contact_lag_own', 'ldob    0x1B1(r8), r14', 'ldob    guest_char_game[r14], r14', 'cmpobne GAME_VF2, r14, contact_lag_own', 'lda     0x90F600, r4', 'lda     _vf2_last_contacts, r3', 'mov     0, r5', 'contact_lag_swap:', 'ldl     (r4), r10', 'ldl     (r3), r12', 'stl     r12, (r4)', 'stl     r10, (r3)', 'addo    8, r4, r4', 'addo    8, r3, r3', 'cmpinco 7, r5, r5', 'bne     contact_lag_swap', 'contact_lag_own:'],
     'pit_vf2_1': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                   'cmpobne GAME_VF2, r14, pit_vf2_1_own', 'mov     12, r3', 'pit_vf2_1_own:'],
     'pit_vf2_2': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
@@ -402,22 +425,109 @@ VF2_HIT = {
                   'mulo    14, r11, g0', 'addo    11, g0, g0', 'divo    22, g0, g0',
                   'call    damage_calc_vf2', 'mov     g8, r15', 'mov     g7, g8', 'mov     r15, g7',
                   'b       loc_2B8C4', 'loc_2B898_own:'],
+    'ah_not_finish_blow': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobne GAME_VF2, r14, ah_not_finish_blow_own', 'ld      0x1A4(g8), r15',
+                  'bbs     0x10, r15, loc_2B560', 'bbs     0xE, r15, loc_2B594', 'bbs     4, r15, loc_2B5E4',
+                  'bbs     0x1A, r15, loc_2B5E4', 'ldos    stf_ram_50FE00, r14', 'bbs     0xE, r14, loc_2B5E4',
+                  'bbs     0xA, r14, anfb_vf2_energy', 'cmpoble 30, r11, loc_2B5E4',
+                  'bbc     8, r14, anfb_vf2_kind', 'bbc     3, r15, loc_2B5E4', 'anfb_vf2_kind:',
+                  'ldob    0x821(g7), r14', 'cmpobne 1, r14, anfb_vf2_energy', 'bbs     0x18, r15, loc_2B5E4',
+                  'anfb_vf2_energy:', 'mulo    14, r11, r3', 'addo    11, r3, r3', 'divo    22, r3, r3',
+                  'ldos    0x1AC(g8), r13', 'cmpoble r13, r3, loc_2B5E4', 'b       loc_2B488',
+                  'ah_not_finish_blow_own:'],
+    'loc_2B5E4': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobne GAME_VF2, r14, loc_2B5E4_own', 'ld      0x1A4(g7), r15',
+                  'bbc     0x16, r15, kd_vf2_motion', 'ld      0x1A4(g8), r4', 'bbs     4, r4, kd_vf2_motion',
+                  'bbs     0xB, r4, loc_2B560', 'kd_vf2_motion:', 'mov     4, g0', 'call    sub_2B94C',
+                  'ld      0x1A4(g8), r15', 'bbc     4, r15, kd_vf2_down', 'lda     0xE1, g0', 'kd_vf2_down:',
+                  'call    sub_2BA44', 'shlo    0x1B, 1, r14', 'addi    g0, r14, r15', 'st      r15, 0x198(g8)',
+                  'shro    1, r11, r3', 'subo    7, r3, r3', 'addo    r3, r3, r3', 'stos    r3, 0x5DE(g8)',
+                  'mov     0x11, g1', 'call    calc_mht_adr', 'cmpobe  0, g0, kd_vf2_kind',
+                  'ldob    1(g0), r3', 'ldob    2(g0), r15', 'shlo    8, r15, r15', 'addo    r15, r3, r3',
+                  'mov     r3, r6', 'ldob    3(g0), r3', 'ldob    4(g0), r15', 'shlo    8, r15, r15',
+                  'addo    r15, r3, r3', 'ldob    5(g0), r15', 'shlo    0x10, r15, r15', 'addo    r15, r3, r3',
+                  'ldob    6(g0), r15', 'shlo    0x18, r15, r15', 'addo    r15, r3, r3', 'mulr    r9, r3, r9',
+                  'b       loc_2B738', 'kd_vf2_kind:', 'ldob    stf_ram_50FE00+0x2, r7', 'shlo    5, r7, r7',
+                  'lda     _vf2_hit_kinds(r7), r7', 'ld      0x1A4(g8), r15', 'bbs     4, r15, kd_vf2_low',
+                  'cmpobe  3, r8, kd_vf2_counter', 'ldis    0x18(r7), r6', 'ld      0x8(r7), r13',
+                  'b       kd_vf2_scale', 'kd_vf2_counter:', 'ldis    0x1A(r7), r6', 'ld      0xC(r7), r13',
+                  'b       kd_vf2_scale', 'kd_vf2_low:', 'cmpobe  3, r8, kd_vf2_low_counter',
+                  'ldis    0x1C(r7), r6', 'ld      0x10(r7), r13', 'b       kd_vf2_scale',
+                  'kd_vf2_low_counter:', 'ldis    0x1E(r7), r6', 'ld      0x14(r7), r13', 'kd_vf2_scale:',
+                  'mulr    r13, r9, r9', 'b       loc_2B6E8', 'loc_2B5E4_own:'],
 }
 INSERT = {
     **VF2_HIT,
     'rsc_gra_vf2': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                     'cmpobne GAME_VF2, r14, rsc_gra_own', 'lda     0x3BB4D327, r14',
                     'mulr    r13, r14, r5', 'b       rsc_gra_done', 'rsc_gra_own:'],
+    'rsc_normal_gravity': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                           'cmpobne GAME_VF2, r14, rsc_normal_gravity_own',
+                           'lda     0x3BB4D327, r3', 'rsc_normal_gravity_own:'],
     'area_coli_618': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                       'cmpobne GAME_VF2, r14, area_coli_618_own', 'ldos    0x61A(g7), r14',
                       'shlo    16, r14, r14', 'shlo    16, r7, r7', 'shro    16, r7, r7',
                       'or      r14, r7, r7', 'area_coli_618_own:'],
-    'rob_revise_yang': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
-                        'cmpobne GAME_VF2, r14, rob_revise_yang_own', 'ld      stf_ram_500000+0x828, r3',
-                        'ld      0x0(r3), r15', 'bbc     0x1F, r15, loc_17F74', 'ld      0x1A4(g7), r7',
-                        'bbc     0x17, r7, rob_revise_yang_own', 'ldos    0x61A(g7), r9',
-                        'ldis    0x26(g7), r13', 'subi    r13, r9, r9', 'lda     0x38E, r6',
-                        'b       loc_17EEC', 'rob_revise_yang_own:'],
+    'rob_revise_yang': ['ldob    0x1B1(g7), r14',
+                        'ldob    guest_char_game[r14], r14',
+                        'cmpobne GAME_VF2, r14, rob_revise_yang_own',
+                        'ld      stf_ram_500000+0x828, r3',
+                        'ld      0x0(r3), r15',
+                        'bbc     0x1F, r15, loc_17F74',
+                        'ldis    0x5B6(g7), r9',
+                        'ld      0x1A4(g7), r7',
+                        'ld      0x1A4(g8), r8',
+                        'bbc     0x17, r7, rob_revise_yang_1',
+                        'ldos    0x61A(g7), r9',
+                        'ldis    0x26(g7), r13',
+                        'subi    r13, r9, r9',
+                        'lda     0x38E, r6',
+                        'b       loc_17EEC',
+                        'rob_revise_yang_1:',
+                        'ld      0x0(g7), r15',
+                        'bbc     9, r15, rob_revise_yang_2',
+                        'ldos    0x61A(g7), r9',
+                        'rob_revise_yang_2:',
+                        'bbs     0x1B, r7, loc_17F74',
+                        'ld      0x0(g7), r15',
+                        'bbs     0x16, r15, loc_17F74',
+                        'bbc     0x1C, r8, rob_revise_yang_3',
+                        'ldos    0x1AA(g8), r14',
+                        'cmpobg  10, r14, loc_17F74',
+                        'bbs     0xD, r7, loc_17E3C',
+                        'bbs     0xA, r7, loc_17E3C',
+                        'b       loc_17F74',
+                        'rob_revise_yang_3:',
+                        'lda     0x1010, r3',
+                        'and     r3, r7, r4',
+                        'cmpobe  r3, r4, loc_17F74',
+                        'bbs     0xE, r7, loc_17F74',
+                        'bbc     0x10, r7, rob_revise_yang_4',
+                        'bbs     8, r7, rob_revise_yang_4',
+                        'bbc     8, r8, rob_revise_yang_4',
+                        'bbs     4, r8, loc_17F74',
+                        'rob_revise_yang_4:',
+                        'bbs     0xD, r7, loc_17DE8',
+                        'bbc     0x12, r7, rob_revise_yang_5',
+                        'bbs     1, r7, loc_17DD8',
+                        'b       loc_17F74',
+                        'rob_revise_yang_5:',
+                        'bbs     2, r7, loc_17E3C',
+                        'bbs     0xA, r7, loc_17DE8',
+                        'lda     0x1102, r13',
+                        'and     r13, r7, r3',
+                        'lda     0x1002, r13',
+                        'cmpobe  r13, r3, loc_17DE8',
+                        'lda     0x4010, r3',
+                        'and     r3, r8, r4',
+                        'cmpobe  r3, r4, loc_17E3C',
+                        'bbc     1, r7, rob_revise_yang_6',
+                        'bbs     0xF, r8, loc_17F74',
+                        'b       loc_17E00',
+                        'rob_revise_yang_6:',
+                        'bbc     0x1E, r7, loc_17F74',
+                        'b       loc_17E00',
+                        'rob_revise_yang_own:'],
     'rand': ['ld      _link+4, r15', 'cmpobne 5, r15, rand_own',
              'ld      stf_ram_500000+0x98, r15', 'lda     0x41C64E6D, r14',
              'mulo    r14, r15, r15', 'lda     12345, r14', 'addo    r14, r15, r15',

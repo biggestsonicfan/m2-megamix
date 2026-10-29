@@ -66,6 +66,24 @@ const u32 *stf_char(u32 c) { return *(const u32 *const *)(STF_GUEST_CHAR_PARTS +
 u32 char_game(u32 c) { return *(const u8 *)(STF_GUEST_char_game + c); }
 const char *const game_name[] = { "STF", "VF2", "FV" };
 
+/* VF2's knock-down by kind of strike (rob+0x843; VF2 program 0x23CA0, 32
+ * bytes a kind): +0 the attacker's knockback factor, +8..+0x14 the
+ * knock-down's (standing, counter, crouching, crouching counter), +0x18..
+ * +0x1E its angles. A VF2 fighter's strike reads these (lift-stf.py,
+ * VF2_HIT); StF's own are at 0x50A800, 40 bytes a kind. */
+const u32 vf2_hit_kinds[40] = {
+    0x3F800000u, 0x3F800000u, 0x3F800000u, 0x3F99999Au, 0x3F800000u, 0x3F99999Au, 0x2E002000u, 0x26001800u,
+    0x3F800000u, 0x3F800000u, 0x3FC00000u, 0x3FE66666u, 0x3F99999Au, 0x3FB851ECu, 0x36003000u, 0x32002400u,
+    0x3F800000u, 0x3F800000u, 0x40000000u, 0x40066666u, 0x3F99999Au, 0x3FB851ECu, 0x30002D00u, 0x2C002400u,
+    0x3F800000u, 0x3F800000u, 0x40200000u, 0x40200000u, 0x40200000u, 0x40200000u, 0x39003900u, 0x39003900u,
+    0x3F800000u, 0x3F800000u, 0x3FA66666u, 0x3F99999Au, 0x3F99999Au, 0x3F99999Au, 0x2E001200u, 0x26001000u,
+};
+
+/* The copro's contact table (0x90F600) of the frame before: VF2's collision
+ * tests last frame's contacts, StF's this frame's (lift-stf.py, contact_lag,
+ * swaps them in when both fighters are VF2's). Longs: the swap is by ldl. */
+u32 vf2_last_contacts[16] __attribute__((aligned(8)));
+
 /* pose_anims is poses.h's (static, baked): the one copy lives here */
 const pose_anim_t *pose_anim(u32 n) { return &pose_anims[n]; }
 
