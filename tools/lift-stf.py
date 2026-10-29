@@ -147,7 +147,8 @@ NAMED = {'coli_cont_cop_g4': ('coli_cont_cop', 'ld      (g11)[g12*1], g5'),
          'sup_fv_jump': ('loc_29D34', 'cmpobne 0, r3, loc_29F48'),
          'en_fv_near': ('get_en_info', 'lda     0x3ECCCCCD, r3'),
          'en_fv_far': ('loc_18D00', 'ld      en_ang_dist, r3'),
-         'kb_fv_lift': ('loc_2B738', 'ld      (g11)[g12*1], r5')}
+         'kb_fv_lift': ('loc_2B738', 'ld      (g11)[g12*1], r5'),
+         'look_fv': ('loc_30804', 'stob    r15, 0x7D3(g7)')}
 # Tables below 0x1000 that are tables all the same (cop_initialize_end2's
 # collision-ball pointers).
 LOW_TABLES = {'off_FE8'}
@@ -767,6 +768,20 @@ def _fv_lift(at):
 
 
 FV_HIT = {
+    # FV's look block (F 0x2B274): no camera paths, skipped while the
+    # frame counter is under 0x81 or rob+0 bit 8 is set, and the target is
+    # seen from the fighter's own angle (StF turns it a quarter toward the
+    # camera's).
+    'look_fv': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14', 'cmpobne GAME_FV, r14, look_fv_own',
+                'ldob    stf_ram_500000+0x2C, r15', 'bbs     7, r15, loc_309C4', 'ld      stf_ram_500000+0x34, r12', 'lda     0x80, r14',
+                'cmpobge r14, r12, loc_309C4', 'lda     0x3F0000, r13', 'and     r13, r12, r13',
+                'cmpobne 0, r13, loc_309C4', 'ld      0x0(g7), r15', 'shlo    0x15, 5, r14', 'and     r14, r15, r14',
+                'cmpobne 0, r14, loc_309C4', 'bbs     0x17, r15, loc_309C4', 'bbs     8, r15, loc_309C4',
+                'ld      0x1A4(g7), r15', 'lda     0x6C119, r14', 'and     r14, r15, r15', 'cmpobne 0, r15, loc_309C4',
+                'mov     1, r15', 'stob    r15, 0x7D3(g7)', 'lda     0x31806363, r15', 'st      r15, (g11)[g12*1]',
+                'ldt     0x18(g7), r12', 'ldis    0x26(g7), r15', 'stq     r12, (g11)[g12*1]',
+                'ldt     0x20C(g8), r12', 'stt     r12, (g11)[g12*1]', 'ldt     (g11)[g12*1], r12',
+                'stt     r12, 0xB0C(g7)', 'b       loc_309C4', 'look_fv_own:'],
     'loc_2B0F8': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                   'cmpobne GAME_FV, r14, loc_2B0F8_own', 'ld      0x1A4(g8), r15',
                   'bbc     8, r15, ah_fv_ukemi', 'lda     (r11)[r11*2], r11', 'shro    1, r11, r11',
@@ -884,8 +899,9 @@ INSERT = {
     'ACT_RC_BWALK': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14', 'cmpobe  GAME_FV, r14, fv_bwalk', 'cmpobne GAME_VF2, r14, bwalk_own', 'ld      0x1A4(g7), r7', 'ld      0x0(g7), r6', 'bbs     3, r7, vf2_bwalk_low', 'bbc     0xA, r7, vf2_bwalk_10', 'bbc     0xB, r7, vf2_bwalk_go', 'b       vf2_bwalk_23', 'vf2_bwalk_low:', 'ldos    0x78(g6), g0', 'ldos    0x810(g7), r14', 'bbs     7, r14, vf2_bwalk_set', 'call    sub_1CE94', 'ret', 'vf2_bwalk_10:', 'bbs     0, r6, vf2_bwalk_go', 'ldos    0x810(g7), r14', 'bbc     7, r14, vf2_bwalk_go', 'ldos    0x78(g6), g0', 'call    sub_1CEA8', 'ret', 'vf2_bwalk_go:', 'ldos    0x2A(g6), g0', 'b       vf2_bwalk_set', 'vf2_bwalk_23:', 'bbc     0, r6, vf2_bwalk_ret', 'ldos    0x2E(g6), g0', 'bbc     1, r7, vf2_bwalk_set', 'ldos    0x2A(g6), g0', 'vf2_bwalk_set:', 'call    set_motion', 'vf2_bwalk_ret:', 'ret', 'fv_bwalk:', 'ld      0x1A4(g7), r7', 'ld      0x0(g7), r6', 'bbs     3, r7, fv_bwalk_low', 'bbc     0xA, r7, fv_bwalk_10', 'bbc     0xB, r7, fv_bwalk_go', 'b       fv_bwalk_23', 'fv_bwalk_low:', 'ldos    0x7C(g6), g0', 'bbc     0xA, r6, fv_bwalk_cut', 'ldos    0x88(g6), g0', 'fv_bwalk_cut:', 'ldos    0x810(g7), r14', 'bbs     7, r14, fv_bwalk_set', 'ldos    0x7C(g6), g0', 'call    sub_1CE94', 'ret', 'fv_bwalk_10:', 'bbs     0, r6, fv_bwalk_go', 'ldos    0x810(g7), r14', 'bbc     7, r14, fv_bwalk_go', 'ldos    0x7C(g6), g0', 'call    sub_1CEA8', 'ret', 'fv_bwalk_go:', 'ldos    0x82(g6), g0', 'bbc     0xA, r6, fv_bwalk_set', 'ldos    0x8C(g6), g0', 'b       fv_bwalk_set', 'fv_bwalk_23:', 'bbc     0, r6, fv_bwalk_ret', 'ldos    0x84(g6), g0', 'bbc     1, r7, fv_bwalk_set', 'ldos    0x82(g6), g0', 'fv_bwalk_set:', 'call    set_motion', 'fv_bwalk_ret:', 'ret', 'bwalk_own:'],
     # VF2's action_after (V 0x180D4) keeps rob+0 bit 8, a low posture: set
     # while crouched, or in a crouch's (0x810 bit 7) first half; StF's hit
-    # code still reads it but never sets it.
-    'action_after': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14', 'cmpobne GAME_VF2, r14, action_after_own', 'ld      0x1A4(g7), r15', 'ldos    0x810(g7), r14', 'ldos    0x800(g7), r3', 'shro    1, r3, r3', 'ldos    0x1AA(g7), r13', 'bbs     3, r15, vf2_low_crouch', 'bbc     7, r14, vf2_low_clr', 'cmpoble r13, r3, vf2_low_set', 'b       vf2_low_clr', 'vf2_low_crouch:', 'bbs     7, r14, vf2_low_set', 'cmpoble r13, r3, vf2_low_clr', 'vf2_low_set:', 'ld      0x0(g7), r15', 'setbit  8, r15, r15', 'st      r15, 0x0(g7)', 'b       action_after_own', 'vf2_low_clr:', 'ld      0x0(g7), r15', 'clrbit  8, r15, r15', 'st      r15, 0x0(g7)', 'action_after_own:'],
+    # code still reads it but never sets it. FV keeps it the same way (F
+    # 0x18B04), and its look block skips the head turn while it is set.
+    'action_after': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14', 'cmpobe  GAME_FV, r14, vf2_low_go', 'cmpobne GAME_VF2, r14, action_after_own', 'vf2_low_go:', 'ld      0x1A4(g7), r15', 'ldos    0x810(g7), r14', 'ldos    0x800(g7), r3', 'shro    1, r3, r3', 'ldos    0x1AA(g7), r13', 'bbs     3, r15, vf2_low_crouch', 'bbc     7, r14, vf2_low_clr', 'cmpoble r13, r3, vf2_low_set', 'b       vf2_low_clr', 'vf2_low_crouch:', 'bbs     7, r14, vf2_low_set', 'cmpoble r13, r3, vf2_low_clr', 'vf2_low_set:', 'ld      0x0(g7), r15', 'setbit  8, r15, r15', 'st      r15, 0x0(g7)', 'b       action_after_own', 'vf2_low_clr:', 'ld      0x0(g7), r15', 'clrbit  8, r15, r15', 'st      r15, 0x0(g7)', 'action_after_own:'],
     'area_coli_618': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                       'cmpobne GAME_VF2, r14, area_coli_618_own', 'ldos    0x61A(g7), r14',
                       'shlo    16, r14, r14', 'shlo    16, r7, r7', 'shro    16, r7, r7',
