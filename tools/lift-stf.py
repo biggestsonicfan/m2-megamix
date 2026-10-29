@@ -370,8 +370,9 @@ INSERT_LIFTED = {
 # the frame left (sub_1CE94), or from its start on rob+0 bit 0 or 0x810 bit
 # 7; standing with 0x810 bit 7 (and no 0x804 bit 13 or rob+0 bit 0), by the
 # same slot at the frame it is at (sub_1CEA8). StF guards by slot 5 from its
-# start. Not ported: VF2's first test of the foe's 0x6B4 bit 0 (V 0x1B694),
-# whose fields StF lays out elsewhere.
+# start. First, on the foe's 0x6D4 bit 0 (VF2's 0x6B4: its strike can be
+# guarded standing), it guards that strike now as VF2's does (V 0x14E78,
+# sub_1CED4, VF2's 0x1B694), which StF's start skips.
 # contact_lag: with two VF2 fighters the copro's contact table (0x90F600, 16
 # words), StF's SHARC pairing, is replaced by VF2's own (push.c,
 # vf2_contacts): the TGP's ball pairing and its swept test of attack balls,
@@ -654,7 +655,10 @@ INSERT = {
                            'cmpobne GAME_VF2, r14, rsc_normal_gravity_own',
                            'lda     0x3BB4D327, r3', 'rsc_normal_gravity_own:'],
     'ACT_RC_TA_GUARD': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
-                        'cmpobne GAME_VF2, r14, ta_guard_own', 'ld      0x1A4(g7), r7',
+                        'cmpobne GAME_VF2, r14, ta_guard_own', 'ld      0x6D4(g8), r15',
+                        'bbc     0, r15, ta_guard_vf2', 'call    sub_1CED4', 'ld      0x1A4(g7), r15',
+                        'clrbit  0, r15, r15', 'st      r15, 0x1A4(g7)', 'cmpobe  0, g0, ta_guard_vf2',
+                        'ret', 'ta_guard_vf2:', 'ld      0x1A4(g7), r7',
                         'ld      0x0(g7), r6', 'ldos    0x68(g6), g0', 'bbs     3, r7, ta_guard_low',
                         'ld      0x804(g7), r15', 'bbs     0xD, r15, ta_guard_own',
                         'bbs     0, r6, ta_guard_own', 'ldos    0x810(g7), r14',
