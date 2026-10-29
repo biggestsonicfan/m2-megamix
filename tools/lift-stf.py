@@ -338,7 +338,13 @@ INSERT_LIFTED = {
 # damage, tools/vf2-guest.mjs) hits as VF2's attack_hit does (V 0x2260C..
 # 0x2309C): the knockback s = sqrt(P / 30) x 30 x 0.0025 (VF2's list word is
 # 1.0), the attacker's speed x 0.5 where StF's is x 0.8; a counter (the
-# victim's 0x1A4 bit 8) P x 3/2 (V 0x22A28); |v| = sqrt(2s / (60 + 0.6 (w -
+# victim's 0x1A4 bit 8) P x 3/2 (V 0x22A28), else VF2's own cases (V 0x22B00
+# with the settings byte [[0x50016C]+0x3351] bit 6 clear): P x 5/4 on the
+# victim's first hit (0x6F4, VF2's 0x6D8, is 1) with no 0x1A4 bit 14 and no
+# 0x6F0 & 0xD9B0; P x 3/4 for a 0x821 kind-4 strike on a down victim (bit 16
+# or 14, no 0x6F0 & 0x264F); P x 3/2 in the air; P + P/8 + 1 (kind 34) on
+# 0x804 bit 8 with bit 0; none of StF's ukemi, down, tetsu or multi-hit
+# halving (V 0x22BC0); |v| = sqrt(2s / (60 + 0.6 (w -
 # 60))) in board units (x 2.02714, VF2's size on the board), with none of
 # StF's further factors; and the damage, out of VF2's 220, scaled to StF's 140
 # bar (rounded) with no catch-up (V 0x18A54). A plain hit's stun (V 0x22CE4)
@@ -388,9 +394,24 @@ VF2_HIT = {
                   'b       loc_2A9F0', 'loc_2A954_own:'],
     'loc_2B1A4': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                   'cmpobne GAME_VF2, r14, loc_2B1A4_own', 'ld      0x1A4(g8), r15',
-                  'bbc     8, r15, loc_2B220', 'lda     aCounter, g0', 'lda     (r11)[r11*2], r11',
+                  'bbc     8, r15, ah_vf2_chain', 'lda     aCounter, g0', 'lda     (r11)[r11*2], r11',
                   'shro    1, r11, r11', 'mov     3, r8', 'lda     0x10000004, r15',
-                  'st      r15, 0x194(g7)', 'b       loc_2B304', 'loc_2B1A4_own:'],
+                  'st      r15, 0x194(g7)', 'b       loc_2B318', 'ah_vf2_chain:',
+                  'ldos    0x6F0(g8), r5', 'ld      0x1A4(g8), r4', 'ldob    0x821(g7), r14',
+                  'cmpobne 4, r14, ah_vf2_first', 'bbs     0x10, r4, ah_vf2_tender',
+                  'bbc     0xE, r4, ah_vf2_air', 'ah_vf2_tender:', 'lda     0x264F, r3',
+                  'and     r5, r3, r15', 'cmpobne 0, r15, loc_2B318', 'lda     aTender, g0',
+                  'shro    2, r11, r3', 'subo    r3, r11, r11', 'b       loc_2B318',
+                  'ah_vf2_first:', 'ldob    0x6F4(g8), r14', 'cmpobne 1, r14, ah_vf2_air',
+                  'bbs     0xE, r4, ah_vf2_air', 'lda     0xD9B0, r3', 'and     r5, r3, r15',
+                  'cmpobne 0, r15, ah_vf2_air', 'lda     aTender, g0', 'shro    2, r11, r3',
+                  'addo    r3, r11, r11', 'b       loc_2B318', 'ah_vf2_air:', 'lda     0x4010, r13',
+                  'and     r13, r4, r3', 'cmpobne 0x10, r3, ah_vf2_hit', 'lda     aAir, g0',
+                  'lda     (r11)[r11*2], r11', 'shro    1, r11, r11', 'b       loc_2B318',
+                  'ah_vf2_hit:', 'ld      0x804(g8), r15', 'bbc     8, r15, loc_2B318',
+                  'bbc     0, r4, loc_2B318', 'lda     aHit_0, g0', 'shro    3, r11, r3',
+                  'lda     1(r11)[r3], r11', 'addo    0x1F, 3, r8', 'b       loc_2B318',
+                  'loc_2B1A4_own:'],
     'contact_lag': ['ldob    0x1B1(r7), r14', 'ldob    guest_char_game[r14], r14', 'cmpobne GAME_VF2, r14, contact_lag_own', 'ldob    0x1B1(r8), r14', 'ldob    guest_char_game[r14], r14', 'cmpobne GAME_VF2, r14, contact_lag_own', 'mov     g0, r4', 'mov     g1, r5', 'mov     r7, g0', 'mov     r8, g1', 'call    vf2_coli_contacts', 'mov     r4, g0', 'mov     r5, g1', 'contact_lag_own:'],
     'pit_vf2_1': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                   'cmpobne GAME_VF2, r14, pit_vf2_1_own', 'mov     12, r3', 'pit_vf2_1_own:'],
