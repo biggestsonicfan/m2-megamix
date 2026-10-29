@@ -147,3 +147,98 @@ Left as they are:
   63`). The frame's FIFO words are as every frame's (606 of them, laid out
   the same); StF's own runs of the pairings don't stop it. Repro:
   `BT_MENU=30,2,1,0,0,140,5 BT_SEED=1`.
+
+## The browser build, every record
+
+The board plays eight fighters; the browser build (`js/`) plays every
+fighter record of the three games, so every one of them is graded there,
+against itself in its own game. `tools/js-battle.mjs` plays a battle on
+`js/engine.js` with battle.lua's input script and writes battle.lua's log
+(`setup js`); the grader takes it as the board's. The engine runs one
+energy bar (200) for every game, so damage and the energy left are scaled
+by the two bars, as for a guest. It fights on the game's arena: the stage
+number is only logged.
+
+```bash
+tools/mame/roster-battles.sh <dir>       # the source battles, 3 MAMEs at a time
+node tools/grade-roster.mjs <dir>        # each one played on the browser build, and graded
+```
+
+Seed 1, 30 seconds, 2 rounds to win; every record against himself on
+stage 0:
+
+| game | record | total | motions | hits | end | first split (round 1) |
+|------|--------|-------|---------|------|-----|-----------------------|
+| vf2 | 0 Akira | 19 F | 33 | 28 | 3 | 34: 1P's motion 18 vs 17 |
+| vf2 | 1 Jacky | 11 F | 19 | 17 | 0 | 34: 1P's motion 271 vs 270 |
+| vf2 | 2 Sarah | 26 F | 39 | 33 | 24 | 34: 1P's motion 505 vs 504 |
+| vf2 | 3 Kage | 11 F | 22 | 14 | 0 | 34: 1P's motion 330 vs 329 |
+| vf2 | 4 Lau | 15 F | 26 | 23 | 0 | 34: 1P's motion 694 vs 693 |
+| vf2 | 5 Jeffry | 20 F | 21 | 11 | 54 | 34: 1P's motion 915 vs 914 |
+| vf2 | 6 Pai | 26 F | 29 | 12 | 68 | 34: 1P's motion 400 vs 399 |
+| vf2 | 7 Wolf | 13 F | 26 | 16 | 0 | 34: 1P's motion 956 vs 955 |
+| vf2 | 8 Shun | 11 F | 22 | 10 | 8 | 34: 1P's motion 655 vs 654 |
+| vf2 | 9 Dural | 24 F | 28 | 18 | 50 | 34: 1P's motion 330 vs 329 |
+| vf2 | 10 Lion | 19 F | 13 | 18 | 50 | 34: 1P's motion 849 vs 848 |
+| vf2 | 11 Mue | 22 F | 35 | 22 | 25 | 34: 1P's motion 18 vs 17 |
+| vf2 | 12 Kojacky | 22 F | 35 | 22 | 25 | 34: 1P's motion 18 vs 17 |
+| fv | 0 Jane | 10 F | 27 | 7 | 0 | 34: 1P's motion 674 vs 670 |
+| fv | 1 Grace | 24 F | 20 | 24 | 55 | 34: 1P's motion 673 vs 670 |
+| fv | 2 Honey | 5 F | 23 | 20 | 10 | 34: 1P's motion 674 vs 670 |
+| fv | 3 Tokio | 26 F | 27 | 11 | 73 | 34: 1P's motion 671 vs 670 |
+| fv | 4 Bahn | 14 F | 27 | 10 | 15 | 34: 1P's motion 846 vs 845 |
+| fv | 5 Picky | 22 F | 24 | 9 | 61 | 43: 1P's place off by 0.086 |
+| fv | 6 Raxel | 10 F | 25 | 8 | 0 | 34: 1P's motion 671 vs 670 |
+| fv | 7 Sanman | 35 F | 34 | 23 | 87 | 34: 1P's motion 671 vs 670 |
+| fv | 8 Mahler | 12 F | 23 | 8 | 12 | 34: 1P's motion 671 vs 670 |
+| fv | 9 B.M. | 9 F | 24 | 7 | 0 | 34: 1P's motion 671 vs 670 |
+| fv | 10 Sonic | 12 F | 28 | 13 | 0 | 34: 1P's motion 850 vs 848 |
+| fv | 11 dummy | 11 F | 28 | 7 | 2 | 34: 1P's motion 673 vs 670 |
+| fv | 12 dummy | FV stops | | | | `I960: Unhandled 00` before the fight |
+| stf | 0 Sonic | 23 F | 24 | 17 | 51 | start: x -1.99 vs -1.00 |
+| stf | 1 Tails | 9 F | 21 | 8 | 0 | start |
+| stf | 2 Amy | 11 F | 20 | 18 | 0 | start |
+| stf | 3 Metal Sonic | 18 F | 28 | 17 | 20 | start |
+| stf | 4 Fang | 10 F | 22 | 12 | 0 | start |
+| stf | 5 Bark | 24 F | 24 | 22 | 50 | start |
+| stf | 6 Knuckles | 30 F | 32 | 17 | 76 | start |
+| stf | 7 Espio | 25 F | 21 | 13 | 72 | start |
+| stf | 8 Eggman | 28 F | 36 | 10 | 70 | start |
+| stf | 9 Eggman B | 21 F | 38 | 17 | 24 | start |
+| stf | 10 Bean | 16 F | 26 | 10 | 24 | start |
+| stf | 11 Eggman (boss) | 25 F | 21 | 21 | 61 | start |
+| stf | 12 Egg UFO | 13 F | 25 | 13 | 7 | start |
+| stf | 13 Egg Minion | 23 F | 29 | 15 | 50 | start |
+| stf | 14 Rocket Metal | 33 F | 33 | 18 | 87 | start |
+| stf | 15 Honey | 20 F | 33 | 18 | 23 | start |
+| stf | 16 Super Sonic | 7 F | 23 | 0 | 0 | start |
+
+Sync is 0 in every one: they part on the script's first press. The
+stages, each game's first fighter against himself: VF2's Akira on 1-11,
+19 F on each but 10 (29 F: VF2's round runs 3076 frames there, past its
+clock); FV's Mahler on 1-8, 12 F on each; StF's Sonic on 1-9, 23 F on
+each. The source fights the same on its stages until a wall or the ring's
+edge comes in, and the browser build fights every stage of a game alike.
+
+What parts them:
+
+- **VF2: the reach guard.** Every VF2 record's first jab is the motion
+  after the one VF2 plays. A jab has two entries in the command table, the
+  first guarded `further_than 1.5`; the engine measures the two fighters
+  2.0 apart at the start, so it takes the far jab, where VF2 takes the near
+  one. With the guard read 0.6 nearer (the fighters' bodies, by the look of
+  it), Lau vs Lau stays together until the jab lands on frame 40: VF2's
+  jab hits 2P there (motion 258), the browser build's does not.
+- **The press comes late.** VF2 starts the jab the frame after it sees
+  the button; the browser build three frames after (its two frames'
+  wait for a chord, `CHORD`). The grader's offset hides one frame of it.
+- **FV: further off.** The first jab is 1 to 4 motions off (670 against
+  671-674): more than VF2's one guard is choosing there.
+- **StF: the start.** StF starts its fighters 4 apart (±1.99 on the
+  round's axis, turned 45° on the stage); the browser build starts every
+  game's at ±1, VF2's places. Everything after that differs.
+- **The bar.** The engine's bar is 200 for every game, but VF2's and FV's
+  damage are their own (VF2's bar is 220, FV's 280): a VF2 or FV fighter
+  goes down in fewer blows than in his game.
+- FV's Honey's battle runs 5 rounds in FV: two of them stop with
+  `also_sub_mode` 23 and no winner.
