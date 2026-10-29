@@ -141,7 +141,10 @@ NAMED = {'coli_cont_cop_g4': ('coli_cont_cop', 'ld      (g11)[g12*1], g5'),
          'vf2_down_pick': ('loc_1E0A0', 'bbc     4, r8, loc_1E0E4'),
          'kb_fv_v': ('loc_2B738', 'ld      (g11)[g12*1], r4'),
          'fb_bar_fv': ('loc_2B474', 'mov     r11, g0'),
-         'smooth_ang_fv': ('loc_2F788', 'ldis    (g11)[g12*1], g2')}
+         'smooth_ang_fv': ('loc_2F788', 'ldis    (g11)[g12*1], g2'),
+         'sup_fv_seed': ('support_rob_position', 'or      r13, r3, r3'),
+         'sup_fv_near': ('loc_29BD8', 'ld      0x168(g13), r3'),
+         'sup_fv_jump': ('loc_29D34', 'cmpobne 0, r3, loc_29F48')}
 # Tables below 0x1000 that are tables all the same (cop_initialize_end2's
 # collision-ball pointers).
 LOW_TABLES = {'off_FE8'}
@@ -292,6 +295,12 @@ INSERT_LIFTED = {
 # taken to the guests' size for a pair from one other game: VF2's always
 # 0.3 * SCALE (0x3F1BAF44), FV's StF's factors * K. StF and FV hold the push
 # to 0.3 a frame (FV's * K, 0x3F1D00BE); VF2 does not.
+# support_rob_position: FV's (F 0x24CE4) turns the pair, or one
+# about the other, back onto the line between their bodies when none of its
+# checks stops it (+0x1B0 bits 1..8 all clear; the case by 0x1A4 bit 5 of
+# each, F 0x2566C). StF's sets bit 9 too and never clears it: StF never
+# turns them. A pair of FV guests clears it, with FV's 0.01 and 1.5 (+0x1D0,
+# +0x1D4), its 0.9/0.5 reach and its step's divide by their distance * K.
 # smooth_int (loc_2F668), a motion's blend from the last pose: StF branches
 # past its foot hold, VF2 (V 0x27564) runs it: with 0xC30 bit 10 and the
 # blend's bit 9, the new pose's z (its first eight) moves by a foot's, the
@@ -656,7 +665,65 @@ VF2_RISE = {
                   'rise_vf2_play:', 'ldob    0x1B1(g7), r14', 'ld      guest_edge_motion[r14*4], r14',
                   'addo    r14, r13, r14', 'ldos    (r14), g0', 'b       loc_14E90', 'loc_14DD8_own:'],
 }
+def _fv_pair(skip):
+    """Both fighters FV guests, or on to skip (r14, r15)."""
+    return ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14', 'ldob    0x1B1(g8), r15',
+            'ldob    guest_char_game[r15], r15', f'cmpobne GAME_FV, r14, {skip}', f'cmpobne GAME_FV, r15, {skip}']
+
+
+def _sup_fv_turn(name, side):
+    """FV's support_rob_position turn (F 0x25158 both, 0x25258 one): the pair
+    turns about its middle, or one about the other, by the case's step * the
+    table's / their distance; the step's * K for the guests' distance."""
+    out = [f'{name}:', 'ldt     0x18(g7), r4', 'ldt     0x18(g8), r8', 'ld      0x1DC(g13), r12',
+           'shro    0xC, r12, r9', 'and     0xF, r9, r14', 'lda     0x15802B2B, r15', 'st      r15, (g11)[g12*1]',
+           'st      r4, (g11)[g12*1]', 'st      r8, (g11)[g12*1]', 'st      r6, (g11)[g12*1]',
+           'st      r10, (g11)[g12*1]', 'ld      (g11)[g12*1], r11']
+    if side == 2:
+        out += ['lda     0x3F000000, r3', 'mulr    r3, r11, r11', 'addr    r4, r8, r4', 'addr    r6, r10, r6',
+                'mulr    r3, r4, r4', 'mulr    r3, r6, r6']
+    out += ['ld      0x21C(g13), r13', 'ldis    2(r13)[r14*4], r3', 'ld      sup_fv_cases+4[g0*16], r13',
+            'muli    r13, r3, r13', 'lda     0xB801717, r15', 'st      r15, (g11)[g12*1]', 'st      r13, (g11)[g12*1]',
+            'ld      (g11)[g12*1], r13', 'lda     0x4002D5F4, r15', 'mulr    r15, r13, r13',
+            'ld      0x5F4(g7), r15', 'clrbit  0x1F, r15, r15', f'cmpobe  0, r15, {name}_a', 'divr    r15, r13, r13',
+            'lda     0xC001818, r15', 'st      r15, (g11)[g12*1]', 'st      r13, (g11)[g12*1]',
+            'ld      (g11)[g12*1], r13', f'{name}_a:', 'st      r13, 0x1C0(g13)', 'st      r13, 0x1C4(g13)',
+            'addo    r13, r12, r12', 'lda     0x12002424, r15', 'st      r15, (g11)[g12*1]',
+            'st      r12, (g11)[g12*1]', 'st      r11, (g11)[g12*1]']
+    if side == 2:
+        return out + ['ld      (g11)[g12*1], r8', 'lda     0x12802525, r15', 'st      r15, (g11)[g12*1]',
+                      'st      r12, (g11)[g12*1]', 'st      r11, (g11)[g12*1]', 'ld      (g11)[g12*1], r9',
+                      'addr    r8, r4, r10', 'subr    r9, r6, r11', 'st      r10, 0x18(g7)', 'st      r11, 0x20(g7)',
+                      'subr    r8, r4, r10', 'addr    r9, r6, r11', 'st      r10, 0x18(g8)', 'st      r11, 0x20(g8)',
+                      'b       loc_29F48']
+    return out + ['ld      (g11)[g12*1], r13', 'lda     0x12802525, r15', 'st      r15, (g11)[g12*1]',
+                  'st      r12, (g11)[g12*1]', 'st      r11, (g11)[g12*1]', 'ld      (g11)[g12*1], r14',
+                  'ld      sup_fv_cases+8[g0*16], g0', f'cmpobe  1, g0, {name}_2', 'addr    r13, r8, r13',
+                  'subr    r14, r10, r14', 'st      r13, 0x18(g7)', 'st      r14, 0x20(g7)', 'mov     0, r15',
+                  'st      r15, 0x1C4(g13)', 'b       loc_29F48', f'{name}_2:', 'subr    r13, r4, r13',
+                  'addr    r14, r6, r14', 'st      r13, 0x18(g8)', 'st      r14, 0x20(g8)', 'mov     0, r15',
+                  'st      r15, 0x1C0(g13)', 'b       loc_29F48']
+
+
+# FV's support_rob_position cases (F 0x2566C): turn, step, which side.
+_SUP_FV_CASES = [(0, 0, 0), (1, 0x40, 0), (1, 0x40, 0), (1, 0x40, 0), (1, 0x40, 1), (2, 0x40, 2), (1, 0x40, 0),
+                 (1, 0x40, 0), (1, 0x40, 1), (1, 0x40, 1), (2, 0x40, 2), (2, 0x40, 2), (1, 0x40, 1), (1, 0x40, 1),
+                 (2, 0x40, 2), (2, 0x40, 2)]
+SUP_FV = {
+    'sup_fv_seed': ['lda     0x3C23D70A, r12', 'lda     0x3FC00000, r13', *_fv_pair('sup_fv_seed_st'),
+                    'clrbit  9, r3, r3', 'lda     0x3CA77842, r12', 'lda     0x404440EE, r13', 'sup_fv_seed_st:',
+                    'st      r12, 0x1D0(g13)', 'st      r13, 0x1D4(g13)', 'sup_fv_seed_own:'],
+    'sup_fv_near': [*_fv_pair('sup_fv_near_own'), 'lda     0x4002D5F4, r15', 'mulr    r15, r4, r4',
+                    'sup_fv_near_own:'],
+    'sup_fv_jump': ['ld      sup_fv_cases[g0*16], r5', 'bx      (r5)', '.align  4', 'sup_fv_cases:',
+                    *[l for t, n, w in _SUP_FV_CASES for l in
+                      (f'.long   {("loc_29F48", "sup_fv_one", "sup_fv_both")[t]}', f'.long   {n:#x}', f'.long   {w}',
+                       '.long   0')],
+                    *_sup_fv_turn('sup_fv_both', 2), *_sup_fv_turn('sup_fv_one', 1), 'sup_fv_jump_own:'],
+}
+
 INSERT = {
+    **SUP_FV,
     **VF2_HIT,
     **VF2_RISE,
     'loc_2F668': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
