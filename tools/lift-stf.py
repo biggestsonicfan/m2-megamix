@@ -289,6 +289,11 @@ INSERT_LIFTED = {
 # taken to the guests' size for a pair from one other game: VF2's always
 # 0.3 * SCALE (0x3F1BAF44), FV's StF's factors * K. StF and FV hold the push
 # to 0.3 a frame (FV's * K, 0x3F1D00BE); VF2 does not.
+# smooth_int (loc_2F668), a motion's blend from the last pose: StF branches
+# past its foot hold, VF2 (V 0x27564) runs it: with 0xC30 bit 10 and the
+# blend's bit 9, the new pose's z (its first eight) moves by a foot's, the
+# old foot's height 0.14 (* SCALE: 0x3E914E40) on one side. VF2 has no
+# unit_smooth_cancel_front there. A VF2 guest takes VF2's.
 # coli_cont_cop_g4: the push between two VF2 guests is VF2's TGP's (its
 # function 0x3B), not StF's SHARC's: vf2_coli_push (stf_call.s, push.c) puts
 # it in g4 in place of the one read back, and the pairs that meet in r13
@@ -601,6 +606,22 @@ VF2_RISE = {
 INSERT = {
     **VF2_HIT,
     **VF2_RISE,
+    'loc_2F668': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobne GAME_VF2, r14, loc_2F668_own', 'ld      0xC30(g7), r15',
+                  'bbc     0xA, r15, smooth_vf2_go', 'bbs     0xA, r5, loc_2F36C', 'bbc     9, r5, smooth_vf2_go',
+                  'ld      0x0(g7), r14', 'bbs     6, r14, smooth_vf2_mir', 'bbs     0xB, r15, smooth_vf2_b',
+                  'b       smooth_vf2_a', 'smooth_vf2_mir:', 'bbc     0xB, r15, smooth_vf2_b', 'smooth_vf2_a:',
+                  'ld      stf_ram_50E000+0x1D0, r14', 'ld      stf_ram_50E000+0xE0, r13',
+                  'lda     0x3E914E40, r15', 'st      r15, stf_ram_50E000+0x1CC', 'b       smooth_vf2_foot',
+                  'smooth_vf2_b:', 'ld      stf_ram_50E000+0x1DC, r14', 'ld      stf_ram_50E000+0xEC, r13',
+                  'smooth_vf2_foot:', 'lda     0xA001414, r15', 'st      r15, (g11)[g12*1]',
+                  'st      r14, (g11)[g12*1]', 'st      r13, (g11)[g12*1]', 'ld      (g11)[g12*1], r11',
+                  'mov     8, r10', 'lda     stf_ram_50E000+0x98, r12', 'smooth_vf2_z:', 'ld      (r12), r14',
+                  'lda     0x9801313, r15', 'st      r15, (g11)[g12*1]', 'st      r14, (g11)[g12*1]',
+                  'st      r11, (g11)[g12*1]', 'ld      (g11)[g12*1], r14', 'st      r14, (r12)',
+                  'addo    0xC, r12, r12', 'cmpdeco 1, r10, r10', 'bl      smooth_vf2_z', 'smooth_vf2_go:',
+                  'cmpobe  8, r8, loc_2F728', 'cmpobe  4, r8, loc_2F730', 'mov     1, r8', 'b       loc_2F734',
+                  'loc_2F668_own:'],
     'rsc_gra_vf2': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                     'cmpobne GAME_VF2, r14, rsc_gra_own', 'lda     0x3BB4D327, r14',
                     'mulr    r13, r14, r5', 'b       rsc_gra_done', 'rsc_gra_own:'],
