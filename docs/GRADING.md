@@ -354,6 +354,33 @@ F to 37 F):
   missing observation. This does not by itself prove `loc_2B488`; the
   three-way split stays unproven and the knockback item open (nothing
   ported).
+- **Frame 41: the split after `loc_2A954` (source; not settled).** The
+  selecting branches are `loc_2A9F0` (stf_motion.s 15765; the victim's
+  rob+0x1A4 bit 13, the guard, to `loc_2B738` by `loc_2AE28` with r11 =
+  r6 = 0), `loc_2AE40` (16012; the attacker's rob+0x70C bit 20 /
+  rob+0x5B8 bit 0 to `loc_2B8C8`), the counter at `loc_2B1A4` (16198)
+  and `ah_not_finish_blow` (16355..16379). What the jab's own data
+  fixes: its VF2 setup (0x2014B77) is op 4, op 0xB (0x844 =
+  0x00058000), end 8, so no op 5 (`sub_1B7C4`) rewrites +0x828;
+  `convertSetup` puts VF2's bytes 10 and 11 (00 80) in StF's 7 and 8, so
+  +0x828 = 0x8000 and `attack_hit`'s head stores [0x50FE00] = 0x8000
+  (not 0x4006: bit 29 is clear). Bits 14 and 10 are clear, so the
+  [0x50FE00] bit-14 entry to `loc_2B5E4` is out and the hit goes on to
+  the r11 ≥ 50 check. +0x821 is VF2's byte 2 = 0, so the bit-24 case is
+  out too. Not ruled out, all of it the victim's state at the hit, which
+  the source does not fix: its rob+0x1A4 bits 13 (the guard), 16
+  (`loc_2B560`, or `loc_2B5E4` without the attacker's bit 22), 14 and 4
+  (`loc_2B5E4`); its rob+0x70C bit 2 (`loc_2B594`, then `loc_2B5E4`);
+  the counter, which with the victim's bit 8 set (it is set in the 0x121
+  read at the friction tap) makes r11 ⌊3(8 + ⌊x/4⌋)/2⌋, x the victim's
+  +0x822, 50 or more (`loc_2B5E4`) when x ≥ 104 (the small counter
+  cannot reach 50); and the finishing-blow check (`sub_19730` against
+  its rob+0x1AC). 0x121 was read at the friction tap, not at the hit,
+  and x and rob+0x70C were not logged. So the source cannot show one
+  path: `loc_2B488` (which reaches the `loc_2B738` store with r6 = 0 and
+  s unscaled) is taken only if all of those are clear, and that is not
+  proven. The split stays unproven and the knockback item stays open
+  (nothing ported).
 - **Frame 41: one slowdown.** StF's `rob_spd_control` (the block after
   `rsc_fric_end`) is the board's only slowdown, and VF2's constant-k
   slowdown is not on the board.
