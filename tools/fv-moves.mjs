@@ -179,7 +179,11 @@ export function importFvMoves(R, ctx, fv, A, { who, k, thrown, handShape = (s) =
                 if (units.has(a)) continue;
                 let h = a;
                 for (; p8(h) === 0x0e; h += 7) { units.set(h, { kind: 'header' }); todo.push([p32(h + 3), 'script']); }
-                if (!units.has(h) && !units.has(h - 0.5)) units.set(p8(h) === 0 ? h : h - 0.5, { kind: 'end' });
+                /* past the headers the matcher runs on: a 0 ends the table,
+                 * anything else is a script (0x36: park the table, try again
+                 * next frame) */
+                if (p8(h) !== 0) todo.push([h, 'script']);
+                else if (!units.has(h)) units.set(h, { kind: 'end' });
                 continue;
             }
             for (;;) {
@@ -203,7 +207,8 @@ export function importFvMoves(R, ctx, fv, A, { who, k, thrown, handShape = (s) =
                     break;
                 }
                 if (op === 0x05 || op === 0x06) { commits.push(a); break; }
-                if (op === 0x10 || op === 0x36) break;
+                if (op === 0x36) { todo.push([p32(a + 1), 'table']); break; }
+                if (op === 0x10) break;
                 a += len;
             }
         }
@@ -393,7 +398,7 @@ export function importFvMoves(R, ctx, fv, A, { who, k, thrown, handShape = (s) =
     }
     const prog = [];
     const here = () => progAt + prog.length;
-    const whereOf = (t) => where.get(t) ?? where.get(t - 0.5);
+    const whereOf = (t) => where.get(t);
     const reloc = (o, b) => {
         const t = (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
         const n = whereOf(t);
@@ -426,7 +431,7 @@ export function importFvMoves(R, ctx, fv, A, { who, k, thrown, handShape = (s) =
             break;
         default:
             reachAt(b, u.op, k);
-            if ([0x0d, 0x0f, 0x27, 0x11].includes(u.op)) reloc(1, b);
+            if ([0x0d, 0x0f, 0x27, 0x11, 0x36].includes(u.op)) reloc(1, b);
             if (u.op === 0x0e) reloc(3, b);
             if (u.op === 0x28) for (const o of [1, 5, 9]) reloc(o, b);
             if (u.op === 0x15 && p32(a + 5)) reloc(5, b);
