@@ -87,6 +87,9 @@ const CRAWL_ACTIONS = [6, 7, 31, 32, 33, 34];
 /* The board's slots 61..70, FV's walks' (F 0x13878, 0x13934; tools/lift-stf.py):
  * its actions 3, 4, 27..30, then the motions it plays on rob+0 bit 10 */
 const WALK_ACTIONS = [3, 4, 27, 28, 29, 30], WALK_MOTIONS = [0x9e, 0x9d, 0x289, 0x288];
+/* The board's slots 71..74, FV's guard's (F 0x13CA8, tools/lift-stf.py): its
+ * actions 8, 9 and 10 standing, 16 crouched */
+const GUARD_ACTIONS = [8, 9, 10, 16];
 /* StF's getting-up slots 41..51 are FV's actions 43..53 */
 const RISE_SLOT = 41, RISE_ACTION = 43, RISE_SLOTS = 11;
 /* FV's reaction kind -> StF's (VF2's numbers), by what its lists play */
@@ -242,6 +245,7 @@ export function importFvMoves(R, ctx, fv, A, { who, k, thrown, handShape = (s) =
     for (const n of CRAWL_ACTIONS) if (act(n)) want.add(act(n));
     for (const n of WALK_ACTIONS) if (act(n)) want.add(act(n));
     for (const m of WALK_MOTIONS) want.add(m);
+    for (const n of GUARD_ACTIONS) if (act(n)) want.add(act(n));
     for (const f of fvKindOf.values()) for (const x of reactions[f]) if (x) want.add(x);
     const commitWord = (a) => p32(a + 1);
     for (const a of commits) {
@@ -450,6 +454,7 @@ export function importFvMoves(R, ctx, fv, A, { who, k, thrown, handShape = (s) =
     /* 61..66 with his flags; 67..70 flagless, as FV's lda plays them */
     WALK_ACTIONS.forEach((n, i) => { actions[61 + i] = mid(A.actions[n]); });
     WALK_MOTIONS.forEach((m, i) => { actions[61 + WALK_ACTIONS.length + i] = mid(m); });
+    GUARD_ACTIONS.forEach((n, i) => { actions[71 + i] = mid(A.actions[n]); });
     const actionsAt = alloc(u16s(actions), 'actions');
     report.push(`action slots: ${changed.size} of ${actions.length} his own`);
 

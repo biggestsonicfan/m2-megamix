@@ -482,6 +482,15 @@ VF2_HIT = {
                   'loc_2B488_vf2_short:', 'subi    2, r3, r4', 'loc_2B488_vf2_turn:', 'addo    1, r4, r4',
                   'stob    r4, stf_ram_50A000+0xB6', 'mov     0, r6', 'b       loc_2B738',
                   'loc_2B488_own:'],
+    # FV's guard stun (F 0x2609C): the attack's frames left less 2, 8 or 10
+    # by its kind (StF: 7 for all), or 2, 6 or 8 with flag bit 2
+    'loc_2AD90': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                  'cmpobne GAME_FV, r14, loc_2AD90_own', 'mov     r3, r13', 'ldos    0x808(g7), r4',
+                  'ldos    0x80C(g7), r5', 'subi    r4, r5, r3', 'mov     r3, r6', 'ldob    0x821(g7), r14',
+                  'mov     2, r4', 'cmpobe  0, r14, gs_fv_sub', 'mov     8, r4', 'bbc     2, r13, gs_fv_k1',
+                  'mov     6, r4', 'gs_fv_k1:', 'cmpobe  1, r14, gs_fv_sub', 'mov     10, r4',
+                  'bbc     2, r13, gs_fv_sub', 'mov     8, r4', 'gs_fv_sub:', 'subi    r4, r3, r3',
+                  'b       loc_2ADE0', 'loc_2AD90_own:'],
     'loc_2B738': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                   'cmpobne GAME_VF2, r14, loc_2B738_own', 'ld      0x5D8(g8), r4',
                   'lda     0x42700000, r3', 'subr    r3, r4, r4', 'lda     0x3F19999A, r13',
@@ -866,6 +875,7 @@ INSERT = {
                            'ld      0x5CC(g7), r3', 'lda     0x3C2EE9B2, r13', 'addr    r13, r3, r3',
                            'rsc_normal_gravity_own:'],
     'ACT_RC_TA_GUARD': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                        'cmpobe  GAME_FV, r14, ta_guard_fv',
                         'cmpobne GAME_VF2, r14, ta_guard_own', 'ld      0x6D4(g8), r15',
                         'bbc     0, r15, ta_guard_vf2', 'call    sub_1CED4', 'ld      0x1A4(g7), r15',
                         'clrbit  0, r15, r15', 'st      r15, 0x1A4(g7)', 'cmpobe  0, g0, ta_guard_vf2',
@@ -876,7 +886,30 @@ INSERT = {
                         'bbc     7, r14, ta_guard_own', 'call    sub_1CEA8', 'ret',
                         'ta_guard_low:', 'bbs     0, r6, ta_guard_set', 'ldos    0x810(g7), r14',
                         'bbs     7, r14, ta_guard_set', 'call    sub_1CE94', 'ret',
-                        'ta_guard_set:', 'call    set_motion', 'ret', 'ta_guard_own:'],
+                        'ta_guard_set:', 'call    set_motion', 'ret',
+                        # FV's (F 0x13CA8): slots 71..74 (tools/fv-moves.mjs);
+                        # standing, a third guard when turned 0x38E or more
+                        # off (F 0x185F8), the crouched guard kept in step
+                        'ta_guard_fv:', 'ld      0x1A4(g7), r7', 'ld      0x0(g7), r6',
+                        'bbs     3, r7, ta_guard_fv_low', 'ldos    0x8E(g6), g0', 'ldis    0x5B6(g7), r9',
+                        'ldis    0x5B4(g7), r13', 'subi    r13, r9, r9', 'lda     0x5FFA, r10',
+                        'shlo    16, r9, r15', 'shri    16, r15, r9', 'subi    r10, 0, r3', 'cmpi    r9, r3',
+                        'concmpi r9, r10', 'be      ta_fv_a1', 'shlo    15, 1, r13', 'addi    r13, r9, r9',
+                        'shlo    16, r9, r15', 'shri    16, r15, r9', 'ta_fv_a1:', 'lda     0x38E, r11',
+                        'subi    r11, 0, r3', 'cmpible r3, r9, ta_fv_a2', 'mov     r3, r9', 'ta_fv_a2:',
+                        'cmpibge r11, r9, ta_fv_a3', 'mov     r11, r9', 'ta_fv_a3:', 'mov     r9, g1',
+                        'cmpible 0, r9, ta_fv_a4', 'subi    r11, 0, r11', 'cmpibl  r11, r9, ta_fv_a5',
+                        'b       ta_fv_a6', 'ta_fv_a4:', 'cmpibg  r11, r9, ta_fv_a5', 'b       ta_fv_a6',
+                        'ta_fv_a5:', 'mov     0, g1', 'ta_fv_a6:', 'cmpobe  0, g1, ta_fv_dir',
+                        'ldos    0x92(g6), g0', 'bbs     0xD, r7, ta_fv_dir', 'ldos    0x90(g6), g0',
+                        'ta_fv_dir:', 'ld      0x804(g7), r15', 'bbs     0xD, r15, ta_fv_held',
+                        'bbs     0, r6, ta_guard_set', 'ldos    0x810(g7), r14', 'bbc     7, r14, ta_guard_set',
+                        'call    sub_1CEA8', 'ret', 'ta_fv_held:', 'setbit  0xD, r6, r6',
+                        'cmpobe  0, g1, ta_fv_keep', 'ldos    0x1A8(g7), r13', 'cmpobne r13, g0, ta_guard_set',
+                        'ta_fv_keep:', 'ldos    0x802(g7), r14', 'cmpobne 0, r14, ta_fv_ret',
+                        'bbs     0, r6, ta_guard_set', 'ta_fv_ret:', 'ret', 'ta_guard_fv_low:',
+                        'ldos    0x94(g6), g0', 'bbs     0, r6, ta_guard_set', 'ldos    0x810(g7), r14',
+                        'bbs     7, r14, ta_guard_set', 'call    sub_1CE94', 'ret', 'ta_guard_own:'],
     # VF2's crouch walks (V 0x1C4F4, 0x14C74, 0x14D10): down and forward or
     # back is a state of its own in VF2, which StF lacks (StF crouches); the
     # board's 0x60 and 0x61, past StF's table, dispatched here, their motions
