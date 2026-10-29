@@ -354,7 +354,7 @@ F to 37 F):
   missing observation. This does not by itself prove `loc_2B488`; the
   three-way split stays unproven and the knockback item open (nothing
   ported).
-- **Frame 41: the split after `loc_2A954` (source; not settled).** The
+- **Frame 41: the split after `loc_2A954`: `loc_2B488` (tap).** The
   selecting branches are `loc_2A9F0` (stf_motion.s 15765; the victim's
   rob+0x1A4 bit 13, the guard, to `loc_2B738` by `loc_2AE28` with r11 =
   r6 = 0), `loc_2AE40` (16012; the attacker's rob+0x70C bit 20 /
@@ -380,20 +380,18 @@ F to 37 F):
   command commit, native, or setup/play reference leads to one.
   battle.lua's seed-1 script gives 1P no G before script frame 57 (round
   frame 87), and the jab is the round's first hit. So this entry no
-  longer opens `loc_2B738`. Not ruled out, all of it the victim's state
-  at the hit, which the source does not fix: its rob+0x1A4 bits 16
-  (`loc_2B560`, or `loc_2B5E4` without the attacker's bit 22), 14 and 4
-  (`loc_2B5E4`); its rob+0x70C bit 2 (`loc_2B594`, then `loc_2B5E4`);
-  the counter, which with the victim's bit 8 set (it is set in the 0x121
-  read at the friction tap) makes r11 ⌊3(8 + ⌊x/4⌋)/2⌋, x the victim's
-  +0x822, 50 or more (`loc_2B5E4`) when x ≥ 104 (the small counter
-  cannot reach 50); and the finishing-blow check (`sub_19730` against
-  its rob+0x1AC). 0x121 was read at the friction tap, not at the hit,
-  and x and rob+0x70C were not logged. So the source cannot show one
-  path: `loc_2B488` (which reaches the `loc_2B738` store with r6 = 0 and
-  s unscaled) is taken only if all of those are clear, and that is not
-  proven. The split stays unproven and the knockback item stays open
-  (nothing ported).
+  longer opens `loc_2B738`. The rest was read in MAME (the board build,
+  the Tou-rin replay, a read/write tap on both robs and [0x50FE00] with
+  the pc in `attack_hit`). On frame 41 the two jabs trade: 2P's hits 1P,
+  then 1P's hits 2P, the same way. At 2P's hit, 1P is in its own jab:
+  its rob+0x1A4 is 0x121 (bits 16, 14, 4 and 13 clear), its rob+0x70C is
+  0 (bit 2 clear), its +0x822 is 8 (under 104, so no counter), and the
+  hit reaches `ah_not_finish_blow` (not a finishing blow). The hit then
+  runs `loc_2B488` (the 0x0B00027E store to 1P's +0x198), `loc_2B4A8`,
+  `loc_2B4E4`, `loc_2B510` and `loc_2B738`; `loc_2B5E4` and `loc_2B560`
+  are not run. So this fight takes exactly one path, `loc_2B488`, to the
+  `loc_2B738` store with r6 = 0 and s unscaled. The split is settled;
+  the knockback item stays open (nothing ported).
 - **Frame 41: one slowdown.** StF's `rob_spd_control` (the block after
   `rsc_fric_end`) is the board's only slowdown, and VF2's constant-k
   slowdown is not on the board.
