@@ -284,10 +284,12 @@ void rob_start(u32 p) {
  * clock, the effects, rob_control (each player's pad to the fighter's
  * +0x1200, then sub_1D47C, which reads the moves the pad makes), the
  * recorder, then each fighter's task (rob_action: the commands, the action,
- * where a hit's damage is dealt, the motion, the part matrices). The pad is
+ * where a hit's damage is dealt, the motion, the part matrices). The clock
+ * runs only while clock_on and, as FIGHT_DSP's, not once a fighter is
+ * knocked out (w0 bit 5). The pad is
  * StF's: punch 1, kick 2, guard 4, down 0x10, up 0x20, right 0x40, left
  * 0x80. */
-void fight_step(const u32 pad[2]) {
+void fight_step(const u32 pad[2], u32 clock_on) {
     u32 p;
     stf_task((void (*)(void))RW(stf_coli, TASK_FN), stf_coli, robs[0], robs[1]);
     stf_task(stf_get_game_info, stf_enemy[0], robs[0], robs[1]);
@@ -297,7 +299,8 @@ void fight_step(const u32 pad[2]) {
      * key when the count reaches the key's frame; left still, every key ran
      * past its end and the camera flew off */
     RH(stf_cam, CAMERA_CNT)++;
-    if (GAME_TIMER > 0) GAME_TIMER--;
+    if (clock_on && !((RW(robs[0], ROB_FLAG) | RW(robs[1], ROB_FLAG)) & ROB_F_LOST) && GAME_TIMER > 0)
+        GAME_TIMER--;
     stf_task((void (*)(void))RW(stf_effect, TASK_FN), stf_effect, robs[0], robs[1]);
     RAM8(G_SOUNDS) = 0u;                 /* GAME_DSP's: the sounds the recorder keeps, from none */
     RAM32(G_SW_HELD) = pad[0] << 8 | pad[1] << 16;

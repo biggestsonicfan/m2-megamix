@@ -24,6 +24,7 @@ static lk_u16 set[LINK_SETS];            /* the setup, as the link carries it */
 static u32 stage;                        /* the stage's number (stages[], the setup's) */
 u32 in_menu = 1u;                        /* the setup menu is up (in the map: tools/mame/battle.lua) */
 static u32 over;                         /* the round is decided: frames to the next */
+static u32 judging;                      /* its end found: steps to JUDGE_DSP_INT */
 static u32 quit;                         /* both starts: back to the setup */
 static u32 held, pheld;                  /* the starts and pads held last frame (edges) */
 static u32 step;                         /* frame_counter at the last fight step */
@@ -122,7 +123,7 @@ static void match_reset(u32 lp) {
     load_fighter_colors(fs[0].anim, fs[1].anim);
     menu_ink(1u);
     snd_request_u(SND_RESET);
-    over = quit = held = pheld = 0u;
+    over = judging = quit = held = pheld = 0u;
 }
 
 /* The setup window, on either pad: h its held pad bits, e the new start
@@ -162,7 +163,7 @@ static void menu_frame(u32 h, u32 e) {
         menu_clear();
         round_start(fs, 0u);
         snd_round(stage, cur_stage, 1u);
-        over = 0u;
+        over = judging = 0u;
         in_menu = 0u;
     } else {
         menu_draw();
@@ -201,7 +202,7 @@ static u32 round_end(void) {
         RAM8(G_ROUND_WINS0) = RAM8(G_ROUND_WINS1) = 0u;
         round_start(fs, 0u);
         snd_request_u(SND_RESET);
-        over = quit = 0u;
+        over = judging = quit = 0u;
         return 0u;
     }
     round_start(fs, 1u);
@@ -212,18 +213,20 @@ static u32 round_end(void) {
 
 /* One 60 Hz frame of the fight (or of the replay): StF's tasks, then the
  * round's end looked for: an armour break's replay first (FV's FIGHT_DSP),
- * a knock-out (a fighter's w0 bit 5) or the clock's end. Returns 0 when
- * the match is over: no more steps this pass. */
+ * a knock-out (a fighter's w0 bit 5) or the clock's end, found here at the
+ * end of the step it comes in. The round is judged four steps on: StF's and
+ * VF2's FIGHT_DSP find it the next step, and JUDGE_INT and JUDGE_WAIT pass a
+ * step each before JUDGE_DSP_INT. The fighters fight on meanwhile, the clock
+ * stopped. Returns 0 when the match is over: no more steps this pass. */
 static u32 fight_frame(const u32 pad[2]) {
-    short clock = GAME_TIMER;
     if (rep_on) { rep_step(); return 1u; }
-    fight_step(pad);
+    fight_step(pad, !over && !judging);  /* the clock stops once the round's end is found */
     if (in_menu) return 1u;
-    if (over) GAME_TIMER = clock;        /* the clock stops once the round is decided */
     if (!over && !quit) ring_out_step(cur_stage);
-    if (!over && !quit && rep_watch()) return 1u;
+    if (!over && !quit && !judging && rep_watch()) return 1u;
     if (quit || over) return round_end();
-    if (((RW(robs[0], ROB_FLAG) | RW(robs[1], ROB_FLAG)) & ROB_F_LOST) || GAME_TIMER <= 0) round_judge();
+    if (judging) { if (!--judging) round_judge(); return 1u; }
+    if (((RW(robs[0], ROB_FLAG) | RW(robs[1], ROB_FLAG)) & ROB_F_LOST) || GAME_TIMER <= 0) judging = 4u;
     return 1u;
 }
 
