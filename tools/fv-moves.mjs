@@ -461,5 +461,5 @@ export function importFvMoves(R, ctx, fv, A, { who, k, thrown, handShape = (s) =
         commandUnits: units.size, commits: commits.length, commitsAsAction: asAction, natives: natives.length,
         programBytes: prog.length, trails, damage: Object.fromEntries(damages), lost,
     };
-    return { report, coverage, moves, actionsAt, kindsAt, remapAt, newId, range: [FV_MOVES_AT, far] };
+    return { report, coverage, moves, actionsAt, kindsAt, remapAt, newId, copyId, range: [FV_MOVES_AT, far] };
 }

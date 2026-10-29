@@ -32,8 +32,8 @@
 typedef struct { float r[9], t[3]; } mat_t;   /* column-major, the COP's layout */
 
 /* A fighter as the setup picks him: his character (and its baked colours),
- * his place and yaw at a round's start. */
-typedef struct { const pose_anim_t *anim; float x; u16 yaw; } fighter_t;
+ * his place (x, z) and yaw at a round's start. */
+typedef struct { const pose_anim_t *anim; float x, z; u16 yaw; } fighter_t;
 
 /* stf_call.s: StF's lifted code (stf_motion.s) run with the registers its
  * functions expect: g7 the rob, g8 the other, g13 the task (stf_task), or g0
@@ -163,6 +163,7 @@ void stage_round_start(void);
 void draw_stage(const stage_t *st);
 void send_materials(const u32 *mat);
 void load_stage(u32 n);
+u32 stage_index(void);                  /* cur_stage's menu index (stages[] is each file's own) */
 
 /* ---- colors.c ---- */
 void cx_put(const cx_run_t *c);

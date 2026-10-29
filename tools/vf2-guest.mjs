@@ -1013,6 +1013,8 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
     const coverage = {
         chars: [CHR, CHR + PLAYER2], game: 'VF2', name: 'Akira',
         motions: ids.length, thrownCopies: thrownIds.length, actions: A.actions.length,
+        /* the board's motion id -> VF2's, for tools/grade-battle.mjs */
+        motionIds: Object.fromEntries([...newId, ...copyId].map(([v, b]) => [b, v])),
         actionSlots: STF_ACTIONS.length, remapped: own.filter((x) => x).length,
         reactions: 30 * 40, reactionsFromKind0: kind0,
         commandUnits: units.size, commits: commits.length, natives: natives.length,

@@ -22,7 +22,7 @@ u32 frame_counter;
 static fighter_t fs[2];                  /* the fighters, as the setup picks them */
 static lk_u16 set[LINK_SETS];            /* the setup, as the link carries it */
 static u32 stage;                        /* the stage's number (stages[], the setup's) */
-static u32 in_menu = 1u;                 /* the setup menu is up */
+u32 in_menu = 1u;                        /* the setup menu is up (in the map: tools/mame/battle.lua) */
 static u32 over;                         /* the round is decided: frames to the next */
 static u32 quit;                         /* both starts: back to the setup */
 static u32 held, pheld;                  /* the starts and pads held last frame (edges) */
@@ -145,11 +145,13 @@ static void menu_frame(u32 h, u32 e) {
         menu_ink(1u);
     }
     if (c == M_P1 || c == M_P2) {
-        i = c == M_P1 ? 0u : 1u;
-        fs[i].anim = pose_anim(menu_val[c]);
-        rob_init(i, &fs[i]);
-        rob_start(i);
-        armour_limits(i);
+        fs[c == M_P1 ? 0u : 1u].anim = pose_anim(menu_val[c]);
+        /* both: player 2's character turns on whether it is player 1's */
+        for (i = 0; i < 2u; i++) {
+            rob_init(i, &fs[i]);
+            rob_start(i);
+            armour_limits(i);
+        }
         /* the scene's rows again: a guest's seven part rows took StF's fixed ones */
         stage_colors(cur_stage);
         load_fighter_colors(fs[0].anim, fs[1].anim);
@@ -325,6 +327,13 @@ int main(void) {
         }
 
         scene_begin();
+        /* alone, the pads again for the fight, read as late as StF's
+         * rob_control reads them (after the frame's first tasks), not at
+         * the vblank's first instant */
+        if (!in_menu && lp != LP_TICK) {
+            p[0] = m2_player(0); p[1] = m2_player(1);
+            for (i = 0; i < 2u; i++) pad[i] = pad_bits(&p[i]) & 0xFFu;
+        }
         fight_frames(pad);
         if (lp == LP_TICK) link_check(link_sum(in_menu, over));
         scene_end();

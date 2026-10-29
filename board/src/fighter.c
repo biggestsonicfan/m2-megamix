@@ -117,7 +117,31 @@ static const u32 stf_fight_ram[] = {
     0x50A324u,          0x3EAE978Du,
     G_ZANZOU_MA,        0x3DCCCCCDu,   /* 0.1 */
     G_BARRIER_DEFAULT,  0x00000005u,
-    0x50A800u,          0x3F800000u,   /* list_90_floats_RAM */
+    0x50A0A8u,          0x3F95C28Fu,   /* lau_mul_J 1.17, then 1.2 */
+    0x50A0ACu,          0x3F99999Au,
+    0x50A0B0u,          0x00000500u,   /* lau_add_xang 0x500, 0 */
+    /* the rest of game_engine_setup's constants */
+    0x50A0BCu,          0x3F333333u,   /* gyang_yvec */
+    0x50A0C0u,          0x3ECCCCCDu,   /* gyang_asi_d */
+    0x50A0C4u,          0x3ECCCCCDu,   /* gyang_ha_d */
+    0x50A0C8u,          0x00001000u,
+    0x50A0CCu,          0x3ECCCCCDu,   /* gyang_asi_h */
+    0x501098u,          0x3F800000u,   /* BRIGHT */
+    0x5010A4u,          0x3ECCCCCDu,   /* ROB_LENG */
+    0x5010A8u,          0x3E4CCCCDu,   /* ROB_LIMIT */
+    0x5010E4u,          0x3E19999Au,   /* ROB_LIMIT2 */
+    0x5010DCu,          0x0000FF81u,   /* bytes 0x81, 0xFF, then 0 */
+    0x5010ECu,          0x00002000u,
+    0x50A028u,          0x3F19999Au,   /* en_ang_dist: get_en_info turns a
+                                          fighter toward the other past it */
+    0x50A1B0u,          0xBE99999Au,   /* stage_low_judge */
+    0x50A1B8u,          0x3F800000u,
+    0x50A1C0u,          0x3F666666u,
+    0x50A1E0u,          0x3FB33333u,   /* no_coli_height */
+    0x50A390u,          0x3FD9999Au,   /* 1.7 each */
+    0x50A394u,          0x3FD9999Au,
+    0x50A398u,          0x3FD9999Au,
+    0x50A428u,          0x40000000u,   /* float_2 */
     0x50E000u,          0xBDB914C0u,
     0x50E01Cu,          0x45BA174Fu,
     0x50E028u,          0x463C2F12u,
@@ -126,12 +150,34 @@ static const u32 stf_fight_ram[] = {
     0x530004u,          0x0000007Fu,
 };
 
+/* list_90_floats_RAM (0x50A800), which game_engine_setup's sub_2E2B0
+ * copies from ROM: per attack strength (0x50FE02), the hit's push (its +8
+ * scales every knockback) and the rest. Left 0, no hit pushed anyone. */
+static const u32 stf_list_90[90] = {
+    0x3F800000u, 0x40A00000u, 0x3F800000u, 0x3F800000u, 0x3F800000u, 0x40000000u,
+    0x3F800000u, 0x3FC00000u, 0x60004000u, 0x28002400u, 0x40000000u, 0x40900000u,
+    0x3F800000u, 0x3F800000u, 0x3F800000u, 0x40000000u, 0x3F800000u, 0x3FC00000u,
+    0x60004000u, 0x28002400u, 0x3F800000u, 0x40E00000u, 0x3F800000u, 0x3F800000u,
+    0x3F800000u, 0x40000000u, 0x3F800000u, 0x3FC00000u, 0x48004000u, 0x38001000u,
+    0x40800000u, 0x41200000u, 0x3F800000u, 0x3F000000u, 0x3F4CCCCDu, 0x3F4CCCCDu,
+    0x3ECCCCCDu, 0x3F4CCCCDu, 0x48004000u, 0x38005000u, 0x41A00000u, 0x40C00000u,
+    0x3F800000u, 0x3F99999Au, 0x3F800000u, 0x3F99999Au, 0x3F000000u, 0x3F800000u,
+    0x60004000u, 0x40002400u, 0x3F800000u, 0x3FC00000u, 0x3F000000u, 0x3F000000u,
+    0x3F800000u, 0x40000000u, 0x3F800000u, 0x3FC00000u, 0x60004000u, 0x38002400u,
+    0x3F800000u, 0x41000000u, 0x3F800000u, 0x3F800000u, 0x3F800000u, 0x40000000u,
+    0x3F800000u, 0x3FC00000u, 0x60004000u, 0x38002400u, 0x3F800000u, 0xC1200000u,
+    0x3F800000u, 0x3F800000u, 0x3F800000u, 0x40000000u, 0x3F800000u, 0x3FC00000u,
+    0x60004000u, 0x38002400u, 0x3F4CCCCDu, 0x41400000u, 0x3F800000u, 0x3F000000u,
+    0x3F000000u, 0x3F000000u, 0x3F000000u, 0x3F000000u, 0x48004000u, 0x48004000u,
+};
+
 /* StF's globals as they are in a 2-player fight (a real board's RAM at a
  * fight's start): the modes, the task blocks, the debug flags. */
 void stf_globals(void) {
     u32 i;
     for (i = 0; i < sizeof stf_fight_ram / sizeof stf_fight_ram[0]; i += 2)
         RAM32(stf_fight_ram[i]) = stf_fight_ram[i + 1];
+    for (i = 0; i < 90u; i++) RAM32(0x50A800u + i * 4u) = stf_list_90[i];
     RAM32(G_GAME_TIMER) = 0x09090000u;     /* game_timer 0, mode 9, also_mode 9 */
     RAM32(G_MODE_FLAG) = 0x200u;
     RAM32(G_SUB_MODE) = 0x0909u;           /* _sub_mode, also_sub_mode */
@@ -166,19 +212,23 @@ static const u32 rob_balls[2][9] = {
 
 void rob_init(u32 p, const fighter_t *f) {
     u32 *r = robs[p];
-    union { float f; u32 u; } x;
+    union { float f; u32 u; } x, z;
     u32 i;
     for (i = 0; i < ROB_SIZE / 4; i++) r[i] = 0u;
     for (i = 0; i < MOT_SIZE / 4; i++) mots[p][i] = 0u;
     x.f = f->x;
+    z.f = f->z;
     RW(r, ROB_FLAG) = p ? 0x84000082u : 0x84000080u;
     RB(r, ROB_IDNM) = (u8)p;
     RW(r, TASK_SIZE) = ROB_SIZE;
     RW(r, TASK_FN) = (u32)stf_action_init;
     RW(r, ROB_CONTROL) = 1u << 3;        /* control_init: the pad drives it */
     RW(r, ROB_XPOS) = x.u;
+    RW(r, ROB_ZPOS) = z.u;
     RH(r, ROB_YANG) = f->yaw;
-    RB(r, ROB_CHAR) = (u8)(f->anim->chr + (p ? 26u : 0u));
+    /* player 2 is character + 26 (his other colours, and his own motion
+     * list) only against himself, as ROUND_INIT has it */
+    RB(r, ROB_CHAR) = (u8)(f->anim->chr + (p && f->anim->chr == RB(robs[0], ROB_CHAR_IS) ? 26u : 0u));
     RB(r, ROB_CHAR_IS) = (u8)f->anim->chr;
     RW(r, ROB_CHAR_REC) = (u32)stf_char(RB(r, ROB_CHAR));
     RW(r, ROB_CHAR_MOTS) = stf_char(RB(r, ROB_CHAR))[3];
@@ -214,16 +264,28 @@ void rob_start(u32 p) {
     RW(stf_osage[p], TASK_FN) = (u32)stf_osage_init;
 }
 
-/* One 60 Hz frame of StF's fight, its tasks in a real board's order:
- * rob_control (each player's pad to the fighter's +0x1200, then sub_1D47C,
- * which reads the moves the pad makes), each fighter's task (rob_action: the
- * commands, the action, the motion, the part matrices), the collision task
- * (hits, damage, the walls), then get_game_info (each fighter's angle and
- * distance to the other, which it turns by). The pad is StF's: punch 1, kick 2, guard
- * 4, down 0x10, up 0x20, right 0x40, left 0x80. */
+/* One 60 Hz frame of StF's fight, its tasks in StF's own order (its task
+ * list, read off a real fight): the collision task first (hits and walls,
+ * on the poses of the frame before), get_game_info (each fighter's angle
+ * and distance to the other, which it turns by), the camera, ROUND_DSP's
+ * clock, the effects, rob_control (each player's pad to the fighter's
+ * +0x1200, then sub_1D47C, which reads the moves the pad makes), the
+ * recorder, then each fighter's task (rob_action: the commands, the action,
+ * where a hit's damage is dealt, the motion, the part matrices). The pad is
+ * StF's: punch 1, kick 2, guard 4, down 0x10, up 0x20, right 0x40, left
+ * 0x80. */
 void fight_step(const u32 pad[2]) {
     u32 p;
+    stf_task((void (*)(void))RW(stf_coli, TASK_FN), stf_coli, robs[0], robs[1]);
+    stf_task(stf_get_game_info, stf_enemy[0], robs[0], robs[1]);
+    stf_task(stf_cam_mode_10, stf_cam, robs[0], robs[1]);
+    /* the camera's frame count, which StF's camera_init (os display) moves
+     * on each frame: a throw's camera script (sub_6BA98) steps to its next
+     * key when the count reaches the key's frame; left still, every key ran
+     * past its end and the camera flew off */
+    RH(stf_cam, CAMERA_CNT)++;
     if (GAME_TIMER > 0) GAME_TIMER--;
+    stf_task((void (*)(void))RW(stf_effect, TASK_FN), stf_effect, robs[0], robs[1]);
     RAM8(G_SOUNDS) = 0u;                 /* GAME_DSP's: the sounds the recorder keeps, from none */
     RAM32(G_SW_HELD) = pad[0] << 8 | pad[1] << 16;
     for (p = 0; p < 2u; p++) RW(robs[p], ROB_DENTED_CNT)--;  /* camera_init's sub_7F5CC */
@@ -232,17 +294,10 @@ void fight_step(const u32 pad[2]) {
         /* g13 the rob too: the command interpreter keeps its base there */
         stf_task(stf_sub_1D47C, robs[p], robs[p], robs[p ^ 1u]);
     }
+    /* the replay's recorder (fa_record): both fighters' frame in the ring */
+    stf_task(stf_rec_disp, stf_rec, robs[0], robs[1]);
     for (p = 0; p < 2u; p++)
         stf_task((void (*)(void))RW(robs[p], TASK_FN), robs[p], robs[p], robs[p ^ 1u]);
-    stf_task((void (*)(void))RW(stf_coli, TASK_FN), stf_coli, robs[0], robs[1]);
-    stf_task((void (*)(void))RW(stf_effect, TASK_FN), stf_effect, robs[0], robs[1]);
-    stf_task(stf_get_game_info, stf_enemy[0], robs[0], robs[1]);
-    stf_task(stf_cam_mode_10, stf_cam, robs[0], robs[1]);
-    /* the camera's frame count, which StF's camera_init (os display) moves
-     * on each frame: a throw's camera script (sub_6BA98) steps to its next
-     * key when the count reaches the key's frame; left still, every key ran
-     * past its end and the camera flew off */
-    RH(stf_cam, CAMERA_CNT)++;
     /* the projectile task (fa_tobi's sub_89FB8): sub_8A29C steps each live
      * object (Eggman's bombs: fly, burst, the hit test whose hit the next
      * frame's collision task deals); sub_8A2E4 is left out (it tells StF's
@@ -257,8 +312,6 @@ void fight_step(const u32 pad[2]) {
         RW(robs[p], ROB_TRAIL_AT) = (at + 1u) & 7u;
         for (k = 0; k < 3u; k++) RW(robs[p], ROB_TRAIL + at * 12u + k * 4u) = RW(robs[p], ROB_GXPOS + k * 4u);
     }
-    /* the replay's recorder (fa_record): both fighters' frame in the ring */
-    stf_task(stf_rec_disp, stf_rec, robs[0], robs[1]);
 }
 
 /* A round: both fighters back to their marks, the collision task, the
@@ -269,16 +322,34 @@ u32 round_time = 30u;             /* seconds, the setup menu's time */
 
 #define COP_ZANZOU_INIT COP_CMD(0x81)
 
+/* Where the fighters start, as StF's ROUND_INIT and SET_INT place them: 4.0
+ * apart through the middle along the angle at 0x500432, 0x2000 for a match's
+ * first round and a quarter turn more for each round after it, each facing
+ * the other. cos(k * 45 degrees) * 2, by k; 1.4142143 is the COP's sqrt 2.
+ * On the other games' stages, as those games start a round (read off VF2
+ * and FV fights): 2.0 apart along x, VF2 every round, FV a quarter turn
+ * more for each round after the first. */
+static u16 start_ang;
+static const u32 start_cos[8] = {
+    0x40000000u, 0x3FB504F7u, 0x00000000u, 0xBFB504F7u, 0xC0000000u, 0xBFB504F7u, 0x00000000u, 0x3FB504F7u,
+};
+static float start_f(u32 k) { union { u32 u; float f; } v; v.u = start_cos[k & 7u]; return v.f; }
+
 /* next: the match's next round, the armour as the last one left it */
 void round_start(fighter_t fs[2], u32 next) {
-    u32 i;
+    u32 i, k;
+    u32 n = stage_index();               /* 2, 3 VF2's; 4 FV's */
+    float d = n >= 2u ? 0.5f : 1.0f;
+    start_ang = !next ? (n >= 2u ? 0u : 0x2000u) : (u16)(start_ang + (n == 2u || n == 3u ? 0u : 0x4000u));
+    k = start_ang >> 13;
     stage_round_start();
     for (i = 0; i < 2u; i++) {
         if (next) armour_keep(i);
         /* at yaw a a fighter faces (-sin a, cos a) in x, z, as StF's
-         * camera does: 4.0 apart, facing each other, as a real fight starts */
-        fs[i].x = i ? 2.0f : -2.0f;
-        fs[i].yaw = i ? 0x4000u : 0xC000u;
+         * camera does */
+        fs[i].x = (i ? start_f(k) : -start_f(k)) * d;
+        fs[i].z = (i ? start_f(k + 6u) : -start_f(k + 6u)) * d;
+        fs[i].yaw = (u16)(start_ang + (i ? 0x4000u : 0xC000u));
         rob_init(i, &fs[i]);
     }
     task_reset(stf_coli, sizeof stf_coli);
