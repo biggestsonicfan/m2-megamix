@@ -25,7 +25,8 @@
  *     under headers whose colorbases name the player 2 rows (7..13, 30/31),
  *     which the board fills with FV's player 2 colours, the same as player
  *     1's: both players look alike, as in FV;
- *   - his skeleton and pose bones (record +4, VF2's layout, at his size);
+ *   - his skeleton (record +4, VF2's layout, at his size) and pose bones
+ *     (FV's, one set for its whole cast: FV_RIG);
  *   - his collision balls: FV's, one set for its whole cast (FV_BALLS);
  *   - his moves: FV's own (tools/fv-moves.mjs).
  */
@@ -57,6 +58,11 @@ const HANDS = 0x0640ebf4, SHAPES = 4;
  * the part each rides (32 words), a pointer to each part's list (the second
  * word: parts 1..15, 8 bytes each, ball * 4) and a count by part (16). StF's
  * record, the same four. */
+/* The bones FV solves every fighter's pose on (calc_rob_angle_cont, F
+ * 0x2AB00: one table where VF2's is VF2_RIG and StF's is by character),
+ * VF2's layout: the chest, the head, each arm's and leg's pivot and its two
+ * bones' lengths (+0xC, +0x10), the pelvis. */
+const FV_RIG = 0x2c194;
 const FV_BALLS = { points: 0x0640e4fc, part: 0x0640e7dc, lists: 0x0640e860, counts: 0x0640e914 };
 /* His weight: FV's record +0x1C (record 21's is record 8's), and his armour's
  * pieces by record (8, and 21 his second player's): 16 slots of [4 counts, pieces], 0x28 bytes a piece,
@@ -351,10 +357,15 @@ export function importMahler(R, ctx, games, { byKey }, { chr: CHR_ = CHR, obj = 
     for (let e = 0; e < 15; e++) bones.push([0, 1, 2].map((a) => r.view.getFloat32(r.off + e * 12 + a * 4, true)));
     const skelBytes = new Uint8Array(SKELETON_BYTES), sv = new DataView(skelBytes.buffer);
     bones.forEach((p, e) => p.forEach((x, a) => sv.setFloat32(e * 12 + a * 4, x * k, true)));
-    const rigBytes = Uint8Array.from(ctx.rigBytes), rv = new DataView(rigBytes.buffer);
-    const put = (e, p) => p.forEach((x, a) => rv.setFloat32(e * 12 + a * 4, x * k, true));
-    put(1, bones[1]);
-    [2, 5, 9, 12].forEach((e) => { put(e, bones[e]); put(e + 1, [bones[e + 1][0], 0, 0]); put(e + 2, [bones[e + 2][0], 0, 0]); });
+    /* the pose bones: FV's, at his size (his skeleton's bones in VF2's rig
+     * turned his arms ~15 degrees off FV's, standing) */
+    const f = (o) => fv.mainCpuView.getFloat32(FV_RIG + o, true), pt = (o) => [f(o), f(o + 4), f(o + 8)];
+    const rig = [pt(0), pt(0xc)];
+    for (const at of [0x18, 0x2c]) rig.push(pt(at), [f(at + 0xc), 0, 0], [f(at + 0x10), 0, 0]);
+    rig.push(pt(0x40));
+    for (const at of [0x4c, 0x60]) rig.push(pt(at), [f(at + 0xc), 0, 0], [f(at + 0x10), 0, 0]);
+    const rigBytes = new Uint8Array(rig.length * 12), rv = new DataView(rigBytes.buffer);
+    rig.flat().forEach((x, i) => rv.setFloat32(i * 4, x * k, true));
     const skel = alloc(skelBytes, 'skeleton');
     const rigAt = alloc(rigBytes, 'bones');
 

@@ -140,7 +140,8 @@ NAMED = {'coli_cont_cop_g4': ('coli_cont_cop', 'ld      (g11)[g12*1], g5'),
          'contact_lag': ('loc_29428', 'call    coli_cont_cop'),
          'vf2_down_pick': ('loc_1E0A0', 'bbc     4, r8, loc_1E0E4'),
          'kb_fv_v': ('loc_2B738', 'ld      (g11)[g12*1], r4'),
-         'fb_bar_fv': ('loc_2B474', 'mov     r11, g0')}
+         'fb_bar_fv': ('loc_2B474', 'mov     r11, g0'),
+         'smooth_ang_fv': ('loc_2F788', 'ldis    (g11)[g12*1], g2')}
 # Tables below 0x1000 that are tables all the same (cop_initialize_end2's
 # collision-ball pointers).
 LOW_TABLES = {'off_FE8'}
@@ -295,7 +296,13 @@ INSERT_LIFTED = {
 # past its foot hold, VF2 (V 0x27564) runs it: with 0xC30 bit 10 and the
 # blend's bit 9, the new pose's z (its first eight) moves by a foot's, the
 # old foot's height 0.14 (* SCALE: 0x3E914E40) on one side. VF2 has no
-# unit_smooth_cancel_front there. A VF2 guest takes VF2's.
+# unit_smooth_cancel_front there. A VF2 guest takes VF2's. FV's (F 0x2A300)
+# is VF2's with its own 0.14 (* K: 0x3E92893A); an FV guest takes that.
+# FV's joint angles there (F 0x2A46C) take the shift twice: StF's
+# -d >> n is stored, then run again on it, so the old pose's angles are
+# held only by (d >> n) >> n (the 5th joint's x, if above 0, keeps its sign
+# the first time). FV's poses all but jump to the new motion; an FV guest's
+# angles do the same (smooth_ang_fv).
 # coli_cont_cop_g4: the push between two VF2 guests is VF2's TGP's (its
 # function 0x3B), not StF's SHARC's: vf2_coli_push (stf_call.s, push.c) puts
 # it in g4 in place of the one read back, and the pairs that meet in r13
@@ -485,6 +492,11 @@ VF2_HIT = {
     'fb_bar_fv': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                   'cmpobne GAME_FV, r14, fb_bar_fv_own', 'mulo    7, g0, g0', 'addo    5, g0, g0',
                   'divo    10, g0, g0', 'fb_bar_fv_own:'],
+    'smooth_ang_fv': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+                      'cmpobne GAME_FV, r14, smooth_ang_fv_own', 'cmpobne 8, r11, smooth_ang_fv_n',
+                      'cmpibge 0, g0, smooth_ang_fv_n', 'shri    r8, g0, g0', 'b       smooth_ang_fv_1',
+                      'smooth_ang_fv_n:', 'subi    g0, 0, g0', 'shri    r8, g0, g0', 'smooth_ang_fv_1:',
+                      'shri    r8, g1, g1', 'subi    g2, 0, g2', 'shri    r8, g2, g2', 'smooth_ang_fv_own:'],
     'ah_not_finish_blow': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                   'cmpobne GAME_VF2, r14, ah_not_finish_blow_own', 'ld      0x1A4(g8), r15',
                   'bbs     0x10, r15, loc_2B560', 'bbs     0xE, r15, loc_2B594', 'bbs     4, r15, loc_2B5E4',
@@ -648,12 +660,15 @@ INSERT = {
     **VF2_HIT,
     **VF2_RISE,
     'loc_2F668': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
-                  'cmpobne GAME_VF2, r14, loc_2F668_own', 'ld      0xC30(g7), r15',
+                  'cmpobe  GAME_FV, r14, smooth_vf2_in', 'cmpobne GAME_VF2, r14, loc_2F668_own',
+                  'smooth_vf2_in:', 'ld      0xC30(g7), r15',
                   'bbc     0xA, r15, smooth_vf2_go', 'bbs     0xA, r5, loc_2F36C', 'bbc     9, r5, smooth_vf2_go',
                   'ld      0x0(g7), r14', 'bbs     6, r14, smooth_vf2_mir', 'bbs     0xB, r15, smooth_vf2_b',
                   'b       smooth_vf2_a', 'smooth_vf2_mir:', 'bbc     0xB, r15, smooth_vf2_b', 'smooth_vf2_a:',
                   'ld      stf_ram_50E000+0x1D0, r14', 'ld      stf_ram_50E000+0xE0, r13',
-                  'lda     0x3E914E40, r15', 'st      r15, stf_ram_50E000+0x1CC', 'b       smooth_vf2_foot',
+                  'ldob    0x1B1(g7), r15', 'ldob    guest_char_game[r15], r15',
+                  'cmpobe  GAME_FV, r15, smooth_fv_a', 'lda     0x3E914E40, r15', 'b       smooth_vf2_hold',
+                  'smooth_fv_a:', 'lda     0x3E92893A, r15', 'smooth_vf2_hold:', 'st      r15, stf_ram_50E000+0x1CC', 'b       smooth_vf2_foot',
                   'smooth_vf2_b:', 'ld      stf_ram_50E000+0x1DC, r14', 'ld      stf_ram_50E000+0xEC, r13',
                   'smooth_vf2_foot:', 'lda     0xA001414, r15', 'st      r15, (g11)[g12*1]',
                   'st      r14, (g11)[g12*1]', 'st      r13, (g11)[g12*1]', 'ld      (g11)[g12*1], r11',
