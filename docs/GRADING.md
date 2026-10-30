@@ -118,13 +118,42 @@ Honey and Eggman (1P, 2P) on South Island and Aurora Icefield:
 | 1P, 2P     | Sonic       | Honey       | Eggman      |
 |------------|-------------|-------------|-------------|
 | **South Island** |       |             |             |
-| Sonic      | 99 A        | 100 A       | 99 A        |
+| Sonic      | 100 A       | 100 A       | 100 A       |
 | Honey      | 100 A       | 100 A       | 100 A       |
-| Eggman     | 100 A       | 99 A        | 100 A       |
+| Eggman     | 100 A       | 100 A       | 100 A       |
 | **Aurora** |             |             |             |
-| Sonic      | MAME stops  | MAME stops  | 99 A        |
+| Sonic      | 28 F (geo)  | 49 D (geo)  | 100 A       |
 | Honey      | 100 A       | 100 A       | 100 A       |
-| Eggman     | 100 A       | 99 A        | 100 A       |
+| Eggman     | 100 A       | 100 A       | 100 A       |
+
+(geo): MAME's geometrizer stops on board frame 501 (Sonic vs Sonic) and
+1093 (Sonic vs Honey), "geo_adsp: compute: invalid single-function
+operation 03", with the SHARC recompiler on or off (below).
+
+### Aurora: the geometrizer's frame runs over
+
+On Aurora Icefield the board's display list takes the geometrizer (MAME's
+SHARC running StF's cpres2) about 0.9 of a frame, from its first FIFO read
+to the END: about 140 objects a frame (the stage 76, the reflections 30,
+the fighters 35). StF's own takes 0.6 to 0.75 of a frame, 35 to 94
+objects. About round frame 450 StF's stage was 32 objects, the board's
+76: StF's `ground_disp` puts the 16 ground chunks (model 1129) through
+`area_clip` and draws 8 to 10 of them (none at that point), the board
+all 16, and the board drew 6 cage panels to StF's 2.
+Now and then the board's list runs past the vblank (Sonic vs Sonic: board
+frames 834, 842, 895, 1133, 1225). MAME's Model 2B
+(`model2b_state::screen_vblank`) puts the geometrizer's FIFO back at the
+read start at every vblank, so cpres2, still in the last list's MATRIX,
+reads the next list's header as operands. A light's 0x3F3504ED then
+dispatches as op 0x1E (code jump) into NOPs, and the SHARC stops on
+op 03.
+
+A throwaway build without the ground chunks played Sonic vs Sonic to the
+end, 100 A, but still took about 0.9 of a frame and ran over 17 times
+(some between rounds). Bringing the board's load down to StF's needs StF's
+stage culls ported (`area_clip` and its outcode table), not one list
+dropped. MAME could also leave the FIFO alone while cpres2 is still in
+a list.
 
 The guests, against their own games: Akira vs Akira 100 A on Tou-rin, the
 Colosseum and the Test stage (the fights are the same on all three: no
