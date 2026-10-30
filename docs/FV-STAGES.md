@@ -4,10 +4,10 @@ This page is what an import of Fighting Vipers' (FV's) arenas onto Megamix's
 board needs to know: what each stage draws, what it needs in the data ROMs, and
 what it does that StF's stage code has no field for. The cage break, FV's
 finishing blow through a wall, is under Cage break.
-`tools/fv-stages.mjs` gives the plan (`fvStagePlan`), in the shape
-`tools/vf2-stages.mjs` has for VF2's:
+`tools/stages/fv-stages.mjs` gives the plan (`fvStagePlan`), in the shape
+`tools/stages/vf2-stages.mjs` has for VF2's:
 
-    node tools/fv-stages.mjs [--json out.json]   (reads $ROMS_DIR's fvipers.zip)
+    node tools/stages/fv-stages.mjs [--json out.json]   (reads $ROMS_DIR's fvipers.zip)
 
 The figures below are its output. FV's stage code and data are read through
 noclip (`vendor/noclip/js`: `stages.js`, `display.js`, `fvstages.js`,
@@ -118,7 +118,7 @@ set 36. The sets' pages, as sheet/slot (slot as in
 - Set 36 fills sheet 1 slots 12-15.
 
 The arenas' models read only from sheet 0 slots 12-23 and sheet 1 slots
-12-23: 11 to 19 pages an arena (`node tools/fv-stages.mjs` prints the tiles used
+12-23: 11 to 19 pages an arena (`node tools/stages/fv-stages.mjs` prints the tiles used
 a page). UFO Diner reads sheet 0 slots 12-14, and a few tiles on Bay Side and
 City Hall Elevator sit on sheet 1 slots 12-15 (set 36's). An earlier
 `modelNeeds` read past a model's last face and counted tiles on sheet 1 slots
@@ -333,7 +333,7 @@ The board has StF's camera and fight but no round-end or replay modes
   in `cage_display`; the kind multipliers in 0x264E4 and 0x26840; camera mode
   0x1A, then the replay shots once the board has a replay.
 - The piece models (0xA85-0xAAA, 0x14F4-0x14F6, 0x1523) are not in the
-  arena lists; `tools/fv-stages.mjs` adds them to each stage's models
+  arena lists; `tools/stages/fv-stages.mjs` adds them to each stage's models
   (`CAGE_PIECES`).
 - StF's motions have no finish kinds; StF's fighters on an FV arena need
   kind-3 moves picked for them.

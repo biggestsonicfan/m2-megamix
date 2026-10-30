@@ -8,12 +8,12 @@ places:
   first nine keep their numbers, so Ryo is now `?p1=11` and Chai `?p1=12`.
   `tests/bout.test.mjs` fought all 169 pairings then (121 without Ryo and Chai); with every record in (#1639) it fights each pair once.
 - **The board** (the StF Model 2B build, docs/BOARD.md). An FV fighter
-  could be a guest there as Akira is (`tools/vf2-guest.mjs`) and Ryo is
-  (`tools/ryo-guest.mjs`). This file records what that needs and what is
-  left to hold it. `tools/fv-guest-survey.mjs` measures it from the ROMs
+  could be a guest there as Akira is (`tools/guests/vf2-guest.mjs`) and Ryo is
+  (`tools/guests/ryo-guest.mjs`). This file records what that needs and what is
+  left to hold it. `tools/survey/fv-guest-survey.mjs` measures it from the ROMs
   and changes nothing:
 
-      node tools/fv-guest-survey.mjs [--json]
+      node tools/survey/fv-guest-survey.mjs [--json]
 
 Mahler (pin #1613) has a file of his own, docs/FV-MAHLER.md: what he needs
 beyond the three (`--char 8`).
@@ -99,7 +99,7 @@ plenty.
 
 ## Per fighter
 
-`node tools/fv-guest-survey.mjs`. "Core" models are what StF's code would
+`node tools/survey/fv-guest-survey.mjs`. "Core" models are what StF's code would
 draw: both records' parts, the midriff, the hands and the heads. "Armour"
 models are the rest.
 
@@ -123,7 +123,7 @@ Two sets of limits matter here. "StF's ROMs" is the room in StF's own ROM
 files and in texture RAM as StF lays it out. "Model 2B" is the room the
 hardware gives, as large as any Model 2B game in MAME's driver fills it.
 The board build is our own program, so it doesn't have to stop at StF's
-fill. `tools/model2-rom-limits.py` reads the ROM regions from the fork's
+fill. `tools/survey/model2-rom-limits.py` reads the ROM regions from the fork's
 `src/mame/sega/model2.cpp`; `--all` covers 2O, 2A and 2C too:
 
 | Region | StF fills | Model 2B fills | Largest | What it holds here |
@@ -147,10 +147,10 @@ Two more limits aren't ROM sizes:
   share, instead of all of set 1 is a loader change. It doesn't need more
   RAM.
 - **Motion ids are 13 bits** (MOTION_ID 0x1FFF), so 8192 of them. The
-  guest lists hold 2048 because `tools/lift-stf.py` GUESTS gives
+  guest lists hold 2048 because `tools/board/lift-stf.py` GUESTS gives
   `offset_list_motions` and `animation_related` 0x2000 bytes each.
 
-What Akira and Ryo leave in each case (`node tools/fv-guest-survey.mjs`):
+What Akira and Ryo leave in each case (`node tools/survey/fv-guest-survey.mjs`):
 
 | What | Room, StF's ROMs | Room, Model 2B | All three FV (core) |
 |--|--|--|--|

@@ -9,7 +9,7 @@
 # Each battle goes to <outdir>/<game>-<p1>-<p2>-s<stage>/trace.txt (with
 # mame.out); one already there and finished is kept. A jobs file has lines
 # "<game> <p1> <p2> <stage>"; without one, the list above. Then:
-#   node tools/grade-roster.mjs <outdir>
+#   node tools/grade/grade-roster.mjs <outdir>
 #
 # MAME is $MAME (default the shared build), the sets are in $ROMS_DIR.
 set -u

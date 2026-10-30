@@ -4,7 +4,7 @@ Hornet is Daytona USA's car as a Fighters Megamix fighter. The plan for
 Megamix is to use Daytona's own Model 2 car with FM's moves. This page covers
 where FM keeps a fighter's data, how its motions are laid out and how they map
 onto Virtua Fighter 2's, so that FM's motions (Hornet's to start with) can be
-played as VF2 motions on Megamix's board. `tools/fm-saturn.mjs` reads the disc
+played as VF2 motions on Megamix's board. `tools/sources/fm-saturn.mjs` reads the disc
 and does the conversion.
 
 The disc is the prototype of Apr 08, 1997:
@@ -134,7 +134,7 @@ reads them.
 The player's car in `daytona` (Revision A). Sega Racing Classic's symbols
 (rokuYAMP's `docs/d1a-daytona-symbols.md`) name the routines; their
 addresses are a later build's, so the ones here were read off rev A's code.
-`tools/daytona-hornet.mjs` finds the car by the instructions below (and fails
+`tools/sources/daytona-hornet.mjs` finds the car by the instructions below (and fails
 on another build), prints it, and writes it cut in two as an OBJ.
 
 - **Set-up** (0xD12C): car +0x14, +0x84 and +0x258 come out of a table at
@@ -192,8 +192,8 @@ Daytona's car, the pivot the nose turns about. Axes: FM x = Daytona +z
 (rearward), FM y = −y.
 
 ```
-node tools/daytona-hornet.mjs                     # the car's models and the split
-node tools/daytona-hornet.mjs --obj hornet.obj    # nose, cabin and four tires, placed
+node tools/sources/daytona-hornet.mjs                     # the car's models and the split
+node tools/sources/daytona-hornet.mjs --obj hornet.obj    # nose, cabin and four tires, placed
 ```
 
 `tests/daytona-hornet.test.mjs` checks the models, the hubs, the cut, and
@@ -270,7 +270,7 @@ FM's left on Daytona's car is taken as −x in noclip's decode. The car is
 symmetric, so this only picks 805 or 806 for a slot.
 
 ```
-node tools/fm-saturn.mjs hornet --pose 10a     # each slot in the cabin's frame
+node tools/sources/fm-saturn.mjs hornet --pose 10a     # each slot in the cabin's frame
 ```
 
 ### The objects
@@ -281,7 +281,7 @@ poses FM's Hornet then puts Daytona's pieces where FM puts its own. They are
 not imported into the board's data ROMs yet.
 
 ```
-node tools/daytona-hornet.mjs --objects DIR    # DIR/<slot>-<piece>.mesh, .uv, .th, objects.json
+node tools/sources/daytona-hornet.mjs --objects DIR    # DIR/<slot>-<piece>.mesh, .uv, .th, objects.json
 ```
 
 | Slot | Piece | Daytona model | Polygons |
@@ -1681,15 +1681,15 @@ and the kind 9 bit table name is a row of it.
 ## The tool
 
 ```
-node tools/fm-saturn.mjs --fighters
-node tools/fm-saturn.mjs hornet --list          # id, frames, data and setup offsets
-node tools/fm-saturn.mjs hornet --bones
-node tools/fm-saturn.mjs hornet --actions        # slot, motion, frames, bank
-node tools/fm-saturn.mjs hornet --moves         # at, move, motion, frames, bank
-node tools/fm-saturn.mjs hornet --pose 10a 1    # the car pose, in the cabin's frame
-node tools/fm-saturn.mjs hornet 0x11c --out stance.bin
-node tools/fm-saturn.mjs hornet 0x11c --json
-node tools/fm-saturn.mjs --file 134 --out 134.bin
+node tools/sources/fm-saturn.mjs --fighters
+node tools/sources/fm-saturn.mjs hornet --list          # id, frames, data and setup offsets
+node tools/sources/fm-saturn.mjs hornet --bones
+node tools/sources/fm-saturn.mjs hornet --actions        # slot, motion, frames, bank
+node tools/sources/fm-saturn.mjs hornet --moves         # at, move, motion, frames, bank
+node tools/sources/fm-saturn.mjs hornet --pose 10a 1    # the car pose, in the cabin's frame
+node tools/sources/fm-saturn.mjs hornet 0x11c --out stance.bin
+node tools/sources/fm-saturn.mjs hornet 0x11c --json
+node tools/sources/fm-saturn.mjs --file 134 --out 134.bin
 ```
 
 `--disc` reads another `Track01.bin`. `--out` writes a VF2 motion block
@@ -1702,7 +1702,7 @@ that every motion's keys come out of its VF2 block unchanged, and FM Akira's
 
 - **Hornet on the board** (docs/BOARD.md, The guest: Daytona's Hornet)
   plays Akira's motions. Next is FM's motions, converted to VF2
-  (`tools/fm-saturn.mjs`), as his own. A broken nose and cabin, if Daytona's
+  (`tools/sources/fm-saturn.mjs`), as his own. A broken nose and cabin, if Daytona's
   car is to break, would need meshes of their own; the windows' reflection
   doesn't move (`move_car_sky_tex` not ported).
 - **FM's pose rig and model scale**: which rig FM's solve uses (VF2 has one

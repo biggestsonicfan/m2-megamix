@@ -15,8 +15,8 @@ The owner asked for FV's Mahler (pin #1613). As with Honey, Tokio and Bahn
   tables", "The formats against StF's", "Room", "What importing one
   takes") applies to him unchanged. Its survey covers him now:
 
-      node tools/fv-guest-survey.mjs --char 8          # Mahler alone
-      node tools/fv-guest-survey.mjs --char 2,3,4,8,9  # with the trio and B.M.
+      node tools/survey/fv-guest-survey.mjs --char 8          # Mahler alone
+      node tools/survey/fv-guest-survey.mjs --char 2,3,4,8,9  # with the trio and B.M.
 
   `--char` takes FV character numbers. With no `--char` it surveys the
   trio as before.

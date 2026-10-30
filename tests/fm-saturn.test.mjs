@@ -1,10 +1,10 @@
-/* Fighters Megamix's motions (tools/fm-saturn.mjs): every fighter's decode
+/* Fighters Megamix's motions (tools/sources/fm-saturn.mjs): every fighter's decode
  * and come out of VF2's block the same at their keys; FM's Akira plays as
  * VF2's own Akira past the first key. Skipped without the FM disc. */
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
-import * as FM from '../tools/fm-saturn.mjs';
-import { encodeVF2 } from '../tools/shenmue-motion.mjs';
+import * as FM from '../tools/sources/fm-saturn.mjs';
+import { encodeVF2 } from '../tools/sources/shenmue-motion.mjs';
 import * as M from '../vendor/noclip/js/motion.js';
 import { loadNodeGames } from './node-roms.mjs';
 

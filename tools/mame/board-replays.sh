@@ -47,7 +47,7 @@ one() {
   run "$D/src" "$DRV" "$ROMS_DIR" BT_GAME="$G" BT_P1="$A" BT_P2="$B" BT_STAGE="$S" BT_RECORD="$D/src/replay.txt"
   run "$D/board" sfight "$REPO/board/roms;$ROMS_DIR" BT_GAME=board BT_MENU="$MENU" \
     BT_MAP="$BUILD/game.map" BT_REPLAY="$D/src/replay.txt"
-  node "$REPO/tools/grade-battle.mjs" "$D/src/trace.txt" "$D/board/trace.txt" > "$D/grade.txt" 2>&1
+  node "$REPO/tools/grade/grade-battle.mjs" "$D/src/trace.txt" "$D/board/trace.txt" > "$D/grade.txt" 2>&1
   echo "$NAME: $(grep -m1 "^scores" "$D/grade.txt" || tail -n1 "$D/grade.txt")"
 }
 

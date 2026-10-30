@@ -517,7 +517,7 @@ export function matchPress(entries, btn, hist, dist, { ctx = 0, en = 0 } = {}) {
  * and, where they are not the VF2/StF ones:
  *   motion(id)         its own motion by id (else motionOf(rom, id))
  *   size               its height to Akira's, for its reach and its body (1)
- * A game that brings its own fighters (Shenmue's Ryo, js/ryo.js) names its
+ * A game that brings its own fighters (Shenmue's Ryo, js/shenmue/ryo.js) names its
  * maker as game.makeFighter.
  */
 export function makeFighter(games, entry) {

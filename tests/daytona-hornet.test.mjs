@@ -1,10 +1,10 @@
-/* Daytona USA's Hornet (tools/daytona-hornet.mjs): the player's car where the
+/* Daytona USA's Hornet (tools/sources/daytona-hornet.mjs): the player's car where the
  * program draws it from, cut where FM's Hornet is cut. Skipped without
  * daytona.zip; FM's half skipped without the FM disc. */
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import * as D from '../tools/daytona-hornet.mjs';
-import * as FM from '../tools/fm-saturn.mjs';
+import * as D from '../tools/sources/daytona-hornet.mjs';
+import * as FM from '../tools/sources/fm-saturn.mjs';
 import { decodeModel } from '../vendor/noclip/js/model.js';
 import { loadRomSet } from '../vendor/noclip/js/romset.js';
 import { readFighters } from '../vendor/noclip/js/vf2fighters.js';

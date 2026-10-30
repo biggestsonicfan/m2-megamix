@@ -4,7 +4,7 @@ Ryo is the roster's tenth fighter, from Shenmue. Like the rest of the cast,
 everything about him is read off the original data when the page loads: the
 Shenmue beta's GD-ROM (0.400, disc 3). `tools/serve.py` serves four files
 off it, at `/shenmue/<path>`. It reads the disc image through
-`tools/shenmue-fight.py cat`. Without the disc, the roster is the eleven
+`tools/sources/shenmue-fight.py cat`. Without the disc, the roster is the eleven
 Model 2 fighters.
 
 | file | what |
@@ -14,7 +14,7 @@ Model 2 fighters.
 | `MISC/MOTION.BIN` | his motions, and each one's record (timing, damage) |
 | `SCENE/03/MFBT/EN_RYOU.BIN` | the free battle's move script |
 
-`js/shenmue.js` holds the readers. `js/ryo.js` turns them into a fighter
+`js/shenmue/shenmue.js` holds the readers. `js/shenmue/ryo.js` turns them into a fighter
 (Chai's too, `docs/CHAI.md`)
 with the same interface as `js/fighters.js`; `games.shenmue.makeFighter`
 builds him.

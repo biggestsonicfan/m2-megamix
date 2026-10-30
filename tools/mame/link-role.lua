@@ -1,5 +1,5 @@
 -- A board build's cabinet role for the comm-board link, as the setup's LINK
--- keeps it (board/src/link.c link_save: 0x01D03FF0 "MMX1", the role, its
+-- keeps it (board/src/link/link.c link_save: 0x01D03FF0 "MMX1", the role, its
 -- complement), written over the first frames, before the boot's watchdog
 -- reads it. LINK_ROLE: 0 off, 1 1P's cabinet (the master), 2 2P's.
 local role = tonumber(os.getenv("LINK_ROLE") or "0")

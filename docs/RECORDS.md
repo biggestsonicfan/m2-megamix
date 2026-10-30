@@ -14,7 +14,7 @@ set beside what each fighter or stage does. This file is that comparison.
   program, data and polygon ROM that StF's sizes do not have
   (docs/FV-GUESTS.md). Nothing here changes it.
 
-`node tools/record-survey.mjs` prints the tables below from `$ROMS_DIR`'s
+`node tools/survey/record-survey.mjs` prints the tables below from `$ROMS_DIR`'s
 zips (`--json out.json` for the values). Every field whose meaning is not
 known is printed for every record, by value: a value only one fighter or
 one stage has is a lead. The names come from the code that reads the field.
@@ -628,5 +628,5 @@ the three with their own +0x2C and +0x38, are where to start.
 
 When a fighter or stage does something only it does, look up its row: a
 value only it has is where to start. Then name the field in
-`tools/record-survey.mjs` (the `STF_CHAR`, `VF2_CHAR`, `FV_CHAR` lists and
+`tools/survey/record-survey.mjs` (the `STF_CHAR`, `VF2_CHAR`, `FV_CHAR` lists and
 the `*_FLAGS` maps), and it leaves the unknown columns.

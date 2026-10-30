@@ -7,7 +7,7 @@ import { loadGames } from '../js/games.js';
 
 const ROMS = process.env.ROMS_DIR || `${process.env.HOME}/build/mameroms`;
 export const SHENMUE_DIR = process.env.SHENMUE_DIR || `${process.env.HOME}/source/repos/ai/SHENMUE 1 BETA 0.400 DISC 3 PERFECT DUMP`;
-const TOOL = fileURLToPath(new URL('../tools/shenmue-fight.py', import.meta.url));
+const TOOL = fileURLToPath(new URL('../tools/sources/shenmue-fight.py', import.meta.url));
 
 export function shenmueFile(path) {
     if (!existsSync(SHENMUE_DIR)) return null;
