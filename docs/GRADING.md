@@ -131,6 +131,47 @@ fork's build, Sonic vs Sonic and Sonic vs Honey on Aurora stopped the
 geometrizer (board frames 501 and 1093, "geo_adsp: compute: invalid
 single-function operation 03"; below).
 
+### The stf lineup
+
+The stf lineup's build (docs/BOARD.md, Lineups), graded the same way
+(`LINEUP=stf tools/mame/board-replays.sh`): each of Amy, Fang, Bark, Espio
+and Bean (1P) against Sonic, Honey and Eggman and the other four, on South
+Island, and the mirrors and each against Eggman on Aurora. The default
+lineup's 22 fights, run again on the same source, are still 100 A.
+
+| 1P, 2P | Sonic | Honey | Eggman | Amy | Fang | Bark | Espio | Bean |
+|--------|-------|-------|--------|-----|------|------|-------|------|
+| **South Island** | | | | | | | | |
+| Amy    | 100 A | 100 A | 100 A | 100 A | 100 A | 100 A | 100 A | 100 A |
+| Fang   | 100 A | 100 A | 100 A |       | 100 A | 91 A  | 100 A | 100 A |
+| Bark   | 100 A | 80 B  | 100 A |       |       | 100 A | 62 C  | 100 A |
+| Espio  | 100 A | 100 A | 100 A |       |       |       | 100 A | 100 A |
+| Bean   | 100 A | 100 A | 100 A |       |       |       |       | 100 A |
+| **Aurora** | | | | | | | | |
+| Amy    |       |       | 100 A | 100 A |  |      |       |      |
+| Fang   |       |       | 100 A |       | 100 A |     |       |      |
+| Bark   |       |       | 100 A |       |       | 100 A |      |      |
+| Espio  |       |       | 100 A |       |       |       | 100 A |     |
+| Bean   |       |       | 100 A |       |       |       |       | 100 A |
+
+What is left is the megamix's own, not the lift's:
+
+- **Bark vs Espio (62) and Bark vs Honey (80): the armour break.** Every
+  fighter wears FV's armour on the board (200 and 75 for a non-FV
+  fighter), and a StF strike of 30 or more breaks it
+  (tools/lift-stf.py `ARMOUR_BREAK`). Bark's double kick (motion 158,
+  35) does. The board then plays FV's armour-break replay (sub_mode 22),
+  and the clock goes back with it: Bark vs Espio's round 2 runs to 1240,
+  then 1318 again for the replay, and the fight goes on from there. StF has
+  no armour, so it fights on. The grader takes the fight after the replay
+  for a third round. Up to the break both are in step.
+- **Fang vs Bark (91): Fang's intro.** StF's round 1 starts with each
+  fighter's intro, and Fang's leaves him at (-1.410, -1.410), not
+  (-1.414, -1.414) (round 2 has none). The board plays no intros. It is
+  one frame of Bark's kick landing later (frame 182) in this pairing only.
+
+Bean's five fights went from 72..96 to 100 (below, the jump's setup).
+
 ### Aurora: the geometrizer's frame runs over
 
 On Aurora Icefield the board's display list takes the geometrizer (MAME's
@@ -859,10 +900,25 @@ F to 37 F):
   on frame 44 (|v| 0.00138 under r5), VF2 on 45: rob+0x5D4 differs on 45
   (VF2 2.5, the board 0.5; ratio 0.4286) and on 55..60 (VF2 0.5, the
   board 0; 0.6667), as before, from the knockback, not this formula.
+- **The jump's setup (Bean, #1921).** Out of a roll (378, 279), Bean's
+  ta_kick (240) crept 0.003 a frame toward Eggman in StF and stood on the
+  board. 240 runs `ACT_RC_JUMP`, which steps by the setup op 9's vector
+  (rob+0x830/0x834) over its frames (rob+0x5BE), but 240's setup has no
+  op 9. It steps by the last one's, and `set_mot_dat` clears none of it
+  (the block rob+0x818..0x83F that setup ops 5, 9 and 0xA write; +0x5BC,
+  +0x5CC). StF had z 1.0 over 30 frames there, left by its attract demo's
+  fight. The board zeroed its robs every round. Two changes:
+  - battle.lua zeroes those fields in StF's robs at the picks. A real
+    cabinet has run its attract demo, so what is left there is chance,
+    and the board starts zeroed. That took Bean's round 1s to 100.
+  - The board keeps them from round to round (fighter.c `setup_keep`),
+    as StF's round start does. That took the round 2s to 100.
 
 Left as they are:
 
-- Honey's intro pose: StF's motion 15, the board's 507.
+- Honey's intro pose: StF's motion 15, the board's 507. Fang's intro
+  leaves him 0.004 nearer the middle (above, The stf lineup).
+- The armour break's replay, on any fighter's 30-damage strike (above).
 - The board's rounds end 4 or 5 frames before StF's (the winner and the
   energy left are the same).
 - Sonic vs Sonic and Sonic vs Honey on Aurora stop MAME, always on the

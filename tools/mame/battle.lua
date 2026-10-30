@@ -227,6 +227,21 @@ if GAME == "stf" then
   tap(900, "Coin 1", 8); tap(940, "Coin 1", 8)
   tap(1100, "1 Player Start", 6); tap(1160, "2 Players Start", 6)
   tap(1300, "P1 Punch", 4); tap(1320, "P2 Punch", 4)
+  -- What the motion setups' ops 5, 9 and 0xA write (rob+0x818..0x83F, the
+  -- jump's frames at +0x5BE and its fall at +0x5CC; set_mot_dat clears
+  -- only part of it) still holds the attract demo's fight, and a jump
+  -- whose setup has no op 9 (Bean's ta_kick out of a roll, motion 240)
+  -- steps by the last one's (ACT_RC_JUMP). The board starts its fighters
+  -- zeroed, so this does too.
+  at(1320, function()
+    for _, p in ipairs({ 0x500804, 0x500808 }) do
+      local r = sp:read_u32(p)
+      if r ~= 0 then
+        for a = 0x818, 0x83C, 4 do sp:write_u32(r + a, 0) end
+        sp:write_u32(r + 0x5BC, 0); sp:write_u32(r + 0x5CC, 0)
+      end
+    end
+  end)
   if STAGE >= 0 then
     _G.BT_STAGE_TAP = sp:install_write_tap(0x500064, 0x500067, "bt_stage", function(o, d, mk)
       if (mk & 0xFF) == 0 then return nil end
