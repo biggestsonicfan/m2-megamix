@@ -1,6 +1,4 @@
-board/src/poses.h
-board/src/stf_motion.s
-board/src/stf_motion.h
-board/src/stf_rom_80000.bin
+board/src/gen/*
+!board/src/gen/README.md
 board/roms/
 board/moves-out/

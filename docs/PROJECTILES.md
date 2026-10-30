@@ -4,7 +4,7 @@ Eggman's bomb is a projectile: an object of its own that flies, lands and
 explodes, apart from his body's collision balls. The board build runs StF's
 own fight code, so the projectile can come from StF's code too. This note
 traces the code from stfdisasm (addresses are StF's), lists Eggman's data
-(`tools/stf-projectiles.mjs` reads it from `sfight.zip`), says what damage a
+(`tools/survey/stf-projectiles.mjs` reads it from `sfight.zip`), says what damage a
 bomb does and when a guard stops it, and lists what the board needs to run it.
 Eggman's bomb runs on the board (#1601): StF's step loop and the bomb's
 steps are lifted, the board (`effects.c`) runs them each frame and draws the bomb, its
@@ -58,7 +58,7 @@ hits a fighter that rob+0x70C bit 25 would spare, bit 20 any guard stops it
 
 ## Eggman's bomb
 
-`node tools/stf-projectiles.mjs` lists every motion. Eggman (character 8)
+`node tools/survey/stf-projectiles.mjs` lists every motion. Eggman (character 8)
 throws type 2, `bean_bomb_roll`:
 
 | motion | command | bombs (flight frames, aim) | level | damage | stun |
@@ -114,7 +114,7 @@ docs/BOARD.md, `sub_2C7E4`.
 
 ## What the board does
 
-`tools/lift-stf.py` lifts it all with no new RAM (`stf_rom_80000.bin`
+`tools/board/lift-stf.py` lifts it all with no new RAM (`stf_rom_80000.bin`
 unchanged):
 
 - STUBS: drop `call_projectile_routine`.
@@ -146,7 +146,7 @@ On the board (`fighter.c` and `effects.c`):
      (+0xCA, +0xC8 or +0x72, +0x70), stretched along z to its length (+0xC4
      or +0xB4); and the tip, 955, at its end (not while +0xC is 1).
    - `tdl_laser` (10, Metal Sonic's) is not drawn; no lineup has him.
-4. `tools/import-assets.mjs` keeps the models of the types the lineup's
+4. `tools/board/import-assets.mjs` keeps the models of the types the lineup's
    fighters throw (THROWS: Eggman 2; Bean 2, 8; Fang 1, 4, 14; Amy 12, 13,
    16, 17 and `amy_drop_item_list`'s 11 things; Espio 11, 15 and models 954,
    955), from both lists' records, and the marker lists: for the default

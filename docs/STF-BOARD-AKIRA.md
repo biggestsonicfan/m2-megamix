@@ -333,7 +333,7 @@ the seven pages".
 
 ## Akira packed into the seven pages
 
-`node tools/pack-akira.mjs` builds this and checks it in memory (`--out DIR`
+`node tools/guests/pack-akira.mjs` builds this and checks it in memory (`--out DIR`
 writes the two patch blobs). No ROM file was changed. No StF page, page-list
 entry, model or material record is touched: the only bytes that change are
 in two runs of 0xFF.
@@ -395,7 +395,7 @@ what the boot upload put there. So the edit can't apply to fights only.
 It also changes the seven slots on the attract and select screens; see
 "Attract and select with the seven pages" below.
 
-The edit (made by `tools/pack-akira.mjs`, in memory; `--out` writes the bytes):
+The edit (made by `tools/guests/pack-akira.mjs`, in memory; `--out` writes the bytes):
 
 | where | old | new |
 |--|--|--|

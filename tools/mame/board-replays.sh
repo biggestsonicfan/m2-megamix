@@ -17,7 +17,7 @@
 #
 # MAME is $MAME (default the shared build), the sets are in $ROMS_DIR; the
 # board's ROMs are $BOARD_ROMS (default this checkout's board/roms; another
-# lineup's, tools/lineup.mjs, are its own; LINEUP=stf picks that lineup's
+# lineup's, tools/board/lineup.mjs, are its own; LINEUP=stf picks that lineup's
 # job list).
 set -u
 OUT=${1:?usage: board-replays.sh <outdir> <build dir> [jobs file]}
@@ -51,14 +51,14 @@ one() {
   run "$D/src" "$DRV" "$ROMS_DIR" BT_GAME="$G" BT_P1="$A" BT_P2="$B" BT_STAGE="$S" BT_RECORD="$D/src/replay.txt"
   run "$D/board" sfight "$BOARD_ROMS;$ROMS_DIR" BT_GAME=board BT_MENU="$MENU" \
     BT_MAP="$BUILD/game.map" BT_REPLAY="$D/src/replay.txt"
-  node "$REPO/tools/grade-battle.mjs" "$D/src/trace.txt" "$D/board/trace.txt" > "$D/grade.txt" 2>&1
+  node "$REPO/tools/grade/grade-battle.mjs" "$D/src/trace.txt" "$D/board/trace.txt" > "$D/grade.txt" 2>&1
   echo "$NAME: $(grep -m1 "^scores" "$D/grade.txt" || tail -n1 "$D/grade.txt")"
 }
 
 jobs() {
   if [ -n "$JOBS" ]; then cat "$JOBS"; return; fi
   if [ "${LINEUP:-megamix}" = stf ]; then
-    # The stf lineup (tools/lineup.mjs): StF's Sonic 0, Honey 15, Eggman 8,
+    # The stf lineup (tools/board/lineup.mjs): StF's Sonic 0, Honey 15, Eggman 8,
     # Amy 2, Fang 4, Bark 5, Espio 7, Bean 10 (the menu's 0, 1, 2, 5..9).
     # On South Island, every pairing with one of the five the default
     # lineup lacks, and their mirrors; on Aurora Icefield, the mirrors and

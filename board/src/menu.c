@@ -37,7 +37,7 @@ u16 menu_val[M_ITEMS] = { 0, 30, 2, 0, 0, 1, 140, 5, LINK_OFF };
 const char *const link_name[3] = { "OFF", "1P", "2P" };
 /* the status line, by link.state */
 const char *const link_state_name[6] = { "", "NO_COMM_BOARD", "COMM_STARTING", "NO_OTHER_CABINET", "LINKING", "LINKED" };
-/* fighter_name and fighter_from, the lineup's (tools/lineup.mjs), are in
+/* fighter_name and fighter_from, the lineup's (tools/board/lineup.mjs), are in
  * poses.h: the game a fighter's name line shows where it is not the one its
  * code runs as (Ryo and Chai, Shenmue's, and Hornet, Daytona USA's car, as
  * Fighters Megamix had him, run as VF2's Akira does) */

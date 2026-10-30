@@ -13,7 +13,7 @@ them the roster goes without him.
 | `SCENE/03/MEND/M_FGT4.BIN` | his own motion bank: ids 0x800 to 0x848 (`CHA_CHA_*`, and the `AKI_AKI_NGR_*` his throws' victims play) |
 | `SCENE/03/MEND/EN_CHAI2.BIN` | his move script |
 
-`js/chai.js` holds his spec, and `js/ryo.js` makes either of them a fighter
+`js/shenmue/chai.js` holds his spec, and `js/shenmue/ryo.js` makes either of them a fighter
 (`shenmueFighter`). A motion id at the bank's base (0x800, in its header at
 +0x14) or above is his bank's, at id − base. Anything lower comes from
 `MISC/MOTION.BIN`, which Ryo's motions also come from. The records are
@@ -23,7 +23,7 @@ laid out as Ryo's are.
 
 `CHA_B` has the same 15 bones as Ryo's `YKB_B`, so he is posed and skinned
 as Ryo is. Its textures are the fight afterimage's: ARGB4444 at alpha 4 of
-15 all over. `js/shenmue.js` reads a 4444 texture with no texel half opaque
+15 all over. `js/shenmue/shenmue.js` reads a 4444 texture with no texel half opaque
 as solid, otherwise the alpha test would cut him out entirely.
 
 ## Size
@@ -65,6 +65,6 @@ His stance, walks, dashes and guards are his own (0x800, 0x801, 0x83B,
 
 - On the board (docs/BOARD.md, The guest: Shenmue's Chai) he is StF
   character 12 with CHA_B. His standing P, K, P+K and P+G moves are this
-  moveset (tools/shenmue-moves.mjs, #1612); the rest of his moveset is a
+  moveset (tools/guests/shenmue-moves.mjs, #1612); the rest of his moveset is a
   copy of Akira's, as Ryo's is.
 - The state-gated moves are left out (Tenshin and the rest above).

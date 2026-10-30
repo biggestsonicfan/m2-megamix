@@ -10,8 +10,8 @@ import { loadRomSet } from '../vendor/noclip/js/romset.js';
 import { readStageTable } from '../vendor/noclip/js/stages.js';
 import { readVf2Stages } from '../vendor/noclip/js/vf2.js';
 import { prepareGame } from './fighters.js';
-import { loadShenmue, shenmueFighter, RYO as RYO_SPEC } from './ryo.js';
-import { CHAI as CHAI_SPEC } from './chai.js';
+import { loadShenmue, shenmueFighter, RYO as RYO_SPEC } from './shenmue/ryo.js';
+import { CHAI as CHAI_SPEC } from './shenmue/chai.js';
 
 export const GAMES = [
     { key: 'vf2', zip: 'vf2', title: 'Virtua Fighter 2', kind: 'vf2' },
@@ -54,7 +54,7 @@ export const ROSTER = [
     ...[1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 16].map((index) => ({ game: 'stf', index, name: STF_NAMES[index] })),
 ];
 
-/* Ryo and Chai, from the Shenmue beta's disc, when it can be had (js/ryo.js, js/chai.js). */
+/* Ryo and Chai, from the Shenmue beta's disc, when it can be had (js/shenmue/ryo.js, js/shenmue/chai.js). */
 export const RYO = { game: 'shenmue', index: 0, name: 'RYO' };
 export const CHAI = { game: 'shenmue', index: 1, name: 'CHAI' };
 

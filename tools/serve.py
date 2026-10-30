@@ -4,9 +4,9 @@
 The repo is served as it is, and /roms/<set>.zip is read in place from
 $ROMS_DIR (default ~/build/mameroms) for the three sets the game loads;
 nothing else under /roms is served. /shenmue/<path> is one of the eight
-files Ryo and Chai are read from (js/ryo.js, js/chai.js), read off the Shenmue beta's
+files Ryo and Chai are read from (js/shenmue/ryo.js, js/shenmue/chai.js), read off the Shenmue beta's
 GD-ROM in $SHENMUE_DIR (default ~/source/repos/ai/SHENMUE 1 BETA 0.400 DISC
-3 PERFECT DUMP) by tools/shenmue-fight.py; without the disc it is a 404 and
+3 PERFECT DUMP) by tools/sources/shenmue-fight.py; without the disc it is a 404 and
 the roster goes without them. The port is the first argument, or a free one;
 the URL is printed. --open also opens it in a Chrome window of its own, with
 software WebGL, and stops serving when that window closes; when the port is
@@ -28,7 +28,7 @@ ROMS = os.environ.get('ROMS_DIR') or os.path.expanduser('~/build/mameroms')
 SETS = {'vf2.zip', 'fvipers.zip', 'sfight.zip'}
 SHENMUE = os.environ.get('SHENMUE_DIR') or os.path.expanduser('~/source/repos/ai/SHENMUE 1 BETA 0.400 DISC 3 PERFECT DUMP')
 SHENMUE_FILES = {'MISC/MODELS.PKS', 'MISC/MODELS.PKF', 'MISC/MOTION.BIN', 'SCENE/03/MFBT/EN_RYOU.BIN',
-                 # Chai's (js/chai.js): the ending's fight
+                 # Chai's (js/shenmue/chai.js): the ending's fight
                  'SCENE/03/MEND/MODELS.PKS', 'SCENE/03/MEND/MODELS.PKF', 'SCENE/03/MEND/M_FGT4.BIN', 'SCENE/03/MEND/EN_CHAI2.BIN'}
 
 

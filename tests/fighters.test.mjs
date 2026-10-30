@@ -72,7 +72,7 @@ function f0(f) {
 /* Ryo (with the Shenmue disc): 5'9" to Akira's 5'11", and his throw on Akira. */
 const ryo = fighters.find((f) => f.name === 'RYO');
 if (ryo) {
-    const { ryoFit, SIZE } = await import('../js/ryo.js');
+    const { ryoFit, SIZE } = await import('../js/shenmue/ryo.js');
     const fit = ryoFit(games);
     assert.ok(Math.abs(fit.ryo / fit.akira - 69 / 71) < 0.002, `Ryo's height ${fit.ryo} to Akira's ${fit.akira}`);
     assert.equal(ryo.size, SIZE);
@@ -87,7 +87,7 @@ if (ryo) {
  * to Ryo's, his throws and strikes his. */
 const chai = fighters.find((f) => f.name === 'CHAI');
 if (chai) {
-    const { shenmueFit, SIZE, restHeight } = await import('../js/ryo.js');
+    const { shenmueFit, SIZE, restHeight } = await import('../js/shenmue/ryo.js');
     const c = games.shenmue.chars.CHAI;
     const fit = shenmueFit(games, c);
     const want = SIZE * restHeight(c.fullModel) / restHeight(games.shenmue.chars.RYO.model);

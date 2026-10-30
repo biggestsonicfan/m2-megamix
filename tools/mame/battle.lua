@@ -1,6 +1,6 @@
 -- One two-player battle, the same in a source game and on the board build:
 -- set the fight up, play a seeded input script from each round's start, and
--- log both fighters every frame of every round. tools/grade-battle.mjs
+-- log both fighters every frame of every round. tools/grade/grade-battle.mjs
 -- compares two such logs (docs/GRADING.md).
 --
 --   BT_GAME=stf BT_P1=0 BT_P2=15 BT_STAGE=1 BT_SEED=1 BT_OUT=<file> \

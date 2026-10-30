@@ -21,7 +21,7 @@ BT_GAME=stf BT_P1=0 BT_P2=15 BT_STAGE=0 BT_SEED=1 BT_FRAMES=30000 BT_OUT=trace.t
 # the board: the same fight, set on its menu
 BT_GAME=board BT_MENU=30,2,0,0,1,140,5 BT_MAP=<build>/game.map BT_SEED=1 BT_FRAMES=30000 \
   BT_OUT=trace.txt mame sfight -rompath "board/roms;$ROMS_DIR" ...
-node tools/grade-battle.mjs <source>/trace.txt <board>/trace.txt
+node tools/grade/grade-battle.mjs <source>/trace.txt <board>/trace.txt
 ```
 
 Give each run its own directory and its own `-cfg_directory`,
@@ -79,7 +79,7 @@ differently, and Mahler's round 1 then parts on frame 1378, not 1604.
 
 ## What is graded
 
-`tools/grade-battle.mjs`, round by round:
+`tools/grade/grade-battle.mjs`, round by round:
 
 - **sync**: the first frame the fights part (a fighter's motion differs,
   or his place by more than 0.05), as a share of the round. Places are
@@ -159,7 +159,7 @@ What is left is the megamix's own, not the lift's:
 - **Bark vs Espio (62) and Bark vs Honey (80): the armour break.** Every
   fighter wears FV's armour on the board (200 and 75 for a non-FV
   fighter), and a StF strike of 30 or more breaks it
-  (tools/lift-stf.py `ARMOUR_BREAK`). Bark's double kick (motion 158,
+  (tools/board/lift-stf.py `ARMOUR_BREAK`). Bark's double kick (motion 158,
   35) does. The board then plays FV's armour-break replay (sub_mode 22),
   and the clock goes back with it: Bark vs Espio's round 2 runs to 1240,
   then 1318 again for the replay, and the fight goes on from there. StF has
@@ -201,7 +201,7 @@ ring edge comes in), Mahler vs Mahler on Western (FV) 97 A (below; 100 A on main
 with the culls, sync 100).
 
 Mahler from 37 F to 54 D (sync 6, motions 76, hits 59, end 59), by FV's
-own rules for an FV fighter (tools/lift-stf.py):
+own rules for an FV fighter (tools/board/lift-stf.py):
 
 - **The knock-down.** An FV strike knocks down by FV's angle and factor
   table by kind (`fv_hit_kinds`, F 0x291DC) and FV's lift by the strike's
@@ -223,7 +223,7 @@ Then to 97 A (sync 87, motions 100, hits 100, end 100):
 - **The land time.** calc_land_time (F 0x19C7C) under FV's gravity, and
   the landing's margin (0.02 over the floor, F 0x18A4C) × K. 91 A.
 - **The follow-ups.** FV's follow-up tables end in op 0x36 (park the table,
-  try again next frame); tools/fv-moves.mjs keeps that tail. FV's hit sets
+  try again next frame); tools/guests/fv-moves.mjs keeps that tail. FV's hit sets
   no multi-hit flag and halves nothing (StF's loc_2B304; FV's rob+0 bit 16
   is its down). 93 A.
 - **The reactions.** StF's 30 kinds merge some of FV's 22 (FV's 5 and 10
@@ -293,7 +293,7 @@ F to 37 F):
 - **No trade lockout.** StF's `coli_attack_chk` keeps a fighter whose
   strike just landed from being hit back for a while (+0x2AC); VF2 and FV
   have no such lockout, and two guests' jabs trade. It is skipped when
-  both fighters are guests (`loc_2A6B8`, tools/lift-stf.py).
+  both fighters are guests (`loc_2A6B8`, tools/board/lift-stf.py).
 - **The push between bodies.** `coli_recalc_pos` keeps two bodies 0.3
   apart and caps the push at 0.3 a frame, in StF's units; for two guests
   of one game it is in theirs now (`loc_2D7B0`, `loc_2D7E0`): VF2's
@@ -303,7 +303,7 @@ F to 37 F):
   their `nearer_than`/`further_than` distances (ops 0x1A, 0x1B) in their
   own units, against a distance the board measures at their size: Mahler
   took his far jab (FV 672) where FV takes the near one (671). They are
-  scaled now (`reachAt`, tools/vf2-guest.mjs), and his first punch is
+  scaled now (`reachAt`, tools/guests/vf2-guest.mjs), and his first punch is
   FV's, on FV's frame.
 
 - **The guests' push.** The fights parted on the first jab's contact
@@ -312,8 +312,8 @@ F to 37 F):
   0.0834. Between two VF2 guests the board now works it out as VF2's TGP
   does (its function 0x3B, TGP 0x99E, sent by `coli_cont_cop` 0x23524 as
   `0x1D803B3B` + kind, P1's and P2's g3 masks, 0xB4 and 0xB8):
-  `vf2_push` (board/src/push.c), called from StF's `coli_cont_cop` in place
-  of the g4 read back (`coli_cont_cop_g4`, tools/lift-stf.py).
+  `vf2_push` (board/src/fight/push.c), called from StF's `coli_cont_cop` in place
+  of the g4 read back (`coli_cont_cop_g4`, tools/board/lift-stf.py).
   - The TGP holds 30 balls per fighter, k = 0..29. Ball k has i960 ball
     k's radius (TGP program table 0xAD4+30−k, the same as rob+0xD00's)
     but the position of i960 ball SENT[k], the order
@@ -373,7 +373,7 @@ F to 37 F):
   Akira's script in data ROM (record at 0x2014B77: `04 05 00 0c ..`): 12.
   The board's `_uk_read_move_data` (0x155B0) copies b[3] as it is from the
   converted record (0x2E0E560: `04 05 00 08 ..`): 8. The 8 is written when
-  the board is built, not when it runs: `tools/vf2-guest.mjs` `damage()`
+  the board is built, not when it runs: `tools/guests/vf2-guest.mjs` `damage()`
   (`convertSetup`, op 4) makes it max(1, round(b[3] × DAMAGE)), DAMAGE =
   140/200 (StF's energy over VF2's); round(12 × 0.7) = 8 (`guests.json`
   `damage["12"] = 8`). The one byte is both the damage and the knockback's
@@ -382,8 +382,8 @@ F to 37 F):
   is the board's only knockback, for every fighter with no check of the
   game, and VF2's formula (0x2260C..0x2306C) is not on the board.
 - **Frame 41: where a VF2 knockback would sit.** Still open: nothing is
-  ported. The knockback is not hand-written: tools/lift-stf.py lifts StF's
-  `collision` and what it calls into board/src/stf_motion.s (generated, do
+  ported. The knockback is not hand-written: tools/board/lift-stf.py lifts StF's
+  `collision` and what it calls into board/src/gen/stf_motion.s (generated, do
   not edit). `sub_2A7E4` is a 4-line bit-clear; the formula is in the next
   routine, `attack_hit` (stf_motion.s 15656), g7 the attacker, g8 the
   victim. Two labels hold it (stf_motion.s at 6416c9a):
@@ -449,7 +449,7 @@ F to 37 F):
 - **Frame 41: the factor on rob+0x5E0/+0x5E8.** `ld 0(r7)` (`loc_2B850`,
   stf_motion.s 16622) is word 0 of the same 0x28-byte list record whose
   +8 scales s: r7 is set once at `loc_2A954` and not changed before the
-  stores. The list is in the tree, `stf_list_90` (board/src/fighter.c
+  stores. The list is in the tree, `stf_list_90` (board/src/fight/fighter.c
   156, copied to 0x50A800 by `stf_globals`). The index is [0x50FE02], the
   attacker's +0x843, which `_uk_read_move_data` copies from byte 10 of
   the strike record; `convertSetup` op 4 puts VF2's byte 13 there. Akira's
@@ -467,12 +467,12 @@ F to 37 F):
   ported).
 - **Frame 41: the victim's rob+0x0 bit 29 is clear at the hit (source).**
   `rob_init` zeroes the block and writes rob+0x0 = 0x84000080 (1P) or
-  0x84000082 (2P), bit 29 clear (board/src/fighter.c 217, 221). The one
+  0x84000082 (2P), bit 29 clear (board/src/fight/fighter.c 217, 221). The one
   setter is play op 0x20 (`loc_1C748`, stf_motion.s 11058..11061), and
   only when rob+0x84C = 2. +0x84C is written by `rob_init` (0xFF) and by
   `set_mot_dat` from setup head byte 12 (stf_motion.s 9842), and
   `convertSetup` writes byte 12 = 0 for every VF2 Akira setup
-  (tools/vf2-guest.mjs 547). StF's own setups with byte 12 = 2 are
+  (tools/guests/vf2-guest.mjs 547). StF's own setups with byte 12 = 2 are
   motions 215..221; Akira gets none of them: his 52 action slots and
   reaction positions 0..40 are his VF2 ids (vf2-guest.mjs 721, 738), the
   kept tails 41..43 are StF's 0 or 59, and set_motion's remap
@@ -557,7 +557,7 @@ F to 37 F):
   VF2 adds rob+0x5C8/0x5D0 at × 0.5 under [0x500068] bit 20.
 - The rob+0xA0E countdown, read in StF, g4/vf2.dis and the board side by
   side: the board has StF's, VF2 has none. The board's rob_spd_control is
-  StF's lifted (board/src/stf_motion.s 7357), and after rsc_espd_end
+  StF's lifted (board/src/gen/stf_motion.s 7357), and after rsc_espd_end
   (StF 0x180AC) it decrements a non-zero rob+0xA0E; while it stays above
   0 the routine returns (loc_181D4) before gravity, the move of rob+0x18..
   by rob+0x2C..0x34 and rob_check_stage, so the fighter holds still; on
@@ -575,7 +575,7 @@ F to 37 F):
   can be held where VF2 never holds one.
 - StF's × 0.7 gravity, read in StF, g4/vf2.dis and the board side by side:
   the board has StF's, VF2 has none, and on the board it never fires. In
-  the board's rob_spd_control (rsc_gra_calc, board/src/stf_motion.s 7457,
+  the board's rob_spd_control (rsc_gra_calc, board/src/gen/stf_motion.s 7457,
   StF 0x1811C) the gravity [0x50A000] is multiplied by flt_1D290 (0.7)
   when rob+0x1A4 bit 14 is set, before it is taken off rob+0x30; sub_16A4C
   (6159) and calc_land_time (8987) have the same test and multiply.
@@ -595,7 +595,7 @@ F to 37 F):
   StF never does, and the board keeps StF's. The test is the same in all
   three: with rob+0x0 bit 2 clear (grounded) and rob+0x61C 0, it marks the
   fighter out (r6 = 1) when |rob+0x1F4| or |rob+0x1FC| is at or past
-  [0x50A00C] (StF 0x180C8..0x18110, board/src/stf_motion.s 7437..7453,
+  [0x50A00C] (StF 0x180C8..0x18110, board/src/gen/stf_motion.s 7437..7453,
   VF2 0x17A40..0x17A80; StF compares as floats with cmpr/bge, VF2 the
   sign-cleared bits with cmpibge, which agree for these values; the
   [0x50A010] each loads into r4 is dead). Only the branch after it
@@ -620,7 +620,7 @@ F to 37 F):
   gravity 0.00067556 and [0x50A004] 2.0) and 0x295C4. StF's own bytes
   (sfight.zip) keep the load (0x1818C) but no test: the full add follows
   (0x18194..0x181B0), and no StF code sets, clears or tests bit 20 of
-  [0x500068]. The board is StF's (board/src/stf_motion.s 7485..7493, its
+  [0x500068]. The board is StF's (board/src/gen/stf_motion.s 7485..7493, its
   load dead too), its fight RAM starts the word with bit 20 clear
   (fighter.c, 0x8400442C), and nothing on it sets the bit. Outside VF2's
   slow motion the three agree. In it, a VF2 fighter's push (rob+0x5C8/
@@ -634,7 +634,7 @@ F to 37 F):
   where its result goes and how it lands an out fighter differ, and the board
   keeps StF's. StF's own bytes (sfight.zip) check at 0x18214..0x18244, and
   the board's copy is the same instruction for instruction
-  (board/src/stf_motion.s 7517..7529). VF2's check is at 0x17B94..0x17BBC.
+  (board/src/gen/stf_motion.s 7517..7529). VF2's check is at 0x17B94..0x17BBC.
   In all three, g4 = [0x50A010] (the ground outside) and r11 = 1 when
   |x| or |z| is at or past [0x50A00C]; inside, both are 0 (StF compares
   as floats, VF2 the bits; they agree, as before). The differences:
@@ -670,7 +670,7 @@ F to 37 F):
   Read from the code only; the board was not run.
 
   Since then the check goes by the fighter's game (`guest_char_game`;
-  tools/lift-stf.py, INSERT at loc_18214 and loc_18248). FV's (F 0x588C0,
+  tools/board/lift-stf.py, INSERT at loc_18214 and loc_18248). FV's (F 0x588C0,
   rebuilt from `fvipers.zip`) is StF's to the instruction but for two
   tests that branch nowhere (rob+0x7D6 in place of 0x7D2), so StF's and
   FV's fighters keep StF's path. A VF2 fighter now runs VF2's: measured
@@ -782,7 +782,7 @@ F to 37 F):
   rob+0x1A4, stored at loc_129DC) has bit 8, a fighter with rob+0x1A4 bit 8
   gets rob+0x760 = the halfword at [0x500828]+0x1E0 (an angle that moves
   during the round; get_my_info reads it too), + 0x8000 for 2P (rob+4). Its one reader
-  is StF's rob_revise_yang (board/src/stf_motion.s 7186..7192, StF 0x17CBC):
+  is StF's rob_revise_yang (board/src/gen/stf_motion.s 7186..7192, StF 0x17CBC):
   with rob+0x1A4 bit 8 and rob+0x821 == 4 (byte 2 of setup op 4, the
   strike, from _uk_read_move_data) it turns him to rob+0x760 at 0x71C a
   frame. VF2's routine ends at its last store (V 0x180B4, `ret` at
@@ -816,7 +816,7 @@ F to 37 F):
 - rob_spd_control's head (the friction on the fighter's own speed), read in
   g4/vf2.dis and the board side by side: the same code but for two
   instructions, and the friction does not match for a VF2 fighter. VF2's
-  routine (V 0x1791C..0x179D8) and the board's (board/src/stf_motion.s
+  routine (V 0x1791C..0x179D8) and the board's (board/src/gen/stf_motion.s
   7372..7417, StF 0x17F78..) both save rob+0x18.. to 0x50E000, work out
   r5 = [0x50A004] × [0x50A000] × w (rob+0x5D8) × 1/60 (0x3C888888) ×
   (1 + rob+0x5D4) and r6 = r5 × [0x50A008] (the push's k, above), and, unless
@@ -881,7 +881,7 @@ F to 37 F):
   different formula.
   Ported: after the `mulr r13, r14, r5`, a VF2 fighter (guest_char_game of
   rob+0x1B1) takes r5 = [0x50A004] × 0x3BB4D327 (INSERT `rsc_gra_vf2`
-  in tools/lift-stf.py); StF's fighters keep
+  in tools/board/lift-stf.py); StF's fighters keep
   [0x50A004] × [0x50A000] × 0.25. The same run on the board after it
   (VF2's own run unchanged), frames 40..60: w 79, [0x50A004] 1.0,
   [0x50A008] 10.0, the board's gravity still 0.0252222 (it is not read
@@ -934,7 +934,7 @@ Left as they are:
 
 The board plays eight fighters; the browser build (`js/`) plays every
 fighter record of the three games, so every one of them is graded there,
-against itself in its own game. `tools/js-battle.mjs` plays a battle on
+against itself in its own game. `tools/grade/js-battle.mjs` plays a battle on
 `js/engine.js` with battle.lua's input script and writes battle.lua's log
 (`setup js`); the grader takes it as the board's. The engine runs one
 energy bar (200) for every game, so damage and the energy left are scaled
@@ -943,7 +943,7 @@ number is only logged.
 
 ```bash
 tools/mame/roster-battles.sh <dir>       # the source battles, 3 MAMEs at a time
-node tools/grade-roster.mjs <dir>        # each one played on the browser build, and graded
+node tools/grade/grade-roster.mjs <dir>        # each one played on the browser build, and graded
 ```
 
 Seed 1, 30 seconds, 2 rounds to win; every record against himself on

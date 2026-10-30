@@ -3,10 +3,10 @@ cmake_minimum_required(VERSION 3.20)
 # m2-megamix's board build: a new program for the Sonic the Fighters board (Model 2B),
 # built against m2-sdk (headers, i960 boot assembly, linker script, ROM splitter).
 #
-#   node tools/bake-board.mjs                        (board/src/poses.h, from the ROM sets)
-#   python3 tools/lift-stf.py                        (board/src/stf_motion.s, .h, stf_rom_80000.bin,
+#   node tools/board/bake-board.mjs                  (board/src/gen/poses.h, from the ROM sets)
+#   python3 tools/board/lift-stf.py                  (board/src/gen/stf_motion.s, .h, stf_rom_80000.bin,
 #                                                     from the StF disassembly)
-#   node tools/import-assets.mjs                     (board/roms/sfight/'s data ROMs, only the assets used)
+#   node tools/board/import-assets.mjs               (board/roms/sfight/'s data ROMs, only the assets used)
 #   cmake -G "Unix Makefiles" -B <build> -S board
 #   make -C <build> -j2                              -> board/roms/sfight/epr-19001.15, epr-19002.16
 #
@@ -21,11 +21,11 @@ endif()
 
 project(m2_megamix C ASM)
 
-if(NOT EXISTS "${CMAKE_SOURCE_DIR}/src/poses.h")
-    message(FATAL_ERROR "src/poses.h is missing: run node tools/bake-board.mjs first")
+if(NOT EXISTS "${CMAKE_SOURCE_DIR}/src/gen/poses.h")
+    message(FATAL_ERROR "src/gen/poses.h is missing: run node tools/board/bake-board.mjs first")
 endif()
-if(NOT EXISTS "${CMAKE_SOURCE_DIR}/src/stf_motion.s")
-    message(FATAL_ERROR "src/stf_motion.s is missing: run python3 tools/lift-stf.py first")
+if(NOT EXISTS "${CMAKE_SOURCE_DIR}/src/gen/stf_motion.s")
+    message(FATAL_ERROR "src/gen/stf_motion.s is missing: run python3 tools/board/lift-stf.py first")
 endif()
 
 set(M2_STARTUP_ASM
@@ -37,14 +37,14 @@ set(M2_STARTUP_ASM
 # The program's modules (src/*.c) are compiled as one unit through megamix.c,
 # which includes them: the header-only SDK defines its functions in the
 # headers (M2_API=, below), so a module built on its own would carry its own copy.
-add_executable(game.elf ${M2_STARTUP_ASM} src/megamix.c src/link.c src/carry.c src/push.c src/stf_call.s src/stf_motion.s)
+add_executable(game.elf ${M2_STARTUP_ASM} src/megamix.c src/link/link.c src/draw/carry.c src/fight/push.c src/fight/stf_call.s src/gen/stf_motion.s)
 # StF's motion code keeps its ROM tables' addresses (.stfrom, 0x80000..0xFFFFF).
-set_source_files_properties(src/stf_motion.s PROPERTIES
-    COMPILE_OPTIONS "-Wa,-I${CMAKE_SOURCE_DIR}/src"
-    OBJECT_DEPENDS "${CMAKE_SOURCE_DIR}/src/stf_rom_80000.bin")
+set_source_files_properties(src/gen/stf_motion.s PROPERTIES
+    COMPILE_OPTIONS "-Wa,-I${CMAKE_SOURCE_DIR}/src/gen"
+    OBJECT_DEPENDS "${CMAKE_SOURCE_DIR}/src/gen/stf_rom_80000.bin")
 # carry.c and push.c alone on the i960's floating point (the rest is soft-float, below):
 # its last -mnumerics wins over the target's -msoft-float.
-set_source_files_properties(src/carry.c src/push.c PROPERTIES COMPILE_OPTIONS "-mnumerics")
+set_source_files_properties(src/draw/carry.c src/fight/push.c PROPERTIES COMPILE_OPTIONS "-mnumerics")
 target_include_directories(game.elf PRIVATE src "${M2_SDK}/src")
 target_compile_options(game.elf PRIVATE $<$<COMPILE_LANGUAGE:C>:-O2>)
 target_compile_definitions(game.elf PRIVATE $<$<COMPILE_LANGUAGE:C>:M2_API=>)
@@ -62,9 +62,9 @@ endif()
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
-# roms/sfight/: the program EPROM pair, beside the data ROMs tools/import-assets.mjs
+# roms/sfight/: the program EPROM pair, beside the data ROMs tools/board/import-assets.mjs
 # writes there. MAME runs it with -rompath board/roms alone. Another lineup's
-# build (tools/lineup.mjs) goes beside its own data ROMs: -DROM_DIR=<dir>/sfight.
+# build (tools/board/lineup.mjs) goes beside its own data ROMs: -DROM_DIR=<dir>/sfight.
 set(ROM_DIR "${CMAKE_SOURCE_DIR}/roms/sfight" CACHE PATH "where the program EPROMs go")
 add_custom_target(rom ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory "${ROM_DIR}"

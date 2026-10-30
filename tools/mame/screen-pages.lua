@@ -6,7 +6,7 @@
 --   mame sfight -rompath $ROMS_DIR -video none -sound none -nothrottle
 --     -skip_gameinfo -autoboot_script tools/mame/screen-pages.lua
 --
--- AS_PATCH writes `node tools/pack-akira.mjs --out <dir>` blobs into the regions
+-- AS_PATCH writes `node tools/guests/pack-akira.mjs --out <dir>` blobs into the regions
 -- before boot; leave it out for the unpatched run. AS_INPUT=attract presses
 -- nothing; select puts a coin in at 1000, Start at 1100, then P1 Right every
 -- 120 frames, so the cursor visits all eight characters. Model keys are
