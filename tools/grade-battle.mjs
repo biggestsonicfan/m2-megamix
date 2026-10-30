@@ -293,8 +293,9 @@ function print(src, brd, rep) {
 const src = readLog(readFileSync(srcPath, 'utf8')), brd = readLog(readFileSync(brdPath, 'utf8'));
 /* A guest plays his own game's motions under new ids (from 519 on); the
  * import's guests.json maps them back (motionIds, the board's id -> his
- * game's), so his motions compare with the source's. */
-const GUESTS = new URL('../board/roms/guests.json', import.meta.url).pathname;
+ * game's), so his motions compare with the source's. $BOARD_ROMS: another
+ * lineup's ROMs (tools/lineup.mjs). */
+const GUESTS = process.env.BOARD_ROMS ? `${process.env.BOARD_ROMS}/guests.json` : new URL('../board/roms/guests.json', import.meta.url).pathname;
 if (src.setup && src.setup.game !== 'stf' && brd.setup?.game === 'board' && existsSync(GUESTS)) {
     const game = { vf2: 'VF2', fv: 'Fighting Vipers' }[src.setup.game];
     for (const g of JSON.parse(readFileSync(GUESTS, 'utf8')).guests) {

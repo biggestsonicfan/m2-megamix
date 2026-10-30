@@ -37,11 +37,10 @@ u16 menu_val[M_ITEMS] = { 0, 30, 2, 0, 0, 1, 140, 5, LINK_OFF };
 const char *const link_name[3] = { "OFF", "1P", "2P" };
 /* the status line, by link.state */
 const char *const link_state_name[6] = { "", "NO_COMM_BOARD", "COMM_STARTING", "NO_OTHER_CABINET", "LINKING", "LINKED" };
-static const char *const fighter_name[POSE_ANIMS] = { "SONIC", "HONEY", "EGGMAN", "AKIRA", "RYO", "CHAI", "HORNET", "MAHLER" };
-/* The game a fighter's name line shows where it is not the one its code
- * runs as: Ryo and Chai (Shenmue's) and Hornet (Daytona USA's car, as Fighters
- * Megamix had him) run as VF2's Akira does, on moves turned into VF2's. */
-static const char *const fighter_from[POSE_ANIMS] = { 0, 0, 0, 0, "SHENMUE", "SHENMUE", "DAYTONA", 0 };
+/* fighter_name and fighter_from, the lineup's (tools/lineup.mjs), are in
+ * poses.h: the game a fighter's name line shows where it is not the one its
+ * code runs as (Ryo and Chai, Shenmue's, and Hornet, Daytona USA's car, as
+ * Fighters Megamix had him, run as VF2's Akira does) */
 static const char *const stage_name[STAGES] = { "SOUTH_ISLAND", "AURORA_ICEFIELD", "VF2 TOU-RIN", "VF2 COLOSSEUM", "FV WESTERN", "VF2 TEST", "DOA STAGE 10" };
 u32 menu_cur;
 

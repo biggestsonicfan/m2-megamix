@@ -162,10 +162,20 @@ LOW_TABLES = {'off_FE8'}
 # run through kill_osage_sub (player 2's Honey on).
 RUN_ON = {'off_1008', 'off_1010', 'osage_per_character'}
 # Jump tables in the ROM range that hold code (the camera's script steps;
-# projectile_list's records and Eggman's bomb's start and steps):
-# lifted with the code, as the copied ROM holds StF's addresses.
+# projectile_list's records and Eggman's bomb's start and steps; the records
+# of the rest of StF's cast's projectiles, player 1's and player 2's: Fang's
+# corks, Bean's kicked and unlit bombs, Espio's tongue, Amy's hammer and
+# anvil): lifted with the code, as the copied ROM holds StF's addresses.
+PROJECTILE_RECORDS = {'fang_cork_shoot', 'fang_I_cork_shoot', 'spinning_cork', 'spinning_cork_I',
+                      'fast_bomb_projectile', 'bean_bomb_nonlit', 'espio_tongue', 'espio_tongue_grab',
+                      'amy_hammer', 'amy_hammer_1', 'fang_hyper_cork', 'fang_I_hyper_cork',
+                      'amy_drop_16t_anvil_1', 'amy_drop_16t_anvil_2', 'very_fast_bomb_projectile',
+                      'bomb_in_place_silly_noise', '_uk_flying_hands', '_uk_heart_thing'}
+# Their steps' jump tables, and spin_smoke_trg's.
+PROJECTILE_STEPS = {'off_8BE20', 'off_8CC18', 'off_8D13C', 'off_8D6E4', 'off_8D904', 'off_8DCF0', 'off_8DE98',
+                    'off_8E1E8', 'off_820C8'}
 ROM_CODE_TABLES = {'off_9C83C', 'off_9C848', 'projectile_list', 'projectile_I_list', 'bean_bomb_roll',
-                   'bean_bomb_roll_1', 'off_8D3D8'}
+                   'bean_bomb_roll_1', 'off_8D3D8'} | PROJECTILE_RECORDS | PROJECTILE_STEPS
 # Data blocks that point into themselves (the fight camera's motion table
 # and its scripts, `.short` halves and `.long`s): lifted as words, each
 # word that is an address inside the block made relative to its label.

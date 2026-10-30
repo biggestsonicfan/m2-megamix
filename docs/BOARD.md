@@ -34,6 +34,38 @@ table B (2048 entries, not 512): StF's stage sets need up to 1178, and the
 SDK's size drops six of their pages. It keeps the SDK's include guard and is
 included in place of it; the SDK itself is used unchanged.
 
+### Lineups
+
+Texture RAM holds one fighters' sheet (StF's set 1, 24 pages), and the
+guests' tiles go into pages 3, 12, 15, 16, 18, 19 and 21 and the cells the
+lineup's StF fighters leave free (`tools/pack-akira.mjs`, `keptCells`). StF's
+whole cast and all five guests do not fit ("out of room: 32 cells free, a
+2x4 wanted"), so each lineup (`tools/lineup.mjs`) is its own build:
+
+| lineup | fighters, in the menu's order |
+|--|--|
+| megamix (default) | Sonic, Honey, Eggman, Akira, Ryo, Chai, Hornet, Mahler |
+| stf | Sonic, Honey, Eggman, Akira, Mahler, Amy, Fang, Bark, Espio, Bean |
+
+stf has StF's fighting cast but Tails and Knuckles (their slots are Ryo's
+and Akira's) and Metal Sonic (page 3 is the guests'). Its StF fighters run
+on StF's own data, so StF grades them by replay (docs/GRADING.md, Results).
+`bake-board.mjs` writes the lineup's names (`fighter_name`, `fighter_from`)
+into `poses.h`; `import-assets.mjs` imports the fighters `poses.h` names and
+their projectiles' models. To build one beside the default:
+
+```sh
+LINEUP=stf node tools/bake-board.mjs
+node tools/import-assets.mjs <dir>              # <dir>/sfight, <dir>/guests.json
+cmake -G "Unix Makefiles" -DROM_DIR=<dir>/sfight -B <build> -S board
+make -C <build> -j2
+LINEUP=stf BOARD_ROMS=<dir> tools/mame/board-replays.sh <out> <build>
+```
+
+The new StF fighters' models take ids VF2's extra stage models used, so
+`VF2_MORE_TOP` (`tools/vf2-stages.mjs`) is 4047: 3955..4047 is free with
+every StF fighter in.
+
 ## The program's layout
 
 `board/src` is one module a file; `megamix.h` declares what they share, and

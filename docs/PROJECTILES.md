@@ -121,9 +121,11 @@ unchanged):
 - ROOTS: add `sub_8A29C` (the step loop). Leave `sub_8A2E4` out: it writes to
   `mod_fa_enemy0/1`, which the board has no CPU players for (its pointers are 0).
 - ROM_CODE_TABLES: `projectile_list`, `projectile_I_list`, `bean_bomb_roll`,
-  `bean_bomb_roll_1` and `off_8D3D8` (the bomb's steps). Every other type's
-  record still holds StF's code addresses; only add them with their own
-  characters.
+  `bean_bomb_roll_1` and `off_8D3D8` (the bomb's steps); and, for the stf
+  lineup (docs/BOARD.md, Lineups), every other type's record
+  (PROJECTILE_RECORDS) and their steps' jump tables (PROJECTILE_STEPS).
+  Before #1921 those records still held StF's code addresses, and Fang's
+  first cork (type 1) stopped the board ("I960: Unhandled 00").
 
 On the board (`fighter.c` and `effects.c`):
 
@@ -133,12 +135,22 @@ On the board (`fighter.c` and `effects.c`):
    each frame, before `zanzou_control` (StF's own order in `fa_tobi`). The
    step sets the burst's hit balls; the next frame's collision task deals
    the damage, as in StF.
-3. `tobi_draw` draws each live object (bit 31; not bit 9): its model (+0x7C) at +0x44,
-   turned by +0x72, +0x70, +0x74 unless bit 7 or 3, scaled by +0x68, as
-   `tobi_disp_go` does; and the bomb's marker at +0x50 (`tdl_bakudan`).
-4. `tools/import-assets.mjs` keeps (from `projectile_list`'s type 2 and the
-   marker lists) models 1703, 807–810, 1710, 1711 and
-   2200–2205 and their textures.
+3. `tobi_draw` draws each live object (bit 31; not bit 9) by its type's
+   routine (`_uk_projectile`):
+   - `tobi_disp_go` (types 0, 1, 4–6, 12–14, 16): its model (+0x7C) at
+     +0x44, turned by +0x72, +0x70, +0x74 unless bit 7 or 3, scaled by
+     +0x68. `tdl_otoshi2` (17) is the same, always turned.
+   - `tdl_bakudan` (2, 3, 7–9): that, and the bomb's marker at +0x50 and its fuse.
+   - `tdl_bero` (11) and `tdl_berotsukami` (15), Espio's tongue: model 954
+     from its root (+0xA8, or +0x44 once it has caught), turned by y then x
+     (+0xCA, +0xC8 or +0x72, +0x70), stretched along z to its length (+0xC4
+     or +0xB4); and the tip, 955, at its end (not while +0xC is 1).
+   - `tdl_laser` (10, Metal Sonic's) is not drawn; no lineup has him.
+4. `tools/import-assets.mjs` keeps the models of the types the lineup's
+   fighters throw (THROWS: Eggman 2; Bean 2, 8; Fang 1, 4, 14; Amy 12, 13,
+   16, 17 and `amy_drop_item_list`'s 11 things; Espio 11, 15 and models 954,
+   955), from both lists' records, and the marker lists: for the default
+   lineup models 1703, 807–810, 1710, 1711 and 2200–2205 and their textures.
 
 ## Checks
 
@@ -150,6 +162,11 @@ Done on MAME (`shared`, board ROMs), P1 Eggman against P2 Honey, standing:
 - 298 with Honey holding guard: 0x1AC stays 140, guard reaction (109).
 - 297 (forward, neutral, forward+punch): three bombs; 140 → 130 → 123 →
   115 (the second and third hit her while down, at StF's reduced rate).
+
+#1921, the stf lineup, by replay snapshots: Fang's cork (753) in flight and
+its burst, his spinning cork (1220), and Bean's bomb (1703) with its marker
+draw. Espio's tongue and Amy's hammer and anvil are drawn by the code
+above but were not seen in a snapshot.
 
 Not checked yet: the guard from behind, Eggman in his own burst, the clock
 at 0, and m2-hle2. The original list, each beside real StF on MAME:

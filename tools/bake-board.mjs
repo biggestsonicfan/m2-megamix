@@ -36,13 +36,15 @@ import { stormSchedule } from '../vendor/noclip/js/vf2.js';
 import { vf2StagePlan, vf2SkyPlan, VF2_SETS, VF2_RING, SCALE as VF2_SCALE, ARMOUR_BLOCKS, colourSnap } from './vf2-stages.mjs';
 import { fvBoardPlan, fvSkyPlan, FV_SET0, FV_RING, FV_SCALE, FV_TURN } from './fv-stages.mjs';
 import { loadDoa, doaStagePlan, doaSkyPlan, doaStageCx, doaMaterials, DOA_SET, DOA_SCALE, DOA_FLOOR, DOA_RING, SWAY } from './doa-stages.mjs';
+import { LINEUPS, LINEUP, FROM } from './lineup.mjs';
 import { xtraResolve } from '../vendor/noclip/js/romset.js';
 import { resolveData } from '../vendor/noclip/js/motion.js';
 import { loadScrollCG } from '../vendor/noclip/js/scroll.js';
 
 const OUT = process.argv[2] ?? new URL('../board/src/poses.h', import.meta.url).pathname;
 /* StF's fighters: their models and textures are already on the board. */
-const CAST = ['SONIC', 'HONEY', 'EGGMAN'].map((n) => ROSTER.findIndex((e) => e.game === 'stf' && e.name === n));
+/* The fighters, in the menu's order: the lineup's (tools/lineup.mjs). */
+const NAMES = LINEUPS[LINEUP];
 const ACTS = ['stance'];
 
 const games = await loadNodeGames();
@@ -78,15 +80,14 @@ const partsOf = (p) => p.parts.filter((pt) => /^\d+(:\d+)?$/.test(String(pt.key)
 const P2_CHAR = 26;
 const u16s = (a) => a.map((x) => `0x${x.toString(16)}`).join(',');
 const anims = [];
-for (const r of CAST) {
-    const e = ROSTER[r];
+const bakeStf = (e) => {
     const f = makeFighter(games, e);
     const body = f.createBody();
     const f2 = makeFighter(games, { ...e, index: e.index + P2_CHAR });
     const body2 = f2.createBody();
     for (const a of ACTS) {
         const ref = f.act(a);
-        const id = `${e.name.toLowerCase()}_${a}`;
+        const id = `${e.name.toLowerCase().replace(/\W/g, '_')}_${a}`;
         const parts = partsOf(body.pose(ref, 1));
         const p2 = partsOf(body2.pose(f2.act(a), 1));
         if (p2.length !== parts.length || p2.some((pt, i) => pt.slot !== parts[i].slot))
@@ -99,7 +100,7 @@ for (const r of CAST) {
         anims.push(`{"${e.name} ${a}", ${e.index}, ${parts.length}, ${id}_parts, {{0}, {0}, {0}, {0}}}`);
         console.log(id, 'character', e.index, 'parts', parts.length);
     }
-}
+};
 /* The guests (tools/vf2-guest.mjs): StF's own code draws them from the
  * records it puts in, so no parts here; their colours are their own game's,
  * seven part rows a player (rows 5, 6, 12 and 13 are StF's fixed rows, unused
@@ -114,7 +115,7 @@ const GUESTS = [
     { name: 'HORNET', chr: 17, game: games.vf2.rom, fighter: 0, rows: 7 },
     { name: 'MAHLER', chr: 18, game: games.fv.rom, fighter: 8, rows: 7 },
 ];
-for (const g of GUESTS) {
+const bakeGuest = (g) => {
     const id = `${g.name.toLowerCase()}_stance`;
     const cx = buildColorxlat(g.game, { fighters: [g.fighter] });
     const cx2 = buildColorxlat(g.game, { fighters: [-1, g.fighter] });
@@ -126,7 +127,17 @@ for (const g of GUESTS) {
         `{{0, ${g.rows}, 48, 16, ${id}_part}, {28, 2, 0, 64, ${id}_skin}, ` +
         `{${g.rows}, ${g.rows}, 48, 16, ${id}_part2}, {30, 2, 0, 64, ${id}_skin2}}}`);
     console.log(id, 'character', g.chr, 'guest');
+};
+for (const n of NAMES) {
+    const g = GUESTS.find((x) => x.name === n);
+    if (g) { bakeGuest(g); continue; }
+    const e = ROSTER.find((x) => x.game === 'stf' && x.name === n);
+    if (!e) throw new Error(`lineup ${LINEUP}: no fighter ${n}`);
+    bakeStf(e);
 }
+out.push(`/* lineup ${LINEUP} (tools/lineup.mjs): the menu's names, and the game a name line shows */`);
+out.push(`static const char *const fighter_name[${NAMES.length}] = { ${NAMES.map((n) => JSON.stringify(n)).join(', ')} };`);
+out.push(`static const char *const fighter_from[${NAMES.length}] = { ${NAMES.map((n) => (FROM[n] ? JSON.stringify(FROM[n]) : '0')).join(', ')} };`);
 out.push(`#define POSE_ANIMS ${anims.length}`);
 out.push(`static const pose_anim_t pose_anims[POSE_ANIMS] = {\n    ${anims.join(',\n    ')}\n};\n`);
 /* ---- stages ---- */

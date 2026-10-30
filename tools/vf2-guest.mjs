@@ -258,7 +258,7 @@ function meshLength(d, base) {
  * ids it kept). vf2, stf: noclip's ROM sets. extraTiles: another guest's
  * texture tiles, packed with his (packAkira's `extra`). What a guest built on
  * his comes back as `ctx` (tools/ryo-guest.mjs). */
-export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
+export function importAkira(R, vf2, stf, { extraTiles = [], cast } = {}) {
     const { main, polygons, textures, program } = R;
     const T = R.guest.tables;
     /* each table's room runs to the next one's (the last, to the heap) */
@@ -475,7 +475,7 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
         if (id <= 0) throw new Error('no free model ids');
         if (!R.models.has(id)) modelId.set(vf2List[modelId.size], id);
     }
-    const pack = packAkira(vf2, stf, vf2List, extraTiles);
+    const pack = packAkira(vf2, stf, vf2List, extraTiles, cast);
     if (pack.problems.length) throw new Error(`pack-akira: ${pack.problems.join('; ')}`);
     /* A face's colorbase (th3 >> 6) names a palette entry, whose three
      * fields pick each channel's colorxlat row. Where StF's entry differs from
