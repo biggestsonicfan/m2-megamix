@@ -28,7 +28,7 @@
  */
 import * as FM from './fm-saturn.mjs';
 import { encodeVF2 } from './shenmue-motion.mjs';
-import { SCALE, MOTION_ID, COMMIT_TYPE, STF_ACTIONS, DAMAGE, scaleMotion, strikeTrail, trailOp } from './vf2-guest.mjs';
+import { SCALE, MOTION_ID, COMMIT_TYPE, STF_ACTIONS, scaleMotion, strikeTrail, trailOp } from './vf2-guest.mjs';
 
 const PLAYER2 = 26;
 const MAIN_DATA = 0x02000000;
@@ -176,8 +176,10 @@ export function importFmMoves(R, ctx, game, fighter, { who = 'Hornet' } = {}) {
     }
 
     /* ---- setups, StF's way ---- */
+    /* A strike keeps FM's damage: the board's attack_hit runs VF2's for his
+     * game and takes it off StF's bar x 140/220 (tools/lift-stf.py, VF2_HIT). */
     const damages = new Map();
-    const damage = (v) => { const d = v && Math.max(1, Math.round(v * DAMAGE)); damages.set(v, d); return d; };
+    const damage = (v) => { damages.set(v, v && Math.max(1, Math.round((v * 140) / 220))); return v; };
     let trails = 0;
     function convertSetup(id) {
         const s = setups.get(id), h = s.head;
@@ -242,7 +244,7 @@ export function importFmMoves(R, ctx, game, fighter, { who = 'Hornet' } = {}) {
         setupT.view.setUint32(newId.get(id) * 4, alloc(convertSetup(id), `setup ${hex(id)}`, 1), true);
     }
     report.push(`motion blocks ${motionBytes} bytes and their setups at ${hex(MAIN_DATA + FM_MOTIONS_AT)}..${hex(MAIN_DATA + far)}; ${trails} strikes trail`);
-    report.push(`damage x140/200: ${[...damages].sort((a, b) => a[0] - b[0]).map(([v, d]) => `${v}->${d}`).join(', ')}`);
+    report.push(`damage x140/220 on the board: ${[...damages].sort((a, b) => a[0] - b[0]).map(([v, d]) => `${v}->${d}`).join(', ')}`);
 
     /* ---- the command script ---- */
     let commits = 0;

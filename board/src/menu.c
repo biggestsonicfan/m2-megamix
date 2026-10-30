@@ -42,7 +42,7 @@ static const char *const fighter_name[POSE_ANIMS] = { "SONIC", "HONEY", "EGGMAN"
  * runs as: Ryo and Chai (Shenmue's) and Hornet (Daytona USA's car, as Fighters
  * Megamix had him) run as VF2's Akira does, on moves turned into VF2's. */
 static const char *const fighter_from[POSE_ANIMS] = { 0, 0, 0, 0, "SHENMUE", "SHENMUE", "DAYTONA", 0 };
-static const char *const stage_name[STAGES] = { "SOUTH_ISLAND", "AURORA_ICEFIELD", "VF2 TOU-RIN", "VF2 COLOSSEUM", "FV WESTERN" };
+static const char *const stage_name[STAGES] = { "SOUTH_ISLAND", "AURORA_ICEFIELD", "VF2 TOU-RIN", "VF2 COLOSSEUM", "FV WESTERN", "VF2 TEST", "DOA STAGE 10" };
 u32 menu_cur;
 
 u32 slen(const char *s) { u32 n = 0; while (s[n]) n++; return n; }

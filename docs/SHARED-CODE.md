@@ -1071,7 +1071,7 @@ only per-fighter data differences can be branched.
      rob+0x650 at least 0.2 (0x3E4CCCCD, 0x236D4); both decay by 0.03 a frame (0x3CF5C28F).
    - (c) Push factor: VF2 always 0.3 (0x23748). StF 0.3, or 0.7 (0x3F333333) when 0x804 bits
      0x2100 together, or 0.65 (0x3F266666) by 0x804>>6 & 0x1A4 bit 2, none of it when one attacks
-     (0x804 & 0x1A4 bit 8); stored at rob+0x67C (0x2D73C..0x2D7B0); StF clamps g4 to >= 0.3
+     (0x804 & 0x1A4 bit 8); stored at rob+0x67C (0x2D73C..0x2D7B0); StF caps g4 at 0.3
      (0x2D7E0).
    - (a) StF-only: 0x1A4 bit 29 skip, g6 bit 0 path sharing the wall vectors 0x644/0x64C when both
      have 0x1A4 bit 18/19 (0x2D84C), cage-wall handling by 0x23C(g13) and rob+0x26 (0x2D8B4), the
@@ -1080,8 +1080,10 @@ only per-fighter data differences can be branched.
      (area id) per fighter. Harmless: StF's stage.
    - (d) Task 0x164 = VF2 0x148; 0xD4..0xDC = 0xC8..0xD0; 0xCC/0xD0 = 0xC0/0xC4; outputs
      0xE0..0xF4 = 0xD4..0xE8. rob+0x644/0x64C are the same offsets in both.
-4. Board impact: none for one fighter; the constants are the pair's. Recommendation: nothing
-   (a VF2-pair feel would need both fighters to be VF2's).
+4. Board impact: the pair's constants, in StF's units, kept two guests (drawn at StF's size)
+   apart at StF's distance. Done: for two guests of one game, VF2's factor (0.3 x VF2's size,
+   no cap) or FV's (StF's x FV's size, cap 0.3 x it) (docs/GRADING.md, "The push between
+   bodies").
 
 ### calc_attack_flag (StF 0x2DC48, VF2 0x238A4)
 1. Turns the move's attack part id (rob+0x820) into a mask of the balls that attack.

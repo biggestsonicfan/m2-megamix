@@ -25,8 +25,9 @@
  *     under headers whose colorbases name the player 2 rows (7..13, 30/31),
  *     which the board fills with FV's player 2 colours, the same as player
  *     1's: both players look alike, as in FV;
- *   - his skeleton and pose bones (record +4, VF2's layout, at his size);
- *   - his collision balls, Akira's fitted to his parts;
+ *   - his skeleton (record +4, VF2's layout, at his size) and pose bones
+ *     (FV's, one set for its whole cast: FV_RIG);
+ *   - his collision balls: FV's, one set for its whole cast (FV_BALLS);
  *   - his moves: FV's own (tools/fv-moves.mjs).
  */
 import { readFighters } from '../vendor/noclip/js/vf2fighters.js';
@@ -38,7 +39,7 @@ import { buildTexram } from '../vendor/noclip/js/texture.js';
 import { SHEET_H, SHEET_BYTES, texelByte, levelOrigin } from '../vendor/noclip/js/atlas.js';
 import { readObject, encodeObject } from './daytona-hornet.mjs';
 import { SCALE, THROWN } from './vf2-guest.mjs';
-import { pointBox, fitBalls, seatGuest } from './ryo-guest.mjs';
+import { seatGuest } from './ryo-guest.mjs';
 import { importFvMoves } from './fv-moves.mjs';
 
 /* StF's character 18: not one the code checks by number, nor a bit of the
@@ -52,6 +53,21 @@ export const K = 2.676 / 1.309;
 /* FV's record: +4 the skeleton, +0x24 the midriff; the hand list */
 const SKELETON = 4, SKELETON_BYTES = 15 * 12, MIDRIFF_AT = 0x24, JUMP = 0x34;
 const HANDS = 0x0640ebf4, SHAPES = 4;
+/* The collision balls, one set for FV's whole cast (main_data, copied to
+ * 0x506000 by 0x1950): their points (32: x, y, z in the part's frame, r),
+ * the part each rides (32 words), a pointer to each part's list (the second
+ * word: parts 1..15, 8 bytes each, ball * 4) and a count by part (16). StF's
+ * record, the same four. */
+/* The bones FV solves every fighter's pose on (calc_rob_angle_cont, F
+ * 0x2AB00: one table where VF2's is VF2_RIG and StF's is by character),
+ * VF2's layout: the chest, the head, each arm's and leg's pivot and its two
+ * bones' lengths (+0xC, +0x10), the pelvis. */
+const FV_RIG = 0x2c194;
+const FV_BALLS = { points: 0x0640e4fc, part: 0x0640e7dc, lists: 0x0640e860, counts: 0x0640e914 };
+/* His weight: FV's record +0x1C (record 21's is record 8's), and his armour's
+ * pieces by record (8, and 21 his second player's): 16 slots of [4 counts, pieces], 0x28 bytes a piece,
+ * its weight at +0x14. */
+const WEIGHT = 0x1c, ARMOUR = 0x0640edac, RECORDS = [8, 21];
 const MIDRIFF = { model: 8, ring: 0x70, ringPoints: 8, count: 0xd0, links: 0xd4, link: 10, first: 8 };
 const POLY_RUN_END = 0xec2578 + 0x13da88;
 const TEX_RUN_END = 0x78bdb8 + 0x74248;
@@ -169,7 +185,7 @@ const midriffRecs = (fv, m) => streamsOf(fv, m).recs;
  * stay FV's. Its faces' tiles must be his (mahlerTiles). */
 export function importMahler(R, ctx, games, { byKey }, { chr: CHR_ = CHR, obj = null } = {}) {
     const { main, polygons, textures } = R;
-    const fv = games.fv.rom, vf2 = games.vf2.rom;
+    const fv = games.fv.rom;
     const Who = 'Mahler';
     const report = [];
     const alloc = (b, label, align = 4) => ctx.alloc(b, label, align, Who);
@@ -341,20 +357,40 @@ export function importMahler(R, ctx, games, { byKey }, { chr: CHR_ = CHR, obj = 
     for (let e = 0; e < 15; e++) bones.push([0, 1, 2].map((a) => r.view.getFloat32(r.off + e * 12 + a * 4, true)));
     const skelBytes = new Uint8Array(SKELETON_BYTES), sv = new DataView(skelBytes.buffer);
     bones.forEach((p, e) => p.forEach((x, a) => sv.setFloat32(e * 12 + a * 4, x * k, true)));
-    const rigBytes = Uint8Array.from(ctx.rigBytes), rv = new DataView(rigBytes.buffer);
-    const put = (e, p) => p.forEach((x, a) => rv.setFloat32(e * 12 + a * 4, x * k, true));
-    put(1, bones[1]);
-    [2, 5, 9, 12].forEach((e) => { put(e, bones[e]); put(e + 1, [bones[e + 1][0], 0, 0]); put(e + 2, [bones[e + 2][0], 0, 0]); });
+    /* the pose bones: FV's, at his size (his skeleton's bones in VF2's rig
+     * turned his arms ~15 degrees off FV's, standing) */
+    const f = (o) => fv.mainCpuView.getFloat32(FV_RIG + o, true), pt = (o) => [f(o), f(o + 4), f(o + 8)];
+    const rig = [pt(0), pt(0xc)];
+    for (const at of [0x18, 0x2c]) rig.push(pt(at), [f(at + 0xc), 0, 0], [f(at + 0x10), 0, 0]);
+    rig.push(pt(0x40));
+    for (const at of [0x4c, 0x60]) rig.push(pt(at), [f(at + 0xc), 0, 0], [f(at + 0x10), 0, 0]);
+    const rigBytes = new Uint8Array(rig.length * 12), rv = new DataView(rigBytes.buffer);
+    rig.flat().forEach((x, i) => rv.setFloat32(i * 4, x * k, true));
     const skel = alloc(skelBytes, 'skeleton');
     const rigAt = alloc(rigBytes, 'bones');
 
     /* ---- balls, moves, records and the guest tables ---- */
-    const partBox = (s) => {
-        const q = pieces.find((x) => x.slot === s);
-        return q ? pointBox(q.polys.flatMap((p) => (p.quad ? p.p : p.p.slice(0, 3)))) : null;
-    };
-    const { ballRec, moved: ballsMoved } = fitBalls(ctx, vf2, partBox, k, alloc);
-    report.push(`${ballsMoved} collision balls fitted to his parts`);
+    /* his balls: FV's, at his size (VF2's, fitted to his parts, pushed him
+     * off on a jab's contact: FV's radii are smaller) */
+    let ballRec;
+    const ballsMoved = (() => {
+        const take = (a, len) => { const x = M.res(a); return Uint8Array.from(x.data.subarray(x.off, x.off + len)); };
+        const pts = take(FV_BALLS.points, 32 * 16), pv = new DataView(pts.buffer);
+        for (let i = 0; i < 32 * 4; i++) pv.setFloat32(i * 4, pv.getFloat32(i * 4, true) * k, true);
+        const part = Array.from({ length: 32 }, (_, i) => M.d32(FV_BALLS.part + i * 4));
+        const lists = new Uint8Array(16 * 8);
+        lists.set(take(M.d32(FV_BALLS.lists), 15 * 8), 8);
+        const counts = take(FV_BALLS.counts, 16);
+        for (let s = 0; s < 16; s++)
+            for (let j = 0; j < counts[s]; j++)
+                if (part[lists[s * 8 + j] >> 2] !== s) throw new Error(`${Who}: ball ${lists[s * 8 + j] >> 2} is not part ${s}'s`);
+        ballRec = alloc(u32s([
+            alloc(pts, 'balls', 16), alloc(u32s(part), 'ball parts', 16),
+            alloc(lists, 'part balls', 16), alloc(counts, 'part ball counts', 16),
+        ]), 'ball record', 16);
+        return counts.reduce((n, c) => n + c, 0);
+    })();
+    report.push(`${ballsMoved} collision balls, FV's`);
     const seamList = alloc(u32s([0]), 'seams');
     const shapes = {};
     const mv = importFvMoves(R, ctx, fv, A, {
@@ -370,8 +406,22 @@ export function importMahler(R, ctx, games, { byKey }, { chr: CHR_ = CHR, obj = 
     jump[0] = M.d8(jumpAt); jump[1] = M.d8(jumpAt + 1);
     for (let i = 4; i < 0x14; i += 4) jv.setFloat32(i, M.f32(jumpAt + i) * k, true);
     report.push(`jump: ${jump[0]}, ${jump[1]} frames, reach ${[4, 8, 12, 16].map((i) => jv.getFloat32(i, true).toFixed(3)).join(' ')}`);
+    /* His weight (record +0x14: rob+0x7DC, and with sub_3261C's pieces
+     * rob+0x5D8, which hits' knockback is divided by): FV's init (F 0x12900)
+     * takes record +0x1C and adds its armour's pieces (F 0x2D84C, StF's
+     * sub_3261C), which the board has none of for him, so both go in here. */
+    const weights = RECORDS.map((r) => {
+        let w = M.f32(A.root + WEIGHT);
+        const at = M.d32(ARMOUR + r * 4);
+        for (let s = 0; s < 16; s++) {
+            const n = [0, 1, 2, 3].reduce((t, i) => t + M.d8(at + s * 8 + i), 0), p = M.d32(at + s * 8 + 4);
+            if (p) for (let i = 0; i < n; i++) w += M.f32(p + i * 0x28 + 0x14);
+        }
+        return w;
+    });
+    report.push(`weight: ${weights.map((w) => w.toFixed(3)).join(', ')} (FV's record and armour)`);
     const chars = seatGuest(R, ctx, { chr: CHR_, parts, p2Parts, skel, rigAt, ballRec, seamList, game: R.guest.games.FV,
-        jump: alloc(jump, 'jump', 4), moves: mv.moves, kinds: mv.kindsAt, remap: mv.remapAt, actions: mv.actionsAt }, alloc);
+        jump: alloc(jump, 'jump', 4), weights, moves: mv.moves, kinds: mv.kindsAt, remap: mv.remapAt, actions: mv.actionsAt }, alloc);
     /* his hands (FV's four shapes a hand, the first again past them) and midriff, by player */
     chars.forEach((c, p) => {
         const hands = M.hands.flatMap((l) => Array.from({ length: 16 }, (_, i) => modelOf(l[i < SHAPES ? i : 0], p)));

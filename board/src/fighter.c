@@ -66,6 +66,37 @@ const u32 *stf_char(u32 c) { return *(const u32 *const *)(STF_GUEST_CHAR_PARTS +
 u32 char_game(u32 c) { return *(const u8 *)(STF_GUEST_char_game + c); }
 const char *const game_name[] = { "STF", "VF2", "FV" };
 
+/* VF2's knock-down by kind of strike (rob+0x843; VF2 program 0x23CA0, 32
+ * bytes a kind): +0 the attacker's knockback factor, +8..+0x14 the
+ * knock-down's (standing, counter, crouching, crouching counter), +0x18..
+ * +0x1E its angles. A VF2 fighter's strike reads these (lift-stf.py,
+ * VF2_HIT); StF's own are at 0x50A800, 40 bytes a kind. */
+const u32 vf2_hit_kinds[40] = {
+    0x3F800000u, 0x3F800000u, 0x3F800000u, 0x3F99999Au, 0x3F800000u, 0x3F99999Au, 0x2E002000u, 0x26001800u,
+    0x3F800000u, 0x3F800000u, 0x3FC00000u, 0x3FE66666u, 0x3F99999Au, 0x3FB851ECu, 0x36003000u, 0x32002400u,
+    0x3F800000u, 0x3F800000u, 0x40000000u, 0x40066666u, 0x3F99999Au, 0x3FB851ECu, 0x30002D00u, 0x2C002400u,
+    0x3F800000u, 0x3F800000u, 0x40200000u, 0x40200000u, 0x40200000u, 0x40200000u, 0x39003900u, 0x39003900u,
+    0x3F800000u, 0x3F800000u, 0x3FA66666u, 0x3F99999Au, 0x3F99999Au, 0x3F99999Au, 0x2E001200u, 0x26001000u,
+};
+
+/* FV's (F 0x291DC, its RAM 0x50A800; laid out as VF2's): an FV fighter's
+ * strike knocks down by these (lift-stf.py, loc_2B5E4) */
+const u32 fv_hit_kinds[48] = {
+    0x3F800000u, 0x3F800000u, 0x3F99999Au, 0x3FB33333u, 0x3F800000u, 0x3F8CCCCDu, 0x60003800u, 0x2C002000u,
+    0x3F800000u, 0x3F800000u, 0x40000000u, 0x400CCCCDu, 0x3F800000u, 0x3F99999Au, 0x3C003000u, 0x2C001C00u,
+    0x3F800000u, 0x3F800000u, 0x40333333u, 0x404CCCCDu, 0x3F99999Au, 0x3FC00000u, 0x78007000u, 0x60002800u,
+    0x3F800000u, 0x3F000000u, 0x3F000000u, 0x3F400000u, 0x3F4CCCCDu, 0x3F19999Au, 0x78006600u, 0x60001400u,
+    0x3FC00000u, 0x40000000u, 0x3FCCCCCDu, 0x40000000u, 0x3FC00000u, 0x3FE66666u, 0x18001600u, 0x12001000u,
+    0x3F000000u, 0x3F000000u, 0x3F99999Au, 0x3FB33333u, 0x3F800000u, 0x3F8CCCCDu, 0x60003800u, 0x2C002000u,
+};
+
+/* FV's knock-down lift by the strike's byte 0xE (FV's rob 0x874; F 0x29314):
+ * up, then along */
+const u32 fv_hit_lift[10] = {
+    0x3F800000u, 0x3F800000u, 0x3FE00000u, 0x3FC00000u, 0x40000000u,
+    0x3F800000u, 0x3FC00000u, 0x40100000u, 0x40300000u, 0x40000000u,
+};
+
 /* pose_anims is poses.h's (static, baked): the one copy lives here */
 const pose_anim_t *pose_anim(u32 n) { return &pose_anims[n]; }
 
@@ -271,10 +302,12 @@ void rob_start(u32 p) {
  * clock, the effects, rob_control (each player's pad to the fighter's
  * +0x1200, then sub_1D47C, which reads the moves the pad makes), the
  * recorder, then each fighter's task (rob_action: the commands, the action,
- * where a hit's damage is dealt, the motion, the part matrices). The pad is
+ * where a hit's damage is dealt, the motion, the part matrices). The clock
+ * runs only while clock_on and, as FIGHT_DSP's, not once a fighter is
+ * knocked out (w0 bit 5). The pad is
  * StF's: punch 1, kick 2, guard 4, down 0x10, up 0x20, right 0x40, left
  * 0x80. */
-void fight_step(const u32 pad[2]) {
+void fight_step(const u32 pad[2], u32 clock_on) {
     u32 p;
     stf_task((void (*)(void))RW(stf_coli, TASK_FN), stf_coli, robs[0], robs[1]);
     stf_task(stf_get_game_info, stf_enemy[0], robs[0], robs[1]);
@@ -284,7 +317,8 @@ void fight_step(const u32 pad[2]) {
      * key when the count reaches the key's frame; left still, every key ran
      * past its end and the camera flew off */
     RH(stf_cam, CAMERA_CNT)++;
-    if (GAME_TIMER > 0) GAME_TIMER--;
+    if (clock_on && !((RW(robs[0], ROB_FLAG) | RW(robs[1], ROB_FLAG)) & ROB_F_LOST) && GAME_TIMER > 0)
+        GAME_TIMER--;
     stf_task((void (*)(void))RW(stf_effect, TASK_FN), stf_effect, robs[0], robs[1]);
     RAM8(G_SOUNDS) = 0u;                 /* GAME_DSP's: the sounds the recorder keeps, from none */
     RAM32(G_SW_HELD) = pad[0] << 8 | pad[1] << 16;
@@ -327,19 +361,30 @@ u32 round_time = 30u;             /* seconds, the setup menu's time */
  * first round and a quarter turn more for each round after it, each facing
  * the other. cos(k * 45 degrees) * 2, by k; 1.4142143 is the COP's sqrt 2.
  * On the other games' stages, as those games start a round (read off VF2
- * and FV fights): 2.0 apart along x, VF2 every round, FV a quarter turn
- * more for each round after the first. */
+ * and FV fights): 2.0 of theirs apart along x, VF2 every round, FV a
+ * quarter turn more for each round after the first. Those stages and their
+ * fighters are drawn at the guests' size (tools/vf2-guest.mjs SCALE,
+ * tools/fv-stages.mjs FV_SCALE), so 2.0 of theirs is 2.0 times that here:
+ * about StF's 4.0 (VF2_SCALE: poses.h). */
+#define FV_SCALE  (2.676f / 1.309f)
 static u16 start_ang;
 static const u32 start_cos[8] = {
     0x40000000u, 0x3FB504F7u, 0x00000000u, 0xBFB504F7u, 0xC0000000u, 0xBFB504F7u, 0x00000000u, 0x3FB504F7u,
 };
 static float start_f(u32 k) { union { u32 u; float f; } v; v.u = start_cos[k & 7u]; return v.f; }
 
+/* half the start distance on stage n: 2, 3, 5 VF2's, 4 FV's, 6 DOA's */
+static float start_half(u32 n) {
+    if (n == 4u) return 0.5f * FV_SCALE;
+    if (n == 2u || n == 3u || n == 5u) return 0.5f * VF2_SCALE;
+    return n >= 2u ? 0.5f : 1.0f;
+}
+
 /* next: the match's next round, the armour as the last one left it */
 void round_start(fighter_t fs[2], u32 next) {
     u32 i, k;
     u32 n = stage_index();               /* 2, 3 VF2's; 4 FV's */
-    float d = n >= 2u ? 0.5f : 1.0f;
+    float d = start_half(n);
     start_ang = !next ? (n >= 2u ? 0u : 0x2000u) : (u16)(start_ang + (n == 2u || n == 3u ? 0u : 0x4000u));
     k = start_ang >> 13;
     stage_round_start();

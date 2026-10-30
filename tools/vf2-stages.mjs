@@ -34,15 +34,24 @@ import { levelOrigin, texelByte, SHEET_BYTES, SHEET_H } from '../vendor/noclip/j
 import { loadScrollCG, scrollAt } from '../vendor/noclip/js/scroll.js';
 import { buildColorxlat } from '../vendor/noclip/js/colors.js';
 
-/* VF2's stage slots the board has: Tou-rin, then the Colosseum. */
-export const VF2_STAGE_SLOTS = [0, 1];
+/* VF2's stage slots the board has: Tou-rin, the Colosseum, and record 12,
+ * the stage the debug list names Test (texture set 25, colour block 2), which
+ * the arcade's order never reaches. */
+export const VF2_STAGE_SLOTS = [0, 1, 12];
 /* The board's model ids for them, from here down (import-assets checks that
  * neither StF's models the board keeps nor the guests' are among them). */
 export const VF2_STAGE_TOP = 4835;
+/* and for the models only the later stages (Test) draw, from here down: StF's
+ * stage models the board does not keep (3848..4139 are free) */
+export const VF2_MORE_TOP = 4139;
 /* The board's texture sets for them: after StF's 18, in the copy of the set
- * table pack-akira makes; and the destination list they share. */
+ * table pack-akira makes (Test's after FV's Western's 20, fv-stages.mjs
+ * FV_SET0); and the destination list they share. */
 export const VF2_SET0 = 18;
-const DATA_INDEX = 9;
+export const VF2_SETS = [VF2_SET0, VF2_SET0 + 1, 21];
+/* the destination lists: one for each different list the stages' sets make
+ * (Tou-rin's and the Colosseum's are one; FV's Western has 10) */
+const DATA_INDEXES = [9, 11];
 /* VF2's ring half-size at the factory setting, in its own units: stage
  * setup (0xCF64) puts 0x50A704 in stage_x (0x50A00C), 7.5 from 0x11540[0]
  * (8.0, 0x11530's, only when the stages cycle). The ring-out test (0x17BA8),
@@ -57,11 +66,16 @@ export { SCALE };
  * (luty[i], lutx[i]) in a sheet's 2048 x 1024): 0-15 columns of four from
  * x 0, 16-23 two rows from x 1024. */
 const slotOf = (x, y) => (x < 1024 ? (x >> 8) * 4 + (y >> 8) : y < 512 ? 16 + ((x - 1024) >> 8) * 2 + (y >> 8) : -1);
-/* the pages the stages read on the stages' sheet, kept where they are */
-const KEEP_ODD = new Set([22, 23]);
+/* the pages the stages read on the stages' sheet are kept where they are:
+ * 22 and 23 on every stage, and any other the stage's models read (Test's
+ * 16-21). The fighters' set has only the other sheet (pack-akira.mjs), and
+ * the moved even pages are all left of x 1024, so slots 16-23 are free. */
+const KEEP_ODD = [22, 23];
 /* an even page's slot 16-23 -> the stages' sheet slot at x - 1024 */
 const vf2Base = (rom, slot) => rom.game.stageTable.vf2.at + slot * 256;
 const evenTo = (s) => ((s - 16) >> 1) * 4 + ((s - 16) & 1);
+/* a VF2 stage by its slot: the arenas, then the records the game leaves out */
+const vf2Stage = (g, slot) => [...g.stages, ...(g.extraStages ?? [])].find((s) => s.slot === slot);
 
 /*
  * The plan: for each stage, its draws as { model, ops, lit, frames, shift }:
@@ -73,7 +87,7 @@ const evenTo = (s) => ((s - 16) >> 1) * 4 + ((s - 16) & 1);
 export function vf2StagePlan(games) {
     const vf2 = games.vf2;
     const stages = VF2_STAGE_SLOTS.map((slot) => {
-        const st = vf2.stages.find((s) => s.slot === slot);
+        const st = vf2Stage(vf2, slot);
         const draws = st.draws.filter((d) => !d.extra && !d.points).map((d) => {
             const out = { model: d.model, ops: d.ops, layer: d.layer };
             if (d.anim?.index) { out.model = d.anim.frames[0]; out.lit = d.anim.frames[1]; }
@@ -91,11 +105,35 @@ export function vf2StagePlan(games) {
         });
         return { st, draws };
     });
-    const set = new Set();
-    for (const { draws } of stages) for (const d of draws) for (const m of [d.model, d.lit, ...(d.frames ?? [])]) if (m) set.add(m);
-    const models = [...set].sort((a, b) => a - b);
-    const idOf = new Map(models.map((m, i) => [m, VF2_STAGE_TOP - i]));
+    const modelsOf = (list) => [...new Set(list.flatMap(({ draws }) => draws.flatMap((d) => [d.model, d.lit, ...(d.frames ?? [])])).filter(Boolean))].sort((a, b) => a - b);
+    const first = modelsOf(stages.slice(0, HEAP_STAGES)), more = modelsOf(stages.slice(HEAP_STAGES)).filter((m) => !first.includes(m));
+    const models = [...first, ...more];
+    const idOf = new Map([...first.map((m, i) => [m, VF2_STAGE_TOP - i]), ...more.map((m, i) => [m, VF2_MORE_TOP - i])]);
+    for (const p of stages) p.keep = new Set([...KEEP_ODD, ...oddSlotsRead(vf2.rom, p.draws)]);
     return { stages, models, idOf };
+}
+
+/* The stages' sheet slots (16-23) a stage's models read a tile from. */
+function oddSlotsRead(rom, draws) {
+    const vt = rom.game.modelTable.offset;
+    const raw = (m, o) => rom.mainDataView.getUint32(vt + m * 16 + o, true);
+    const vp = new DataView(rom.polygons.buffer, rom.polygons.byteOffset, rom.polygons.byteLength);
+    const tv = new DataView(rom.textures.buffer, rom.textures.byteOffset, rom.textures.byteLength);
+    const out = new Set();
+    for (const m of new Set(draws.flatMap((d) => [d.model, d.lit, ...(d.frames ?? [])]).filter(Boolean))) {
+        const obc = raw(m, 12) || 0xfffff;
+        let p = (raw(m, 8) & 0x3fffff) * 4 + 24, th = raw(m, 4);
+        for (let i = 0; i < obc; i++, p += 40) {
+            const attr = vp.getUint32(p, true);
+            if ((attr & 3) === 0) break;
+            const th0 = tv.getUint16(th * 2, true), th2 = tv.getUint16(th * 2 + 4, true);
+            if ((th0 & 0x4000) && !((th2 >> 12) & 1)) out.add(slotOf(32 * (th2 & 0x3f), 32 * ((th2 >> 6) & 0x1f)));
+            let tho = (attr >> 12) & 0x1f;
+            if (tho & 0x10) tho -= 0x20;
+            th += tho * 4;
+        }
+    }
+    return out;
 }
 
 /*
@@ -146,21 +184,28 @@ export const BOLT = { on: 0x2aa8346, off: 0x2aa85e6, step: 0x54, pairs: 8, col: 
 /* blocks 126 and 127: FV's armour figures on the HUD (tools/bake-board.mjs) */
 export const ARMOUR_BLOCKS = [126, 127];
 const SKY_FREE_BLOCKS = [...Array.from({ length: 44 }, (_, i) => 40 + i), ...Array.from({ length: 19 }, (_, i) => 107 + i)];
-/* The skies' place in main_data: free room above the guests' heap (366 KB
- * of skies in 384; the heap below runs up to it, its end checked on import). */
+/* The skies' places in main_data: free room above the guests' heap (366 KB
+ * of skies in 384; the heap below runs up to it, its end checked on import),
+ * and StF data the board does not keep after set 1's pages (below StF's
+ * motions at 0x02C015A2), for the skies that do not fit the first. A sky
+ * goes whole into the first room it fits. */
 export const VF2_SKY_AT = 0x02fa0000;
-const SKY_END = 0x03000000;
+const SKY_ROOMS = [[VF2_SKY_AT, 0x03000000], [0x02b30000, 0x02b80000]];
+/* The pages of the stages after the first two, which the guests' heap has
+ * no room for: the rest of that room. */
+const MORE_PAGES = [0x02b80000, 0x02c00000];
+const HEAP_STAGES = 2;
 const gamma = (i) => Math.trunc(Math.max(((i - 64) * 255) / 191, 0));
 const lumaCol = (cx, p) => Array.from({ length: 32 }, (_, r) => cx[p * 0x4000 + r * 0x200 + 0x80]);
 
 export function vf2SkyPlan(games) {
     const vf2 = games.vf2.rom, stf = games.stf.rom, cpu = vf2.mainCpuView;
     const stfCx = buildColorxlat(stf, { colorSet: games.stf.stages[0].texSet[1], tint: games.stf.stages[0].tint, fighters: [] });
-    const parts = [];
-    let at = VF2_SKY_AT;
-    const place = (bytes) => { const a = at; parts.push(bytes); at += (bytes.length + 15) & ~15; if (bytes.length & 15) parts.push(new Uint8Array(16 - (bytes.length & 15))); return a; };
+    const rooms = SKY_ROOMS.map(([at, end]) => ({ at, end, parts: [] }));
+    let room = rooms[0];
+    const place = (bytes) => { const a = room.at; room.parts.push(bytes); room.at += (bytes.length + 15) & ~15; if (bytes.length & 15) room.parts.push(new Uint8Array(16 - (bytes.length & 15))); return a; };
     const skies = VF2_STAGE_SLOTS.map((slot) => {
-        const st = games.vf2.stages.find((s) => s.slot === slot);
+        const st = vf2Stage(games.vf2, slot);
         const rec = VF2_SKY_RECORDS + st.num * 32;
         const list = cpu.getUint32(rec + 0x10, true);
         const rows = cpu.getUint16(list, true), voff = cpu.getUint8(list + 2);
@@ -186,6 +231,9 @@ export function vf2SkyPlan(games) {
         }
         const vCx = buildColorxlat(vf2, { colorSet: st.texSet[1], tint: st.tint, fighters: [] });
         const { dest, to, snap, cb, pb } = packSky(`VF2 sky ${st.name}`, cells, bolt, chars, pal, vCx, stfCx);
+        const size = cb.length + pb.length + cells.byteLength + 48;
+        room = rooms.find((r) => r.at + size <= r.end);
+        if (!room) throw new Error(`VF2 sky ${st.name}: no room left in main_data`);
         const stormPal = !storm ? null : STORM_PAL.map((writes) => writes.flatMap(([first, groups, count, on, off]) => {
             const out = [];
             for (let g = 0; g < groups; g++) {
@@ -201,11 +249,14 @@ export function vf2SkyPlan(games) {
         return { name: st.name, rows, voff, dest, chars: place(cb), pal: place(pb), pano: place(new Uint8Array(cells.buffer)),
             storm: storm ? { pal: stormPal, bolt } : null };
     });
-    if (at > SKY_END) throw new Error(`VF2 skies: 0x${(at - VF2_SKY_AT).toString(16)} bytes, past main_data's end`);
-    const blob = new Uint8Array(at - VF2_SKY_AT);
-    let o = 0;
-    for (const b of parts) { blob.set(b, o); o += b.length; }
-    return { skies, blob };
+    const blobs = rooms.filter((r) => r.parts.length).map((r) => {
+        if (r.at > r.end) throw new Error(`VF2 skies: past their room's end, 0x${r.end.toString(16)}`);
+        const bytes = new Uint8Array(r.parts.reduce((n, b) => n + b.length, 0));
+        let o = 0;
+        for (const b of r.parts) { bytes.set(b, o); o += b.length; }
+        return { at: r.at - bytes.length, bytes };
+    });
+    return { skies, blobs };
 }
 
 /*
@@ -272,35 +323,53 @@ const hex = (v) => '0x' + v.toString(16).toUpperCase();
 /* R: import-assets' regions and tables; games: noclip's ROM sets; ctx: what
  * importAkira built (its heap in main_data, pack-akira's set table copy, the
  * colorbases the guests took). */
+const MAIN_DATA = 0x02000000;
+
+/* free room in a region: the first gap of len bytes the board keeps nothing in */
+/* from 0x100: a pointer of 0 is none (a model with no UVs, no mesh) */
+const free = (r, len, align = 16, from = 0x100) => {
+    const iv = r.kept.map(([a, b]) => [a, b]).sort((a, b) => a[0] - b[0]);
+    let at = (from + align - 1) & ~(align - 1);
+    for (const [a, b] of iv) {
+        if (b <= at) continue;
+        if (a >= at + len) break;
+        at = (b + align - 1) & ~(align - 1);
+    }
+    if (at + len > r.out.length) throw new Error(`VF2 stages: no room for ${len} bytes in ${r.name}`);
+    return at;
+};
+const isFree = (r, a, len) => !r.kept.some(([x, y]) => x < a + len && a < y);
+const u32s = (list) => { const b = new Uint8Array(list.length * 4); const v = new DataView(b.buffer); list.forEach((x, i) => v.setUint32(i * 4, x >>> 0, true)); return b; };
+
 export function importVf2Stages(R, games, ctx) {
-    const { pack, freeTaken } = ctx;
-    const { main, polygons, textures } = R;
-    const vf2 = games.vf2.rom, stf = games.stf.rom;
+    const { main } = R;
     const plan = vf2StagePlan(games);
     const report = [];
-    const MAIN_DATA = 0x02000000;
-
-    /* free room in a region: the first gap of len bytes the board keeps nothing in */
-    /* from 0x100: a pointer of 0 is none (a model with no UVs, no mesh) */
-    const free = (r, len, align = 16, from = 0x100) => {
-        const iv = r.kept.map(([a, b]) => [a, b]).sort((a, b) => a[0] - b[0]);
-        let at = (from + align - 1) & ~(align - 1);
-        for (const [a, b] of iv) {
-            if (b <= at) continue;
-            if (a >= at + len) break;
-            at = (b + align - 1) & ~(align - 1);
-        }
-        if (at + len > r.out.length) throw new Error(`VF2 stages: no room for ${len} bytes in ${r.name}`);
-        return at;
-    };
-    const isFree = (r, a, len) => !r.kept.some(([x, y]) => x < a + len && a < y);
-    const u32s = (list) => { const b = new Uint8Array(list.length * 4); const v = new DataView(b.buffer); list.forEach((x, i) => v.setUint32(i * 4, x >>> 0, true)); return b; };
 
     for (const m of plan.models) {
         const id = plan.idOf.get(m);
         if (id <= 0 || !isFree(main, R.modelTable + id * 16, 16)) throw new Error(`VF2 stages: model id ${id} is taken (lower VF2_STAGE_TOP)`);
     }
 
+    importVf2Models(R, games, ctx, plan, report);
+    const sets = importVf2Sets(R, games, ctx, plan, report);
+    /* the skies, at the fixed place bake-board.mjs gives the board */
+    const sky = vf2SkyPlan(games);
+    for (const { at, bytes } of sky.blobs) {
+        if (!isFree(main, at - MAIN_DATA, bytes.length)) throw new Error(`VF2 skies: their room in main_data at ${hex(at)} is taken`);
+        main.put(at - MAIN_DATA, bytes, 'VF2 stage skies');
+    }
+    report.push(`skies ${sky.skies.map((k) => `${k.name} ${k.dest.length} blocks`).join(', ')}: ${sky.blobs.map((b) => `${(b.bytes.length / 1024).toFixed(0)} KB at ${hex(b.at)}`).join(', ')}`);
+    const problems = checkVf2Stages(R, games, plan, sets);
+    if (problems.length) throw new Error(`VF2 stages: ${problems.slice(0, 8).join('; ')}`);
+    report.push(`every model decodes through the board's ROMs as through VF2's: points at its scale, UVs, tile sizes, texels at levels 0-3`);
+    return { report };
+}
+
+/* A face's colorbase and tile, VF2's to the board's. */
+function vf2Mappers(R, games, ctx) {
+    const { freeTaken } = ctx, { main } = R;
+    const vf2 = games.vf2.rom, stf = games.stf.rom;
     /* ---- colours: a colorbase whose palette entry differs from StF's names
      * an StF entry with VF2's value, or a free one set to it (as Akira's) ---- */
     const pal = (rom, cb) => rom.mainDataView.getUint16(0x100000 + cb * 2, true);
@@ -326,14 +395,22 @@ export function importVf2Stages(R, games, ctx) {
         if (!(th0 & 0x4000)) return th2;
         const x = 32 * (th2 & 0x3f), y = 32 * ((th2 >> 6) & 0x1f), s = slotOf(x, y);
         if (!((th2 >> 12) & 1)) {
-            if (!KEEP_ODD.has(s)) throw new Error(`VF2 stages: a tile on the stages' sheet, slot ${s}`);
+            if (s < 16) throw new Error(`VF2 stages: a tile on the stages' sheet, slot ${s}`);
             return th2;
         }
         if (s < 16) throw new Error(`VF2 stages: a tile on the fighters' sheet, slot ${s}`);
         moved++;
         return (th2 & ~0x103f) | ((x - 1024) / 32);
     };
+    return { mapCb, mapTh2, stats: () => ({ cbs: cbMap.size, fresh, moved }) };
+}
 
+/* The stages' models as ids plan.idOf: VF2's meshes scaled, their points
+ * and headers in textures with colorbases and tiles mapped to the board's. */
+function importVf2Models(R, games, ctx, plan, report) {
+    const { main, polygons, textures } = R;
+    const vf2 = games.vf2.rom;
+    const { mapCb, mapTh2, stats } = vf2Mappers(R, games, ctx);
     /* ---- models: the mesh (points scaled), its headers and points ---- */
     const vt = vf2.game.modelTable.offset;
     const raw = (m, o) => vf2.mainDataView.getUint32(vt + m * 16 + o, true);
@@ -403,10 +480,19 @@ export function importVf2Stages(R, games, ctx) {
         }
         main.put(R.modelTable + plan.idOf.get(m) * 16, u32s([uv, mat, (oba & ~0x3fffff) | (polyAt >> 2), raw(m, 12)]), `VF2 stage model ${m} as ${plan.idOf.get(m)}`);
     }
-    report.push(`${plan.models.length} models as ${VF2_STAGE_TOP - plan.models.length + 1}..${VF2_STAGE_TOP}; meshes ${(polyBytes / 1024).toFixed(0)} KB, headers and points ${(texBytes / 1024).toFixed(0)} KB`);
-    report.push(`${cbMap.size} colorbases moved (${fresh} new); ${moved} faces' tiles from the fighters' sheet to the stages'`);
+    const ids = [...plan.idOf.values()], top = ids.filter((i) => i > VF2_MORE_TOP);
+    report.push(`${plan.models.length} models as ${VF2_STAGE_TOP - top.length + 1}..${VF2_STAGE_TOP}, ${VF2_MORE_TOP - (ids.length - top.length) + 1}..${VF2_MORE_TOP}; meshes ${(polyBytes / 1024).toFixed(0)} KB, headers and points ${(texBytes / 1024).toFixed(0)} KB`);
+    const { cbs, fresh, moved } = stats();
+    report.push(`${cbs} colorbases moved (${fresh} new); ${moved} faces' tiles from the fighters' sheet to the stages'`);
 
-    /* ---- texture sets ---- */
+}
+
+/* The stages' texture sets as board set-table entries VF2_SETS, their pages
+ * in main_data and their destination lists at DATA_INDEXES; returns VF2's set
+ * numbers. */
+function importVf2Sets(R, games, ctx, plan, report) {
+    const { pack } = ctx, { main } = R;
+    const vf2 = games.vf2.rom, stf = games.stf.rom;
     const v32 = (a) => { const r = resolveData(vf2, a); return r.view.getUint32(r.off, true); };
     const VH = v32(0x0230000c), VD = v32(0x02300008);
     /* every VF2 page block, so a block runs to the next one */
@@ -433,21 +519,28 @@ export function importVf2Stages(R, games, ctx) {
     const dataTable = stf.mainDataView.getUint32(0x300008, true) - MAIN_DATA;
     const sets = plan.stages.map(({ st }) => st.texSets[0]);
     /* the set table copy's entries 18 on, which run past what pack-akira wrote */
-    const entries = sets.map((_, k) => tableAt + (VF2_SET0 + k) * 4);
+    const entries = sets.map((_, k) => tableAt + VF2_SETS[k] * 4);
     for (const e of entries) {
         if (!isFree(main, e, 4)) throw new Error('VF2 stages: the set table copy runs into something');
         main.put(e, new Uint8Array(4), 'VF2 set entry');
     }
-    let list = null;
+    const lists = [];
     let pageBytes = 0;
+    const allocMore = (b, label) => {
+        const at = free(main, b.length, 16, MORE_PAGES[0] - MAIN_DATA);
+        if (MAIN_DATA + at + b.length > MORE_PAGES[1]) throw new Error(`VF2 stages: ${label} past ${hex(MORE_PAGES[1])}`);
+        main.put(at, b, label);
+        return MAIN_DATA + at;
+    };
     sets.forEach((s, k) => {
+        const keep = plan.stages[k].keep;
         const P = v32(VH + s * 4), D = v32(VD + v32(P) * 4), n = v32(D);
         const g2s = [], pages = [];
         for (let i = 0; i < n; i++) {
             let g2 = v32(D + 4 + i * 4);
             const b = v32(P + 4 + i * 4);
             const slot = (g2 >> 1) & 0x7fff;
-            if (g2 & 1) { if (!KEEP_ODD.has(slot)) continue; }
+            if (g2 & 1) { if (!keep.has(slot)) continue; }
             else g2 = (g2 & ~0xffff) | (evenTo(slot) << 1) | 1;
             g2s.push(g2);
             if (!b) { pages.push(0); continue; }
@@ -455,27 +548,23 @@ export function importVf2Stages(R, games, ctx) {
             const bytes = blockBytes(b), pad = b & 15, padded = new Uint8Array(pad + bytes.length);
             padded.set(bytes, pad);
             pageBytes += bytes.length;
-            pages.push(ctx.alloc(padded, `set ${s} page ${i}`, 16, 'VF2 stage') + pad);
+            pages.push(k < HEAP_STAGES ? ctx.alloc(padded, `set ${s} page ${i}`, 16, 'VF2 stage') + pad
+                : allocMore(padded, `VF2 stage set ${s} page ${i}`) + pad);
         }
-        const l = u32s([g2s.length, ...g2s]);
-        if (list && list.join() !== [...l].join()) throw new Error('VF2 stages: the sets\' destination lists differ');
-        list = [...l];
-        const pAt = ctx.alloc(u32s([DATA_INDEX, ...pages]), `set ${s} page list`, 16, 'VF2 stage');
-        main.put(entries[k], u32s([pAt]), `VF2 set ${s} as ${VF2_SET0 + k}`);
+        const l = [...u32s([g2s.length, ...g2s])].join();
+        let li = lists.indexOf(l);
+        if (li < 0) { li = lists.length; lists.push(l); }
+        if (li >= DATA_INDEXES.length) throw new Error('VF2 stages: more destination lists than DATA_INDEXES');
+        const pAt = ctx.alloc(u32s([DATA_INDEXES[li], ...pages]), `set ${s} page list`, 16, 'VF2 stage');
+        main.put(entries[k], u32s([pAt]), `VF2 set ${s} as ${VF2_SETS[k]}`);
     });
-    const dAt = ctx.alloc(Uint8Array.from(list), 'destination list', 16, 'VF2 stage');
-    if (!isFree(main, dataTable + DATA_INDEX * 4, 4)) throw new Error(`VF2 stages: destination list ${DATA_INDEX} is StF's`);
-    main.put(dataTable + DATA_INDEX * 4, u32s([dAt]), `destination list ${DATA_INDEX}`);
-    report.push(`sets ${sets.join(', ')} as ${sets.map((_, k) => VF2_SET0 + k).join(', ')}: ${list[0]} pages each, ${(pageBytes / 1024).toFixed(0)} KB`);
-    /* the skies, at the fixed place bake-board.mjs gives the board */
-    const sky = vf2SkyPlan(games);
-    if (!isFree(main, VF2_SKY_AT - MAIN_DATA, sky.blob.length)) throw new Error('VF2 skies: their room in main_data is taken');
-    main.put(VF2_SKY_AT - MAIN_DATA, sky.blob, 'VF2 stage skies');
-    report.push(`skies ${sky.skies.map((k) => `${k.name} ${k.dest.length} blocks`).join(', ')}: ${(sky.blob.length / 1024).toFixed(0)} KB`);
-    const problems = checkVf2Stages(R, games, plan, sets);
-    if (problems.length) throw new Error(`VF2 stages: ${problems.slice(0, 8).join('; ')}`);
-    report.push(`every model decodes through the board's ROMs as through VF2's: points at its scale, UVs, tile sizes, texels at levels 0-3`);
-    return { report };
+    lists.forEach((l, li) => {
+        const dAt = ctx.alloc(Uint8Array.from(l.split(',').map(Number)), 'destination list', 16, 'VF2 stage'), di = DATA_INDEXES[li];
+        if (!isFree(main, dataTable + di * 4, 4)) throw new Error(`VF2 stages: destination list ${di} is StF's`);
+        main.put(dataTable + di * 4, u32s([dAt]), `destination list ${di}`);
+    });
+    report.push(`sets ${sets.join(', ')} as ${sets.map((_, k) => VF2_SETS[k]).join(', ')}: ${sets.map((_, k) => plan.stages[k].keep.size + 8).join(', ')} pages, ${(pageBytes / 1024).toFixed(0)} KB, destination lists ${DATA_INDEXES.slice(0, lists.length).join(', ')}`);
+    return sets;
 }
 
 /* Each model through the board's data ROMs (StF's, as import-assets leaves
@@ -496,7 +585,7 @@ function checkVf2Stages(R, games, plan, sets) {
     const problems = [];
     const near = (a, b) => Math.abs(a - b) <= 1e-4 * Math.max(1, Math.abs(b));
     plan.stages.forEach(({ draws }, k) => {
-        const src = texOf(buildTexram(vf2, [sets[k]])), dst = texOf(buildTexram(board, [1, VF2_SET0 + k]));
+        const src = texOf(buildTexram(vf2, [sets[k]])), dst = texOf(buildTexram(board, [1, VF2_SETS[k]]));
         const models = new Set();
         for (const d of draws) for (const m of [d.model, d.lit, ...(d.frames ?? [])]) if (m) models.add(m);
         for (const m of models) {

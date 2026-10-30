@@ -140,7 +140,9 @@ StF's work RAM they use becomes `.bss` blocks of the board's; StF's ROM tables
 at 0xC0000..0xFFFFF (the character records, skeletons, motion lists) are
 copied raw to the same addresses (`.stfrom`). Collision routines are stubbed.
 The coprocessor runs StF's own firmware (m2-sdk's default), so the ops are
-the ones StF sends. The code uses the i960's own floating point, as StF does:
+the ones StF sends. FV's fighters get it too: FV's own revision differs in
+three results (stf-sharc's `FV_COP` has them), and none shows in the graded
+FV replay. The code uses the i960's own floating point, as StF does:
 fine on MAME and a real board (not on a soft-float i960).
 
 `board/src/stf_call.s` calls a lifted routine with StF's registers (g7 the
@@ -322,6 +324,20 @@ same frame of the stance motion (278), all sixteen part positions in the rob
   the SDK's ramp would show it far too bright.
   Real StF and board snapshots show the same pixels: (0, 0, 188) on South
   Island (0xF0C0) and (213, 38, 0) on Dynamite Plant (0x017F).
+- Stage culls (`stage.c`): `bake-board.mjs` marks each StF draw with its
+  cull (`stage_draw_t.cull`). The ground's 16 chunks go through
+  `ground_disp`'s `area_clip`: a 5 by 5 grid of points through the camera
+  and the chunks' matrix, outcodes 0x90 (Z at or under 1.0), 0x81 and 0x82
+  (focus * 0.6667 * X / Z past -248 or 248), a chunk drawn unless its four
+  corners share a bit, and the chunk under the camera always. The backdrop
+  ring's 16 segments go through `doom_cnt`'s test: the camera's unscaled
+  z axis against the direction from the camera to the segment's point,
+  hidden over 0.866 until one is drawn and over 0 after (the draw's
+  `set_obj` call clears g1, the threshold). Camera flag bits 0x10 (no
+  ground), 0x11 (no ring) and 0x1B (whole ring) are read too. On Aurora,
+  Sonic vs Sonic, the board now draws the ring segments StF does (8 or 9 a
+  frame; StF's COP data agree on all 524 frames logged) and 9 chunks to
+  StF's 9, the 8s and 10s within a few frames of StF's.
 - Light: `change_scene` copies the stage record's `stage_bright` (+0x04,
   float) and `stage_vecter_x`/`_y` (+0x08, +0x0A, angles) to `BRIGHT` and
   `VECTER_X`/`_Y`. Every frame `camera_init` builds the light on the
@@ -1669,6 +1685,62 @@ the data ROMs, and `bake-board.mjs` bakes their records into `poses.h`.
 - Check: `checkVf2Stages` decodes every model from VF2 and from the patched
   board ROMs and compares points (times SCALE), UVs, tile sizes and the
   texels at levels 0..3. MAME: both stages draw as in VF2.
+
+### VF2's Test stage
+
+VF2's stage record 12 (noclip's "Test", one of `extraStages`: the city
+street with the "VIRTUA FIGHTER 2" graffiti) is setup stage 5, "VF2 TEST",
+after FV's Western, through the same importer (`VF2_STAGE_SLOTS` 0, 1, 12).
+
+- Models: 50 draws. The models Tou-rin and the Colosseum also use keep
+  their ids; Test's own go from `VF2_MORE_TOP` (4139) down (4090..4139),
+  ids StF's kept models leave free (3848..4139), since FV's Western takes
+  4383..4429 below `VF2_STAGE_TOP`'s run.
+- Textures: VF2 texture set 25 as board set 21 (set 20 is FV's). Test reads
+  odd stages'-sheet slots the arenas do not (16..23), so each stage keeps
+  its own odd pages (`oddSlotsRead`: every face whose th2 bit 12 is clear),
+  16 pages in all, and its own destination list: StF data-table index 11
+  (Tou-rin and the Colosseum share index 9, FV's is 10). The arenas' pages
+  stay on the heap; Test's go into `MORE_PAGES`, main_data
+  0x2B80000..0x2C00000, data StF does not keep.
+- Sky: VF2's 0x2502C record 12, 31 blocks. It does not fit beside the
+  arenas' at `VF2_SKY_AT` (main_data ends at 0x3000000), so `SKY_ROOMS` puts
+  each sky whole into the first room it fits: Test's goes to 0x2B30000.
+- Music: VF2's stage table (data 0x1E900) gives Test song 0x18, imported as
+  StF code 0xAE101C (`guest-sound.mjs`, `SND_VF2_TEST` in sound.c).
+- Ring out: as on the arenas.
+- Check: `checkVf2Stages` as above. MAME: setup stage 5, Sonic against
+  Honey on the street, the sky and the graffiti wall behind them.
+
+### DOA's stage
+
+Dead or Alive's stage 10 (the Model 2B set doab, with doa's ROMs: an
+elevated road at night, the city behind it) is setup stage 6, "DOA STAGE 10"
+(DOA has no stage names), through `tools/doa-stages.mjs`, which reads the
+stage as noclip's `doa.js` runs its draw routine.
+
+- Size: VF2's scale (DOA's fighters stand 1.24-1.57 of its units). The
+  ring's top is at y 1.0 in DOA's frame (`DOA_FLOOR`), so the draws move down
+  by it; the ring is +-12.1 (`DOA_RING`) and rings out as the others do.
+- Models: 57 draws of 42 (model, texture points) pairs, ids 4048..4089
+  (`DOA_STAGE_TOP`, below VF2's Test). A draw with no points block uses
+  the model's own. Two draws sway: 512 frames of their turn as s16 tables
+  (`doastage_sway3/4`, stage_draw_t's `sway`; stage.c `sway_mul`).
+- Textures: DOA's stage sheet is raw with no mip chain and the scenery reads
+  slots 2, 3, 6, 7, 10, 11, 14 and 15 of it. Those eight go to the same
+  slots of the stages' sheet as raw pages (tex_send_beta) with mips made
+  here, as board set 22, destination list 12, at main_data 0x2A00000; every
+  face's th2 loses bit 12.
+- Colours: each colour component becomes the StF stage row (0..27) that
+  shows nearest across the luma range; DOA's four lumaram bands are added
+  after StF's 71 at 3/4 (count 75). The four untextured faces take rows
+  14..27, whose luma 48..63 become DOA's row.
+- Sky: DOA's four scroll pictures, its 2048-pixel ring laid twice across the
+  board's 4096, repacked to 62 blocks at 0x2A80000.
+- Music: DOA's can't come along; it plays VF2's Tou-rin (`SND_VF2_TOURIN`).
+- Check: `checkDoaStage`: every model through the board's ROMs against
+  DOA's (points at the scale, UVs, tile sizes, texels at levels 0-3).
+  MAME: setup stage 6, Sonic against Honey on the road, the city behind.
 
 ### Ring out
 

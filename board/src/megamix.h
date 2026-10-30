@@ -98,7 +98,7 @@ const pose_anim_t *pose_anim(u32 n);
 void stf_globals(void);
 void rob_init(u32 p, const fighter_t *f);
 void rob_start(u32 p);
-void fight_step(const u32 pad[2]);
+void fight_step(const u32 pad[2], u32 clock_on);
 void round_start(fighter_t fs[2], u32 next);
 void hud_draw(void);
 void boot_state(u32 save);

@@ -33,8 +33,9 @@ import { readFrameTables, buildStageDisplayList, opsAt } from '../vendor/noclip/
 import { makeFighter } from '../js/fighters.js';
 import { buildColorxlat } from '../vendor/noclip/js/colors.js';
 import { stormSchedule } from '../vendor/noclip/js/vf2.js';
-import { vf2StagePlan, vf2SkyPlan, VF2_SET0, VF2_RING, SCALE as VF2_SCALE, ARMOUR_BLOCKS, colourSnap } from './vf2-stages.mjs';
+import { vf2StagePlan, vf2SkyPlan, VF2_SETS, VF2_RING, SCALE as VF2_SCALE, ARMOUR_BLOCKS, colourSnap } from './vf2-stages.mjs';
 import { fvBoardPlan, fvSkyPlan, FV_SET0, FV_RING, FV_SCALE, FV_TURN } from './fv-stages.mjs';
+import { loadDoa, doaStagePlan, doaSkyPlan, doaStageCx, doaMaterials, DOA_SET, DOA_SCALE, DOA_FLOOR, DOA_RING, SWAY } from './doa-stages.mjs';
 import { xtraResolve } from '../vendor/noclip/js/romset.js';
 import { resolveData } from '../vendor/noclip/js/motion.js';
 import { loadScrollCG } from '../vendor/noclip/js/scroll.js';
@@ -171,9 +172,17 @@ const scale = [k, 0, 0, 0, 0, k, 0, 0, 0, 0, k, 0, 0, 0, 0, 1];
 /* anim, shift, phase, mask: a StF draw that swaps its model (South Island's
  * palms and their shadow): model anim[((frame >> shift) + phase) & mask].
  * spin: a StF draw that turns about its own y, m * ang_y(spin * frame)
- * (South Island's sky, Aurora's diamonds). */
+ * (South Island's sky, Aurora's diamonds).
+ * sway: DOA's swaying draws, the 3x3 of m by frame from the round's start,
+ * s16 at 1/8192, SWAY_FRAMES frames of nine.
+ * cull: which of StF's stage culls the draw goes through (draw_stage):
+ * CULL_RING and CULL_RING16, a segment of doom_cnt's backdrop ring, drawn at
+ * 1.0 (Aurora Icefield) or 1.6; CULL_SEA, ground_disp's sea; CULL_CHUNK + i,
+ * ground_disp's chunk i (stage_parts[i]) through area_clip. */
+const CULL_RING = 1, CULL_RING16 = 2, CULL_SEA = 3, CULL_CHUNK = 0x10, AURORA_SLOT = 2;
+out.push(`#define CULL_RING ${CULL_RING}u\n#define CULL_RING16 ${CULL_RING16}u\n#define CULL_SEA ${CULL_SEA}u\n#define CULL_CHUNK 0x${CULL_CHUNK.toString(16)}u`);
 out.push('typedef struct { u32 model; float m[12]; float x0, x1; u8 turn, side, swing, win;');
-out.push('                 const u16 *anim; u8 shift, phase, mask; u16 spin; } stage_draw_t;');
+out.push('                 const u16 *anim; u8 shift, phase, mask; u16 spin; const short *sway; u8 cull; } stage_draw_t;');
 /* bg: the record's stage_bg_color (+0x16, BGR555), which StF's scr_bg_int
  * puts behind the 3D layer (change_bg_color, bg_col_set).
  * bright, vx, vy: stage_bright (+0x04) and stage_vecter_x/y (+0x08, +0x0A),
@@ -253,26 +262,34 @@ function spinOf(st, e) {
     return spin;
 }
 const stages = [];
+/* VF2's, Tou-rin and the Colosseum in the setup's 2 and 3, Test after FV's
+ * Western, so the setup's numbers stay as they were */
+const vf2Stages = [];
 stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
     const list = buildStageDisplayList(st, frames).filter((e) => !e.extra && !e.points);
     /* cage_display's panels come wall by wall, each wall's in table order. */
     const np = cagePanels(st.flags), ends = cageEnds(np);
     const walls = list.filter((e) => e.layer === 'cage').length;
     if (walls && walls !== 4 * np) throw new Error(`${st.name}: ${walls} cage panels, not 4 walls of ${np}`);
-    let panel = 0;
+    let panel = 0, chunk = 0;
     const tables = [], rows = [];
     for (const e of list) {
         const x = e.layer === 'cage' ? ends.slice(panel % np, panel++ % np + 2) : [0, 0];
-        let tail = '';
+        let anim = '0, 0, 0, 0', spin = 0;
         if (e.anim) {
             const t = e.anim.frames, mask = t.length - 1;
             if (e.anim.index || t.length & mask) throw new Error(`${st.name}: model ${e.model}'s frames are not a table of 2^n`);
             let k = tables.indexOf(t);
             if (k < 0) { k = tables.length; tables.push(t); }
-            tail = `, 0, 0, 0, 0, stage${n}_anim${k}, ${e.anim.shift}, ${e.anim.phase}, ${mask}, 0`;
-        } else if (typeof e.ops === 'function') tail = `, 0, 0, 0, 0, 0, 0, 0, 0, ${spinOf(st, e)}`;
-        rows.push(`  {${e.model}, {${boardOf(mul(scale, composeOps(opsAt(e, 0)))).map(f32).join(',')}}, ${x.map(f32).join(', ')}${tail}},`);
+            anim = `stage${n}_anim${k}, ${e.anim.shift}, ${e.anim.phase}, ${mask}`;
+        } else if (typeof e.ops === 'function') spin = spinOf(st, e);
+        let cull = 0;
+        if (e.layer === 'sky') cull = st.slot === AURORA_SLOT ? CULL_RING : CULL_RING16;
+        else if (e.layer === 'water') cull = CULL_SEA;
+        else if (e.layer === 'ground') cull = CULL_CHUNK + chunk++;
+        rows.push(`  {${e.model}, {${boardOf(mul(scale, composeOps(opsAt(e, 0)))).map(f32).join(',')}}, ${x.map(f32).join(', ')}, 0, 0, 0, 0, ${anim}, ${spin}, 0, ${cull}},`);
     }
+    if (chunk && chunk !== 16) throw new Error(`${st.name}: ${chunk} ground chunks, not area_clip's 16`);
     tables.forEach((t, k) => out.push(`static const u16 stage${n}_anim${k}[${t.length}] = {${t.join(',')}};`));
     out.push(`static const stage_draw_t stage${n}_draws[${list.length}] = {`, ...rows);
     out.push('};');
@@ -345,10 +362,11 @@ stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
         const bright = vr.getFloat32(base + 0x6c, true), vx = vr.getInt16(base + 0x70, true), vy = vr.getInt16(base + 0x72, true);
         const tint = st.tint.map((t) => Math.round(t * 128)).join(', ');
         const nm = st.name.toUpperCase();
-        stages.push(`{"${nm}", ${VF2_SET0 + n}, ${draws.length}, ${name}_draws, {0, 28, 0, 64, ${name}_cx}, ${name}_mat, 0x0, ${f32(bright)}, ${vx}, ${vy}, 0xFFFF, {${tint}}, {0, 0, 0, 0, 0}, ` +
+        vf2Stages.push(`{"${nm}", ${VF2_SETS[n]}, ${draws.length}, ${name}_draws, {0, 28, 0, 64, ${name}_cx}, ${name}_mat, 0x0, ${f32(bright)}, ${vx}, ${vy}, 0xFFFF, {${tint}}, {0, 0, 0, 0, 0}, ` +
             `${f32(VF2_RING * VF2_SCALE)}, ${lit}, ${storm}, ${flash}, ${wind}, ${windAt}, ${windShift}, &${name}_sky}`);
-        console.log('stage', stages.length - 1, nm, 'VF2 set', st.texSets[0], 'as', VF2_SET0 + n, 'draws', draws.length);
+        console.log('VF2 stage', n, nm, 'VF2 set', st.texSets[0], 'as', VF2_SETS[n], 'draws', draws.length);
     });
+    stages.push(...vf2Stages.slice(0, 2));
 }
 /*
  * Fighting Vipers' Western (tools/fv-stages.mjs, which puts its models,
@@ -386,6 +404,49 @@ stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
             `0, 0, 0, {0, 0, 0}, 0, 0, 0, &${name}_sky, ${turn}, ${f32(FV_RING * FV_SCALE)}}`);
         console.log('stage', stages.length - 1, nm, 'FV set', st.texSets.at(-1), 'as', FV_SET0 + n, 'draws', draws.length);
     });
+}
+stages.push(...vf2Stages.slice(2));
+/*
+ * Dead or Alive's stage 10 (tools/doa-stages.mjs, which puts its models,
+ * textures, colours and sky into the data ROMs): the scenery as the stage's
+ * draw routine draws it (noclip doa.js), each draw's model and texture points
+ * a board model; the meshes are scaled by DOA_SCALE and the draws moved down
+ * by DOA_FLOOR, so a matrix is StF's 1/1.6 with DOA's translation, less the
+ * floor, times that scale. The two swaying draws (model 18425) keep their
+ * place and turn by a table of SWAY frames.
+ * Colours: StF's stage rows (doaStageCx). Materials: DOA's 32 (program 0x6B0).
+ * Light: straight down and back, [0, -1, -1] / sqrt 2.
+ */
+{
+    const doa = await loadDoa(), plan = doaStagePlan(doa), { sky: k, bg } = doaSkyPlan(doa, games);
+    const at = (ops) => {
+        const m = composeOps(ops);
+        m[13] -= DOA_FLOOR;
+        for (let i = 12; i < 15; i++) m[i] *= DOA_SCALE;
+        return boardOf(mul(scale, m));
+    };
+    const name = 'doastage';
+    out.push(`#define SWAY_FRAMES ${SWAY}`);
+    plan.draws.forEach((d, i) => {
+        if (!d.sway) return;
+        const v = d.sway.flatMap((ops) => at(ops).slice(0, 9).map((x) => Math.round(x * 8192)));
+        if (v.some((x) => Math.abs(x) > 0x7fff)) throw new Error('DOA sway: past s16');
+        out.push(`static const short ${name}_sway${i}[] = {${v.join(',')}};`);
+    });
+    out.push(`static const stage_draw_t ${name}_draws[${plan.draws.length}] = {`);
+    plan.draws.forEach((d, i) => {
+        const sway = d.sway ? `, 0, 0, 0, 0, 0, ${name}_sway${i}` : '';
+        out.push(`  {${d.id}, {${at(d.ops).map(f32).join(',')}}, 0.0f, 0.0f, 0, 0, 0, 0${sway}},`);
+    });
+    out.push('};');
+    out.push(`static const u16 ${name}_cx[] = {${u16s(cxlatRun(doaStageCx(doa, games, plan), 0, 28, 0, 64))}};`);
+    out.push(`static const u32 ${name}_mat[32] = {${doaMaterials(doa).map((v) => `0x${v.toString(16)}u`).join(',')}};`);
+    out.push(`static const u8 ${name}_skyb[] = {${k.dest.join(',')}};`);
+    out.push(`static const sky_t ${name}_sky = {0x${k.chars.toString(16)}u, 0x${k.pal.toString(16)}u, 0x${k.pano.toString(16)}u, ${k.rows}, ${k.eye}, ${k.dest.length}, ${k.head}, ${name}_skyb, 0, {0, 0}, 0};`);
+    const nm = `DOA ${plan.st.name.toUpperCase()}`;
+    stages.push(`{"${nm}", ${DOA_SET}, ${plan.draws.length}, ${name}_draws, {0, 28, 0, 64, ${name}_cx}, ${name}_mat, 0x${bg.toString(16)}, 1.0f, -8192, 0, 0xFFFF, {128, 128, 128}, {0, 0, 0, 0, 0}, ` +
+        `0, 0, 0, {0, 0, 0}, 0, 0, 0, &${name}_sky, 0, ${f32(DOA_RING * DOA_SCALE)}}`);
+    console.log('stage', stages.length - 1, nm, 'DOA stage', plan.st.num, 'as set', DOA_SET, 'draws', plan.draws.length);
 }
 /* Fighting Vipers' armour on the HUD (board/src/armour.c armour_hud): each
  * player's figure as FV's energy_disp draws it beside the bar, FV's own

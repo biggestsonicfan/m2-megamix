@@ -99,7 +99,21 @@ export const COMMIT_TYPE = {
     0x15: 0x11, 0x16: 0x12, 0x17: 0x13, 0x18: 0x14, 0x19: 0x15, 0x1a: 0x16, 0x1b: 0x17, 0x1c: 0x18,
     0x1f: 0x19, 0x20: 0x1a,
 };
+/* The reach guards (ops 0x1A nearer than, 0x1B further than: a float at +1)
+ * are a distance the board measures at his size. */
+export function reachAt(b, op, k) {
+    if (op !== 0x1a && op !== 0x1b) return;
+    const v = new DataView(b.buffer, b.byteOffset + 1, 4);
+    v.setFloat32(0, v.getFloat32(0, true) * k, true);
+}
 const COMMIT_ACTION = { 7: 18, 8: 19, 0x12: 14, 0x13: 15, 0x1d: 16, 0x1e: 17 };
+/* VF2's edge stumbles (rob_check_stage, V 0x17C00..0x17FB8): the slips
+ * 0x182..0x185, the falls off 0x186..0x189, the teeters 0x18A, 0x18B; the
+ * board's lift plays them by place from edge_motion (tools/lift-stf.py). */
+export const EDGE_MOTIONS = Array.from({ length: 10 }, (_, k) => 0x182 + k);
+/* VF2's reaction 0x2CE, and what it becomes on a low 0x1F8: 0xA7, 0x2CF
+ * (V 0x23238; the board's lift, sub_2BA44). */
+export const SWAP_MOTIONS = [0x2ce, 0xa7, 0x2cf];
 
 /* StF's 52 action slots, each played with one of VF2's (its number) or a VF2
  * motion ({ motion }), matched by what the motion does: stance, crouch,
@@ -195,8 +209,12 @@ export function scaleMotion(b, k = [SCALE, SCALE, SCALE]) {
 /* The bits of a rob's flags StF's own play op 5 sets. */
 const STF_FLAG_BITS = new Set([0, 1, 3, 4, 7, 8, 9, 10, 11, 13, 15, 23, 25, 29, 30]);
 export const THROWN = [SCALE, 1.07, SCALE];
-/* Damage (setup op 4, a strike, and op 5, a throw: byte +3; play op 8: byte
- * +3) is out of VF2's 200 energy; StF's fighters have 140. */
+/* Damage (op 5, a throw: byte +3; play op 8: byte +3) is out of VF2's 220
+ * energy; StF's fighters have 140. A strike's (op 4, byte +3) stays VF2's:
+ * the board's attack_hit takes VF2's knockback, counter and hit-stun from it
+ * and scales only what comes off the bar (tools/lift-stf.py, VF2_HIT).
+ * DAMAGE is the other guests' scale (FM's and FV's moves). */
+const VF2_DAMAGE = 140 / 220;
 export const DAMAGE = 140 / 200;
 /* Fighting Vipers' armour: a strike this strong (the board's damage) breaks
  * a damaged piece for a fighter whose game has no armour (setup head byte 4
@@ -395,7 +413,7 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
         for (let i = 0; i < 40; i++) { const x = d32(t + i * 4); if (!x && k) kind0++; r.push(x || reactions[0][i]); }
         reactions.push(r);
     }
-    const want = new Set([...A.actions, ...STF_ACTIONS.map(actionMotion), ...reactions.flat().map((x) => x & MOTION_ID)].filter((x) => x));
+    const want = new Set([...A.actions, ...STF_ACTIONS.map(actionMotion), ...reactions.flat().map((x) => x & MOTION_ID), ...EDGE_MOTIONS, ...SWAP_MOTIONS].filter((x) => x));
     const commitWord = (a) => p32(a + 1);
     for (const a of commits) {
         const w = commitWord(a), type = w >>> 24;
@@ -511,7 +529,7 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
     const put16 = (a, o, v) => { a[o] = v & 0xff; a[o + 1] = (v >> 8) & 0xff; };
     const damages = new Map();
     const damage = (v) => {
-        const d = v && Math.max(1, Math.round(v * DAMAGE));
+        const d = v && Math.max(1, Math.round(v * VF2_DAMAGE));
         damages.set(v, d);
         return d;
     };
@@ -545,7 +563,7 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
         for (const { op, b } of s.setup) {
             let o;
             switch (op) {
-            case 4: o = [4, b[1], b[2], damage(b[3]), 0, ...b.subarray(8, 17), ...f32(2.0)]; if (b.subarray(4, 8).some((x) => x)) lost.strikeBytes += !quiet; break;
+            case 4: o = [4, b[1], b[2], b[3], 0, ...b.subarray(8, 17), ...f32(2.0)]; if (b.subarray(4, 8).some((x) => x)) lost.strikeBytes += !quiet; break;
             case 5: o = [...b, 0, 0, 0, 0]; put16(o, 1, mid(b[1] | (b[2] << 8))); o[3] = damage(b[3]); break;
             /* Op 3's float at +7 is 0x81C, the height a jump lands at: VF2's units. */
             case 3: o = [...b]; o.splice(7, 4, ...f32(new DataView(b.buffer, b.byteOffset + 7, 4).getFloat32(0, true) * SCALE)); break;
@@ -684,6 +702,7 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
             case 0x33: reloc(1, b); prog.push(0x11, ...b.subarray(1, 5)); break;
             default:
                 if (u.op === 0x2b && b[2]) { lost.op2bBytes += !quiet; b[2] = 0; }
+                reachAt(b, u.op, SCALE);
                 if ([0x0d, 0x0f, 0x27, 0x11].includes(u.op)) reloc(1, b);
                 if (u.op === 0x0e) reloc(3, b);
                 if (u.op === 0x28) for (const o of [1, 5, 9]) reloc(o, b);
@@ -702,15 +721,25 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
     const knux = program.u32(T.CHAR_PARTS.src + CHR * 4);
     const knuxActions = program.u32(knux + 0xc);
     const recs = [];
-    /* his 52 action slots (Knuckles' flag bits), the motions under mid */
+    /* his 52 action slots (Knuckles' flag bits), the motions under mid, and
+     * slot 52, VF2's 12 (crouch to guard), which the board's TA_GUARD plays
+     * for a VF2 fighter as VF2's does, 53..58, VF2's 6, 7, 24..27, its
+     * crouch walks', and 59/60, VF2's 3/4, its walks' (tools/lift-stf.py) */
     const actionsOf = (mid) => {
         const out = [];
         for (let i = 0; i < 52; i++) out.push(program.u16(knuxActions + i * 2));
         STF_ACTIONS.forEach((x, s) => { out[s] = (out[s] & ~MOTION_ID) | mid(actionMotion(x)); });
+        for (const v of [12, 6, 7, 24, 25, 26, 27, 3, 4]) out.push(mid(A.actions[v]));
         return out;
     };
     const actions = actionsOf(mid);
     const actionsAt = alloc(u16s(actions), 'actions');
+    /* edge_motion: his edge stumbles, then his action slots 31..80 (the
+     * getting up the board's lift plays VF2's way, tools/lift-stf.py) and
+     * SWAP_MOTIONS, under mid */
+    const edgeOf = (m) => [...EDGE_MOTIONS, ...A.actions.slice(31, 81), ...SWAP_MOTIONS].map(m);
+    const edgeAt = alloc(u16s(edgeOf(mid)), 'edge motions');
+    T.edge_motion.view.setUint32(CHR * 4, edgeAt, true);
 
     /* ptr_DA0B4[character] (sub_2B94C): his 30 lists, each VF2's 40, then
      * StF's category 5 (an attack with 0x1A4 bit 22: his hit's) and StF's
@@ -972,6 +1001,7 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
             actions: alloc(u16s(actionsOf(gid)), 'actions', 4, who),
             kinds: kindsOf(gid, who),
             remap: alloc(u16s(remapOf(gid)), 'motion remap', 4, who),
+            edge: alloc(u16s(edgeOf(gid)), 'edge motions', 4, who),
         };
     }
 
@@ -1028,7 +1058,7 @@ export function importAkira(R, vf2, stf, { extraTiles = [] } = {}) {
     const ctx = {
         alloc, heapEnd: () => heap, u32s, u16s, grow, pack, freeTaken, polyEnd: poly, modelIds: new Set(modelId.values()),
         recs, bones, rigBytes, balls, kinds, kindsAt, knuxKinds, ownAt, own, theirs, theirsAt, actions, actionsAt, newRoot, progAt,
-        handsAt, mid, newId, setups, convertSetup, ownMoveset, reactions, damage, knuxActions,
+        handsAt, edgeAt, mid, newId, setups, convertSetup, ownMoveset, reactions, damage, knuxActions,
         reserveIds, putMotion, theirCopy, vf2Frames, ownBlocksEnd: () => room,
         headOf: (p) => M((p ? A.p2 : A).parts[2].model),
     };

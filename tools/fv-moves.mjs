@@ -30,7 +30,7 @@
  *     StF's kind (FV_KIND); a kind FV has none of stays Akira's.
  */
 import { resolveData } from '../vendor/noclip/js/motion.js';
-import { MOTION_ID, STF_ACTIONS, DAMAGE, scaleMotion, strikeTrail, trailOp } from './vf2-guest.mjs';
+import { MOTION_ID, STF_ACTIONS, DAMAGE, scaleMotion, strikeTrail, trailOp, reachAt } from './vf2-guest.mjs';
 
 const MAIN_DATA = 0x02000000;
 /* His moves go in main_data's room from 0x9913a0 (nothing StF's the board
@@ -53,8 +53,11 @@ const PLAY_TO = {
     0x18: null, 0x19: null, 0x1a: null, 0x1b: null, 0x1c: null, 0x1d: null, 0x1e: null,
 };
 const PLAY_MOTION = { 0x0a: 5, 0x0b: 5, 0x17: 4 };
-/* The bits of a rob's flags StF's own play op 5 sets (vf2-guest.mjs). */
-const STF_FLAG_BITS = new Set([0, 1, 3, 4, 7, 8, 9, 10, 11, 13, 15, 23, 25, 29, 30]);
+/* The bits of a rob's flags StF's own play op 5 sets (vf2-guest.mjs), and
+ * FV's bit 16: he is down. StF's code reads it as FV's does (its
+ * decide_coli_kind: a fighter standing over one down is pushed off him, FIX),
+ * though no StF fighter sets it. */
+const STF_FLAG_BITS = new Set([0, 1, 3, 4, 7, 8, 9, 10, 11, 13, 15, 16, 23, 25, 29, 30]);
 /* StF's and FV's command matcher (noclip js/moves.js OP_LENGTH). */
 const OP_LENGTH = [
     3, 3, 2, 4, 2, 9, 5, 2, 2, 2, 2, 2, 2, 5, 7, 5,
@@ -77,6 +80,16 @@ const FV_ACTION = {
     0: 0, 1: 1, 2: 2, 5: 5, 8: 8, 9: 11, 14: 18, 15: 20, 16: 27, 17: 29, 20: 28, 21: 19, 22: 30, 23: 21, 24: 21,
     28: 39, 29: 40, 30: 40, 31: 42, 81: 35, 82: 36, 83: 37,
 };
+/* The board's slots 53..58, VF2's crouch walks' (actions 0x60/0x61,
+ * tools/lift-stf.py): FV's actions 5 and 6 (F 0x139C4, 0x13A60) are the same
+ * walks, with these actions' motions */
+const CRAWL_ACTIONS = [6, 7, 31, 32, 33, 34];
+/* The board's slots 61..70, FV's walks' (F 0x13878, 0x13934; tools/lift-stf.py):
+ * its actions 3, 4, 27..30, then the motions it plays on rob+0 bit 10 */
+const WALK_ACTIONS = [3, 4, 27, 28, 29, 30], WALK_MOTIONS = [0x9e, 0x9d, 0x289, 0x288];
+/* The board's slots 71..74, FV's guard's (F 0x13CA8, tools/lift-stf.py): its
+ * actions 8, 9 and 10 standing, 16 crouched */
+const GUARD_ACTIONS = [8, 9, 10, 16];
 /* StF's getting-up slots 41..51 are FV's actions 43..53 */
 const RISE_SLOT = 41, RISE_ACTION = 43, RISE_SLOTS = 11;
 /* FV's reaction kind -> StF's (VF2's numbers), by what its lists play */
@@ -166,7 +179,11 @@ export function importFvMoves(R, ctx, fv, A, { who, k, thrown, handShape = (s) =
                 if (units.has(a)) continue;
                 let h = a;
                 for (; p8(h) === 0x0e; h += 7) { units.set(h, { kind: 'header' }); todo.push([p32(h + 3), 'script']); }
-                if (!units.has(h) && !units.has(h - 0.5)) units.set(p8(h) === 0 ? h : h - 0.5, { kind: 'end' });
+                /* past the headers the matcher runs on: a 0 ends the table,
+                 * anything else is a script (0x36: park the table, try again
+                 * next frame) */
+                if (p8(h) !== 0) todo.push([h, 'script']);
+                else if (!units.has(h)) units.set(h, { kind: 'end' });
                 continue;
             }
             for (;;) {
@@ -190,7 +207,8 @@ export function importFvMoves(R, ctx, fv, A, { who, k, thrown, handShape = (s) =
                     break;
                 }
                 if (op === 0x05 || op === 0x06) { commits.push(a); break; }
-                if (op === 0x10 || op === 0x36) break;
+                if (op === 0x36) { todo.push([p32(a + 1), 'table']); break; }
+                if (op === 0x10) break;
                 a += len;
             }
         }
@@ -229,7 +247,11 @@ export function importFvMoves(R, ctx, fv, A, { who, k, thrown, handShape = (s) =
     FV_KIND.forEach((v, f) => { if (!fvKindOf.has(v)) fvKindOf.set(v, f); });
     const want = new Set([FALL]);
     STF_ACTIONS.forEach((x, s) => { const m = slotMotion(x, s); if (m) want.add(m); });
-    for (const f of fvKindOf.values()) for (const x of reactions[f]) if (x) want.add(x);
+    for (const n of CRAWL_ACTIONS) if (act(n)) want.add(act(n));
+    for (const n of WALK_ACTIONS) if (act(n)) want.add(act(n));
+    for (const m of WALK_MOTIONS) want.add(m);
+    for (const n of GUARD_ACTIONS) if (act(n)) want.add(act(n));
+    for (const r of reactions) for (const x of r) if (x) want.add(x);
     const commitWord = (a) => p32(a + 1);
     for (const a of commits) {
         const w = commitWord(a), type = w >>> 24;
@@ -277,13 +299,17 @@ export function importFvMoves(R, ctx, fv, A, { who, k, thrown, handShape = (s) =
         for (const { op, b } of s.setup) {
             const o = [...b];
             switch (op) {
-            /* [4, attack, ?, damage, ...0x0D] as StF's; FV's effects (+0xE..+0x12) out, StF's float in */
+            /* [4, attack, ?, damage, ...0x0D] as StF's; FV's effects (+0xE..+0x12) out, StF's float in.
+             * The damage stays FV's: the board's attack_hit takes FV's knockback from it and
+             * scales what comes off the bar (tools/lift-stf.py, loc_2B898_fv, fb_bar_fv).
+             * FV's byte 0xE (its knock-down lift) rides in the float's low byte (FV_HIT). */
             case 4:
                 o.length = 0xe;
-                o[3] = damage(b[3]);
                 o[7] = FV_KIND[b[7]] ?? b[7];
                 if (b[0xf] | b[0x10] | b[0x11] | b[0x12]) lost.strikeBytes++;
                 o.push(...f32(2.0));
+                /* and above it FV's own kind + 1: an FV victim's list of FV's (lift-stf.py, kind_fv) */
+                o[0xe] = (b[0xe] & 7) | ((b[7] + 1) << 3);
                 break;
             case 5: put16(o, 1, mid(u16at(b, 1))); o[3] = damage(b[3]); break;
             case 3: o.splice(7, 4, ...f32(new DataView(b.buffer, b.byteOffset + 7, 4).getFloat32(0, true) * k)); break;
@@ -373,7 +399,7 @@ export function importFvMoves(R, ctx, fv, A, { who, k, thrown, handShape = (s) =
     }
     const prog = [];
     const here = () => progAt + prog.length;
-    const whereOf = (t) => where.get(t) ?? where.get(t - 0.5);
+    const whereOf = (t) => where.get(t);
     const reloc = (o, b) => {
         const t = (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
         const n = whereOf(t);
@@ -405,7 +431,8 @@ export function importFvMoves(R, ctx, fv, A, { who, k, thrown, handShape = (s) =
             prog.push(...le32((0x8c800000 | mid(u.g0)) >>> 0), ...le32(0x84003000), ...le32(R.guest.nativeTail));
             break;
         default:
-            if ([0x0d, 0x0f, 0x27, 0x11].includes(u.op)) reloc(1, b);
+            reachAt(b, u.op, k);
+            if ([0x0d, 0x0f, 0x27, 0x11, 0x36].includes(u.op)) reloc(1, b);
             if (u.op === 0x0e) reloc(3, b);
             if (u.op === 0x28) for (const o of [1, 5, 9]) reloc(o, b);
             if (u.op === 0x15 && p32(a + 5)) reloc(5, b);
@@ -425,6 +452,15 @@ export function importFvMoves(R, ctx, fv, A, { who, k, thrown, handShape = (s) =
         actions[s] = (actions[s] & ~MOTION_ID) | mid(m);
         changed.set(s, mid(m));
     });
+    CRAWL_ACTIONS.forEach((n, i) => {
+        if (!act(n)) return;
+        actions[53 + i] = (actions[53 + i] & ~MOTION_ID) | mid(act(n));
+        changed.set(53 + i, mid(act(n)));
+    });
+    /* 61..66 with his flags; 67..70 flagless, as FV's lda plays them */
+    WALK_ACTIONS.forEach((n, i) => { actions[61 + i] = mid(A.actions[n]); });
+    WALK_MOTIONS.forEach((m, i) => { actions[61 + WALK_ACTIONS.length + i] = mid(m); });
+    GUARD_ACTIONS.forEach((n, i) => { actions[71 + i] = mid(A.actions[n]); });
     const actionsAt = alloc(u16s(actions), 'actions');
     report.push(`action slots: ${changed.size} of ${actions.length} his own`);
 
@@ -438,6 +474,9 @@ export function importFvMoves(R, ctx, fv, A, { who, k, thrown, handShape = (s) =
         own.set(kk, list);
         return alloc(u32s(list), `reactions ${kk}`);
     });
+    /* then FV's 22 by FV's kind, StF's 30 on: an FV strike on him picks these
+     * (FV's kinds 5 and 10 are both StF's 11, and so on) */
+    reactions.forEach((r, f) => kinds.push(alloc(u32s([...r.map(mid), mid(r[16]), ...tail(FV_KIND[f])]), `fv reactions ${f}`)));
     const kindsAt = alloc(u32s(kinds), 'reaction kinds');
     report.push(`reactions: ${own.size} of ${kinds.length} kinds his own`);
 
