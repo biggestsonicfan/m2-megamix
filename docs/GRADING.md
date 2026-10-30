@@ -122,13 +122,14 @@ Honey and Eggman (1P, 2P) on South Island and Aurora Icefield:
 | Honey      | 100 A       | 100 A       | 100 A       |
 | Eggman     | 100 A       | 100 A       | 100 A       |
 | **Aurora** |             |             |             |
-| Sonic      | 28 F (geo)  | 49 D (geo)  | 100 A       |
+| Sonic      | 100 A       | 100 A       | 100 A       |
 | Honey      | 100 A       | 100 A       | 100 A       |
 | Eggman     | 100 A       | 100 A       | 100 A       |
 
-(geo): MAME's geometrizer stops on board frame 501 (Sonic vs Sonic) and
-1093 (Sonic vs Honey), "geo_adsp: compute: invalid single-function
-operation 03", with the SHARC recompiler on or off (below).
+The shared MAME is mainline (mamedev/mame 6df80b69e1e, 0.289). On the
+fork's build, Sonic vs Sonic and Sonic vs Honey on Aurora stopped the
+geometrizer (board frames 501 and 1093, "geo_adsp: compute: invalid
+single-function operation 03"; below).
 
 ### Aurora: the geometrizer's frame runs over
 
@@ -139,21 +140,14 @@ the fighters 35). StF's own takes 0.6 to 0.75 of a frame, 35 to 94
 objects. About round frame 450 StF's stage was 32 objects, the board's
 76: StF's `ground_disp` puts the 16 ground chunks (model 1129) through
 `area_clip` and draws 8 to 10 of them (none at that point), the board
-all 16, and the board drew 6 cage panels to StF's 2.
-Now and then the board's list runs past the vblank (Sonic vs Sonic: board
-frames 834, 842, 895, 1133, 1225). MAME's Model 2B
-(`model2b_state::screen_vblank`) puts the geometrizer's FIFO back at the
-read start at every vblank, so cpres2, still in the last list's MATRIX,
-reads the next list's header as operands. A light's 0x3F3504ED then
-dispatches as op 0x1E (code jump) into NOPs, and the SHARC stops on
-op 03.
-
-A throwaway build without the ground chunks played Sonic vs Sonic to the
-end, 100 A, but still took about 0.9 of a frame and ran over 17 times
-(some between rounds). Bringing the board's load down to StF's needs StF's
-stage culls ported (`area_clip` and its outcode table), not one list
-dropped. MAME could also leave the FIFO alone while cpres2 is still in
-a list.
+all 16, and the board drew 6 cage panels to StF's 2. Now and then the
+board's list runs past the vblank (Sonic vs Sonic: board frames 834, 842,
+895, 1133, 1225). The fork's Model 2B put the geometrizer's FIFO back at
+the read start at every vblank, so cpres2, still in the last list's
+MATRIX, read the next list's header as operands and stopped. Mainline
+has no such reset, and both fights play to the end at 100 A. The board
+still runs over now and then; porting StF's stage culls (`area_clip` and
+its outcode table) would bring its load down to StF's.
 
 The guests, against their own games: Akira vs Akira 100 A on Tou-rin, the
 Colosseum and the Test stage (the fights are the same on all three: no
