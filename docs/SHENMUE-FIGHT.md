@@ -2,8 +2,8 @@
 
 The goal is to port Ryo and his best-known moves to Megamix: each move's command,
 motion, damage and frames. This page covers what the Shenmue betas hold toward
-that. `tools/shenmue-fight.py` reads it. The motions themselves are #1505's work,
-in `docs/VF3-SHENMUE.md` and `tools/shenmue-motion.mjs` on branch
+that. `tools/sources/shenmue-fight.py` reads it. The motions themselves are #1505's work,
+in `docs/VF3-SHENMUE.md` and `tools/sources/shenmue-motion.mjs` on branch
 `vf3-shenmue-motions`.
 
 **In short:**
@@ -22,13 +22,13 @@ in `docs/VF3-SHENMUE.md` and `tools/shenmue-motion.mjs` on branch
 
 ```bash
 D3="$HOME/source/repos/ai/SHENMUE 1 BETA 0.400 DISC 3 PERFECT DUMP"
-python3 tools/shenmue-fight.py list "$D3"                            # path, LBA, size
-python3 tools/shenmue-fight.py extract "$D3" /tmp/x 1ST_READ.BIN MOTION.BIN SCENE/03/MFBT/EN_RYOU.BIN
-python3 tools/shenmue-fight.py moves /tmp/x/1ST_READ.BIN [--json]   # notebook names (+ descriptions)
-python3 tools/shenmue-fight.py cast /tmp/x/1ST_READ.BIN             # EN_ file names by fighter id
-node tools/shenmue-motion.mjs /tmp/x/MISC/MOTION.BIN --list > /tmp/x/m.txt   # branch vf3-shenmue-motions
-python3 tools/shenmue-fight.py script /tmp/x/SCENE/03/MFBT/EN_RYOU.BIN --names /tmp/x/m.txt
-python3 tools/shenmue-fight.py skills /tmp/x/SCENE/03/MFBT/EN_RYOU.BIN /tmp/x/1ST_READ.BIN --names /tmp/x/m.txt [--json]
+python3 tools/sources/shenmue-fight.py list "$D3"                            # path, LBA, size
+python3 tools/sources/shenmue-fight.py extract "$D3" /tmp/x 1ST_READ.BIN MOTION.BIN SCENE/03/MFBT/EN_RYOU.BIN
+python3 tools/sources/shenmue-fight.py moves /tmp/x/1ST_READ.BIN [--json]   # notebook names (+ descriptions)
+python3 tools/sources/shenmue-fight.py cast /tmp/x/1ST_READ.BIN             # EN_ file names by fighter id
+node tools/sources/shenmue-motion.mjs /tmp/x/MISC/MOTION.BIN --list > /tmp/x/m.txt   # branch vf3-shenmue-motions
+python3 tools/sources/shenmue-fight.py script /tmp/x/SCENE/03/MFBT/EN_RYOU.BIN --names /tmp/x/m.txt
+python3 tools/sources/shenmue-fight.py skills /tmp/x/SCENE/03/MFBT/EN_RYOU.BIN /tmp/x/1ST_READ.BIN --names /tmp/x/m.txt [--json]
 ```
 
 - **The discs:** the high-density area is the .gdi's data tracks from LBA

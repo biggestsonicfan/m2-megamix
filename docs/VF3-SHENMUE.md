@@ -4,7 +4,7 @@ Shenmue's fighting motions are Virtua Fighter 3's, and VF3's are Virtua
 Fighter 2's with two objects more. This page covers how each format is laid out
 and how one maps onto the next, so that a Shenmue motion (Ryo's, from the
 Dreamcast disc) can be played as a VF2 motion on Megamix's board.
-`tools/shenmue-motion.mjs` does the conversion.
+`tools/sources/shenmue-motion.mjs` does the conversion.
 
 VF2's own format is in noclip's `vendor/noclip/js/motion.js`. In short: 20
 objects of 3 channels. Objects 0–11 are angles, as BRAD floats (65535 a turn);
@@ -152,19 +152,19 @@ Sampled frame by frame against the same VF2 motions:
 ## The tool
 
 ```
-node tools/shenmue-motion.mjs MOTION.BIN --list
-node tools/shenmue-motion.mjs MOTION.BIN AKIRA_TA_KAMAE_VF3 --out kamae.bin
-node tools/shenmue-motion.mjs MOTION.BIN 16 --json
+node tools/sources/shenmue-motion.mjs MOTION.BIN --list
+node tools/sources/shenmue-motion.mjs MOTION.BIN AKIRA_TA_KAMAE_VF3 --out kamae.bin
+node tools/sources/shenmue-motion.mjs MOTION.BIN 16 --json
 ```
 
-`--out` writes a VF2 motion block at VF2's size; `tools/vf2-guest.mjs`'s
+`--out` writes a VF2 motion block at VF2's size; `tools/guests/vf2-guest.mjs`'s
 SCALE is not applied. `--json` prints Shenmue's channels and VF2's.
 
 ## Through Akira's import
 
 I tested one motion: Shenmue 524, TA_KI_SYO_L, converted and put in VF2's
 ROM in place of motion 738, the same move and one of the 328 that
-`importAkira` carries. Then I ran `tools/import-assets.mjs` unchanged.
+`importAkira` carries. Then I ran `tools/board/import-assets.mjs` unchanged.
 
 - **It is accepted.** The import ran through without an error, and its report
   and `guests.json` match the plain import's. The block has VF2's key counts,

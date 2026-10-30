@@ -25,12 +25,13 @@ HUD are plain text, in the style of a debug menu.
 
 `board/` is the same game growing as a new program for the Sonic the Fighters
 board (Model 2B), built on m2-sdk, on data ROMs that hold only the assets it
-uses (`tools/import-assets.mjs`). It boots into a game setup in the style of
+uses (`tools/board/import-assets.mjs`). It boots into a game setup in the style of
 StF's debug menu (time, rounds, stage, both fighters, energy, barriers;
 up/down to pick, kick/punch to change, start to fight). Two cabinets can
 play one fight over the Model 2 communication board (`tools/mame/link-cabinets.sh`).
 A fighter's moves can be written out as text, edited and imported again
-(`tools/moves-text.mjs`, `board/moves/`). Its source is `board/src`, one module a file.
+(`tools/board/moves-text.mjs`, `board/moves/`). Its source is `board/src`, one module a
+file, grouped by what it does (`board/src/README.md`).
 See `docs/BOARD.md`.
 
 ## Running
@@ -71,30 +72,35 @@ struct dump, F2 pauses and F3 steps one frame.
 
 ## How it fits together
 
+`docs/CODE-MAP.md` maps the whole repo: each area's what, where, when, why and
+who. Each part has a README of its own: `js/README.md`, `board/src/README.md`,
+`tools/README.md`.
+
 - `js/games.js` loads the three sets and holds the roster and the stage lists.
 - `js/fighters.js` adapts each game to one fighter interface: actions,
   commands, setup records (timing, strike, throw), reactions and a body that
-  poses any game's motion.
+  poses any game's motion. Its parts are in `js/fighters/`.
 - `js/engine.js` is the fight. It knows nothing about three.js, and runs in
-  Node for the tests.
+  Node for the tests. Its parts are in `js/engine/`.
+- `js/shenmue/` reads the Shenmue beta's disc and makes Ryo and Chai fighters.
 - `js/render.js` draws the stage and fighters with noclip's shader. Each one
   gets its own game's texture RAM and colour tables.
 - `docs/STRUCTURES.md` lists the shared structures and where each game keeps them.
 - `docs/DEBUG-MODE.md` reads the three games' debug mode: how to turn it on, and every field its menus name, by offset in each game.
-- `docs/FV-GUESTS.md` measures what Fighting Vipers' Honey, Tokio and Bahn need as board guests, and what room is left in StF's ROMs and at Model 2B's sizes (`tools/fv-guest-survey.mjs`, `tools/model2-rom-limits.py`).
-- `docs/FV-MAHLER.md` does the same for Mahler: one record for both players, his shoulder pads and sway chain, the 171 motions he shares with B.M. (`tools/fv-guest-survey.mjs --char 8`), and the cage break that stays broken. On the board he is guest 18 (`tools/mahler-guest.mjs`, his moves by `tools/fv-moves.mjs`; docs/BOARD.md).
-- `tools/model-obj.mjs` exports a fighter's models as OBJ and MTL (with its tiles as PNGs) for a 3D program, and reads them back; `tools/import-assets.mjs --obj mahler=<dir>` builds the board's Mahler from the edited folder (docs/BOARD.md, Mahler from an OBJ).
-- `docs/RECORDS.md` reads every fighter record and stage record of the three games: which fields and flag bits are known, which are not, and what each value does where one fighter or stage alone has it; `tools/record-survey.mjs` prints the tables.
-- `docs/SHADOWS.md` is how each game casts the fighters' shadows, StF's way as the parent; `tools/shadow-data.mjs` reads every fighter's table in StF's form.
-- `docs/SHARED-CODE.md` audits the i960 functions StF and VF2 share: which are one code, and what a VF2 fighter still needs (guest data or a branch on `char_game`); `tools/shared-fns.py` compares them.
-- `docs/FM-SATURN.md` covers Fighters Megamix's (Saturn) fighter data and motions; `tools/fm-saturn.mjs` reads them off the disc and converts them to VF2 motion blocks (Hornet's to start with); `tools/daytona-hornet.mjs` finds Daytona USA's Hornet in the Model 2 set and cuts it where FM cuts its Hornet.
-- `docs/PROJECTILES.md` traces StF's projectiles (Eggman's bomb): how one is thrown, hits and is guarded, and what the board needs to run it; `tools/stf-projectiles.mjs` lists every motion that throws one.
-- `docs/SHENMUE-SOUND.md` reads Shenmue's fight sounds off the beta's discs: the battle packs (DTPK), the strike sounds' scale by damage, and the lines Ryo and Chai say to each other, for the board to use; `tools/shenmue-sound.py` decodes them to WAVs.
+- `docs/FV-GUESTS.md` measures what Fighting Vipers' Honey, Tokio and Bahn need as board guests, and what room is left in StF's ROMs and at Model 2B's sizes (`tools/survey/fv-guest-survey.mjs`, `tools/survey/model2-rom-limits.py`).
+- `docs/FV-MAHLER.md` does the same for Mahler: one record for both players, his shoulder pads and sway chain, the 171 motions he shares with B.M. (`tools/survey/fv-guest-survey.mjs --char 8`), and the cage break that stays broken. On the board he is guest 18 (`tools/guests/mahler-guest.mjs`, his moves by `tools/guests/fv-moves.mjs`; docs/BOARD.md).
+- `tools/board/model-obj.mjs` exports a fighter's models as OBJ and MTL (with its tiles as PNGs) for a 3D program, and reads them back; `tools/board/import-assets.mjs --obj mahler=<dir>` builds the board's Mahler from the edited folder (docs/BOARD.md, Mahler from an OBJ).
+- `docs/RECORDS.md` reads every fighter record and stage record of the three games: which fields and flag bits are known, which are not, and what each value does where one fighter or stage alone has it; `tools/survey/record-survey.mjs` prints the tables.
+- `docs/SHADOWS.md` is how each game casts the fighters' shadows, StF's way as the parent; `tools/survey/shadow-data.mjs` reads every fighter's table in StF's form.
+- `docs/SHARED-CODE.md` audits the i960 functions StF and VF2 share: which are one code, and what a VF2 fighter still needs (guest data or a branch on `char_game`); `tools/survey/shared-fns.py` compares them.
+- `docs/FM-SATURN.md` covers Fighters Megamix's (Saturn) fighter data and motions; `tools/sources/fm-saturn.mjs` reads them off the disc and converts them to VF2 motion blocks (Hornet's to start with); `tools/sources/daytona-hornet.mjs` finds Daytona USA's Hornet in the Model 2 set and cuts it where FM cuts its Hornet.
+- `docs/PROJECTILES.md` traces StF's projectiles (Eggman's bomb): how one is thrown, hits and is guarded, and what the board needs to run it; `tools/survey/stf-projectiles.mjs` lists every motion that throws one.
+- `docs/SHENMUE-SOUND.md` reads Shenmue's fight sounds off the beta's discs: the battle packs (DTPK), the strike sounds' scale by damage, and the lines Ryo and Chai say to each other, for the board to use; `tools/sources/shenmue-sound.py` decodes them to WAVs.
 
 ## Not the board's own code
 
 The engine is written from what the three games share, so some parts are
-approximations. Each is marked `Here:` in `js/engine.js`:
+approximations. Each is marked `Here:` in `js/engine/`:
 
 - Strikes hit with the part their setup record names (op 4's attack part,
   the slot masks at StF 0xCE020, VF2 0x02007ACA, FV 0x0640E72E), each slot

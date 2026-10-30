@@ -46,7 +46,7 @@ function atlasTexture({ sheet0, sheet1 }) {
 const SUN = (() => { const v = [0.45, 0.8, 0.4], l = Math.hypot(...v); return v.map((x) => x / l); })();
 const AMBIENT = 0.5, DIFFUSE = 0.6;
 
-/* A Shenmue texture (js/shenmue.js decodePvr) as a material, one per name:
+/* A Shenmue texture (js/shenmue/shenmue.js decodePvr) as a material, one per name:
  * its punch-through texels cut out, both faces drawn. */
 function skinMaterial(cache, textures, name) {
     if (cache.has(name)) return cache.get(name);

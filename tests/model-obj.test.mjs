@@ -1,11 +1,11 @@
-/* A fighter from each game out to OBJ and MTL and back (tools/model-obj.mjs):
+/* A fighter from each game out to OBJ and MTL and back (tools/board/model-obj.mjs):
  * every face as the ROM's, and every mesh in no more records. */
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadNodeGames } from './node-roms.mjs';
-import { whoIs, exportFighter, readObjDir, fighterPieces, compareWithRom } from '../tools/model-obj.mjs';
+import { whoIs, exportFighter, readObjDir, fighterPieces, compareWithRom } from '../tools/board/model-obj.mjs';
 
 const games = await loadNodeGames();
 const root = mkdtempSync(join(process.env.TMPDIR || tmpdir(), 'model-obj-'));

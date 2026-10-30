@@ -1,10 +1,10 @@
-/* Each board fighter's moves, as tools/moves-text.mjs writes them, assemble
+/* Each board fighter's moves, as tools/board/moves-text.mjs writes them, assemble
  * where they came from to the bytes that are there (needs board/roms: run
- * tools/import-assets.mjs first); and assembled somewhere else, they read
+ * tools/board/import-assets.mjs first); and assembled somewhere else, they read
  * back as the same moves. */
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { decodeBoard, parseMoves, assembleProgram, assembleSetup, decodeMoves, memory } from '../tools/moves-text.mjs';
+import { decodeBoard, parseMoves, assembleProgram, assembleSetup, decodeMoves, memory } from '../tools/board/moves-text.mjs';
 
 const dir = new URL('../board/roms', import.meta.url).pathname;
 if (!existsSync(`${dir}/sfight`)) { console.log('moves-text: no board/roms, skipped'); process.exit(0); }

@@ -4,25 +4,25 @@
  * A new program for the board, built on m2-sdk. Sonic the Fighters' program is
  * the map: its data ROMs stay on the board, and its own motion code poses the
  * fighters: set_motion, calc_rob_angle and calc_unit_mat, lifted from StF's
- * program into src/stf_motion.s by tools/lift-stf.py. calc_unit_mat leaves one
+ * program into src/gen/stf_motion.s by tools/board/lift-stf.py. calc_unit_mat leaves one
  * part matrix per slot on the coprocessor, and each part is drawn from its
  * slot (op 0x37) with op 0x78, the object path m2_obj.h proves on the real
  * geometrizer.
  *
  * The program is one board of modules, each a .c file of src/ (docs/BOARD.md
  * lists them): this header is what they share. The stage draw lists, the eye
- * models and the colour runs come from tools/bake-board.mjs (src/poses.h).
+ * models and the colour runs come from tools/board/bake-board.mjs (src/gen/poses.h).
  */
 #ifndef MEGAMIX_H
 #define MEGAMIX_H
 
 #include "m2.h"
 #include "m2_obj.h"
-#include "stf_tex_codec.h"   /* the SDK's, with room for StF's stage sets */
-#include "poses.h"
-#include "stf_motion.h"
-#include "rob.h"
-#include "link.h"
+#include "stage/stf_tex_codec.h" /* the SDK's, with room for StF's stage sets */
+#include "gen/poses.h"
+#include "gen/stf_motion.h"
+#include "fight/rob.h"
+#include "link/link.h"
 
 #define FOCUS 280.0f
 
