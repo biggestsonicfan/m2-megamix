@@ -74,6 +74,9 @@ Mahler's damage is about 0.88 of FV's, not StF's bar's share. The board
 draws the guests and their stages at StF's size (VF2's 2.027, FV's
 2.044), and the grader takes its places back to the source's units.
 
+Keep MAME's SHARC recompiler on (no `-nodrc`): the interpreter rounds
+differently, and Mahler's round 1 then parts on frame 1378, not 1604.
+
 ## What is graded
 
 `tools/grade-battle.mjs`, round by round:
@@ -168,8 +171,23 @@ Round 1 is in step to its last frames. Round 2 parts on frame 1206 (sync
 74): FV's round 2 is not round 1 turned 90 degrees. Its yaws are a unit off
 by frame 70 (16383, not 16384), which moves a push (F 0x25244) a frame
 later on frame 83, and on frame 1206 2P's atan target (F 0x190CC) stops
-150 short. That is the TGP's own sine, cosine and atan; the board's SHARC
-(StF's program) gives an exact turn. Next: FV's TGP trig for FV fighters.
+150 short.
+
+It is not the trig. FV is Model 2B too, with a SHARC, not a TGP. Its COP
+runs its own revision of StF's program, which differs in result in three
+places:
+- the atan and sine constants (StF's are an ulp low);
+- area_table_gen's broad-phase cell (16.0, StF's 8.0);
+- get_sm_ang_r's second angle.
+
+stf-sharc's `FV_COP` build carries all three behind one command (0x88). On
+the board this replay's trace is the same to the byte with any of them, or
+with that image loaded. The split is FV's own: on round 2's steps 39-40 FV's
+1P stands a little lower than in round 1 (ball heights 1.2106 and 1.2154).
+outside_ball's push is then 0.1173 deep, not 0.1193 (the board's 0.1193
+matches round 1's). That leaves the board 0.0014 out, and on step 63
+get_2d_dir gives 998 against FV's 997 (998.1 and 997.8, truncated). A turn
+step of 12 against 11 grows into the split.
 
 ## What the grading found
 

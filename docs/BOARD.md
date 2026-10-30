@@ -140,7 +140,9 @@ StF's work RAM they use becomes `.bss` blocks of the board's; StF's ROM tables
 at 0xC0000..0xFFFFF (the character records, skeletons, motion lists) are
 copied raw to the same addresses (`.stfrom`). Collision routines are stubbed.
 The coprocessor runs StF's own firmware (m2-sdk's default), so the ops are
-the ones StF sends. The code uses the i960's own floating point, as StF does:
+the ones StF sends. FV's fighters get it too: FV's own revision differs in
+three results (stf-sharc's `FV_COP` has them), and none shows in the graded
+FV replay. The code uses the i960's own floating point, as StF does:
 fine on MAME and a real board (not on a soft-float i960).
 
 `board/src/stf_call.s` calls a lifted routine with StF's registers (g7 the
