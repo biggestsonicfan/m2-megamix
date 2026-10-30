@@ -138,20 +138,26 @@ SHARC running StF's cpres2) about 0.9 of a frame, from its first FIFO read
 to the END: about 140 objects a frame (the stage 76, the reflections 30,
 the fighters 35). StF's own takes 0.6 to 0.75 of a frame, 35 to 94
 objects. About round frame 450 StF's stage was 32 objects, the board's
-76: StF's `ground_disp` puts the 16 ground chunks (model 1129) through
-`area_clip` and draws 8 to 10 of them (none at that point), the board
-all 16, and the board drew 6 cage panels to StF's 2. Now and then the
-board's list runs past the vblank (Sonic vs Sonic: board frames 834, 842,
-895, 1133, 1225). The fork's Model 2B put the geometrizer's FIFO back at
-the read start at every vblank, so cpres2, still in the last list's
-MATRIX, read the next list's header as operands and stopped. Mainline
-has no such reset, and both fights play to the end at 100 A. The board
-still runs over now and then; porting StF's stage culls (`area_clip` and
-its outcode table) would bring its load down to StF's.
+76: StF's `ground_disp` puts the 16 ground chunks through `area_clip`
+and draws 8 to 10 of them (none at that point), and `doom_cnt` draws 7 to
+10 of the 16 backdrop-ring segments (model 1129); the board drew all 32,
+and 6 cage panels to StF's 2. Now and then the board's list ran past the
+vblank (Sonic vs Sonic: board frames 834, 842, 895, 1133, 1225). The
+fork's Model 2B put the geometrizer's FIFO back at the read start at
+every vblank, so cpres2, still in the last list's MATRIX, read the next
+list's header as operands and stopped. Mainline has no such reset, and
+both fights play to the end at 100 A.
+
+The board now has both culls (BOARD.md, "Stage culls"). On Aurora, Sonic
+vs Sonic, it draws the ring segments StF does (8 or 9 a frame, in step
+with StF's own COP data on all 524 frames logged) and 9 ground chunks a
+frame to StF's 9, its 8s and 10s within a few frames of StF's. The models
+it reads a frame came down to 130 on average, StF's 114.
 
 The guests, against their own games: Akira vs Akira 100 A on Tou-rin, the
 Colosseum and the Test stage (the fights are the same on all three: no
-ring edge comes in), Mahler vs Mahler on Western (FV) 97 A (below).
+ring edge comes in), Mahler vs Mahler on Western (FV) 97 A (below; 100 A on mainline MAME
+with the culls, sync 100).
 
 Mahler from 37 F to 54 D (sync 6, motions 76, hits 59, end 59), by FV's
 own rules for an FV fighter (tools/lift-stf.py):

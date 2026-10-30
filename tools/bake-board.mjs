@@ -174,9 +174,15 @@ const scale = [k, 0, 0, 0, 0, k, 0, 0, 0, 0, k, 0, 0, 0, 0, 1];
  * spin: a StF draw that turns about its own y, m * ang_y(spin * frame)
  * (South Island's sky, Aurora's diamonds).
  * sway: DOA's swaying draws, the 3x3 of m by frame from the round's start,
- * s16 at 1/8192, SWAY_FRAMES frames of nine. */
+ * s16 at 1/8192, SWAY_FRAMES frames of nine.
+ * cull: which of StF's stage culls the draw goes through (draw_stage):
+ * CULL_RING and CULL_RING16, a segment of doom_cnt's backdrop ring, drawn at
+ * 1.0 (Aurora Icefield) or 1.6; CULL_SEA, ground_disp's sea; CULL_CHUNK + i,
+ * ground_disp's chunk i (stage_parts[i]) through area_clip. */
+const CULL_RING = 1, CULL_RING16 = 2, CULL_SEA = 3, CULL_CHUNK = 0x10, AURORA_SLOT = 2;
+out.push(`#define CULL_RING ${CULL_RING}u\n#define CULL_RING16 ${CULL_RING16}u\n#define CULL_SEA ${CULL_SEA}u\n#define CULL_CHUNK 0x${CULL_CHUNK.toString(16)}u`);
 out.push('typedef struct { u32 model; float m[12]; float x0, x1; u8 turn, side, swing, win;');
-out.push('                 const u16 *anim; u8 shift, phase, mask; u16 spin; const short *sway; } stage_draw_t;');
+out.push('                 const u16 *anim; u8 shift, phase, mask; u16 spin; const short *sway; u8 cull; } stage_draw_t;');
 /* bg: the record's stage_bg_color (+0x16, BGR555), which StF's scr_bg_int
  * puts behind the 3D layer (change_bg_color, bg_col_set).
  * bright, vx, vy: stage_bright (+0x04) and stage_vecter_x/y (+0x08, +0x0A),
@@ -265,20 +271,25 @@ stf.stages.filter((st) => STAGE_SLOTS.includes(st.slot)).forEach((st, n) => {
     const np = cagePanels(st.flags), ends = cageEnds(np);
     const walls = list.filter((e) => e.layer === 'cage').length;
     if (walls && walls !== 4 * np) throw new Error(`${st.name}: ${walls} cage panels, not 4 walls of ${np}`);
-    let panel = 0;
+    let panel = 0, chunk = 0;
     const tables = [], rows = [];
     for (const e of list) {
         const x = e.layer === 'cage' ? ends.slice(panel % np, panel++ % np + 2) : [0, 0];
-        let tail = '';
+        let anim = '0, 0, 0, 0', spin = 0;
         if (e.anim) {
             const t = e.anim.frames, mask = t.length - 1;
             if (e.anim.index || t.length & mask) throw new Error(`${st.name}: model ${e.model}'s frames are not a table of 2^n`);
             let k = tables.indexOf(t);
             if (k < 0) { k = tables.length; tables.push(t); }
-            tail = `, 0, 0, 0, 0, stage${n}_anim${k}, ${e.anim.shift}, ${e.anim.phase}, ${mask}, 0`;
-        } else if (typeof e.ops === 'function') tail = `, 0, 0, 0, 0, 0, 0, 0, 0, ${spinOf(st, e)}`;
-        rows.push(`  {${e.model}, {${boardOf(mul(scale, composeOps(opsAt(e, 0)))).map(f32).join(',')}}, ${x.map(f32).join(', ')}${tail}},`);
+            anim = `stage${n}_anim${k}, ${e.anim.shift}, ${e.anim.phase}, ${mask}`;
+        } else if (typeof e.ops === 'function') spin = spinOf(st, e);
+        let cull = 0;
+        if (e.layer === 'sky') cull = st.slot === AURORA_SLOT ? CULL_RING : CULL_RING16;
+        else if (e.layer === 'water') cull = CULL_SEA;
+        else if (e.layer === 'ground') cull = CULL_CHUNK + chunk++;
+        rows.push(`  {${e.model}, {${boardOf(mul(scale, composeOps(opsAt(e, 0)))).map(f32).join(',')}}, ${x.map(f32).join(', ')}, 0, 0, 0, 0, ${anim}, ${spin}, 0, ${cull}},`);
     }
+    if (chunk && chunk !== 16) throw new Error(`${st.name}: ${chunk} ground chunks, not area_clip's 16`);
     tables.forEach((t, k) => out.push(`static const u16 stage${n}_anim${k}[${t.length}] = {${t.join(',')}};`));
     out.push(`static const stage_draw_t stage${n}_draws[${list.length}] = {`, ...rows);
     out.push('};');

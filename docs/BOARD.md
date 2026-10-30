@@ -324,6 +324,20 @@ same frame of the stance motion (278), all sixteen part positions in the rob
   the SDK's ramp would show it far too bright.
   Real StF and board snapshots show the same pixels: (0, 0, 188) on South
   Island (0xF0C0) and (213, 38, 0) on Dynamite Plant (0x017F).
+- Stage culls (`stage.c`): `bake-board.mjs` marks each StF draw with its
+  cull (`stage_draw_t.cull`). The ground's 16 chunks go through
+  `ground_disp`'s `area_clip`: a 5 by 5 grid of points through the camera
+  and the chunks' matrix, outcodes 0x90 (Z at or under 1.0), 0x81 and 0x82
+  (focus * 0.6667 * X / Z past -248 or 248), a chunk drawn unless its four
+  corners share a bit, and the chunk under the camera always. The backdrop
+  ring's 16 segments go through `doom_cnt`'s test: the camera's unscaled
+  z axis against the direction from the camera to the segment's point,
+  hidden over 0.866 until one is drawn and over 0 after (the draw's
+  `set_obj` call clears g1, the threshold). Camera flag bits 0x10 (no
+  ground), 0x11 (no ring) and 0x1B (whole ring) are read too. On Aurora,
+  Sonic vs Sonic, the board now draws the ring segments StF does (8 or 9 a
+  frame; StF's COP data agree on all 524 frames logged) and 9 chunks to
+  StF's 9, the 8s and 10s within a few frames of StF's.
 - Light: `change_scene` copies the stage record's `stage_bright` (+0x04,
   float) and `stage_vecter_x`/`_y` (+0x08, +0x0A, angles) to `BRIGHT` and
   `VECTER_X`/`_Y`. Every frame `camera_init` builds the light on the
