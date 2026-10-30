@@ -55,7 +55,7 @@ void snd_pump(void) {
  * left out: North Wind is for Sonic against Knuckles, whose slot is Akira's
  * on the board, and South Island's music for stages 4 and 5, which the board
  * does not have. A guest stage plays its own game's song, added to StF's
- * sound program's data by tools/guest-sound.mjs as a song of StF's: FV's
+ * sound program's data by tools/board/guest-sound.mjs as a song of StF's: FV's
  * Western its western_song, StF's 26th (0xAE1019; the tool checks the
  * numbers), VF2's Tou-rin Lau's (VF2's 0xAD100B), the Colosseum Akira's
  * (0xAD1003) and Test its 0xAD1018, the 27th to 29th. */

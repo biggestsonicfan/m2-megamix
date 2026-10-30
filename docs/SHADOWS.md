@@ -9,9 +9,9 @@ otherwise (The board's other guests, below). Sonic the Fighters is the parent: t
 coprocessor firmware, so a fighter from any game gets its shadows the way
 StF draws them, from its own data put into StF's form.
 
-`tools/shadow-data.mjs` reads every roster fighter's table and every roster
+`tools/survey/shadow-data.mjs` reads every roster fighter's table and every roster
 stage's light from the three ROM sets and prints them in StF's form
-(`--json` for all of it). `tools/import-assets.mjs` keeps the shadow models
+(`--json` for all of it). `tools/board/import-assets.mjs` keeps the shadow models
 of the board's StF fighters in the data ROMs. The board draws them with
 StF's own code (On the board, below).
 
@@ -113,7 +113,7 @@ matrix at rob +0xF34 + 0x34 · rob +0xF00, needing rob +0x78A and the slot
 rob +0x788 in the mask; on bit 27, slot rob +0x7A0 (op 0x37), needing rob
 +0x7A2. All of StF's tables have a tail of zeros, so no StF fighter uses it.
 
-StF's tables (`node tools/shadow-data.mjs`) have flags 0 and one model a
+StF's tables (`node tools/survey/shadow-data.mjs`) have flags 0 and one model a
 part (Sonic models 25 to 39, Honey 3822 to 3836, Eggman 1847 to 1860; slot
 9 is Sonic's model 33 on every character but 11). Those models are not
 flat: each is a low solid of the part (noclip's `decodeModel`: Sonic's
@@ -160,12 +160,12 @@ shadows", "Fighting Vipers' wall shadows", "The pieces' floor shadows"):
 
 Ryo, Chai and Hornet come from games that cast shadows another way.
 StF's own `off_64988` would give each guest the table of the StF character
-whose slot it takes (`tools/shadow-data.mjs` prints this): Ryo, character
+whose slot it takes (`tools/survey/shadow-data.mjs` prints this): Ryo, character
 1, Tails' cards (0x658D0, models 57 to 71); Chai, 12, and Hornet, 17,
 Sonic's (0x65748); Akira, 6, Knuckles' (0x65BE0). StF's cards on a guest's
 slots are the wrong shape (on Hornet, slot 1 is the nose and slot 9 the
 cabin), so the board gives each guest a table of its own
-(`tools/guest-shadows.mjs`, On the board, below).
+(`tools/guests/guest-shadows.mjs`, On the board, below).
 
 ### Daytona's Hornet (Model 2)
 
@@ -304,7 +304,7 @@ The hulls (#1600; read off disc 3's MISC/COLD.BIN, the MVSD at 0x21B880,
 next +8, points (3 × f32) +12, face normals +16, a work buffer +20, edges
 (two u16 points) +24, faces +28 (24 bytes: the normal, three points, three
 edges), and the counts of points, edges and faces at +32, +34, +36. The
-slot is the board's `SLOT_BONES` (js/ryo.js on the chai branch), which the model rides on too.
+slot is the board's `SLOT_BONES` (js/shenmue/ryo.js on the chai branch), which the model rides on too.
 
 | bone | slot | points | triangles | open ends | |
 |---|---|---|---|---|---|
@@ -338,7 +338,7 @@ One card a bone works; nothing has to be dropped or split:
   small hole, mostly under the next hull's patch. Closing each end costs a
   triangle (the neck two): 18 more, 180 in all.
 - Still to do when they are built: the board's Z is mirrored from
-  Shenmue's (js/ryo.js `local`), which turns every face's winding round;
+  Shenmue's (js/shenmue/ryo.js `local`), which turns every face's winding round;
   the hulls are in bone space at Shenmue's size, so they take the model's
   `shenmueFit` scale; and they take StF's
   shadow models' material. Shenmue uses the same hulls for every
@@ -346,7 +346,7 @@ One card a bone works; nothing has to be dropped or split:
 
 ## On the board
 
-The board runs StF's routines, lifted by `tools/lift-stf.py` (roots
+The board runs StF's routines, lifted by `tools/board/lift-stf.py` (roots
 `sub_63AC4`, `rob_kage_disp_inside`, `rob_kage_disp_outside`; the lift
 pulls in `rob_kage_set_matrix`, `rob_kage_set_flag_sub`,
 `rob_kage_disp_test`, `tobi_kage_set_flag`, `tobi_kage_disp` and
@@ -369,7 +369,7 @@ pulls in `rob_kage_set_matrix`, `rob_kage_set_flag_sub`,
   sets it each frame from the stage's light and its turn since the round
   start.
 
-The guests' tables (`tools/guest-shadows.mjs`) go into `off_64988`'s room
+The guests' tables (`tools/guests/guest-shadows.mjs`) go into `off_64988`'s room
 in the extra data ROM after StF's own copied tables, and their models after
 the guests' others, each with StF's shadow cards' material:
 
@@ -438,7 +438,7 @@ through the feet there or on South Island.
 
 What the board will need, in StF's form, for a fighter from any game:
 
-1. Its table: 16 entries and a tail, as `tools/shadow-data.mjs` writes it
+1. Its table: 16 entries and a tail, as `tools/survey/shadow-data.mjs` writes it
    (done for every guest: On the board, above).
    A VF2 or FV fighter's fifteen entries keep their order, the slot they
    lack (slot 0, as in StF's) comes last with model 0, and VF2's flags are
@@ -464,7 +464,7 @@ What the board will need, in StF's form, for a fighter from any game:
    the table each would need.
 4. Its stage's light: VECTER_X/Y and `stage_soko` for every stage the
    board offers (done: the stage's light, StF's soko, 0 on a guest stage);
-   a guest stage's ground from its own record (`tools/shadow-data.mjs`
+   a guest stage's ground from its own record (`tools/survey/shadow-data.mjs`
    prints them). FV's lamps, gates and per-stage ground would be guest
    branches, as would VF2's ring and ground.
 5. The calls, in StF's order, in the board's frame (done, On the board,

@@ -4,7 +4,7 @@ Eggman's bomb is a projectile: an object of its own that flies, lands and
 explodes, apart from his body's collision balls. The board build runs StF's
 own fight code, so the projectile can come from StF's code too. This note
 traces the code from stfdisasm (addresses are StF's), lists Eggman's data
-(`tools/stf-projectiles.mjs` reads it from `sfight.zip`), says what damage a
+(`tools/survey/stf-projectiles.mjs` reads it from `sfight.zip`), says what damage a
 bomb does and when a guard stops it, and lists what the board needs to run it.
 Eggman's bomb runs on the board (#1601): StF's step loop and the bomb's
 steps are lifted, the board (`effects.c`) runs them each frame and draws the bomb, its
@@ -58,7 +58,7 @@ hits a fighter that rob+0x70C bit 25 would spare, bit 20 any guard stops it
 
 ## Eggman's bomb
 
-`node tools/stf-projectiles.mjs` lists every motion. Eggman (character 8)
+`node tools/survey/stf-projectiles.mjs` lists every motion. Eggman (character 8)
 throws type 2, `bean_bomb_roll`:
 
 | motion | command | bombs (flight frames, aim) | level | damage | stun |
@@ -114,7 +114,7 @@ docs/BOARD.md, `sub_2C7E4`.
 
 ## What the board does
 
-`tools/lift-stf.py` lifts it all with no new RAM (`stf_rom_80000.bin`
+`tools/board/lift-stf.py` lifts it all with no new RAM (`stf_rom_80000.bin`
 unchanged):
 
 - STUBS: drop `call_projectile_routine`.
@@ -136,7 +136,7 @@ On the board (`fighter.c` and `effects.c`):
 3. `tobi_draw` draws each live object (bit 31; not bit 9): its model (+0x7C) at +0x44,
    turned by +0x72, +0x70, +0x74 unless bit 7 or 3, scaled by +0x68, as
    `tobi_disp_go` does; and the bomb's marker at +0x50 (`tdl_bakudan`).
-4. `tools/import-assets.mjs` keeps (from `projectile_list`'s type 2 and the
+4. `tools/board/import-assets.mjs` keeps (from `projectile_list`'s type 2 and the
    marker lists) models 1703, 807–810, 1710, 1711 and
    2200–2205 and their textures.
 

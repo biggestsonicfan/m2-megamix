@@ -1,12 +1,12 @@
 # The code StF and VF2 share
 
-The board runs Sonic the Fighters' own i960 code (`board/src/stf_motion.s`,
-from `tools/lift-stf.py`) for every fighter, the VF2 guest too. Both games run
+The board runs Sonic the Fighters' own i960 code (`board/src/gen/stf_motion.s`,
+from `tools/board/lift-stf.py`) for every fighter, the VF2 guest too. Both games run
 AM2's engine, so most of that code has a VF2 version under the same name.
 This is the audit of those functions: which are already one code for both
 (StF's copy does what VF2's does), and where VF2's differs, what a VF2
 fighter loses on the board and how to give it back: guest data
-(`tools/vf2-guest.mjs`) when the code is the same and only his values are
+(`tools/guests/vf2-guest.mjs`) when the code is the same and only his values are
 StF's, or a branch on `char_game` (lift-stf.py's `INSERT`, as at
 `loc_2B9CC`) when the code itself differs.
 
@@ -14,7 +14,7 @@ StF's, or a branch on `char_game` (lift-stf.py's `INSERT`, as at
 
 A function is shared when stfdisasm and VF2's recovered Sega symbols
 (vf2-decomp's `original_symbols.csv`, 301 of them, arcade rev 2.1) give it the
-same name. `python3 tools/shared-fns.py` finds them, takes each one's body
+same name. `python3 tools/survey/shared-fns.py` finds them, takes each one's body
 (what its entry reaches through branches and jump tables, without calls) in
 both programs and scores the two (`--out DIR` writes the bodies and a line
 diff; `--all` lists the 240 shared names of the whole programs, not only the
@@ -258,7 +258,7 @@ single fighter to branch for.
 
 Notation: S = StF (sfight program ROM), V = VF2 rev 2.1. Commit word = rob+0x194, its
 type = top byte rob+0x197 (0x19B, 0x19F the same byte of 0x198 and 0x19C). StF and VF2
-number the commit types differently; "V x -> S y" is `COMMIT_TYPE` in tools/vf2-guest.mjs
+number the commit types differently; "V x -> S y" is `COMMIT_TYPE` in tools/guests/vf2-guest.mjs
 (0x10->0xC, 0x11->0xD, 0x18->0x14, 0x19->0x15, 0x1B->0x17, 0x1C->0x18, 0xD->9, 9->6 ...).
 Everything below that is only that renumbering is class (c), and the importer already handles it
 for every type Akira's program commits. Akira's program (walked from V 0x1D1FC[0]) commits VF2
@@ -512,7 +512,7 @@ His data, read from the VF2 set: record (V 0x200620C[0]) = 0x02001208.
 ## Appendix: Actions (exec_action)
 
 
-StF labels are from rom_code1.asm (ACTUAL_MOVES, line 28271). VF2 addresses are from the ROM and vf2-decomp's original_symbols.csv. "Slot n" means StF g6 slot n, i.e. halfword n of the character's action list. tools/vf2-guest.mjs fills it with VF2 action STF_ACTIONS[n]. "Action n" means index n of Akira's VF2 action list (84 entries). "Slow mode" is 0x500068 bit 20. VF2 sets it in display mode 10 (0x1fd14, along with gravity 0x50a000=0x3a3117c4 and 0x50a004=2.0), and the board never has it. In StF, 0x500068 is not_scr_bg_move, so the bit means nothing there.
+StF labels are from rom_code1.asm (ACTUAL_MOVES, line 28271). VF2 addresses are from the ROM and vf2-decomp's original_symbols.csv. "Slot n" means StF g6 slot n, i.e. halfword n of the character's action list. tools/guests/vf2-guest.mjs fills it with VF2 action STF_ACTIONS[n]. "Action n" means index n of Akira's VF2 action list (84 entries). "Slow mode" is 0x500068 bit 20. VF2 sets it in display mode 10 (0x1fd14, along with gravity 0x50a000=0x3a3117c4 and 0x50a004=2.0), and the board never has it. In StF, 0x500068 is not_scr_bg_move, so the bit means nothing there.
 
 ### exec_action (StF ACTUAL_MOVES / VF2 0x1b80c)
 - Returns if rob+0x19C is 0. Otherwise it jumps to handler[rob+0x19F]. That byte is the committed command type, so this runs the per-frame half of the current command.
@@ -634,7 +634,7 @@ StF labels are from rom_code1.asm (ACTUAL_MOVES, line 28271). VF2 addresses are 
 ## Appendix: Motions
 
 
-StF addresses are from rom_code1.asm (Sega's labels where it has them). VF2 addresses are from vf2-decomp's original_symbols.csv. "Akira's" means the id is among the 328 VF2 motion ids that tools/vf2-guest.mjs carries over. Counts of Akira's play ops come from his VF2 setups in that same set: op 1 x23, 2 x1, 3 x1, 4 x148, 5 x60, 6 x46, 8 x4, 9 x25, 0xa x101, 0xd x23, 0xe x7, 0x10 x154, 0x12 x132, 0x14 x4, 0x16 x2, 0x17 x16. He has no 0x7, 0xb, 0xc, 0xf, 0x11, 0x13 or 0x15, and no setup kind word with bit 23 set.
+StF addresses are from rom_code1.asm (Sega's labels where it has them). VF2 addresses are from vf2-decomp's original_symbols.csv. "Akira's" means the id is among the 328 VF2 motion ids that tools/guests/vf2-guest.mjs carries over. Counts of Akira's play ops come from his VF2 setups in that same set: op 1 x23, 2 x1, 3 x1, 4 x148, 5 x60, 6 x46, 8 x4, 9 x25, 0xa x101, 0xd x23, 0xe x7, 0x10 x154, 0x12 x132, 0x14 x4, 0x16 x2, 0x17 x16. He has no 0x7, 0xb, 0xc, 0xf, 0x11, 0x13 or 0x15, and no setup kind word with bit 23 set.
 
 "Gated" means it runs only when the VF2 byte 0x59c351 (backup-SRAM settings copy, [0x50016c]+0x3351) has bit 6 set. vf2-decomp calls this "VF2_GAME_DISP_MODE_OFFSET"; what it means is unknown. Finding where VF2 sets that bit (its test menu or the attract code) would settle every gated item below.
 
@@ -805,7 +805,7 @@ Copro protocol differences (StF rotate ops 0x08/0x09/0x0a with an inline angle v
 ## Appendix: Movement and info
 
 
-Lifted lines are board/src/stf_motion.s's. "rob" fields are StF's layout unless marked VF2. VF2's
+Lifted lines are board/src/gen/stf_motion.s's. "rob" fields are StF's layout unless marked VF2. VF2's
 record pointer is `ld 0x200620C[rob+0x1B0*4]` (VF2 init_fix 0x13F10, kept at rob+0x190 as in StF).
 The board runs StF's game globals: gravity 0x50A000 = 0.0252222 (0x3CCE9ED5) where VF2 has 0.0027222
 (0x3B32674F), 9.27x, not SCALE (2.0271); 0x50A004 = 1.0, 0x50A008 = 10.0 in both. A VF2 guest's
@@ -944,7 +944,7 @@ jump takes the difference in rob+0x5CC (B9), so it falls at 0x3B32674F × SCALE.
    - (a) StF-only: 0x720 bit 12, the grab bit `ACT_RC_NAGE_TOUCH` needs, while 0x19F is 39..41:
      facing outside 0x5550..0xAAA0, opponent 1A4 & 0x1018 clear, dist <= rec[+0x10]+0. The lifter
      had both numbers as labels until L1.
-4. Akira: his command program, which tools/vf2-guest.mjs copies op for op, tests 0x5B8 with op 7 (bit
+4. Akira: his command program, which tools/guests/vf2-guest.mjs copies op for op, tests 0x5B8 with op 7 (bit
    set) for bits 0 x6, 3 x6, **8 x10**, **11 x2**, 18..23 x1-2 and 26 x11 (no op 0xA). On the board, bit 8
    means "opponent moving away" instead of "in range", and bit 11 is never set. So his 10 range-gated
    commands fire on the wrong condition, and his 2 bit-11 commands never fire.
@@ -967,8 +967,8 @@ jump takes the difference in rob+0x5CC (B9), so it falls at 0x3B32674F × SCALE.
 ## Appendix: Collision
 
 
-Lifter status (tools/lift-stf.py): `collision` is a ROOT; all seven functions are lifted live into
-board/src/stf_motion.s (collision 12470, area_coli 16684, decide_coli_kind 15855 with its chunk
+Lifter status (tools/board/lift-stf.py): `collision` is a ROOT; all seven functions are lifted live into
+board/src/gen/stf_motion.s (collision 12470, area_coli 16684, decide_coli_kind 15855 with its chunk
 player_mot_nums_read 15851). None is in STUBS and none calls a STUB directly. In the tree under
 `collision`, the stubs reached are `sound_request_u` (hit/voice sounds in attack_hit/damage code,
 e.g. loc_2B390, loc_2BD80, loc_2C438) and `print_mes` (the "HIT COMBO" debug text, loc_2B318);
@@ -1071,7 +1071,7 @@ only per-fighter data differences can be branched.
      rob+0x650 at least 0.2 (0x3E4CCCCD, 0x236D4); both decay by 0.03 a frame (0x3CF5C28F).
    - (c) Push factor: VF2 always 0.3 (0x23748). StF 0.3, or 0.7 (0x3F333333) when 0x804 bits
      0x2100 together, or 0.65 (0x3F266666) by 0x804>>6 & 0x1A4 bit 2, none of it when one attacks
-     (0x804 & 0x1A4 bit 8); stored at rob+0x67C (0x2D73C..0x2D7B0); StF clamps g4 to >= 0.3
+     (0x804 & 0x1A4 bit 8); stored at rob+0x67C (0x2D73C..0x2D7B0); StF caps g4 at 0.3
      (0x2D7E0).
    - (a) StF-only: 0x1A4 bit 29 skip, g6 bit 0 path sharing the wall vectors 0x644/0x64C when both
      have 0x1A4 bit 18/19 (0x2D84C), cage-wall handling by 0x23C(g13) and rob+0x26 (0x2D8B4), the
@@ -1080,8 +1080,10 @@ only per-fighter data differences can be branched.
      (area id) per fighter. Harmless: StF's stage.
    - (d) Task 0x164 = VF2 0x148; 0xD4..0xDC = 0xC8..0xD0; 0xCC/0xD0 = 0xC0/0xC4; outputs
      0xE0..0xF4 = 0xD4..0xE8. rob+0x644/0x64C are the same offsets in both.
-4. Board impact: none for one fighter; the constants are the pair's. Recommendation: nothing
-   (a VF2-pair feel would need both fighters to be VF2's).
+4. Board impact: the pair's constants, in StF's units, kept two guests (drawn at StF's size)
+   apart at StF's distance. Done: for two guests of one game, VF2's factor (0.3 x VF2's size,
+   no cap) or FV's (StF's x FV's size, cap 0.3 x it) (docs/GRADING.md, "The push between
+   bodies").
 
 ### calc_attack_flag (StF 0x2DC48, VF2 0x238A4)
 1. Turns the move's attack part id (rob+0x820) into a mask of the balls that attack.

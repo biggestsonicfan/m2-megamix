@@ -5,7 +5,7 @@ own scale of strengths, and talk to each other when they meet. On the board they
 make their moves' own Shenmue sounds (On the board, below); their hits and
 guards still sound as the StF characters' whose slots they take (Ryo Tails',
 slot 1; Chai the robots' lists, slot 12; docs/BOARD.md, Sound). This page is what
-the discs hold toward that, and what the board will need. `tools/shenmue-sound.py`
+the discs hold toward that, and what the board will need. `tools/sources/shenmue-sound.py`
 reads it all.
 
 **In short:**
@@ -25,10 +25,10 @@ reads it all.
 
 ```bash
 D3="$HOME/source/repos/ai/SHENMUE 1 BETA 0.400 DISC 3 PERFECT DUMP"
-python3 tools/shenmue-fight.py extract "$D3" /tmp/x SCENE/03/SOUND/BATTLE_1.SND SCENE/03/SOUND/BATTLE_2.SND
-python3 tools/shenmue-sound.py bank /tmp/x/SCENE/03/SOUND/BATTLE_1.SND [--json] [--wav /tmp/b1]
-python3 tools/shenmue-sound.py lines "$D3" CHAI          # every scene Chai speaks in
-python3 tools/shenmue-sound.py banter "$D3" /tmp/banter  # BANTER as WAVs (disc 2 beside disc 3) + banter.json
+python3 tools/sources/shenmue-fight.py extract "$D3" /tmp/x SCENE/03/SOUND/BATTLE_1.SND SCENE/03/SOUND/BATTLE_2.SND
+python3 tools/sources/shenmue-sound.py bank /tmp/x/SCENE/03/SOUND/BATTLE_1.SND [--json] [--wav /tmp/b1]
+python3 tools/sources/shenmue-sound.py lines "$D3" CHAI          # every scene Chai speaks in
+python3 tools/sources/shenmue-sound.py banter "$D3" /tmp/banter  # BANTER as WAVs (disc 2 beside disc 3) + banter.json
 ```
 
 ## AICA ADPCM
@@ -138,13 +138,13 @@ Only when Ryo faces Chai: against anyone else they say nothing new.
 its own Shenmue record names, at the frame it names (Shenmue's punch scale,
 below), as Shenmue would have played it:
 
-- `js/ryo.js` `readSounds` reads a record's type-4 events (slot, SE, the
+- `js/shenmue/ryo.js` `readSounds` reads a record's type-4 events (slot, SE, the
   frame as 2f + 1, as the record's timing); the fighter's `sounds(id)`.
-- `tools/shenmue-moves.mjs` turns each battle-pack one (slot 0xAB76) into a
+- `tools/guests/shenmue-moves.mjs` turns each battle-pack one (slot 0xAB76) into a
   play op 4 of code 0xAE1600 + SE, in place of the Akira template's op 4s;
   a move whose record has none keeps the template's (3 of Chai's). Slot 3
   (`ab 03 58`, 10 events) and slot 7 (Ryo's voices) are left out.
-- `tools/guest-sound.mjs` puts the SEs the moves send into a request group of
+- `tools/board/guest-sound.mjs` puts the SEs the moves send into a request group of
   their own, 0x16 (as VF2's are 0x15): entry nn plays one note on channel 14
   of Akira's by-key tone 0x68, on the keys after his, each key the SE's
   tone's sample decoded from BATTLE_1 (disc 3's SCENE/03) and stored as 8-bit

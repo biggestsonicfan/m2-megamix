@@ -14,9 +14,9 @@ stages from each of the three games, as in the browser game.
 ## Building and running
 
 ```sh
-node tools/bake-board.mjs                       # board/src/poses.h, from $ROMS_DIR's zips
-python3 tools/lift-stf.py                       # board/src/stf_motion.{s,h}, stf_rom_c0000.bin
-node tools/import-assets.mjs                    # board/roms/sfight/'s data ROMs, from $ROMS_DIR's sfight.zip
+node tools/board/bake-board.mjs                 # board/src/gen/poses.h, from $ROMS_DIR's zips
+python3 tools/board/lift-stf.py                 # board/src/gen/stf_motion.{s,h}, stf_rom_80000.bin
+node tools/board/import-assets.mjs              # board/roms/sfight/'s data ROMs, from $ROMS_DIR's sfight.zip
 cmake -G "Unix Makefiles" -B <build> -S board   # m2-sdk beside this checkout
 make -C <build> -j2                             # -> board/roms/sfight/epr-19001.15, epr-19002.16
 mame sfight -rompath board/roms
@@ -26,10 +26,10 @@ MAME reports wrong checksums for every ROM of the set; that is expected.
 `M2_HLE_GEO_OFF=1` in the environment runs MAME's real geometrizer program
 instead of its HLE; both draw the same picture.
 
-`poses.h`, `stf_motion.s`, `stf_rom_c0000.bin` and `roms/` hold Sega's code
-and data and are not in git.
+`src/gen/` (`poses.h`, `stf_motion.s`, `stf_motion.h`, `stf_rom_80000.bin`)
+and `roms/` hold Sega's code and data and are not in git.
 
-`board/src/stf_tex_codec.h` is the SDK's `m2_tex_codec.h` with a bigger
+`board/src/stage/stf_tex_codec.h` is the SDK's `m2_tex_codec.h` with a bigger
 table B (2048 entries, not 512): StF's stage sets need up to 1178, and the
 SDK's size drops six of their pages. It keeps the SDK's include guard and is
 included in place of it; the SDK itself is used unchanged.
@@ -41,33 +41,25 @@ included in place of it; the SDK itself is used unchanged.
 header-only: its functions and state are defined in its headers, built global
 for the boot asm, so a module built on its own would carry its own copy).
 
-| File | What it holds |
+Its files are grouped by what they do (`board/src/README.md` lists each):
+
+| Folder | What it holds |
 | --- | --- |
-| `main.c` | the frame loop: boot, the setup, a round's start and end, the up-to-four vblank steps, the link's sync |
-| `fighter.c` | StF's fighters: their tasks and globals, `rob_init`, `fight_step`, `round_start`, the HUD |
-| `fighter_draw.c` | a fighter's parts from the coprocessor's slots, the seams and midriff, the spin ball, the mirror image |
-| `effects.c` | afterimages, projectiles and StF's effects |
-| `osage.c` | the sway chains and StF's list blocks |
-| `kage.c` | the shadows |
-| `armour.c` | FV's armour: limits, HUD, kept across rounds |
-| `replay.c` | FV's replay |
-| `ringout.c` | VF2's ring out and its message |
-| `tpd.c` | the moving texture points: eyes, pit, pipes |
-| `stage.c` | the stage's meshes, materials and light; `load_stage`; FV's town turn and Kuma |
-| `sky.c` | the sky on the tile layers |
-| `colors.c` | the colour translation runs |
-| `texture.c` | the texture sets and palettes |
-| `sound.c` | the sound requests to the 68000 |
-| `menu.c` | the setup menu, on tile layer 1 |
-| `camera.c` | the camera and the stage's light in its frame |
-| `cop.c` | the coprocessor's matrix and the submits |
-| `linkplay.c` | the two-cabinet link's glue (the protocol is `link.c`) |
-| `carry.c` | points carried between slots, alone on the i960's floating point |
-| `stf_call.s`, `stf_motion.s` | the lifted StF code and how it is called |
+| `board/src` | `megamix.c` and `megamix.h` (the unit and what it shares), `main.c` (the frame loop), `menu.c`, `sound.c` |
+| `fight/` | StF's fighters (`fighter.c`, `rob.h`), the bridge to the lifted code (`stf_call.s`), FV's armour and replay, VF2's push and ring out, the sway chains |
+| `draw/` | the coprocessor and camera, a fighter's parts, shadows, effects, the moving texture points, the floating-point carry (`carry.c`) |
+| `stage/` | the stage's meshes and light, colour runs, texture sets, the sky, the texture codec |
+| `link/` | the comm board's protocol (`link.c`) and its glue (`linkplay.c`) |
+| `gen/` | what is made from the ROMs and not in git: `poses.h`, `stf_motion.s`, `stf_motion.h`, `stf_rom_80000.bin` |
+
+`megamix.c` includes them by path, in the order they were before the
+folders came (#1913): the binary is the same byte for byte.
+`link/link.c`, `draw/carry.c`, `fight/push.c`, `fight/stf_call.s` and
+`gen/stf_motion.s` are built as objects of their own (`board/CMakeLists.txt`).
 
 ## The data ROMs
 
-`tools/import-assets.mjs` writes `board/roms/sfight/`'s data ROMs: each starts
+`tools/board/import-assets.mjs` writes `board/roms/sfight/`'s data ROMs: each starts
 zero-filled and gets only what the board reads, at StF's own address, so StF's
 pointers, its program-ROM tables and the code lifted from it find everything
 where it always was. From StF it takes the luma ramp, the polygon palette, the
@@ -97,7 +89,7 @@ left out.
 
 ### Moves as text
 
-`tools/moves-text.mjs` writes each fighter's moves on the board as a plain
+`tools/board/moves-text.mjs` writes each fighter's moves on the board as a plain
 listing, `board/moves-out/<chr>-<name>.moves` (it reads `board/roms`, so run
 the import first). A listing has two parts:
 
@@ -116,7 +108,7 @@ Assembled where it came from, a listing gives back the same bytes, and
 somewhere else, it reads back as the same moves.
 
 A `.moves` file put in `board/moves/` replaces that fighter's moves the next
-time `tools/import-assets.mjs` runs:
+time `tools/board/import-assets.mjs` runs:
 
 - A program that differs from what is in the ROM goes in the guest heap. The
   fighter's MOVESET_ARRAY slot then points at it, and its `near` natives
@@ -128,9 +120,9 @@ time `tools/import-assets.mjs` runs:
 
 ## How a fighter is drawn
 
-The motions are StF's own code. `tools/lift-stf.py` lifts StF's motion
+The motions are StF's own code. `tools/board/lift-stf.py` lifts StF's motion
 routines out of its disassembly (`biggestsonicfan/stfdisasm`,
-`rom_code1.asm` with `include.s`) as i960 assembly, `board/src/stf_motion.s`:
+`rom_code1.asm` with `include.s`) as i960 assembly, `board/src/gen/stf_motion.s`:
 `set_motion`, `calc_rob_angle` (the frame's angles from the motion's curves,
 `get_frame_dat`, `smooth_int`'s blends), `calc_unit_mat` (the sixteen part
 matrices, built on the coprocessor's stack and stored in its slots with op
@@ -140,10 +132,12 @@ StF's work RAM they use becomes `.bss` blocks of the board's; StF's ROM tables
 at 0xC0000..0xFFFFF (the character records, skeletons, motion lists) are
 copied raw to the same addresses (`.stfrom`). Collision routines are stubbed.
 The coprocessor runs StF's own firmware (m2-sdk's default), so the ops are
-the ones StF sends. The code uses the i960's own floating point, as StF does:
+the ones StF sends. FV's fighters get it too: FV's own revision differs in
+three results (stf-sharc's `FV_COP` has them), and none shows in the graded
+FV replay. The code uses the i960's own floating point, as StF does:
 fine on MAME and a real board (not on a soft-float i960).
 
-`board/src/stf_call.s` calls a lifted routine with StF's registers (g7 the
+`board/src/fight/stf_call.s` calls a lifted routine with StF's registers (g7 the
 fighter, g8 the other one, g10..g12 the RAM and FIFO bases, g14 0). A fighter
 is StF's rob structure (0x3400 bytes) and its motion record, set up as a
 round's start sets them (the character records at +0x190/+0x1A0, the dent
@@ -165,7 +159,7 @@ pass takes 8.2 ms on South Island and 9.2 ms on Aurora Icefield (10.3 ms
 at most) in MAME. A pass that runs long still steps once per vblank it
 took.
 
-The board's C is soft-float (`M2_SOFTFLOAT`), all but `src/carry.c`, built
+The board's C is soft-float (`M2_SOFTFLOAT`), all but `src/draw/carry.c`, built
 with `-mnumerics` for the i960's own `mulr`/`addr`/`divr` as the lifted
 code is. It carries points from one slot's frame into another's (Ryo's
 seams and midriff, `fighter_draw.c`); in soft-float its matrix setup took 6.75
@@ -322,6 +316,20 @@ same frame of the stance motion (278), all sixteen part positions in the rob
   the SDK's ramp would show it far too bright.
   Real StF and board snapshots show the same pixels: (0, 0, 188) on South
   Island (0xF0C0) and (213, 38, 0) on Dynamite Plant (0x017F).
+- Stage culls (`stage.c`): `bake-board.mjs` marks each StF draw with its
+  cull (`stage_draw_t.cull`). The ground's 16 chunks go through
+  `ground_disp`'s `area_clip`: a 5 by 5 grid of points through the camera
+  and the chunks' matrix, outcodes 0x90 (Z at or under 1.0), 0x81 and 0x82
+  (focus * 0.6667 * X / Z past -248 or 248), a chunk drawn unless its four
+  corners share a bit, and the chunk under the camera always. The backdrop
+  ring's 16 segments go through `doom_cnt`'s test: the camera's unscaled
+  z axis against the direction from the camera to the segment's point,
+  hidden over 0.866 until one is drawn and over 0 after (the draw's
+  `set_obj` call clears g1, the threshold). Camera flag bits 0x10 (no
+  ground), 0x11 (no ring) and 0x1B (whole ring) are read too. On Aurora,
+  Sonic vs Sonic, the board now draws the ring segments StF does (8 or 9 a
+  frame; StF's COP data agree on all 524 frames logged) and 9 chunks to
+  StF's 9, the 8s and 10s within a few frames of StF's.
 - Light: `change_scene` copies the stage record's `stage_bright` (+0x04,
   float) and `stage_vecter_x`/`_y` (+0x08, +0x0A, angles) to `BRIGHT` and
   `VECTER_X`/`_Y`. Every frame `camera_init` builds the light on the
@@ -457,7 +465,7 @@ same frame of the stance motion (278), all sixteen part positions in the rob
   its coefficient from `flt_90BA0`. `m2_obj_frame_setup` fills all 32 with one
   value, so `send_materials` follows it. Without them the palms and the
   waterfall draw white.
-- Moving draws: `tools/bake-board.mjs` bakes each StF draw at frame 0, so a
+- Moving draws: `tools/board/bake-board.mjs` bakes each StF draw at frame 0, so a
   draw that moves carries how. South Island's four palms and their shadow
   swap models by frame: model `anim[((frame >> 1) + phase) & 31]`, from
   StF's tables (palms 522..552, phases 0, 8, 16 and 24; the shadow
@@ -509,11 +517,11 @@ same frame of the stance motion (278), all sixteen part positions in the rob
 
 ## The guest: VF2's Akira
 
-`tools/vf2-guest.mjs` (called by the import) brings in VF2's Akira as StF
+`tools/guests/vf2-guest.mjs` (called by the import) brings in VF2's Akira as StF
 character 6, Knuckles' slot (32 for player 2), which Megamix does not use. He
 runs on StF's own code like the rest of the cast: everything of his that the
 code reads is converted into StF's formats and written into the guest tables
-`tools/lift-stf.py` moves out of the program ROM (`GUESTS`, at 0x02E00000),
+`tools/board/lift-stf.py` moves out of the program ROM (`GUESTS`, at 0x02E00000),
 with a heap after them.
 
 - **Motions:** the ones his actions, his reactions, his command program and
@@ -560,7 +568,7 @@ with a heap after them.
   of one frame.
 - **Models:** 95 models (P1 and P2 parts and his hands) under free model ids
   from 5102 down. Their meshes go in the polygon ROM's empty run, and the
-  materials, UVs and textures are packed by `tools/pack-akira.mjs`. Colour
+  materials, UVs and textures are packed by `tools/guests/pack-akira.mjs`. Colour
   bases whose palette entries differ between the games are moved to a StF
   entry with VF2's colour, or to a free one that is given it.
 - **Size:** StF's world is about twice the size of VF2's and Fighting Vipers'.
@@ -675,7 +683,7 @@ colours take rows 0..6 (7..13 for player 2), which includes StF's fixed rows
 
 ### Grading a guest
 
-`node tools/grade-guest.mjs [romdir] [--json]` (after the import; romdir
+`node tools/grade/grade-guest.mjs [romdir] [--json]` (after the import; romdir
 defaults to `board/roms`) compares the built data ROMs with StF's set and
 grades each guest. A guest table slot or record field is his own when it
 differs from StF's and a stand-in when it is StF's; StF's program-ROM
@@ -725,7 +733,7 @@ Acting on him now:
   - +0x24 (8.0), +0x28 (0xC513C) and +0x2C (9.0): no lifted code reads
     them, and their meaning is unknown.
   - +0x1C (0xC5260, the same in all 26 of StF's records): missed by the
-    audit, found by `tools/grade-guest.mjs` (below). Its reader and
+    audit, found by `tools/grade/grade-guest.mjs` (below). Its reader and
     meaning are unknown, so it stays. VF2's record has no pointer there:
     its +0x1C is the 1.7 in the +0x18..+0x24 floats above, whose reader is
     not found either. So VF2 has no field of the same kind, let alone one
@@ -1019,9 +1027,9 @@ y + 1.0, which holds while guests are scaled to StF's size.
 Fighting Vipers' Honey, Tokio and Bahn are not guests yet; docs/FV-GUESTS.md
 measures what they need and what room Akira and Ryo leave.
 
-Ryo Hazuki (the Shenmue beta's, js/ryo.js) is StF character 1
+Ryo Hazuki (the Shenmue beta's, js/shenmue/ryo.js) is StF character 1
 (Tails, whom Megamix does not use; 27 for player 2), picked as RYO in the
-setup. tools/ryo-guest.mjs builds him on top of what tools/vf2-guest.mjs
+setup. tools/guests/ryo-guest.mjs builds him on top of what tools/guests/vf2-guest.mjs
 put in for Akira, and import-assets runs it after Akira's.
 
 - **Moves.** His own moveset (#1608): `ownMoveset` (vf2-guest.mjs)
@@ -1036,8 +1044,8 @@ put in for Akira, and import-assets runs it after Akira's.
   Check: MAME, the same inputs on the old and the new ROMs, Ryo vs Akira,
   Chai vs Ryo, Akira vs Chai: the same energies every 300 frames to the KO,
   Ryo's motion ids Akira's + 360, Chai's + 688.
-- **His own moves** (#1612, tools/shenmue-moves.mjs): on the ground, P, K,
-  P+K and P+G are the web roster's (js/ryo.js `readMoves`), over that copy.
+- **His own moves** (#1612, tools/guests/shenmue-moves.mjs): on the ground, P, K,
+  P+K and P+G are the web roster's (js/shenmue/ryo.js `readMoves`), over that copy.
   - *Motions.* Each motion they play gets an id after the moveset's
     (Ryo's 1209..1262): its Shenmue block converted to VF2's
     (docs/VF3-SHENMUE.md) at Akira's size (`scaleMotion`), and a setup.
@@ -1086,7 +1094,7 @@ put in for Akira, and import-assets runs it after Akira's.
   painted on two 64×64 ARGB4444 textures (KB_MUF_, KB_MUB_; their alpha is
   0-3 throughout and is not read as holes). Both are in MISC/MODELS.PKS,
   with their textures in MODELS.PKF; the disc has no other Ryo between them
-  (YKB_Z, 2835, is a bigger one). `RYO_MODEL=M node tools/import-assets.mjs`
+  (YKB_Z, 2835, is a bigger one). `RYO_MODEL=M node tools/board/import-assets.mjs`
   builds him with YKB_M instead. The web page draws YKB_M.
 - **Afterimages.** StF's (see The fight). Akira's setups get play op 0x26
   on each strike (vf2-guest `trailOf`; 81 of them): from 4 frames before
@@ -1140,7 +1148,7 @@ put in for Akira, and import-assets runs it after Akira's.
   ramp row gives about 20-40 at the lowest levels, under the 64 the screen
   shows, so a dark texel kept low was black whatever row its face took, and
   he came out with black jeans and a black-brown jacket. Graded against his
-  textures (tools/ryo-guest.mjs, ryoTiles: YKB_B rendered unlit with its own
+  textures (tools/guests/ryo-guest.mjs, ryoTiles: YKB_B rendered unlit with its own
   texels and with the board's ramp colours, front and back), the textures'
   colour is 18-23 off a channel on average with the scale from 0, 6-7 with
   it from a quarter (a fifth 7-8, three tenths 7-9), and his overall
@@ -1215,7 +1223,7 @@ display list in buffer RAM, op 0Bh before the object; m2-hle2's
 `get_geo_captures`), its stored normal and its corner C. A face counts if
 the stored normal said rear (normal · C < 0) while the face's own normal
 said front. Those faces, and only those, are stored with their own flat
-normal (`FLAT` in tools/ryo-guest.mjs); every other face, on the shins too,
+normal (`FLAT` in tools/guests/ryo-guest.mjs); every other face, on the shins too,
 keeps the corner average, and the seams (normals worked out by the board,
 mode 2) are not touched. By index in the part, with the angle between the
 stored normal and the eye when the face was hidden, then the least the
@@ -1337,9 +1345,9 @@ number 3 (0x0C0200E4) and sets scene 3, area `MFBT`, entry 99
 
 ## The guest: Shenmue's Chai
 
-Chai (the beta's disc 3 ending fight, js/chai.js, docs/CHAI.md) is StF
+Chai (the beta's disc 3 ending fight, js/shenmue/chai.js, docs/CHAI.md) is StF
 character 12 (38 for player 2), picked as CHAI in the setup (#1590). He is
-built as Ryo is, by the same code (tools/ryo-guest.mjs `importShenmue`, run
+built as Ryo is, by the same code (tools/guests/ryo-guest.mjs `importShenmue`, run
 for Ryo and then for him), on Akira's moves (`char_game` VF2).
 
 - **Slot.** Megamix uses 0, 8 and 15, Akira 6 and Ryo 1. The others StF's
@@ -1390,14 +1398,14 @@ walks, strikes and takes hits on either side.
 
 Hornet (Daytona USA's car #41, as Fighters Megamix had him) is StF
 character 17 (43 for player 2), picked as HORNET in the setup (#1592), the
-name line DAYTONA. He is built by tools/hornet-guest.mjs `importHornet`
+name line DAYTONA. He is built by tools/guests/hornet-guest.mjs `importHornet`
 (`char_game` VF2, as Akira), after Ryo and Chai, on FM Hornet's own moves
-(tools/fm-moves.mjs, #1610).
+(tools/guests/fm-moves.mjs, #1610).
 
 - **Slot.** 17 is no number StF's code checks and no bit of the opponent
   mask (above, The guest: Shenmue's Chai).
 - **Model.** Daytona's own objects, polygon for polygon, quads kept
-  (tools/daytona-hornet.mjs, docs/FM-SATURN.md), in the slots FM's Hornet
+  (tools/sources/daytona-hornet.mjs, docs/FM-SATURN.md), in the slots FM's Hornet
   moves: the nose on the chest (1); the cabin, the windows and the glass on
   the pelvis (9); the front wheels on the hands (5, 8), the rear on the feet
   (12, 15). The windows are model 2139, which Daytona draws from RAM its boot
@@ -1428,7 +1436,7 @@ name line DAYTONA. He is built by tools/hornet-guest.mjs `importHornet`
   moves are in main_data 0x780000..0x800000 (FV's skies end there now).
 - **Menu.** The setup window is 28 wide from column 16 (was 26 from 18) to
   fit HORNET:DAYTONA.
-- **Moves.** FM Hornet's (tools/fm-moves.mjs `importFmMoves`), below.
+- **Moves.** FM Hornet's (tools/guests/fm-moves.mjs `importFmMoves`), below.
 
 Check: MAME, Hornet vs Honey on South Island: setup reads DAYTONA:HORNET;
 the car stands on its rear wheels, logos, the 41 and the Gaffey panel the
@@ -1465,7 +1473,7 @@ the 52 action slots and 19 of the 30 reaction kinds his own (FM's table at
 - **Lost.** His 10 throws, FM's escape tests (ops 0x43..0x48, 73 of them),
   its follow-switches (0x4A, 0x4E) and button 8's commits have no StF
   counterpart and fail; air checks (0x32) commit as plain ones.
-  `node tools/grade-guest.mjs` lists what each guest loses.
+  `node tools/grade/grade-guest.mjs` lists what each guest loses.
 
 Check: MAME (scripted bout, Hornet vs Honey): his stance is 1639 (FM 0x11C);
 punch, kick, the down and back moves and his reactions to Honey's strikes
@@ -1478,8 +1486,8 @@ frames (MAME, Hornet vs Eggman).
 
 Mahler (FV character 8) is StF character 18 (44 for player 2), picked as
 MAHLER in the setup (#1616), the name line FV. He is built by
-tools/mahler-guest.mjs `importMahler` (`char_game` FV), after Hornet, on
-his own FV moves (tools/fv-moves.mjs). docs/FV-MAHLER.md has the survey
+tools/guests/mahler-guest.mjs `importMahler` (`char_game` FV), after Hornet, on
+his own FV moves (tools/guests/fv-moves.mjs). docs/FV-MAHLER.md has the survey
 this follows.
 
 - **Slot.** 18 is no number StF's code checks and no bit of the opponent
@@ -1531,15 +1539,15 @@ this follows.
 
 ### Mahler from an OBJ
 
-`tools/model-obj.mjs` writes any fighter's models as Wavefront OBJ and MTL
+`tools/board/model-obj.mjs` writes any fighter's models as Wavefront OBJ and MTL
 (its header has the rules), and `import-assets.mjs --obj mahler=<dir>` builds
 Mahler from such a folder in place of FV's polygons:
 
 ```sh
-node tools/model-obj.mjs export MAHLER /tmp/mahler    # mahler.obj, .mtl, .m2.json, tex/
+node tools/board/model-obj.mjs export MAHLER /tmp/mahler    # mahler.obj, .mtl, .m2.json, tex/
 #   edit /tmp/mahler/mahler.obj in Blender (Wavefront, Y up, -Z forward)
-node tools/model-obj.mjs check /tmp/mahler            # faces against the ROM's
-node tools/import-assets.mjs --obj mahler=/tmp/mahler # then make, as above
+node tools/board/model-obj.mjs check /tmp/mahler            # faces against the ROM's
+node tools/board/import-assets.mjs --obj mahler=/tmp/mahler # then make, as above
 ```
 
 - **Objects.** `slotNN` is body part NN, `slotNN_extraK` a piece FV draws on
@@ -1576,7 +1584,7 @@ natives), all 52 action slots and 17 of the 30 reaction kinds (FV's 22 at
 - **Commits.** Types StF has none of play the FV action that does the same
   (`COMMIT_ACTION`): 4 of 107.
 - **Lost.** FV's effect and armour play ops, its sounds and the flag bits
-  StF never sets (all but kind2's bit 5). `node tools/grade-guest.mjs` lists them.
+  StF never sets (all but kind2's bit 5). `node tools/grade/grade-guest.mjs` lists them.
 
 Check: MAME (shared build), Mahler against Mahler on South Island: setup
 reads FV:MAHLER for both; both look the same, the pads on the chest; he
@@ -1585,7 +1593,7 @@ and lying, there and on the Colosseum and Western.
 
 ## VF2's stages: Tou-rin and the Colosseum
 
-`tools/vf2-stages.mjs` brings VF2's stage slots 0 and 1 (Tou-rin, the
+`tools/stages/vf2-stages.mjs` brings VF2's stage slots 0 and 1 (Tou-rin, the
 Colosseum) onto the board as setup stages 2 and 3. `vf2StagePlan` reads
 each stage's draws (noclip's `vf2.js`); `importVf2Stages` writes them into
 the data ROMs, and `bake-board.mjs` bakes their records into `poses.h`.
@@ -1700,7 +1708,7 @@ after FV's Western, through the same importer (`VF2_STAGE_SLOTS` 0, 1, 12).
 
 Dead or Alive's stage 10 (the Model 2B set doab, with doa's ROMs: an
 elevated road at night, the city behind it) is setup stage 6, "DOA STAGE 10"
-(DOA has no stage names), through `tools/doa-stages.mjs`, which reads the
+(DOA has no stage names), through `tools/stages/doa-stages.mjs`, which reads the
 stage as noclip's `doa.js` runs its draw routine.
 
 - Size: VF2's scale (DOA's fighters stand 1.24-1.57 of its units). The
@@ -1750,7 +1758,7 @@ starts (the second ends the match).
 
 ## FV's Western
 
-`tools/fv-stages.mjs` brings Fighting Vipers' Western (FV stage slot 0) onto
+`tools/stages/fv-stages.mjs` brings Fighting Vipers' Western (FV stage slot 0) onto
 the board as setup stage 4, "FV WESTERN". `fvBoardPlan` orders its draws
 (floor, upper, platform, cage and top, poles, rail, objects); `importFvStages`
 writes them into the data ROMs, and `bake-board.mjs` bakes the record
@@ -1793,7 +1801,7 @@ writes them into the data ROMs, and `bake-board.mjs` bakes the record
   behind them, at the fighters' size.
 - The sky: FV's tile-layer panorama, a blue sky with clouds over desert
   hills, drawn by the VF2 skies' code (`sky_t`, `sky_load`, `sky_frame`).
-  `fvSkyPlan` (tools/fv-stages.mjs) bakes it at `FV_SKY_AT` (0x2700000,
+  `fvSkyPlan` (tools/stages/fv-stages.mjs) bakes it at `FV_SKY_AT` (0x2700000,
   after FV's pages): what sub_29728 loads from the record at 0x06CE3600 +
   slot * 32 (the CG and palette lists of `_Scroll_Initialize`, the 16
   patterns a turn shows; each pattern a 12-byte header, then rows of 32
@@ -1846,7 +1854,7 @@ bear's hop and the cage break.
 
 ## The fight
 
-The rounds run on StF's own code, lifted by `tools/lift-stf.py`; the board
+The rounds run on StF's own code, lifted by `tools/board/lift-stf.py`; the board
 sets up what StF's game loop would have set up around it.
 
 - Contact: `coli_init` runs as a task at each round start, and `rob_init`
@@ -2109,7 +2117,7 @@ and the ring's master) or `2P` (player 2's, the slave). The role is kept in
 the backup RAM (0x01D03FF0: "MMX1", the role, its complement), so it holds
 across power-offs. The row under it shows the link's state: `NO_COMM_BOARD`,
 `COMM_STARTING`, `NO_OTHER_CABINET`, `LINKING` or `LINKED`. The code is
-`board/src/link.c`, with its use in `linkplay.c` and `main.c`.
+`board/src/link/link.c`, with its use in `linkplay.c` and `main.c`.
 
 What it was built from: Virtual-On's and Motor Raid's comm code, as m2-hle2
 (`src/board/m2comm.h`) and YAMP (`von-comm-packet.md`, `mr-comm-packet.md`,
@@ -2157,7 +2165,7 @@ In MAME the ring comes up about four seconds after both boards run.
   boards start in step from the same state whatever ran before.
 - `rand`. StF's `rand` is the C library's, whose state each board keeps
   apart from the snapshot. While linked, `rand` steps an LCG on `G_RANDOM` instead
-  (an INSERT in `tools/lift-stf.py`), which both boards hold the same.
+  (an INSERT in `tools/board/lift-stf.py`), which both boards hold the same.
 - The check. Each stepped frame's state (both fighters, the setup, wins,
   the clock, `G_RANDOM`) is hashed (`link_sum`) and goes out with the
   pads. A board whose hash for a frame differs from the other's drops the
@@ -2199,7 +2207,7 @@ build's profile yet.
 The fighters' shadows are StF's: its lifted `rob_kage_*` routines and its
 tables (`off_64988`), called by `kage.c`'s `kage_stage`, `kage_light`,
 `kage_inside` and `kage_outside` in StF's order; each guest has a table of
-its own (`tools/guest-shadows.mjs`) and the masks' balls come from
+its own (`tools/guests/guest-shadows.mjs`) and the masks' balls come from
 `kage_balls`. On Aurora Icefield, as in StF, the fighters are mirrored in
 the ice instead (`mirror_draw`). The fighters draw in a geo window after
 all of these, so nothing clips their feet. `docs/SHADOWS.md` (On the
@@ -2254,7 +2262,7 @@ is silent in the setup and about 800 RMS from the fight's start on.
 
 ### Guests' music
 
-`tools/guest-sound.mjs` (run by the import) writes StF's sound program and
+`tools/board/guest-sound.mjs` (run by the import) writes StF's sound program and
 samples with the guests' songs added. FV's sound program is StF's driver
 (their first 32 KB are the same), so FV's data reads as StF's does. The
 driver's root table, at 0x608000 in both, holds 11 longs:
