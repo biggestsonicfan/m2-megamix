@@ -60,16 +60,18 @@ const LEVELS = 5;                                        /* a raw page writes 0-
 const PAGE_BYTES = 16 + [...Array(LEVELS)].reduce((n, _, L) => n + (256 >> L) ** 2 / 2, 0);
 
 /* The 32x32 cells of sheet 1 an StF fight samples, as (y >> 5) * 64 + (x >> 5):
- * every part and face of Sonic, Honey and Eggman (P1 and P2, normal and
- * squished) and every model docs/data/stf-fight-models.txt saw drawn. */
-const MEGAMIX_CAST = [0, 8, 15];
-export function keptCells(stf) {
+ * every part and face of the board's StF fighters (`cast`, StF's character
+ * numbers: Megamix's Sonic, Honey and Eggman, or a lineup's, tools/board/lineup.mjs;
+ * P1 and P2, normal and squished) and every model
+ * docs/data/stf-fight-models.txt saw drawn. */
+export const MEGAMIX_CAST = [0, 8, 15];
+export function keptCells(stf, cast = MEGAMIX_CAST) {
     const ids = new Set(readFileSync(new URL('../../docs/data/stf-fight-models.txt', import.meta.url), 'utf8')
         .split('\n').filter((l) => /^\d/.test(l)).map((l) => +l.split(' ')[0]));
-    for (const c of MEGAMIX_CAST.flatMap((c) => [c, c + 26])) {
+    for (const c of cast.flatMap((c) => [c, c + 26])) {
         for (const s of readCharacter(stf, c).slots) for (const m of [s.model, s.modelSquished]) if (m) ids.add(m);
     }
-    for (const [id, c] of faceVariantOwners(stf)) if (MEGAMIX_CAST.includes(c % 26)) ids.add(id);
+    for (const [id, c] of faceVariantOwners(stf)) if (cast.includes(c % 26)) ids.add(id);
     const kept = new Set();
     for (const id of ids) {
         const m = decodeModel(stf, id);
@@ -94,7 +96,7 @@ const key = (t) => `${t.x},${t.y},${t.w},${t.h}`;
  * tools/guests/ryo-guest.mjs), each { w, h, levels: [nibbles a level, (w >> L) * (h >> L)
  * row by row] } for levels 0-4; where each went is `extra[i].at`, { x, y } on
  * sheet 1. */
-export function packAkira(vf2, stf, MODELS, extra = []) {
+export function packAkira(vf2, stf, MODELS, extra = [], cast = MEGAMIX_CAST) {
 
 /* ---- 1. Akira's streams and tiles ---------------------------------------- */
 
@@ -171,7 +173,7 @@ const extras = extra.map((t, i) => {
 
 /* The seven pages first, then the shared ones with their kept cells taken. */
 const ALL = [...PAGES, ...SHARED];
-const kept = keptCells(stf);
+const kept = keptCells(stf, cast);
 const used = ALL.map((page) => {
     const u = new Uint8Array(64);
     if (PAGES.includes(page)) return u;

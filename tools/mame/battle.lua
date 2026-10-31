@@ -28,8 +28,9 @@
 --           fv: FV's stage slot, the same way (default 0, Western).
 -- BT_TIME, BT_WINS  fv: the round time (default 30) and the rounds to win
 --           (default 2), forced on 0x500090 and 0x500052.
--- BT_MENU   board: the menu's values "time,round,stage,p1,p2,energy,barrier"
---           (the menu's own indices), e.g. "30,2,0,0,1,140,5".
+-- BT_MENU   board: the menu's values "time,round,stage,p1,p2,energy,barrier[,armour]"
+--           (the menu's own indices; armour, FV's: 0 off, 1 on, left as the
+--           menu has it, on, when not given), e.g. "30,2,0,0,1,140,5,0".
 -- BT_SEED   the input script's seed (its own LCG, so both games get the
 --           same script); BT_INPUTS=<file> plays a written one instead:
 --           lines "<frame> <p1> <p2>", each pad a string of U D L R P K G
@@ -227,6 +228,21 @@ if GAME == "stf" then
   tap(900, "Coin 1", 8); tap(940, "Coin 1", 8)
   tap(1100, "1 Player Start", 6); tap(1160, "2 Players Start", 6)
   tap(1300, "P1 Punch", 4); tap(1320, "P2 Punch", 4)
+  -- What the motion setups' ops 5, 9 and 0xA write (rob+0x818..0x83F, the
+  -- jump's frames at +0x5BE and its fall at +0x5CC; set_mot_dat clears
+  -- only part of it) still holds the attract demo's fight, and a jump
+  -- whose setup has no op 9 (Bean's ta_kick out of a roll, motion 240)
+  -- steps by the last one's (ACT_RC_JUMP). The board starts its fighters
+  -- zeroed, so this does too.
+  at(1320, function()
+    for _, p in ipairs({ 0x500804, 0x500808 }) do
+      local r = sp:read_u32(p)
+      if r ~= 0 then
+        for a = 0x818, 0x83C, 4 do sp:write_u32(r + a, 0) end
+        sp:write_u32(r + 0x5BC, 0); sp:write_u32(r + 0x5CC, 0)
+      end
+    end
+  end)
   if STAGE >= 0 then
     _G.BT_STAGE_TAP = sp:install_write_tap(0x500064, 0x500067, "bt_stage", function(o, d, mk)
       if (mk & 0xFF) == 0 then return nil end
@@ -344,7 +360,7 @@ elseif GAME == "board" then
   armed = math.huge
   local function shown()
     local t = { sp:read_u32(sym.menu_cur) }
-    for i = 1, 7 do t[#t + 1] = sp:read_u16(sym.menu_val + 2 * i) end
+    for i = 1, 8 do t[#t + 1] = sp:read_u16(sym.menu_val + 2 * i) end
     return table.concat(t, ",")
   end
   per_frame = function()
@@ -358,7 +374,7 @@ elseif GAME == "board" then
     end
     if armed < math.huge then return end
     local cur, press = sp:read_u32(sym.menu_cur), nil
-    for i = 1, 7 do
+    for i = 1, 8 do
       local v = sp:read_u16(sym.menu_val + 2 * i)
       if want[i] and v ~= want[i] then
         press = cur < i and "P1 Down" or cur > i and "P1 Up" or v < want[i] and "P1 Kick" or "P1 Punch"

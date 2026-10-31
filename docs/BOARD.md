@@ -34,6 +34,38 @@ table B (2048 entries, not 512): StF's stage sets need up to 1178, and the
 SDK's size drops six of their pages. It keeps the SDK's include guard and is
 included in place of it; the SDK itself is used unchanged.
 
+### Lineups
+
+Texture RAM holds one fighters' sheet (StF's set 1, 24 pages), and the
+guests' tiles go into pages 3, 12, 15, 16, 18, 19 and 21 and the cells the
+lineup's StF fighters leave free (`tools/guests/pack-akira.mjs`, `keptCells`). StF's
+whole cast and all five guests do not fit ("out of room: 32 cells free, a
+2x4 wanted"), so each lineup (`tools/board/lineup.mjs`) is its own build:
+
+| lineup | fighters, in the menu's order |
+|--|--|
+| megamix (default) | Sonic, Honey, Eggman, Akira, Ryo, Chai, Hornet, Mahler |
+| stf | Sonic, Honey, Eggman, Akira, Mahler, Amy, Fang, Bark, Espio, Bean |
+
+stf has StF's fighting cast but Tails and Knuckles (their slots are Ryo's
+and Akira's) and Metal Sonic (page 3 is the guests'). Its StF fighters run
+on StF's own data, so StF grades them by replay (docs/GRADING.md, Results).
+`bake-board.mjs` writes the lineup's names (`fighter_name`, `fighter_from`)
+into `poses.h`; `import-assets.mjs` imports the fighters `poses.h` names and
+their projectiles' models. To build one beside the default:
+
+```sh
+LINEUP=stf node tools/board/bake-board.mjs
+node tools/board/import-assets.mjs <dir>              # <dir>/sfight, <dir>/guests.json
+cmake -G "Unix Makefiles" -DROM_DIR=<dir>/sfight -B <build> -S board
+make -C <build> -j2
+LINEUP=stf BOARD_ROMS=<dir> tools/mame/board-replays.sh <out> <build>
+```
+
+The new StF fighters' models take ids VF2's extra stage models used, so
+`VF2_MORE_TOP` (`tools/stages/vf2-stages.mjs`) is 4047: 3955..4047 is free with
+every StF fighter in.
+
 ## The program's layout
 
 `board/src` is one module a file; `megamix.h` declares what they share, and
@@ -1913,7 +1945,9 @@ sets up what StF's game loop would have set up around it.
   as in FV. On the HUD, FV's figures (patterns 0x20 and 0x147, FV's own
   tiles and colours, in board blocks 126 and 127) at the top corners;
   each half green, FV's green blink once damaged, its red one once
-  broken, as FV's `energy_disp` (0x346A8) colours them.
+  broken, as FV's `energy_disp` (0x346A8) colours them. The setup's
+  FV armour OFF sets limits no damage reaches (as StF's own 500 and 200
+  are) and hides the figures: nothing breaks and the replay never runs.
 - Armour break replay: FV's, which StF kept as REP_WAZA (sub_mode 22).
   The recorder `rec_disp` (fight_step's last task) puts both fighters'
   frame, with the frame's sounds (`check_same_sound`'s, 0x50406A from 0
@@ -2057,6 +2091,8 @@ held, and a change of stage or fighter shows at once.
      2P CHAR  HONEY
      energy     140   energy_max (0x5000A0), 10..250; the bars scale by it
      barrier      5   barrier_default_num (0x50A424), 0..9
+     FV armour   ON   Fighting Vipers' armour, its HUD figures and its
+                      armour-break replay; OFF: StF's, which none breaks
      link       OFF   the cabinet's role: OFF, 1P, 2P (see Two cabinets)
           LINKED   the link's state
 

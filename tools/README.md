@@ -11,6 +11,7 @@ Run in this order before building `board/` (docs/BOARD.md):
 
 | Script | What it does |
 | --- | --- |
+| `lineup.mjs` | the fighters each build has (`LINEUP=<name>`; read by the bake and the import) |
 | `bake-board.mjs` | bakes fighters' and stages' draws into `board/src/gen/poses.h` |
 | `lift-stf.py` | lifts StF's fight code into `board/src/gen/stf_motion.s`, `.h` and `stf_rom_80000.bin` |
 | `import-assets.mjs` | writes `board/roms/sfight/`'s data ROMs, only the assets used, guests and stages in |

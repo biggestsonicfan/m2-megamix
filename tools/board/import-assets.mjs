@@ -163,6 +163,8 @@ function boardTables() {
     for (const m of h.matchAll(/u16 stage\d+_anim\d+\[\d+\] = \{([^}]*)\}/g))
         for (const d of m[1].split(',')) models.add(+d);
     for (const m of h.matchAll(/\{"[^"]+ stance", (\d+), \d+, \w+_parts/g)) chars.add(+m[1]);
+    /* the guests in the lineup (tools/board/lineup.mjs), by StF character */
+    const guests = new Set([...h.matchAll(/\{"[^"]+ stance", (\d+), 0, 0,/g)].map((m) => +m[1]));
     const stages = h.match(/stage_t stages\[STAGES\] = \{([^;]*)\};/)[1];
     for (const m of stages.matchAll(/\{"([^"]+)", (\d+), \d+, \w+, \{[^}]*\}, \w+, \w+, [-\d.]+f, -?\d+, -?\d+, \d+, \{[^}]*\}, \{(\d+), (\d+),/g)) {
         if (+m[2] >= VF2_SET0) continue;
@@ -170,7 +172,7 @@ function boardTables() {
         if (+m[3]) models.add(+m[4]);
     }
     if (!chars.size || !texsets.size) throw new Error('poses.h: no fighters or stages (run tools/board/bake-board.mjs)');
-    return { models, chars: [...chars], texsets: [...texsets] };
+    return { models, chars: [...chars], guests, texsets: [...texsets] };
 }
 
 /* board/src/gen/stf_motion.h (tools/board/lift-stf.py): the guest tables, where the
@@ -200,10 +202,17 @@ const HAND_MODELS = 0x0c6570, FOOT_MODELS = 0x0c6640, BODY_MODELS = 0x0c6710;   
 const HEAD_LIST = 0x0c540c;
 const TRAIL_MODELS = 0x0b540c, TRAIL_OPTION = 0x0b5408;   /* program ROM: zanzou_control's models, by skeleton */
 /* program ROM: the projectiles the board runs (docs/PROJECTILES.md): their
- * records in projectile_list, by type (2: the bomb Eggman throws,
- * bean_bomb_roll), and the bomb's landing marker (tdl_bakudan's two lists of
- * 11 models, bomb_fire_location_marker_circle and bomb_fire_location_marker) */
-const PROJECTILE_LIST = 0x0b46ac, PROJECTILE_TYPES = [2];
+ * records in projectile_list and projectile_I_list (player 2's, when his
+ * colors differ), by type, for the cast's throwers: Eggman's bomb (2,
+ * bean_bomb_roll); Bean's (2, and 8, the kicked one); Fang's corks (1, 4,
+ * 14); Amy's hammer (12, 13) and the dropped things (16, 17: the anvil, and
+ * amy_drop_item_list's 11, 16 bytes each, its animation first); Espio's
+ * tongue (11, 15: models 954 and 955, which tdl_bero draws). And the bomb's
+ * landing marker (tdl_bakudan's two lists of 11 models,
+ * bomb_fire_location_marker_circle and bomb_fire_location_marker) */
+const PROJECTILE_LISTS = [0x0b46ac, 0x0b472c];
+const THROWS = { 2: [12, 13, 16, 17], 4: [1, 4, 14], 7: [11, 15], 8: [2], 10: [2, 8] };
+const DROP_ITEMS = 0x08c67c, DROP_ITEM_COUNT = 11, TONGUE_MODELS = [954, 955];
 const BOMB_MARKERS = [0x08a720, 0x08a736];
 const OSAGE = 0x068d64;                   /* program ROM: osage_per_character, each character's sway chains */
 const OSAGE_SIZE = { 1: 0x24, 2: 0x40, 3: 0x0c, 4: 0x18, 5: 0x44 };   /* osage_dsp's records, type word in */
@@ -318,13 +327,14 @@ async function importStf(R) {
      * +8 the burst, +0xC the fuse: a count, then 16-byte frames whose model
      * is the halfword at +8, as sub_8AE04 and sub_8D590 read them), and the
      * bomb's landing marker */
-    for (const t of PROJECTILE_TYPES) {
-        const rec = program.u32(PROJECTILE_LIST + t * 4);
-        for (let k = 1; k <= 3; k++) {
-            const a = program.u32(rec + k * 4);
-            if (a) for (let i = 0; i < program.u32(a); i++) model(program.u16(a + 4 + i * 16 + 8));
-        }
+    const anim = (a) => { if (a) for (let i = 0; i < program.u32(a); i++) model(program.u16(a + 4 + i * 16 + 8)); };
+    const types = new Set(board.chars.flatMap((c) => THROWS[c] ?? []));
+    for (const t of types) for (const list of PROJECTILE_LISTS) {
+        const rec = program.u32(list + t * 4);
+        for (let k = 1; k <= 3; k++) anim(program.u32(rec + k * 4));
     }
+    if (types.has(16)) for (let i = 0; i < DROP_ITEM_COUNT; i++) anim(program.u32(DROP_ITEMS + i * 16));
+    if (types.has(11)) for (const m of TONGUE_MODELS) model(m);
     for (const list of BOMB_MARKERS) for (let i = 0; i < 11; i++) model(program.u16(list + i * 2));
     model(SHADOW_BALL);
     for (const m of SPIN_SMOKE) model(m);
@@ -644,26 +654,34 @@ await importStf(R);
  * 17 (tools/guests/hornet-guest.mjs), and Fighting Vipers' Mahler as 18
  * (tools/guests/mahler-guest.mjs), their textures packed with Akira's */
 const NG = await loadNodeGames();
-const SHENMUE = [{ name: 'RYO', chr: RYO_CHR }, { name: 'CHAI', chr: CHAI_CHR }];
+/* the lineup's (tools/board/lineup.mjs, as poses.h names them): Akira always, as
+ * the others are built on his moves and tables; and StF's cast, whose cells
+ * the guests' tiles leave free */
+const lineup = boardTables();
+const has = (chr) => lineup.guests.has(chr);
+if (!has(AKIRA_CHR)) throw new Error('poses.h: every lineup needs Akira (the guests are built on him)');
+const SHENMUE = [{ name: 'RYO', chr: RYO_CHR }, { name: 'CHAI', chr: CHAI_CHR }].filter((g) => has(g.chr));
 const shTex = SHENMUE.map((g) => shenmueTiles(NG, g.name));
-const HO = await loadHornet();
-const hoTex = hornetTiles(HO);
-const maTex = mahlerTiles(NG.fv.rom);
-const akira = importAkira(R, NG.vf2.rom, NG.stf.rom, { extraTiles: [...shTex.flatMap((t) => t.tiles), ...hoTex.tiles, ...maTex.tiles] });
+const HO = has(HORNET_CHR) ? await loadHornet() : null;
+const hoTex = HO ? hornetTiles(HO) : { tiles: [] };
+const maTex = has(MAHLER_CHR) ? mahlerTiles(NG.fv.rom) : { tiles: [] };
+const akira = importAkira(R, NG.vf2.rom, NG.stf.rom, { extraTiles: [...shTex.flatMap((t) => t.tiles), ...hoTex.tiles, ...maTex.tiles], cast: lineup.chars });
 for (const line of akira.report) console.log(`Akira: ${line}`);
 const shenmue = SHENMUE.map((g, i) => {
     const r = importShenmue(R, akira.ctx, NG, shTex[i], g);
     for (const line of r.report) console.log(`${r.coverage.name}: ${line}`);
     return r;
 });
-const hornet = importHornet(R, akira.ctx, NG, HO, hoTex, { chr: HORNET_CHR });
-for (const line of hornet.report) console.log(`Hornet: ${line}`);
-const mahler = importMahler(R, akira.ctx, NG, maTex, { chr: MAHLER_CHR, obj: OBJ.mahler });
-for (const line of mahler.report) console.log(`Mahler: ${line}`);
+const hornet = HO && importHornet(R, akira.ctx, NG, HO, hoTex, { chr: HORNET_CHR });
+for (const line of hornet?.report ?? []) console.log(`Hornet: ${line}`);
+const mahler = has(MAHLER_CHR) && importMahler(R, akira.ctx, NG, maTex, { chr: MAHLER_CHR, obj: OBJ.mahler });
+for (const line of mahler ? mahler.report : []) console.log(`Mahler: ${line}`);
 /* each guest's own shadows (tools/guests/guest-shadows.mjs) */
 const cold = shenmueFile('MISC/COLD.BIN');
 const shadows = importGuestShadows(R, akira.ctx, { vf2: NG.vf2.rom, stf: NG.stf.rom, cold: cold && new Uint8Array(cold) }, {
-    akira: { chr: AKIRA_CHR }, hornet: { chr: HORNET_CHR, pieces: hornet.pieces }, mahler: { chr: MAHLER_CHR, pieces: mahler.pieces },
+    akira: { chr: AKIRA_CHR },
+    hornet: hornet && { chr: HORNET_CHR, pieces: hornet.pieces },
+    mahler: mahler && { chr: MAHLER_CHR, pieces: mahler.pieces },
     shenmue: SHENMUE.map((g, i) => ({ name: g.name[0] + g.name.slice(1).toLowerCase(), chr: g.chr, scale: shenmue[i].scale })),
 });
 for (const line of shadows.report) console.log(`Shadows: ${line}`);
@@ -700,7 +718,7 @@ for (const [f, d] of Object.entries(snd.samples)) writeFileSync(`${dir}/${f}`, d
 for (const [f, n] of Object.entries(SFIGHT.billboard.zeros)) writeFileSync(`${dir}/${f}`, new Uint8Array(n));
 writeFileSync(`${OUT}/assets.txt`, manifest(data));
 /* what each guest lost on the way in (tools/grade/grade-guest.mjs reads it) */
-writeFileSync(`${OUT}/guests.json`, JSON.stringify({ guests: [akira.coverage, ...shenmue.map((r) => r.coverage), hornet.coverage, mahler.coverage] }, null, 1) + '\n');
+writeFileSync(`${OUT}/guests.json`, JSON.stringify({ guests: [akira.coverage, ...shenmue.map((r) => r.coverage), hornet?.coverage, mahler?.coverage].filter(Boolean) }, null, 1) + '\n');
 for (const r of data) {
     let n = 0;
     for (const x of r.out) if (x) n++;

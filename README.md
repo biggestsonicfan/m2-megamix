@@ -26,7 +26,7 @@ HUD are plain text, in the style of a debug menu.
 `board/` is the same game growing as a new program for the Sonic the Fighters
 board (Model 2B), built on m2-sdk, on data ROMs that hold only the assets it
 uses (`tools/board/import-assets.mjs`). It boots into a game setup in the style of
-StF's debug menu (time, rounds, stage, both fighters, energy, barriers;
+StF's debug menu (time, rounds, stage, both fighters, energy, barriers, FV armour;
 up/down to pick, kick/punch to change, start to fight). Two cabinets can
 play one fight over the Model 2 communication board (`tools/mame/link-cabinets.sh`).
 A fighter's moves can be written out as text, edited and imported again

@@ -149,6 +149,14 @@
 #define TOBI_F_FACE       (1u << 7)   /* faced to the camera: the burst */
 #define TOBI_F_HIDDEN     (1u << 9)
 #define TOBI_BOMB         2u
+/* Espio's tongue (tdl_bero, tdl_berotsukami) */
+#define TOBI_TONGUE_TIPLESS 0x00Cu /* u8: 1, no tip */
+#define TOBI_TONGUE_ROOT  0x0A8u   /* f32 x, y, z: where it leaves his mouth */
+#define TOBI_GRAB_LEN     0x0B4u   /* f32: the caught tongue's length */
+#define TOBI_TONGUE_LEN   0x0C4u   /* f32 */
+#define TOBI_TONGUE_XANG  0x0C8u   /* u16; yang +0x0CA */
+#define TONGUE_MODEL      954u
+#define TONGUE_TIP_MODEL  955u
 
 /* ---- the replay record (fa_record) ---- */
 #define REC_NEXT          0x06Cu   /* u32 the ring's next frame (rec_disp writes it) */

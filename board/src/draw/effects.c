@@ -35,18 +35,28 @@ void zanzou_draw(u32 pn[3]) {
 }
 
 /* The projectiles: StF's tobi_disp (0x8A518), under the unscaled camera as
- * zanzou_disp. For each live object not hidden whose type draws
- * (_uk_projectile; the bomb's tdl_bakudan): tobi_disp_go, its model at its
- * place, faced to the camera (op 0x10) on TOBI_F_FACE (the burst), else
- * turned by its y, x and z angles unless TOBI_F_TURNLESS, and scaled. Then,
- * while it is in flight, the landing marker: a ring from
- * bomb_fire_location_marker_circle and, by the part of its flight left (in
- * tenths), a marker from bomb_fire_location_marker drawn twice, turned by
- * (1 - left) a quarter turn each way. Then the fuse while it holds a fuse
- * model and has not burst: the point after the last frame of its fuse list
- * (bomb_fuse) carried through the bomb's place, turn and scale (op 0x29),
- * faced to the camera, scaled by its own scale. Each object's faces count
- * toward its thrower. rob.h names the fields (TOBI_). */
+ * zanzou_disp. Each live object not hidden is drawn by its type's routine
+ * (_uk_projectile, tobi_draws below):
+ * - tobi_disp_go (Fang's corks, Amy's hammer, and tdl_otoshi: the anvil):
+ *   its model at its place, faced to the camera (op 0x10) on TOBI_F_FACE
+ *   (the burst), else turned by its y, x and z angles unless
+ *   TOBI_F_TURNLESS, and scaled;
+ * - tdl_otoshi2 (the anvil's second): the same, always turned;
+ * - tdl_bakudan (Eggman's and Bean's bombs): tobi_disp_go; then, while it is
+ *   in flight, the landing marker: a ring from
+ *   bomb_fire_location_marker_circle and, by the part of its flight left (in
+ *   tenths), a marker from bomb_fire_location_marker drawn twice, turned by
+ *   (1 - left) a quarter turn each way. Then the fuse while it holds a fuse
+ *   model and has not burst: the point after the last frame of its fuse list
+ *   (bomb_fuse) carried through the bomb's place, turn and scale (op 0x29),
+ *   faced to the camera, scaled by its own scale;
+ * - tdl_bero and tdl_berotsukami (Espio's tongue, and the tongue that has
+ *   caught): from its root, turned by y then x, the tongue (model 954)
+ *   stretched along z to its length, and the tip (955) at its end, unless
+ *   the reaching tongue's +0xC is 1;
+ * - tdl_laser (Metal Sonic's) is not here: the board has no Metal Sonic.
+ * Each object's faces count toward its thrower. rob.h names the fields
+ * (TOBI_). */
 static const u16 bomb_ring[11] = { 2204, 2204, 2204, 2205, 2205, 2205, 2205, 2203, 2203, 2203, 2203 };
 static const u16 bomb_mark[11] = { 2200, 2200, 2200, 2202, 2202, 2202, 2202, 2201, 2201, 2201, 2201 };
 
@@ -61,55 +71,101 @@ static void tobi_place(const u32 *o) {
     }
 }
 
-void tobi_draw(u32 pn[3]) {
+static void tobi_go(const u32 *o, int turned) {
     volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    *cf = COP_PUSH;
+    if (turned) {
+        *cf = COP_SET_POS; *cf = RW(o, TOBI_XPOS); *cf = RW(o, TOBI_XPOS + 4u); *cf = RW(o, TOBI_XPOS + 8u);
+        *cf = COP_ANG_Y; *cf = (u32)(int)(short)RH(o, TOBI_YANG);
+        *cf = COP_ANG_X; *cf = (u32)(int)(short)RH(o, TOBI_XANG);
+        *cf = COP_ANG_Z; *cf = (u32)(int)(short)RH(o, TOBI_ZANG);
+    } else tobi_place(o);
+    *cf = COP_SCALE; *cf = RW(o, TOBI_SCALE); *cf = RW(o, TOBI_SCALE); *cf = RW(o, TOBI_SCALE);
+    if (RH(o, TOBI_MODEL)) submit_cur(RH(o, TOBI_MODEL));
+    *cf = COP_POP;
+}
+
+static void tobi_bomb(const u32 *o) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    u32 w0 = RW(o, TOBI_FLAG);
+    tobi_go(o, 0);
+    if (RH(o, TOBI_IN_FLIGHT) && RB(o, TOBI_FLIGHT)) {
+        float left = (float)RB(o, TOBI_FLIGHT_LEFT) / (float)RB(o, TOBI_FLIGHT);
+        int i = (int)(left * 10.0f), turn = (int)((1.0f - left) * 16384.0f);
+        if (i < 0) i = 0;
+        if (i > 10) i = 10;
+        *cf = COP_PUSH;
+        *cf = COP_SET_POS; *cf = RW(o, TOBI_MARK_XPOS); *cf = RW(o, TOBI_MARK_XPOS + 4u); *cf = RW(o, TOBI_MARK_XPOS + 8u);
+        submit_cur(bomb_ring[i]);
+        *cf = COP_PUSH;
+        *cf = COP_ANG_Y; *cf = (u32)turn;
+        submit_cur(bomb_mark[i]);
+        *cf = COP_POP;
+        *cf = COP_ANG_Y; *cf = (u32)-turn;
+        submit_cur(bomb_mark[i]);
+        *cf = COP_POP;
+    }
+    if (!(w0 & TOBI_F_BURST) && RH(o, TOBI_FUSE_MODEL)) {
+        const u32 *fuse = (const u32 *)RW(o, TOBI_FUSE);
+        const u32 *at = fuse + 1 + 4u * fuse[0];
+        u32 w[3];
+        *cf = COP_PUSH;
+        *cf = COP_IDENTITY;
+        *cf = COP_SET_POS; *cf = RW(o, TOBI_XPOS); *cf = RW(o, TOBI_XPOS + 4u); *cf = RW(o, TOBI_XPOS + 8u);
+        *cf = COP_ANG_Y; *cf = (u32)(int)(short)RH(o, TOBI_YANG);
+        *cf = COP_ANG_X; *cf = (u32)(int)(short)RH(o, TOBI_XANG);
+        *cf = COP_ANG_Z; *cf = (u32)(int)(short)RH(o, TOBI_ZANG);
+        *cf = COP_SCALE; *cf = RW(o, TOBI_SCALE); *cf = RW(o, TOBI_SCALE); *cf = RW(o, TOBI_SCALE);
+        *cf = COP_M2W; *cf = at[0]; *cf = at[1]; *cf = at[2];
+        w[0] = *cf; w[1] = *cf; w[2] = *cf;
+        *cf = COP_POP;
+        *cf = COP_PUSH;
+        *cf = COP_SET_POS; *cf = w[0]; *cf = w[1]; *cf = w[2];
+        *cf = COP_FACE;
+        *cf = COP_SCALE; *cf = RW(o, TOBI_FUSE_SCALE); *cf = RW(o, TOBI_FUSE_SCALE); *cf = RW(o, TOBI_FUSE_SCALE);
+        submit_cur(RH(o, TOBI_FUSE_MODEL));
+        *cf = COP_POP;
+    }
+}
+
+/* tdl_bero, tdl_berotsukami: the root, its y and x turns and the length */
+static void tobi_tongue(const u32 *o, u32 root, u32 xang, u32 len, int tip) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    *cf = COP_PUSH;
+    *cf = COP_SET_POS; *cf = RW(o, root); *cf = RW(o, root + 4u); *cf = RW(o, root + 8u);
+    *cf = COP_ANG_Y; *cf = (u32)(int)(short)RH(o, xang + 2u);
+    *cf = COP_ANG_X; *cf = (u32)(int)(short)RH(o, xang);
+    *cf = COP_PUSH;
+    *cf = COP_SCALE; *cf = 0x3F800000u; *cf = 0x3F800000u; *cf = RW(o, len);
+    submit_cur(TONGUE_MODEL);
+    *cf = COP_POP;
+    if (tip) {
+        *cf = COP_SET_POS; *cf = 0u; *cf = 0u; *cf = RW(o, len);
+        submit_cur(TONGUE_TIP_MODEL);
+    }
+    *cf = COP_POP;
+}
+
+enum { TD_GO, TD_BOMB, TD_NONE, TD_BERO, TD_GRAB, TD_DROP2 };
+static const u8 tobi_draws[24] = {
+    TD_GO, TD_GO, TD_BOMB, TD_BOMB, TD_GO, TD_GO, TD_GO, TD_BOMB, TD_BOMB, TD_BOMB, TD_NONE, TD_BERO,
+    TD_GO, TD_GO, TD_GO, TD_GRAB, TD_GO, TD_DROP2, TD_NONE, TD_NONE, TD_NONE, TD_NONE, TD_NONE, TD_NONE,
+};
+
+void tobi_draw(u32 pn[3]) {
     u32 n;
     cop_load(&cam_l);
     for (n = 0; n < 30u; n++) {
         u32 *o = stf_tobi + (TOBI_OBJ + n * 0x100u) / 4u;
-        u32 before = polys, w0 = RW(o, TOBI_FLAG);
-        if (!(w0 & TASK_ALIVE) || (w0 & TOBI_F_HIDDEN) || RW(o, TASK_SIZE) == 0u || RB(o, TOBI_TYPE) != TOBI_BOMB) continue;
-        *cf = COP_PUSH;
-        tobi_place(o);
-        *cf = COP_SCALE; *cf = RW(o, TOBI_SCALE); *cf = RW(o, TOBI_SCALE); *cf = RW(o, TOBI_SCALE);
-        if (RH(o, TOBI_MODEL)) submit_cur(RH(o, TOBI_MODEL));
-        *cf = COP_POP;
-        if (RH(o, TOBI_IN_FLIGHT) && RB(o, TOBI_FLIGHT)) {
-            float left = (float)RB(o, TOBI_FLIGHT_LEFT) / (float)RB(o, TOBI_FLIGHT);
-            int i = (int)(left * 10.0f), turn = (int)((1.0f - left) * 16384.0f);
-            if (i < 0) i = 0;
-            if (i > 10) i = 10;
-            *cf = COP_PUSH;
-            *cf = COP_SET_POS; *cf = RW(o, TOBI_MARK_XPOS); *cf = RW(o, TOBI_MARK_XPOS + 4u); *cf = RW(o, TOBI_MARK_XPOS + 8u);
-            submit_cur(bomb_ring[i]);
-            *cf = COP_PUSH;
-            *cf = COP_ANG_Y; *cf = (u32)turn;
-            submit_cur(bomb_mark[i]);
-            *cf = COP_POP;
-            *cf = COP_ANG_Y; *cf = (u32)-turn;
-            submit_cur(bomb_mark[i]);
-            *cf = COP_POP;
-        }
-        if (!(w0 & TOBI_F_BURST) && RH(o, TOBI_FUSE_MODEL)) {
-            const u32 *fuse = (const u32 *)RW(o, TOBI_FUSE);
-            const u32 *at = fuse + 1 + 4u * fuse[0];
-            u32 w[3];
-            *cf = COP_PUSH;
-            *cf = COP_IDENTITY;
-            *cf = COP_SET_POS; *cf = RW(o, TOBI_XPOS); *cf = RW(o, TOBI_XPOS + 4u); *cf = RW(o, TOBI_XPOS + 8u);
-            *cf = COP_ANG_Y; *cf = (u32)(int)(short)RH(o, TOBI_YANG);
-            *cf = COP_ANG_X; *cf = (u32)(int)(short)RH(o, TOBI_XANG);
-            *cf = COP_ANG_Z; *cf = (u32)(int)(short)RH(o, TOBI_ZANG);
-            *cf = COP_SCALE; *cf = RW(o, TOBI_SCALE); *cf = RW(o, TOBI_SCALE); *cf = RW(o, TOBI_SCALE);
-            *cf = COP_M2W; *cf = at[0]; *cf = at[1]; *cf = at[2];
-            w[0] = *cf; w[1] = *cf; w[2] = *cf;
-            *cf = COP_POP;
-            *cf = COP_PUSH;
-            *cf = COP_SET_POS; *cf = w[0]; *cf = w[1]; *cf = w[2];
-            *cf = COP_FACE;
-            *cf = COP_SCALE; *cf = RW(o, TOBI_FUSE_SCALE); *cf = RW(o, TOBI_FUSE_SCALE); *cf = RW(o, TOBI_FUSE_SCALE);
-            submit_cur(RH(o, TOBI_FUSE_MODEL));
-            *cf = COP_POP;
+        u32 before = polys, w0 = RW(o, TOBI_FLAG), t = RB(o, TOBI_TYPE);
+        if (!(w0 & TASK_ALIVE) || (w0 & TOBI_F_HIDDEN) || RW(o, TASK_SIZE) == 0u || t >= 24u) continue;
+        switch (tobi_draws[t]) {
+        case TD_GO: tobi_go(o, 0); break;
+        case TD_DROP2: tobi_go(o, 1); break;
+        case TD_BOMB: tobi_bomb(o); break;
+        case TD_BERO: tobi_tongue(o, TOBI_TONGUE_ROOT, TOBI_TONGUE_XANG, TOBI_TONGUE_LEN, RB(o, TOBI_TONGUE_TIPLESS) != 1u); break;
+        case TD_GRAB: tobi_tongue(o, TOBI_XPOS, TOBI_XANG, TOBI_GRAB_LEN, 1); break;
+        default: continue;
         }
         pn[1u + ((u32 *)RW(o, TOBI_OWNER) == robs[1])] += polys - before;
     }

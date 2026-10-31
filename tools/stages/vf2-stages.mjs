@@ -42,8 +42,11 @@ export const VF2_STAGE_SLOTS = [0, 1, 12];
  * neither StF's models the board keeps nor the guests' are among them). */
 export const VF2_STAGE_TOP = 4835;
 /* and for the models only the later stages (Test) draw, from here down: StF's
- * stage models the board does not keep (3848..4139 are free) */
-export const VF2_MORE_TOP = 4139;
+ * stage models the board does not keep. 3955..4047 are free with StF's whole
+ * cast in (Amy's, Fang's, Bark's, Espio's, Bean's and Metal Sonic's models
+ * take 3890/3891, 3906/3907, 3953/3954, 4110/4111 and 4135/4136); DOA's
+ * stage is 4048..4089. */
+export const VF2_MORE_TOP = 4047;
 /* The board's texture sets for them: after StF's 18, in the copy of the set
  * table pack-akira makes (Test's after FV's Western's 20, fv-stages.mjs
  * FV_SET0); and the destination list they share. */
@@ -346,10 +349,8 @@ export function importVf2Stages(R, games, ctx) {
     const plan = vf2StagePlan(games);
     const report = [];
 
-    for (const m of plan.models) {
-        const id = plan.idOf.get(m);
-        if (id <= 0 || !isFree(main, R.modelTable + id * 16, 16)) throw new Error(`VF2 stages: model id ${id} is taken (lower VF2_STAGE_TOP)`);
-    }
+    const taken = plan.models.map((m) => plan.idOf.get(m)).filter((id) => id <= 0 || !isFree(main, R.modelTable + id * 16, 16));
+    if (taken.length) throw new Error(`VF2 stages: model ids ${taken.sort((a, b) => a - b).join(' ')} are taken (move VF2_STAGE_TOP or VF2_MORE_TOP)`);
 
     importVf2Models(R, games, ctx, plan, report);
     const sets = importVf2Sets(R, games, ctx, plan, report);

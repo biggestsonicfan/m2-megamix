@@ -9,13 +9,18 @@
 # <build dir> is the board's cmake build (its game.map); the board's ROMs are
 # this checkout's board/roms. A job is a line
 #   <name> <game> <p1> <p2> <stage> <board menu>
-# (the game's own fighter and stage numbers; the menu as BT_MENU); without a
+# (the game's own fighter and stage numbers; the menu as BT_MENU, its last
+# value FV's armour: on for FV's battles, off for StF's and VF2's, which have
+# none, so the board plays no armour break their source never had); without a
 # jobs file, the list below: every pairing of the board's fighters that one
 # of the source games plays, on every board stage that game has. Each goes to
 # <outdir>/<name>/: src/ (trace.txt, replay.txt), board/ (trace.txt), and
 # grade.txt. A side already logged to its end is kept.
 #
-# MAME is $MAME (default the shared build), the sets are in $ROMS_DIR.
+# MAME is $MAME (default the shared build), the sets are in $ROMS_DIR; the
+# board's ROMs are $BOARD_ROMS (default this checkout's board/roms; another
+# lineup's, tools/board/lineup.mjs, are its own; LINEUP=stf picks that lineup's
+# job list).
 set -u
 OUT=${1:?usage: board-replays.sh <outdir> <build dir> [jobs file]}
 BUILD=$(cd "${2:?usage: board-replays.sh <outdir> <build dir> [jobs file]}" && pwd)
@@ -24,6 +29,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
 MAME=${MAME:-$HOME/build/mame-bin/mame-shared/shared}
 ROMS_DIR=${ROMS_DIR:-$HOME/build/mameroms}
+export BOARD_ROMS=$(cd "${BOARD_ROMS:-$REPO/board/roms}" && pwd)
 mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)
 
@@ -45,7 +51,7 @@ one() {
   local D=$OUT/$NAME
   case $G in stf) DRV=sfight;; vf2) DRV=vf2;; fv) DRV=fvipers;; *) echo "$G: no such game"; return 1;; esac
   run "$D/src" "$DRV" "$ROMS_DIR" BT_GAME="$G" BT_P1="$A" BT_P2="$B" BT_STAGE="$S" BT_RECORD="$D/src/replay.txt"
-  run "$D/board" sfight "$REPO/board/roms;$ROMS_DIR" BT_GAME=board BT_MENU="$MENU" \
+  run "$D/board" sfight "$BOARD_ROMS;$ROMS_DIR" BT_GAME=board BT_MENU="$MENU" \
     BT_MAP="$BUILD/game.map" BT_REPLAY="$D/src/replay.txt"
   node "$REPO/tools/grade/grade-battle.mjs" "$D/src/trace.txt" "$D/board/trace.txt" > "$D/grade.txt" 2>&1
   echo "$NAME: $(grep -m1 "^scores" "$D/grade.txt" || tail -n1 "$D/grade.txt")"
@@ -53,12 +59,28 @@ one() {
 
 jobs() {
   if [ -n "$JOBS" ]; then cat "$JOBS"; return; fi
+  if [ "${LINEUP:-megamix}" = stf ]; then
+    # The stf lineup (tools/board/lineup.mjs): StF's Sonic 0, Honey 15, Eggman 8,
+    # Amy 2, Fang 4, Bark 5, Espio 7, Bean 10 (the menu's 0, 1, 2, 5..9).
+    # On South Island, every pairing with one of the five the default
+    # lineup lacks, and their mirrors; on Aurora Icefield, the mirrors and
+    # each against Eggman.
+    local c=(0 15 8 2 4 5 7 10) m=(0 1 2 5 6 7 8 9) names=(sonic honey eggman amy fang bark espio bean)
+    for a in 3 4 5 6 7; do for b in 0 1 2 3 4 5 6 7; do
+      [ $b -ge 3 ] && [ $b -lt $a ] && continue
+      echo "stf-${names[a]}-${names[b]}-s0 stf ${c[a]} ${c[b]} 0 30,2,0,${m[a]},${m[b]},140,5,0"
+    done; done
+    for a in 3 4 5 6 7; do for b in $a 2; do
+      echo "stf-${names[a]}-${names[b]}-s1 stf ${c[a]} ${c[b]} 2 30,2,1,${m[a]},${m[b]},140,5,0"
+    done; done
+    return
+  fi
   # StF: Sonic 0, Honey 15, Eggman 8 (the menu's 0, 1, 2) on South Island
   # (StF 0, the menu's 0) and Aurora Icefield (StF 2, the menu's 1); energy
   # and barrier as StF's settings
   local c=(0 15 8) names=(sonic honey eggman) st=(0 2)
   for s in 0 1; do for a in 0 1 2; do for b in 0 1 2; do
-    echo "stf-${names[a]}-${names[b]}-s$s stf ${c[a]} ${c[b]} ${st[s]} 30,2,$s,$a,$b,140,5"
+    echo "stf-${names[a]}-${names[b]}-s$s stf ${c[a]} ${c[b]} ${st[s]} 30,2,$s,$a,$b,140,5,0"
   done; done; done
   # The board's energy is the one whose ratio to the source's is the
   # guest's damage's: Akira's jab takes 18 of VF2's 220 and 11-12 of the
@@ -66,12 +88,12 @@ jobs() {
   # grader scales the source's damage by the two energies.
   # VF2: Akira (the menu's 3) on Tou-rin (VF2 0, the menu's 2), the
   # Colosseum (1, 3) and the Test stage (12, 5)
-  echo "vf2-akira-tourin vf2 0 0 0 30,2,2,3,3,140,5"
-  echo "vf2-akira-colosseum vf2 0 0 1 30,2,3,3,3,140,5"
-  echo "vf2-akira-test vf2 0 0 12 30,2,5,3,3,140,5"
+  echo "vf2-akira-tourin vf2 0 0 0 30,2,2,3,3,140,5,0"
+  echo "vf2-akira-colosseum vf2 0 0 1 30,2,3,3,3,140,5,0"
+  echo "vf2-akira-test vf2 0 0 12 30,2,5,3,3,140,5,0"
   # FV: Mahler (8, the menu's 7) on Western (0, the menu's 4)
-  echo "fv-mahler-western fv 8 8 0 30,2,4,7,7,250,5"
+  echo "fv-mahler-western fv 8 8 0 30,2,4,7,7,250,5,1"
 }
 
 export -f run one; export OUT BUILD HERE REPO MAME ROMS_DIR
-jobs | xargs -P3 -L1 bash -c 'one "$@"' _
+jobs | xargs -P"${PAR:-3}" -L1 bash -c 'one "$@"' _

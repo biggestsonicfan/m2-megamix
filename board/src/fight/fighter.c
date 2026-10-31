@@ -380,9 +380,15 @@ static float start_half(u32 n) {
     return n >= 2u ? 0.5f : 1.0f;
 }
 
+/* What the motion setups' ops 5, 9 and 0xA leave in a rob (+0x818..0x83F,
+ * the jump's frames +0x5BC..0x5BF and its fall +0x5CC): StF's round start
+ * keeps them, and a jump whose setup has no op 9 of its own (Bean's ta_kick
+ * out of a roll) steps by the last one's (ACT_RC_JUMP). */
+static const u16 setup_keep[][2] = { { 0x818u, 0x840u }, { 0x5BCu, 0x5C0u }, { 0x5CCu, 0x5D0u } };
+
 /* next: the match's next round, the armour as the last one left it */
 void round_start(fighter_t fs[2], u32 next) {
-    u32 i, k;
+    u32 i, k, j, a, w, kept[2][(0x840u - 0x818u + 8u) / 4u];
     u32 n = stage_index();               /* 2, 3 VF2's; 4 FV's */
     float d = start_half(n);
     start_ang = !next ? (n >= 2u ? 0u : 0x2000u) : (u16)(start_ang + (n == 2u || n == 3u ? 0u : 0x4000u));
@@ -395,7 +401,12 @@ void round_start(fighter_t fs[2], u32 next) {
         fs[i].x = (i ? start_f(k) : -start_f(k)) * d;
         fs[i].z = (i ? start_f(k + 6u) : -start_f(k + 6u)) * d;
         fs[i].yaw = (u16)(start_ang + (i ? 0x4000u : 0xC000u));
+        for (j = 0, w = 0; j < 3u; j++)
+            for (a = setup_keep[j][0]; a < setup_keep[j][1]; a += 4u) kept[i][w++] = RW(robs[i], a);
         rob_init(i, &fs[i]);
+        if (next)
+            for (j = 0, w = 0; j < 3u; j++)
+                for (a = setup_keep[j][0]; a < setup_keep[j][1]; a += 4u) RW(robs[i], a) = kept[i][w++];
     }
     task_reset(stf_coli, sizeof stf_coli);
     stf_task(stf_coli_init, stf_coli, robs[0], robs[1]);

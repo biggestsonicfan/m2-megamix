@@ -19,7 +19,7 @@ BT_GAME=stf BT_P1=0 BT_P2=15 BT_STAGE=0 BT_SEED=1 BT_FRAMES=30000 BT_OUT=trace.t
   mame sfight -rompath $ROMS_DIR -video none -sound none -nothrottle -skip_gameinfo \
   -autoboot_script tools/mame/battle.lua
 # the board: the same fight, set on its menu
-BT_GAME=board BT_MENU=30,2,0,0,1,140,5 BT_MAP=<build>/game.map BT_SEED=1 BT_FRAMES=30000 \
+BT_GAME=board BT_MENU=30,2,0,0,1,140,5,0 BT_MAP=<build>/game.map BT_SEED=1 BT_FRAMES=30000 \
   BT_OUT=trace.txt mame sfight -rompath "board/roms;$ROMS_DIR" ...
 node tools/grade/grade-battle.mjs <source>/trace.txt <board>/trace.txt
 ```
@@ -32,6 +32,11 @@ Give each run its own directory and its own `-cfg_directory`,
 - The board's menu indices: fighters SONIC 0, HONEY 1, EGGMAN 2, AKIRA 3,
   RYO 4, CHAI 5, HORNET 6, MAHLER 7; stages South Island 0, Aurora 1,
   Tou-rin 2, Colosseum 3, FV Western 4.
+- The menu's last value is its FV armour (0 off, 1 on; the menu's own,
+  on, when left out). A source with no armour (StF, VF2) is graded with
+  it off, FV with it on (`tools/mame/board-replays.sh`): with it on, a
+  StF strike of 30 or more breaks a damaged piece and the board plays
+  FV's armour-break replay, a round its source never had.
 - StF needs two coins in the attract and both Starts some frames apart, or
   one side starts against the CPU. Honey is hidden (Start on Amy); the
   script forces both characters with write taps on the robs' +0x1B0
@@ -130,6 +135,46 @@ The shared MAME is mainline (mamedev/mame 6df80b69e1e, 0.289). On the
 fork's build, Sonic vs Sonic and Sonic vs Honey on Aurora stopped the
 geometrizer (board frames 501 and 1093, "geo_adsp: compute: invalid
 single-function operation 03"; below).
+
+### The stf lineup
+
+The stf lineup's build (docs/BOARD.md, Lineups), graded the same way
+(`LINEUP=stf tools/mame/board-replays.sh`): each of Amy, Fang, Bark, Espio
+and Bean (1P) against Sonic, Honey and Eggman and the other four, on South
+Island, and the mirrors and each against Eggman on Aurora. The default
+lineup's 22 fights, run again on the same source, are still 100 A.
+
+| 1P, 2P | Sonic | Honey | Eggman | Amy | Fang | Bark | Espio | Bean |
+|--------|-------|-------|--------|-----|------|------|-------|------|
+| **South Island** | | | | | | | | |
+| Amy    | 100 A | 100 A | 100 A | 100 A | 100 A | 100 A | 100 A | 100 A |
+| Fang   | 100 A | 100 A | 100 A |       | 100 A | 91 A  | 100 A | 100 A |
+| Bark   | 100 A | 100 A | 100 A |       |       | 100 A | 100 A | 100 A |
+| Espio  | 100 A | 100 A | 100 A |       |       |       | 100 A | 100 A |
+| Bean   | 100 A | 100 A | 100 A |       |       |       |       | 100 A |
+| **Aurora** | | | | | | | | |
+| Amy    |       |       | 100 A | 100 A |  |      |       |      |
+| Fang   |       |       | 100 A |       | 100 A |     |       |      |
+| Bark   |       |       | 100 A |       |       | 100 A |      |      |
+| Espio  |       |       | 100 A |       |       |       | 100 A |     |
+| Bean   |       |       | 100 A |       |       |       |       | 100 A |
+
+What is left is the megamix's own, not the lift's (39 of 40 are 100 A):
+
+- **Bark vs Espio and Bark vs Honey: the armour break.** On the board
+  with FV armour on (the menu's default), every fighter wears FV's armour
+  (200 and 75 for a non-FV fighter), and a StF strike of 30 or more breaks
+  it (tools/board/lift-stf.py `ARMOUR_BREAK`). Bark's double kick (motion
+  158, 35) does, and the board plays FV's armour-break replay (sub_mode
+  22) with the clock going back with it: a round StF, which has no armour,
+  never had. These two graded 62 C and 80 B so. StF's replays are now
+  graded with the armour off (Running a battle), and both are 100 A.
+- **Fang vs Bark (91): Fang's intro.** StF's round 1 starts with each
+  fighter's intro, and Fang's leaves him at (-1.410, -1.410), not
+  (-1.414, -1.414) (round 2 has none). The board plays no intros. It is
+  one frame of Bark's kick landing later (frame 182) in this pairing only.
+
+Bean's five fights went from 72..96 to 100 (below, the jump's setup).
 
 ### Aurora: the geometrizer's frame runs over
 
@@ -859,10 +904,26 @@ F to 37 F):
   on frame 44 (|v| 0.00138 under r5), VF2 on 45: rob+0x5D4 differs on 45
   (VF2 2.5, the board 0.5; ratio 0.4286) and on 55..60 (VF2 0.5, the
   board 0; 0.6667), as before, from the knockback, not this formula.
+- **The jump's setup (Bean, #1921).** Out of a roll (378, 279), Bean's
+  ta_kick (240) crept 0.003 a frame toward Eggman in StF and stood on the
+  board. 240 runs `ACT_RC_JUMP`, which steps by the setup op 9's vector
+  (rob+0x830/0x834) over its frames (rob+0x5BE), but 240's setup has no
+  op 9. It steps by the last one's, and `set_mot_dat` clears none of it
+  (the block rob+0x818..0x83F that setup ops 5, 9 and 0xA write; +0x5BC,
+  +0x5CC). StF had z 1.0 over 30 frames there, left by its attract demo's
+  fight. The board zeroed its robs every round. Two changes:
+  - battle.lua zeroes those fields in StF's robs at the picks. A real
+    cabinet has run its attract demo, so what is left there is chance,
+    and the board starts zeroed. That took Bean's round 1s to 100.
+  - The board keeps them from round to round (fighter.c `setup_keep`),
+    as StF's round start does. That took the round 2s to 100.
 
 Left as they are:
 
-- Honey's intro pose: StF's motion 15, the board's 507.
+- Honey's intro pose: StF's motion 15, the board's 507. Fang's intro
+  leaves him 0.004 nearer the middle (above, The stf lineup).
+- The armour break's replay, on any fighter's 30-damage strike, with the
+  menu's FV armour on (above; graded with it off against StF and VF2).
 - The board's rounds end 4 or 5 frames before StF's (the winner and the
   energy left are the same).
 - Sonic vs Sonic and Sonic vs Honey on Aurora stop MAME, always on the
@@ -872,7 +933,7 @@ Left as they are:
   `multi-function opcode 16 not implemented`, `SET_UREG: unknown register
   63`). The frame's FIFO words are as every frame's (606 of them, laid out
   the same); StF's own runs of the pairings don't stop it. Repro:
-  `BT_MENU=30,2,1,0,0,140,5 BT_SEED=1`.
+  `BT_MENU=30,2,1,0,0,140,5,0 BT_SEED=1`.
 
 ## The browser build, every record
 

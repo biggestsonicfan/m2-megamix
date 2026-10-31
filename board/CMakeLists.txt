@@ -63,8 +63,9 @@ endif()
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 # roms/sfight/: the program EPROM pair, beside the data ROMs tools/board/import-assets.mjs
-# writes there. MAME runs it with -rompath board/roms alone.
-set(ROM_DIR "${CMAKE_SOURCE_DIR}/roms/sfight")
+# writes there. MAME runs it with -rompath board/roms alone. Another lineup's
+# build (tools/board/lineup.mjs) goes beside its own data ROMs: -DROM_DIR=<dir>/sfight.
+set(ROM_DIR "${CMAKE_SOURCE_DIR}/roms/sfight" CACHE PATH "where the program EPROMs go")
 add_custom_target(rom ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory "${ROM_DIR}"
     COMMAND ${CMAKE_OBJCOPY} -O binary $<TARGET_FILE:game.elf> game.bin
