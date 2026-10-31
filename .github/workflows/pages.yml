@@ -1,85 +1,38 @@
 name: pages
 
-# The browser compiler (web/compile.html, Pinboard #1934) -> GitHub Pages.
+# The browser compiler (web/compile.html, Pinboard #1934) on GitHub Pages,
+# megamix.sonicthefighte.rs.
 #
-# The site is the repo's browser code, as it is: the compiler page, the Node
-# tools it runs in the player's browser (tools/), the game's and noclip's
-# modules they import, and the kits (web/kit/, tools/web/make-kits.sh). It holds
-# nothing of Sega's: the player gives the compiler their own ROMs and discs,
-# and the kits have every byte that came from them taken out
-# (tools/web/make-kit.mjs). The last step below stops a deploy that would ship
-# a ROM, a disc image or a build's EPROM.
-#
-# The set it builds is played in m2-hle2's own site (arcade.sonicthefighte.rs,
-# ?homebrew=1&rom=opener), so every player runs the same emulator build.
-#
-# The front page (web/site-index.html) sends the visitor on to the compiler,
-# its link's #configuration with them; the repo's index.html, the browser
-# game, is game.html.
-#
-# One-time setup, in the repository's settings (a workflow's token cannot):
-#   Settings > Pages > Build and deployment > Source: "GitHub Actions"
-# "Deploy from a branch" serves the repo as it is instead: the browser game at
-# the front, and no noclip (a submodule), so the compiler can't read a zip.
+# Pages deploys from the branch: the site is the repo as it is (main, /), noclip's
+# submodule with it. Its front page, index.html, sends the visitor on to the
+# compiler, the shared link's #configuration with them; the browser game is
+# game.html. This workflow only checks that nothing of Sega's is in it: the
+# player gives the compiler their own ROMs and discs, and the kits (web/kit/,
+# tools/web/make-kits.sh) have every byte that came from them taken out
+# (tools/web/make-kit.mjs). A deploy of its own here would race the branch's.
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
-
-concurrency:
-  group: pages
-  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  build:
+  check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
           submodules: false
 
-      # noclip's modules only (the browser game's and the tools' imports)
-      - name: Fetch noclip
-        run: git submodule update --init vendor/noclip
-
-      - name: Assemble the site
+      - name: Nothing of Sega's in the site
         run: |
-          mkdir -p _site/vendor/noclip _site/docs
-          cp -r index.html js tools web _site/
-          cp -r vendor/noclip/js _site/vendor/noclip/
-          cp -r docs/data _site/docs/
-          cp CNAME _site/
-          touch _site/.nojekyll
-          # the site's front page is the compiler; the browser game is game.html
-          mv _site/index.html _site/game.html
-          cp web/site-index.html _site/index.html
-
-      - name: Nothing of Sega's in it
-        run: |
-          bad=$(find _site -type f \( -iname '*.zip' -o -iname '*.bin' -o -iname '*.iso' -o -iname '*.raw' \
-                -o -iname '*.gdi' -o -iname '*.chd' -o -iname 'epr-*' -o -iname 'mpr-*' \) -print)
+          bad=$(git ls-files | grep -iE '\.(zip|bin|iso|raw|gdi|chd)$|(^|/)(epr|mpr)-' || true)
           if [ -n "$bad" ]; then echo "ROM data in the site:"; echo "$bad"; exit 1; fi
           # each kit whole, as tools/web/make-kit.mjs writes it
-          for k in _site/web/kit/*/; do
+          for k in web/kit/*/; do
             test -f "$k/kit.json" -a -f "$k/program.xor.gz" -a -f "$k/files.json"
           done
-
-      - uses: actions/upload-pages-artifact@v5
-        with:
-          path: _site
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v5
+          test -f index.html -a -f game.html -a -f web/compile.html -a -f CNAME

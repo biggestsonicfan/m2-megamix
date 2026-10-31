@@ -97,7 +97,7 @@ def open_browser(url):
 def main():
     args = [a for a in sys.argv[1:] if a != '--open']
     port = int(args[0]) if args else free_port()
-    url = f'http://127.0.0.1:{port}/'
+    url = f'http://127.0.0.1:{port}/game.html'
     try:
         httpd = http.server.ThreadingHTTPServer(('127.0.0.1', port), partial(Handler, directory=ROOT))
     except OSError:
