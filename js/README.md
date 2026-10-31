@@ -1,6 +1,6 @@
 # js: the browser game
 
-Fighters Megamix in a web page (`index.html` loads `main.js`). Who, when and
+Fighters Megamix in a web page (`game.html` loads `main.js`). Who, when and
 why are in [docs/CODE-MAP.md](../docs/CODE-MAP.md); this is what is where.
 Everything is read from the ROM sets through `vendor/noclip`'s readers.
 
