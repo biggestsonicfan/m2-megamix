@@ -50,7 +50,9 @@ A build's link (`#lineup=…&moves=…&zip=<SHA-256>`) is its configuration:
 whoever opens it with the same games builds the same zip, and can tell. Play
 opens m2-hle2's web build (`arcade.sonicthefighte.rs`, `?homebrew=1&rom=opener`)
 and hands it the set; boards with the same zip meet on the same netplay
-channel. `.github/workflows/pages.yml` publishes the site to GitHub Pages.
+channel. `.github/workflows/pages.yml` publishes the site to GitHub Pages
+(megamix.sonicthefighte.rs; the Pages source has to be GitHub Actions). Its
+front page is the compiler; the browser game is `game.html`.
 
 ```
 python3 -m http.server -d . 8000    # then http://127.0.0.1:8000/web/compile.html

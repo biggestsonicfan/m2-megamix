@@ -13,8 +13,14 @@ name: pages
 # The set it builds is played in m2-hle2's own site (arcade.sonicthefighte.rs,
 # ?homebrew=1&rom=opener), so every player runs the same emulator build.
 #
+# The front page (web/site-index.html) sends the visitor on to the compiler,
+# its link's #configuration with them; the repo's index.html, the browser
+# game, is game.html.
+#
 # One-time setup, in the repository's settings (a workflow's token cannot):
 #   Settings > Pages > Build and deployment > Source: "GitHub Actions"
+# "Deploy from a branch" serves the repo as it is instead: the browser game at
+# the front, and no noclip (a submodule), so the compiler can't read a zip.
 on:
   push:
     branches: [main]
@@ -45,7 +51,11 @@ jobs:
           cp -r index.html js tools web _site/
           cp -r vendor/noclip/js _site/vendor/noclip/
           cp -r docs/data _site/docs/
+          cp CNAME _site/
           touch _site/.nojekyll
+          # the site's front page is the compiler; the browser game is game.html
+          mv _site/index.html _site/game.html
+          cp web/site-index.html _site/index.html
 
       - name: Nothing of Sega's in it
         run: |
