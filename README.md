@@ -34,6 +34,29 @@ A fighter's moves can be written out as text, edited and imported again
 file, grouped by what it does (`board/src/README.md`).
 See `docs/BOARD.md`.
 
+## Build it in your browser
+
+`web/compile.html` builds the board's ROM set in the browser, from the player's
+own copies of the games: the MAME sets (sfight, vf2, fvipers, daytona, doa,
+doab), Fighters Megamix's Saturn prototype (Apr 08, 1997, `Track01.bin`) and
+the Shenmue beta's disc 3 (its `.gdi` and tracks). It runs the same tools as
+the native build (`tools/board/`, through stand-ins for Node's modules in
+`web/compile/`), so it makes the same bytes. What it needs besides the
+player's files is a kit per lineup (`web/kit/`, `tools/web/make-kits.sh`):
+the program as built, with everything that came from a ROM taken out
+(`tools/web/make-kit.mjs`). The site holds none of Sega's data.
+
+A build's link (`#lineup=…&moves=…&zip=<SHA-256>`) is its configuration:
+whoever opens it with the same games builds the same zip, and can tell. Play
+opens m2-hle2's web build (`arcade.sonicthefighte.rs`, `?homebrew=1&rom=opener`)
+and hands it the set; boards with the same zip meet on the same netplay
+channel. `.github/workflows/pages.yml` publishes the site to GitHub Pages.
+
+```
+python3 -m http.server -d . 8000    # then http://127.0.0.1:8000/web/compile.html
+tools/web/make-kits.sh /tmp/kits    # the kits again, after a change to the board
+```
+
 ## Running
 
 ```

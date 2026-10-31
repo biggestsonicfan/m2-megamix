@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>m2-megamix: build your Megamix</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { margin: 0 auto; max-width: 52em; padding: 1em 1.2em 3em; background: #111; color: #ddd; font: 15px/1.45 system-ui, sans-serif; }
+  h1 { font-size: 1.5em; margin: .3em 0; }
+  h2 { font-size: 1.1em; margin: 1.6em 0 .4em; }
+  a { color: #8cf; }
+  code { font-size: .95em; }
+  #drop { border: 2px dashed #555; border-radius: 8px; padding: 1em; text-align: center; }
+  #drop.over { border-color: #8cf; background: #1a2430; }
+  table { border-collapse: collapse; width: 100%; margin-top: .6em; }
+  td { padding: .25em .5em; border-top: 1px solid #333; vertical-align: top; }
+  td.ok { color: #7d7; } td.no { color: #e88; }
+  td.what small { color: #999; }
+  button, select { font: inherit; padding: .35em .9em; border-radius: 5px; border: 1px solid #666; background: #2a2a2a; color: #eee; }
+  button:disabled { opacity: .45; }
+  button.go { background: #245; border-color: #48a; }
+  #log { background: #000; color: #aaa; font: 12px/1.35 monospace; height: 14em; overflow: auto; padding: .5em; white-space: pre-wrap; border-radius: 5px; }
+  #result { border: 1px solid #444; border-radius: 8px; padding: .8em 1em; margin-top: 1em; }
+  #result .same { color: #7d7; } #result .differ { color: #fc6; }
+  .hash { font: 12px monospace; word-break: break-all; color: #bbb; }
+  input[type=text] { font: 12px monospace; width: 100%; box-sizing: border-box; padding: .3em; background: #000; color: #ccc; border: 1px solid #444; }
+  .row { display: flex; gap: .6em; flex-wrap: wrap; align-items: center; margin: .6em 0; }
+</style>
+</head>
+<body>
+<h1>Build your Megamix</h1>
+<p>
+  m2-megamix is a new program for the Sonic the Fighters arcade board, with fighters and stages
+  from other Sega games. This page builds its ROM set from <b>your own copies</b> of those games,
+  here in your browser: nothing you give it leaves this computer, and this site holds none of
+  Sega's data. The set runs in <a href="https://arcade.sonicthefighte.rs/">m2-hle2</a> (the Play
+  button) or in MAME as <code>sfight</code>.
+</p>
+<p>
+  Everyone who builds the same configuration from the same games gets the same bytes, so a
+  build's link is all a friend needs: they open it, give it their own files, and you can
+  play each other over netplay.
+</p>
+
+<h2>1. Your files</h2>
+<div id="drop">
+  Drop the files (or their folders) here, or
+  <button id="pick-files">pick files</button> <button id="pick-dir">pick a folder</button>
+  <input id="files" type="file" multiple hidden>
+  <input id="dir" type="file" webkitdirectory multiple hidden>
+  <table id="need"></table>
+</div>
+
+<h2>2. Configuration</h2>
+<div class="row">
+  <label>Lineup <select id="lineup">
+    <option value="megamix">Megamix: Sonic, Honey, Eggman, Akira, Ryo, Chai, Hornet, Mahler</option>
+    <option value="stf">StF: Sonic, Honey, Eggman, Akira, Mahler, Amy, Fang, Bark, Espio, Bean</option>
+  </select></label>
+</div>
+<div class="row">
+  Moves (optional): <button id="pick-moves">add .moves files</button>
+  <input id="moves" type="file" accept=".moves" multiple hidden>
+  <span id="moves-list"></span> <button id="moves-clear" hidden>clear</button>
+</div>
+<p id="link-note" hidden></p>
+
+<h2>3. Build</h2>
+<div class="row"><button id="build" class="go" disabled>Build</button> <span id="step"></span></div>
+<div id="log" hidden></div>
+<div id="result" hidden></div>
+
+<p style="margin-top:2.5em;color:#888;font-size:.9em">
+  The build runs the project's own tools (m2-megamix's
+  <code>tools/board/</code>) on your files. What it needs besides them is a kit made from the
+  project's own build, with every byte that came from a game taken out (<code>tools/web/make-kit.mjs</code>).
+</p>
+<script type="module" src="compile/page.mjs"></script>
+</body>
+</html>

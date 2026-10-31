@@ -37,7 +37,23 @@ set(M2_STARTUP_ASM
 # The program's modules (src/*.c) are compiled as one unit through megamix.c,
 # which includes them: the header-only SDK defines its functions in the
 # headers (M2_API=, below), so a module built on its own would carry its own copy.
-add_executable(game.elf ${M2_STARTUP_ASM} src/megamix.c src/link/link.c src/draw/carry.c src/fight/push.c src/fight/stf_call.s src/gen/stf_motion.s)
+# poses.h is data read from the ROM sets: tools/board/c-data.mjs lays its objects out
+# as the compiler would (gen/poses.bin) at the top of the first 512 KB (.poses, below
+# .stfrom), and the modules see them through gen/poses_decl.h, extern. The program
+# then holds none of it where it was built, and the browser's compiler
+# (web/compile.html) makes the same bytes again from the player's own ROMs.
+find_program(NODE node REQUIRED)
+set(POSES_OUT "${CMAKE_CURRENT_BINARY_DIR}/gen")
+add_custom_command(
+    OUTPUT "${POSES_OUT}/poses.s" "${POSES_OUT}/poses.bin" "${POSES_OUT}/poses_decl.h" "${POSES_OUT}/poses.opt"
+    COMMAND ${NODE} "${CMAKE_SOURCE_DIR}/../tools/board/c-data.mjs" "${CMAKE_SOURCE_DIR}/src/gen/poses.h" "${POSES_OUT}"
+    DEPENDS "${CMAKE_SOURCE_DIR}/src/gen/poses.h" "${CMAKE_SOURCE_DIR}/../tools/board/c-data.mjs"
+    VERBATIM)
+add_executable(game.elf ${M2_STARTUP_ASM} src/megamix.c src/link/link.c src/draw/carry.c src/fight/push.c src/fight/stf_call.s src/gen/stf_motion.s
+    "${POSES_OUT}/poses.s" "${POSES_OUT}/poses_decl.h")
+set_source_files_properties("${POSES_OUT}/poses.s" PROPERTIES
+    COMPILE_OPTIONS "-Wa,-I${POSES_OUT}"
+    OBJECT_DEPENDS "${POSES_OUT}/poses.bin")
 # StF's motion code keeps its ROM tables' addresses (.stfrom, 0x80000..0xFFFFF).
 set_source_files_properties(src/gen/stf_motion.s PROPERTIES
     COMPILE_OPTIONS "-Wa,-I${CMAKE_SOURCE_DIR}/src/gen"
@@ -45,14 +61,15 @@ set_source_files_properties(src/gen/stf_motion.s PROPERTIES
 # carry.c and push.c alone on the i960's floating point (the rest is soft-float, below):
 # its last -mnumerics wins over the target's -msoft-float.
 set_source_files_properties(src/draw/carry.c src/fight/push.c PROPERTIES COMPILE_OPTIONS "-mnumerics")
-target_include_directories(game.elf PRIVATE src "${M2_SDK}/src")
+target_include_directories(game.elf PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}" "${M2_SDK}/src")
 target_compile_options(game.elf PRIVATE $<$<COMPILE_LANGUAGE:C>:-O2>)
 target_compile_definitions(game.elf PRIVATE $<$<COMPILE_LANGUAGE:C>:M2_API=>)
-set_target_properties(game.elf PROPERTIES SUFFIX "")
+set_target_properties(game.elf PROPERTIES SUFFIX "" LINK_DEPENDS "${POSES_OUT}/poses.opt")
 target_link_options(game.elf PRIVATE
     -nostdlib
     "-T${M2_SDK}/lib/testlinkrom_elf.ld"
     "-Wl,--section-start=.stfrom=0x80000"
+    "@${POSES_OUT}/poses.opt"
     "-Wl,-Map=game.map")
 
 include("${M2_SDK}/cmake/m2sdk.cmake")

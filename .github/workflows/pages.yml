@@ -1,0 +1,75 @@
+name: pages
+
+# The browser compiler (web/compile.html, Pinboard #1934) -> GitHub Pages.
+#
+# The site is the repo's browser code, as it is: the compiler page, the Node
+# tools it runs in the player's browser (tools/), the game's and noclip's
+# modules they import, and the kits (web/kit/, tools/web/make-kits.sh). It holds
+# nothing of Sega's: the player gives the compiler their own ROMs and discs,
+# and the kits have every byte that came from them taken out
+# (tools/web/make-kit.mjs). The last step below stops a deploy that would ship
+# a ROM, a disc image or a build's EPROM.
+#
+# The set it builds is played in m2-hle2's own site (arcade.sonicthefighte.rs,
+# ?homebrew=1&rom=opener), so every player runs the same emulator build.
+#
+# One-time setup, in the repository's settings (a workflow's token cannot):
+#   Settings > Pages > Build and deployment > Source: "GitHub Actions"
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: false
+
+      # noclip's modules only (the browser game's and the tools' imports)
+      - name: Fetch noclip
+        run: git submodule update --init vendor/noclip
+
+      - name: Assemble the site
+        run: |
+          mkdir -p _site/vendor/noclip _site/docs
+          cp -r index.html js tools web _site/
+          cp -r vendor/noclip/js _site/vendor/noclip/
+          cp -r docs/data _site/docs/
+          touch _site/.nojekyll
+
+      - name: Nothing of Sega's in it
+        run: |
+          bad=$(find _site -type f \( -iname '*.zip' -o -iname '*.bin' -o -iname '*.iso' -o -iname '*.raw' \
+                -o -iname '*.gdi' -o -iname '*.chd' -o -iname 'epr-*' -o -iname 'mpr-*' \) -print)
+          if [ -n "$bad" ]; then echo "ROM data in the site:"; echo "$bad"; exit 1; fi
+          # each kit whole, as tools/web/make-kit.mjs writes it
+          for k in _site/web/kit/*/; do
+            test -f "$k/kit.json" -a -f "$k/program.xor.gz" -a -f "$k/files.json"
+          done
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
