@@ -9,7 +9,9 @@
 # <build dir> is the board's cmake build (its game.map); the board's ROMs are
 # this checkout's board/roms. A job is a line
 #   <name> <game> <p1> <p2> <stage> <board menu>
-# (the game's own fighter and stage numbers; the menu as BT_MENU); without a
+# (the game's own fighter and stage numbers; the menu as BT_MENU, its last
+# value FV's armour: on for FV's battles, off for StF's and VF2's, which have
+# none, so the board plays no armour break their source never had); without a
 # jobs file, the list below: every pairing of the board's fighters that one
 # of the source games plays, on every board stage that game has. Each goes to
 # <outdir>/<name>/: src/ (trace.txt, replay.txt), board/ (trace.txt), and
@@ -66,10 +68,10 @@ jobs() {
     local c=(0 15 8 2 4 5 7 10) m=(0 1 2 5 6 7 8 9) names=(sonic honey eggman amy fang bark espio bean)
     for a in 3 4 5 6 7; do for b in 0 1 2 3 4 5 6 7; do
       [ $b -ge 3 ] && [ $b -lt $a ] && continue
-      echo "stf-${names[a]}-${names[b]}-s0 stf ${c[a]} ${c[b]} 0 30,2,0,${m[a]},${m[b]},140,5"
+      echo "stf-${names[a]}-${names[b]}-s0 stf ${c[a]} ${c[b]} 0 30,2,0,${m[a]},${m[b]},140,5,0"
     done; done
     for a in 3 4 5 6 7; do for b in $a 2; do
-      echo "stf-${names[a]}-${names[b]}-s1 stf ${c[a]} ${c[b]} 2 30,2,1,${m[a]},${m[b]},140,5"
+      echo "stf-${names[a]}-${names[b]}-s1 stf ${c[a]} ${c[b]} 2 30,2,1,${m[a]},${m[b]},140,5,0"
     done; done
     return
   fi
@@ -78,7 +80,7 @@ jobs() {
   # and barrier as StF's settings
   local c=(0 15 8) names=(sonic honey eggman) st=(0 2)
   for s in 0 1; do for a in 0 1 2; do for b in 0 1 2; do
-    echo "stf-${names[a]}-${names[b]}-s$s stf ${c[a]} ${c[b]} ${st[s]} 30,2,$s,$a,$b,140,5"
+    echo "stf-${names[a]}-${names[b]}-s$s stf ${c[a]} ${c[b]} ${st[s]} 30,2,$s,$a,$b,140,5,0"
   done; done; done
   # The board's energy is the one whose ratio to the source's is the
   # guest's damage's: Akira's jab takes 18 of VF2's 220 and 11-12 of the
@@ -86,11 +88,11 @@ jobs() {
   # grader scales the source's damage by the two energies.
   # VF2: Akira (the menu's 3) on Tou-rin (VF2 0, the menu's 2), the
   # Colosseum (1, 3) and the Test stage (12, 5)
-  echo "vf2-akira-tourin vf2 0 0 0 30,2,2,3,3,140,5"
-  echo "vf2-akira-colosseum vf2 0 0 1 30,2,3,3,3,140,5"
-  echo "vf2-akira-test vf2 0 0 12 30,2,5,3,3,140,5"
+  echo "vf2-akira-tourin vf2 0 0 0 30,2,2,3,3,140,5,0"
+  echo "vf2-akira-colosseum vf2 0 0 1 30,2,3,3,3,140,5,0"
+  echo "vf2-akira-test vf2 0 0 12 30,2,5,3,3,140,5,0"
   # FV: Mahler (8, the menu's 7) on Western (0, the menu's 4)
-  echo "fv-mahler-western fv 8 8 0 30,2,4,7,7,250,5"
+  echo "fv-mahler-western fv 8 8 0 30,2,4,7,7,250,5,1"
 }
 
 export -f run one; export OUT BUILD HERE REPO MAME ROMS_DIR

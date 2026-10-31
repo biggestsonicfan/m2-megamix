@@ -19,7 +19,7 @@ BT_GAME=stf BT_P1=0 BT_P2=15 BT_STAGE=0 BT_SEED=1 BT_FRAMES=30000 BT_OUT=trace.t
   mame sfight -rompath $ROMS_DIR -video none -sound none -nothrottle -skip_gameinfo \
   -autoboot_script tools/mame/battle.lua
 # the board: the same fight, set on its menu
-BT_GAME=board BT_MENU=30,2,0,0,1,140,5 BT_MAP=<build>/game.map BT_SEED=1 BT_FRAMES=30000 \
+BT_GAME=board BT_MENU=30,2,0,0,1,140,5,0 BT_MAP=<build>/game.map BT_SEED=1 BT_FRAMES=30000 \
   BT_OUT=trace.txt mame sfight -rompath "board/roms;$ROMS_DIR" ...
 node tools/grade/grade-battle.mjs <source>/trace.txt <board>/trace.txt
 ```
@@ -32,6 +32,11 @@ Give each run its own directory and its own `-cfg_directory`,
 - The board's menu indices: fighters SONIC 0, HONEY 1, EGGMAN 2, AKIRA 3,
   RYO 4, CHAI 5, HORNET 6, MAHLER 7; stages South Island 0, Aurora 1,
   Tou-rin 2, Colosseum 3, FV Western 4.
+- The menu's last value is its FV armour (0 off, 1 on; the menu's own,
+  on, when left out). A source with no armour (StF, VF2) is graded with
+  it off, FV with it on (`tools/mame/board-replays.sh`): with it on, a
+  StF strike of 30 or more breaks a damaged piece and the board plays
+  FV's armour-break replay, a round its source never had.
 - StF needs two coins in the attract and both Starts some frames apart, or
   one side starts against the CPU. Honey is hidden (Start on Amy); the
   script forces both characters with write taps on the robs' +0x1B0
@@ -144,7 +149,7 @@ lineup's 22 fights, run again on the same source, are still 100 A.
 | **South Island** | | | | | | | | |
 | Amy    | 100 A | 100 A | 100 A | 100 A | 100 A | 100 A | 100 A | 100 A |
 | Fang   | 100 A | 100 A | 100 A |       | 100 A | 91 A  | 100 A | 100 A |
-| Bark   | 100 A | 80 B  | 100 A |       |       | 100 A | 62 C  | 100 A |
+| Bark   | 100 A | 100 A | 100 A |       |       | 100 A | 100 A | 100 A |
 | Espio  | 100 A | 100 A | 100 A |       |       |       | 100 A | 100 A |
 | Bean   | 100 A | 100 A | 100 A |       |       |       |       | 100 A |
 | **Aurora** | | | | | | | | |
@@ -154,17 +159,16 @@ lineup's 22 fights, run again on the same source, are still 100 A.
 | Espio  |       |       | 100 A |       |       |       | 100 A |     |
 | Bean   |       |       | 100 A |       |       |       |       | 100 A |
 
-What is left is the megamix's own, not the lift's:
+What is left is the megamix's own, not the lift's (39 of 40 are 100 A):
 
-- **Bark vs Espio (62) and Bark vs Honey (80): the armour break.** Every
-  fighter wears FV's armour on the board (200 and 75 for a non-FV
-  fighter), and a StF strike of 30 or more breaks it
-  (tools/board/lift-stf.py `ARMOUR_BREAK`). Bark's double kick (motion 158,
-  35) does. The board then plays FV's armour-break replay (sub_mode 22),
-  and the clock goes back with it: Bark vs Espio's round 2 runs to 1240,
-  then 1318 again for the replay, and the fight goes on from there. StF has
-  no armour, so it fights on. The grader takes the fight after the replay
-  for a third round. Up to the break both are in step.
+- **Bark vs Espio and Bark vs Honey: the armour break.** On the board
+  with FV armour on (the menu's default), every fighter wears FV's armour
+  (200 and 75 for a non-FV fighter), and a StF strike of 30 or more breaks
+  it (tools/board/lift-stf.py `ARMOUR_BREAK`). Bark's double kick (motion
+  158, 35) does, and the board plays FV's armour-break replay (sub_mode
+  22) with the clock going back with it: a round StF, which has no armour,
+  never had. These two graded 62 C and 80 B so. StF's replays are now
+  graded with the armour off (Running a battle), and both are 100 A.
 - **Fang vs Bark (91): Fang's intro.** StF's round 1 starts with each
   fighter's intro, and Fang's leaves him at (-1.410, -1.410), not
   (-1.414, -1.414) (round 2 has none). The board plays no intros. It is
@@ -918,7 +922,8 @@ Left as they are:
 
 - Honey's intro pose: StF's motion 15, the board's 507. Fang's intro
   leaves him 0.004 nearer the middle (above, The stf lineup).
-- The armour break's replay, on any fighter's 30-damage strike (above).
+- The armour break's replay, on any fighter's 30-damage strike, with the
+  menu's FV armour on (above; graded with it off against StF and VF2).
 - The board's rounds end 4 or 5 frames before StF's (the winner and the
   energy left are the same).
 - Sonic vs Sonic and Sonic vs Honey on Aurora stop MAME, always on the
@@ -928,7 +933,7 @@ Left as they are:
   `multi-function opcode 16 not implemented`, `SET_UREG: unknown register
   63`). The frame's FIFO words are as every frame's (606 of them, laid out
   the same); StF's own runs of the pairings don't stop it. Repro:
-  `BT_MENU=30,2,1,0,0,140,5 BT_SEED=1`.
+  `BT_MENU=30,2,1,0,0,140,5,0 BT_SEED=1`.
 
 ## The browser build, every record
 

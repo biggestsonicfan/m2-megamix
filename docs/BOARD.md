@@ -1945,7 +1945,9 @@ sets up what StF's game loop would have set up around it.
   as in FV. On the HUD, FV's figures (patterns 0x20 and 0x147, FV's own
   tiles and colours, in board blocks 126 and 127) at the top corners;
   each half green, FV's green blink once damaged, its red one once
-  broken, as FV's `energy_disp` (0x346A8) colours them.
+  broken, as FV's `energy_disp` (0x346A8) colours them. The setup's
+  FV armour OFF sets limits no damage reaches (as StF's own 500 and 200
+  are) and hides the figures: nothing breaks and the replay never runs.
 - Armour break replay: FV's, which StF kept as REP_WAZA (sub_mode 22).
   The recorder `rec_disp` (fight_step's last task) puts both fighters'
   frame, with the frame's sounds (`check_same_sound`'s, 0x50406A from 0
@@ -2089,6 +2091,8 @@ held, and a change of stage or fighter shows at once.
      2P CHAR  HONEY
      energy     140   energy_max (0x5000A0), 10..250; the bars scale by it
      barrier      5   barrier_default_num (0x50A424), 0..9
+     FV armour   ON   Fighting Vipers' armour, its HUD figures and its
+                      armour-break replay; OFF: StF's, which none breaks
      link       OFF   the cabinet's role: OFF, 1P, 2P (see Two cabinets)
           LINKED   the link's state
 

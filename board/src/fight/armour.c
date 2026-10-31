@@ -22,14 +22,20 @@
  * action_init multiplies them: Mahler's, FV's fighter 8, 500 and 200, and
  * everyone else's 200 and 75 (six of FV's twenty records; six have 150
  * and 50, the rest more). As in FV, the damage stays from one round to
- * the next and goes at a match's start (FV 0x2CD04). */
+ * the next and goes at a match's start (FV 0x2CD04).
+ * With the setup's FV armour OFF (M_ARMOUR), the limits are ones no sum
+ * reaches, as StF's own are: no piece is damaged, so none breaks and FV's
+ * replay never runs, and the HUD shows no figures. The source games'
+ * replays are graded so (tools/mame/board-replays.sh): FV's with it on,
+ * StF's and VF2's off. */
 static const u16 armour_fv[2][2] = { { 200u, 75u }, { 500u, 200u } };
 static struct { u16 part[16]; u32 sum[4], bits, w0; } armour_kept[2];
 
 void armour_limits(u32 p) {
     const u16 *l = armour_fv[char_game(RB(robs[p], ROB_CHAR_IS)) == GAME_FV];
     u32 k;
-    for (k = 0; k < 2u; k++) RW(robs[p], ROB_ARMOUR_LIMIT + 4u * k) = l[k] * 140u / 200u * RAM8(G_WINS_NEEDED);
+    for (k = 0; k < 2u; k++)
+        RW(robs[p], ROB_ARMOUR_LIMIT + 4u * k) = menu_val[M_ARMOUR] ? l[k] * 140u / 200u * RAM8(G_WINS_NEEDED) : 0x7FFFFFFFu;
 }
 
 void armour_keep(u32 p) {
@@ -74,6 +80,11 @@ void armour_hud(void) {
     u32 k, i;
     for (k = 0; k < 2u; k++) {
         u32 g = (k ? ARMOUR_BLOCK1 : ARMOUR_BLOCK0) * 16u, bits = RW(robs[k], ROB_ARMOUR), col = k ? 57u : 0u, pen = k ? 12u : 9u;
+        if (!menu_val[M_ARMOUR]) {         /* off: the figure's cells blank */
+            for (i = 0; i < 55u; i++)
+                if (armour_cells[k][i]) M2_TILE_FG[(1u + i / 5u) * 64u + col + i % 5u] = 0x20u;
+            continue;
+        }
         for (i = 0; i < 16u; i++) M2_PALETTE[g + i] = armour_pal[k][i];
         M2_PALETTE[g + pen + 1u] = armour_pen(bits, ARMOUR_UP_DAMAGED, ARMOUR_UP_BROKEN);
         M2_PALETTE[g + pen] = armour_pen(bits, ARMOUR_DOWN_DAMAGED, ARMOUR_DOWN_BROKEN);

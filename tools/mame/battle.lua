@@ -28,8 +28,9 @@
 --           fv: FV's stage slot, the same way (default 0, Western).
 -- BT_TIME, BT_WINS  fv: the round time (default 30) and the rounds to win
 --           (default 2), forced on 0x500090 and 0x500052.
--- BT_MENU   board: the menu's values "time,round,stage,p1,p2,energy,barrier"
---           (the menu's own indices), e.g. "30,2,0,0,1,140,5".
+-- BT_MENU   board: the menu's values "time,round,stage,p1,p2,energy,barrier[,armour]"
+--           (the menu's own indices; armour, FV's: 0 off, 1 on, left as the
+--           menu has it, on, when not given), e.g. "30,2,0,0,1,140,5,0".
 -- BT_SEED   the input script's seed (its own LCG, so both games get the
 --           same script); BT_INPUTS=<file> plays a written one instead:
 --           lines "<frame> <p1> <p2>", each pad a string of U D L R P K G
@@ -359,7 +360,7 @@ elseif GAME == "board" then
   armed = math.huge
   local function shown()
     local t = { sp:read_u32(sym.menu_cur) }
-    for i = 1, 7 do t[#t + 1] = sp:read_u16(sym.menu_val + 2 * i) end
+    for i = 1, 8 do t[#t + 1] = sp:read_u16(sym.menu_val + 2 * i) end
     return table.concat(t, ",")
   end
   per_frame = function()
@@ -373,7 +374,7 @@ elseif GAME == "board" then
     end
     if armed < math.huge then return end
     local cur, press = sp:read_u32(sym.menu_cur), nil
-    for i = 1, 7 do
+    for i = 1, 8 do
       local v = sp:read_u16(sym.menu_val + 2 * i)
       if want[i] and v ~= want[i] then
         press = cur < i and "P1 Down" or cur > i and "P1 Up" or v < want[i] and "P1 Kick" or "P1 Punch"

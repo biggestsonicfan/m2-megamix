@@ -22,19 +22,21 @@
 #define PWIN_H     10u
 #define T_CURSOR   0x801Cu
 static const char *const menu_label[M_ITEMS] = {
-    "GAME_START", "time", "round", "stage", "1P CHAR", "2P CHAR", "energy", "barrier", "link" };
+    "GAME_START", "time", "round", "stage", "1P CHAR", "2P CHAR", "energy", "barrier", "FV armour", "link" };
 /* each value's range and step: the clock in seconds (StF's time, 1..99),
  * the rounds to win (0x500052, the lamps StF draws), the energy a round
  * starts with (energy_max, 0x5000A0, which the bars scale by) and the
- * barriers a match starts with (barrier_default_num, 0x50A424) */
+ * barriers a match starts with (barrier_default_num, 0x50A424), and
+ * whether the fighters wear Fighting Vipers' armour (armour.c) */
 /* and the cabinet's link (link.c): OFF, 1P's (the master) or 2P's, this
  * board's own, kept in the backup RAM; the others are the master's once
  * the boards are linked */
-static const u16 menu_min[M_ITEMS]  = { 0, 1, 1, 0, 0, 0, 10, 0, LINK_OFF };
-static const u16 menu_max[M_ITEMS]  = { 0, 99, 5, STAGES - 1, POSE_ANIMS - 1, POSE_ANIMS - 1, 250, 9, LINK_SLAVE };
-static const u16 menu_step[M_ITEMS] = { 0, 1, 1, 1, 1, 1, 10, 1, 1 };
-u16 menu_val[M_ITEMS] = { 0, 30, 2, 0, 0, 1, 140, 5, LINK_OFF };
+static const u16 menu_min[M_ITEMS]  = { 0, 1, 1, 0, 0, 0, 10, 0, 0, LINK_OFF };
+static const u16 menu_max[M_ITEMS]  = { 0, 99, 5, STAGES - 1, POSE_ANIMS - 1, POSE_ANIMS - 1, 250, 9, 1, LINK_SLAVE };
+static const u16 menu_step[M_ITEMS] = { 0, 1, 1, 1, 1, 1, 10, 1, 1, 1 };
+u16 menu_val[M_ITEMS] = { 0, 30, 2, 0, 0, 1, 140, 5, 1, LINK_OFF };
 const char *const link_name[3] = { "OFF", "1P", "2P" };
+static const char *const onoff_name[2] = { "OFF", "ON" };
 /* the status line, by link.state */
 const char *const link_state_name[6] = { "", "NO_COMM_BOARD", "COMM_STARTING", "NO_OTHER_CABINET", "LINKING", "LINKED" };
 /* fighter_name and fighter_from, the lineup's (tools/board/lineup.mjs), are in
@@ -126,6 +128,7 @@ void menu_draw(void) {
             win_put(WIN_W - 3u - slen(v) - slen(g), r, g, T_INV);
             win_put(WIN_W - 3u - slen(v), r, ":", T_INV);
         } else if (i == M_LINK) v = link_name[menu_val[i]];
+        else if (i == M_ARMOUR) v = onoff_name[menu_val[i]];
         else if (i != M_START) v = dec(menu_val[i], b);
         if (v) win_put(WIN_W - 2u - slen(v), r, v, T_INV);
         if (i == M_STAGE) {               /* the name line, as StF's "15:ADV_MOV2" */

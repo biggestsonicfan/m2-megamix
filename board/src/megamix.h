@@ -189,7 +189,7 @@ void sky_storm_frame(const stage_t *st);
 #define WIN_W      28u
 #define T_TEXT     0x8000u
 #define T_INV      0x8080u
-enum { M_START, M_TIME, M_ROUND, M_STAGE, M_P1, M_P2, M_ENERGY, M_BARRIER, M_LINK, M_ITEMS };
+enum { M_START, M_TIME, M_ROUND, M_STAGE, M_P1, M_P2, M_ENERGY, M_BARRIER, M_ARMOUR, M_LINK, M_ITEMS };
 extern u16 menu_val[M_ITEMS];
 extern u32 menu_cur;
 extern const char *const link_name[3];
