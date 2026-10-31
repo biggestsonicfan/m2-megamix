@@ -29,6 +29,18 @@ instead of its HLE; both draw the same picture.
 `src/gen/` (`poses.h`, `stf_motion.s`, `stf_motion.h`, `stf_rom_80000.bin`)
 and `roms/` hold Sega's code and data and are not in git.
 
+`poses.h` is not compiled as C: `tools/board/c-data.mjs` (run by the build)
+lays its objects out as i960-elf-gcc would, as `.poses`, the top of the
+program's first 512 KB (just below StF's ROM tables at 0x80000), and the
+modules see them through `gen/poses_decl.h`. So the program's own code holds
+nothing read from the ROMs where it is built, and the browser's compiler
+(`web/compile.html`, README "Build it in your browser") puts the same bytes
+there from the player's ROMs. Its kits (`web/kit/<lineup>/`) are this build's
+program with `.poses` zeroed and every run of StF's program in it (the lifted
+code, `.stfrom`, the SDK's copro program) XORed with StF's words:
+`tools/web/make-kits.sh` makes them, and checks each one makes the build again.
+After a change to the board, run it and commit the kits with the change.
+
 `board/src/stage/stf_tex_codec.h` is the SDK's `m2_tex_codec.h` with a bigger
 table B (2048 entries, not 512): StF's stage sets need up to 1178, and the
 SDK's size drops six of their pages. It keeps the SDK's include guard and is

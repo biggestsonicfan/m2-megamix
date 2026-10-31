@@ -9,7 +9,8 @@
 # build (<work dir>/build-<lineup>); a rerun builds only what changed. The
 # lineups' bakes take turns in board/src/gen/poses.h; megamix's is put back last.
 # Needs what the native build needs (docs/BOARD.md): $ROMS_DIR's sets, the
-# Saturn disc, the Shenmue disc, m2-sdk and its i960 toolchain.
+# Saturn disc, the Shenmue disc, m2-sdk and its i960 toolchain ($M2_SDK, if it
+# is not beside the repo).
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 WORK=${1:?tools/web/make-kits.sh <work dir> [lineup ...]}
@@ -24,7 +25,7 @@ for L in "${LINEUPS[@]}"; do
     echo "== $L"
     LINEUP=$L node "$ROOT/tools/board/bake-board.mjs"
     LINEUP=$L node "$ROOT/tools/board/import-assets.mjs" "$WORK/$L" > "$WORK/$L.import.log"
-    cmake -G "Unix Makefiles" -S "$ROOT/board" -B "$WORK/build-$L" -DROM_DIR="$WORK/$L/sfight" > /dev/null
+    cmake -G "Unix Makefiles" -S "$ROOT/board" -B "$WORK/build-$L" -DROM_DIR="$WORK/$L/sfight" ${M2_SDK:+-DM2_SDK="$M2_SDK"} > /dev/null
     make -C "$WORK/build-$L" -j2 --no-print-directory > "$WORK/build-$L.log"
     node "$ROOT/tools/web/make-kit.mjs" "$L" "$WORK/build-$L" "$WORK/$L"
 done
