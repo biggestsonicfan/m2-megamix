@@ -19,7 +19,7 @@
 #include "m2.h"
 #include "m2_obj.h"
 #include "stage/stf_tex_codec.h" /* the SDK's, with room for StF's stage sets */
-#include "gen/poses.h"
+#include "gen/poses_decl.h" /* gen/poses.h's objects, in .poses (tools/board/c-data.mjs) */
 #include "gen/stf_motion.h"
 #include "fight/rob.h"
 #include "link/link.h"
