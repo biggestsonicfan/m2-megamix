@@ -59,6 +59,8 @@ whole cast and all five guests do not fit ("out of room: 32 cells free, a
 | megamix (default) | Sonic, Honey, Eggman, Akira, Ryo, Chai, Hornet, Mahler |
 | stf | Sonic, Honey, Eggman, Akira, Mahler, Amy, Fang, Bark, Espio, Bean |
 
+Ryo, Chai and Hornet are in megamix only, and Amy, Fang, Bark, Espio and
+Bean in stf only: the compiler builds the lineup it is asked for.
 stf has StF's fighting cast but Tails and Knuckles (their slots are Ryo's
 and Akira's) and Metal Sonic (page 3 is the guests'). Its StF fighters run
 on StF's own data, so StF grades them by replay (docs/GRADING.md, Results).
@@ -315,10 +317,22 @@ same frame of the stance motion (278), all sixteen part positions in the rob
   addresses match real StF's (Sonic in stance: 3589,4143 and 3904,4112 on
   0x805030 and 0x805134 at South Island), and Sonic's pupils follow
   player 2 through a jump.
-  Honey's eyes are left still, as m2-hle2's console profile
-  (`sfight_console.h`) leaves them: her table row shifts her points off
-  the texture (-28000, 6401) and her pupils vanish, so `eyes_frame` zeroes
-  her shifts after `snc_eye_thd_set`.
+  `word_21734` is 52 rows of 0x20 bytes, one per character (player 2's
+  from row 26), and runs on through four more labels in the disassembly
+  (`tails_eye_data`, `HONEY_EYE2`, `sonic_eye_data`, `HONEY_EYE1`), so
+  `lift-stf.py` lifts them as one table (`RUN_ON`). With only the first row
+  lifted, every fighter but Sonic read past it: Amy's, Fang's and the
+  others' pupils sat in the wrong place, and Honey's were shifted off the
+  texture (-28000, 6401), which m2-hle2's console profile works around by
+  zeroing her shifts. With the whole table her pupils follow the enemy as
+  in real StF (MAME, South Island).
+- Options: Amy's hammer (model 0x440, slot B of her option set,
+  docs/RECORDS.md) is drawn by `option_draw` (fighter_draw.c) after each
+  part, as StF's `unit_efc_next` does; `copy_option_data` and
+  `delete_option` are lifted, and `import-assets.mjs` keeps the set's
+  models. Only StF's fighters have option sets; the ice's reflection draws
+  none, as `rob_disp_mir` does not. Checked in MAME against real StF (Amy's
+  P on South Island): the hammer comes out and swings along the same path.
   The head's tilt was already in the lifted code: `calc_unit_1` eases the
   waist bend toward the enemy (+0xBE6) and tilts the head by it before it
   aims at +0xB0C.

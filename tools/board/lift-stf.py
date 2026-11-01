@@ -66,9 +66,14 @@ import tempfile
 # far mask), both through rob_kage_disp_test's op 0x74 and set_obj.
 # The eyes: snc_eye_thd_set (camera_init's, a fighter at a time) turns the
 # other fighter's head (or the camera) into the head's frame and, through
-# clip_medama and its table by character (word_21734), into a shift of each
-# eye's texture points, which move_tpd_req queues and tpd.c eyes_frame
-# uploads; tpd_move_init empties the queue (main_loop's, once a frame).
+# clip_medama and its table by character (word_21734, 0x20 bytes a
+# character, player 2's from 26 on, so it runs on through tails_eye_data,
+# HONEY_EYE2, sonic_eye_data and HONEY_EYE1), into a shift of each eye's
+# texture points, which move_tpd_req queues and tpd.c eyes_frame uploads;
+# tpd_move_init empties the queue (main_loop's, once a frame).
+# A fighter's options (Amy's hammer in her hand): copy_option_data (the
+# record's set into the rob, each frame) and delete_option, which
+# fighter_draw.c's option_draw calls as rob_disp_rdn_loop does.
 # The spin attack (Sonic's spindash; a play op of the motion, sub_81A48, sets
 # rob+0x2068): sub_81038 (a battle's start: each fighter's ball models and
 # pulse from character_spin_mot_objects), spin_attack_cnt (camera_init's,
@@ -93,7 +98,7 @@ ROOTS = ['set_motion', 'calc_rob_angle', 'calc_rob_angle_cont', 'calc_unit_mat',
          'sub_81CD8', 'sub_81D44', 'sub_81DB0', 'ring_tobitiri_init', 'ring_tobitiri',
          'efc_disp', 'efc_face_opt_disp', 'guard_attack_effect_disp', 'kira_kira_disp',
          'guard_barrier_effect_disp', 'laser_effect_disp', 'fa_effect', 'ko_disp',
-         'rec_disp', 'sub_3900C']
+         'rec_disp', 'sub_3900C', 'copy_option_data', 'delete_option']
 # Routines the board does not run (debug text, name plates,
 # Super Sonic's hair objects; the shadow mask balls, which read a table at
 # 0x4C84 and kage.c's kage_balls sends): `ret`.
@@ -159,8 +164,10 @@ LOW_TABLES = {'off_FE8'}
 # Tables read on past their end, into the next label's (off_1008's eight
 # pointers run through off_1010 into off_1018; both labels are numbers to the
 # code, so nothing else keeps their data). osage_per_character's 52 entries
-# run through kill_osage_sub (player 2's Honey on).
-RUN_ON = {'off_1008', 'off_1010', 'osage_per_character'}
+# run through kill_osage_sub (player 2's Honey on). word_21734's 52 rows of
+# eye shifts run through four more labels (Sonic's is the only row in its own).
+RUN_ON = {'off_1008', 'off_1010', 'osage_per_character',
+          'word_21734', 'tails_eye_data', 'HONEY_EYE2', 'sonic_eye_data'}
 # Jump tables in the ROM range that hold code (the camera's script steps;
 # projectile_list's records and Eggman's bomb's start and steps; the records
 # of the rest of StF's cast's projectiles, player 1's and player 2's: Fang's

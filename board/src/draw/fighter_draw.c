@@ -167,6 +167,31 @@ static void spin_ball(u32 *r) {
     if (model) submit_cur(model);
 }
 
+/* The option (Amy's hammer; docs/RECORDS.md), as rob_disp's unit_efc_next
+ * draws it on each part, in the part's frame after its model, once
+ * copy_option_data has copied the set in (only if slot B has a model):
+ * option_control puts it away (delete_option) on slot B's part while the
+ * option is out and flag bit 4 is set; then the slot in use (A, or B with
+ * ROB_F_OPTION), if it names this part, is drawn at its place, turned by
+ * its angles in y, x, z. rob_disp_mir draws no option. */
+static void option_draw(u32 p, u32 part) {
+    volatile u32 *cf = (volatile u32 *)M2_COPFIFO_ADDR;
+    u32 *r = robs[p], k;
+    u8 *o;
+    if (RH(r, ROB_OPTION_B + OPT_MODEL) == 0u) return;
+    if ((RW(r, ROB_FLAG) & ROB_F_OPTION) && RH(r, ROB_OPTION_B + OPT_UNIT) == part && (RW(r, ROB_FLAG) & (1u << 4)))
+        stf_call(stf_delete_option, r, robs[p ^ 1u], 0u);
+    o = (u8 *)r + ((RW(r, ROB_FLAG) & ROB_F_OPTION) ? ROB_OPTION_B : ROB_OPTION);
+    if (RH(o, OPT_UNIT) != part) return;
+    *cf = COP_PUSH;
+    *cf = COP_SET_POS; for (k = 0; k < 3u; k++) *cf = RW(o, OPT_POS + k * 4u);
+    *cf = COP_ANG_Y; *cf = (u32)(int)(short)RH(o, OPT_ANG_Y);
+    *cf = COP_ANG_X; *cf = (u32)(int)(short)RH(o, OPT_ANG_X);
+    *cf = COP_ANG_Z; *cf = (u32)(int)(short)RH(o, OPT_ANG_Z);
+    submit_cur(RH(o, OPT_MODEL));
+    *cf = COP_POP;
+}
+
 /* mirror: the fighter's reflection in Aurora Icefield's ice, as
  * rob_disp_mir (0x6428C) draws it: the parts, under the camera scaled by
  * (1, -1, 1), which turns them over the floor's y = 0 (mirror_draw). */
@@ -181,6 +206,7 @@ void draw_fighter(const fighter_t *f, u32 p, u32 mirror) {
      * them in his head */
     u32 n = char_game(a->chr) == GAME_STF ? 18u : 16u;
     u32 still = (RW(r, ROB_FLAG) & ROB_F_NO_EYES) || RH(r, ROB_MOT_NUM) == 0x134u;
+    u32 opt = !mirror && char_game(a->chr) == GAME_STF;
     cop_load(&cam_l);
     if (mirror) { *cf = COP_SCALE; *cf = 0x3F800000u; *cf = 0xBF800000u; *cf = 0x3F800000u; }
     if (RW(r, ROB_SPIN) == 1u) {
@@ -191,6 +217,8 @@ void draw_fighter(const fighter_t *f, u32 p, u32 mirror) {
         *cf = COP_POP;
         return;
     }
+    /* a guest's record has no option sets */
+    if (opt) stf_call(stf_copy_option_data, r, robs[p ^ 1u], 0u);
     /* slot 0 has no model: StF's records leave it 0, and its command
      * interpreter keeps bytes there (+0x40..0x43 of g13, the rob), so a
      * guest's slot 0 (Akira's 0x13AE) turns into an empty StF entry (0xAE),
@@ -207,7 +235,7 @@ void draw_fighter(const fighter_t *f, u32 p, u32 mirror) {
          * welded whole to the joint above) has no model, only its seams */
         if (i < 16u)
             for (s = 0; s < nseams; s++) if ((((const u32 *)seams[1u + s])[1] & 0xFFu) == slot) seamed = 1u;
-        if (model == 0u && !seamed) continue;
+        if (model == 0u && !seamed && !(opt && i < 16u)) continue;
         *cf = COP_PUSH;
         *cf = COP_SCALE; *cf = 0x3F800000u; *cf = RW(r, ROB_Y_SCALE); *cf = 0x3F800000u;
         *cf = COP_PART; *cf = p; *cf = slot * 12u;
@@ -218,6 +246,7 @@ void draw_fighter(const fighter_t *f, u32 p, u32 mirror) {
                 const u32 *sm = (const u32 *)seams[1u + s];
                 if ((sm[1] & 0xFFu) == slot) poly_draw(sm[0], seam_at[s]);
             }
+        if (opt && i < 16u) option_draw(p, i);
         *cf = COP_POP;
     }
     if (!mirror) osage_splice(p);

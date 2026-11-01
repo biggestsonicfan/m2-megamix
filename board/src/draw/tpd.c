@@ -49,15 +49,8 @@ void eyes_frame(const tpd_t *st) {
     stf_call(stf_tpd_move_init, robs[0], robs[1], 0u);
     if (st->kind != 0u) RAM32(G_TPD_WORDS) = at = st->words;
     for (p = 0; p < 2u; p++) {
-        u32 c = RB(robs[p], ROB_CHAR), from = RAM32(G_TPD_COUNT), e;
         if (RW(robs[p], ROB_FLAG) & ROB_F_NO_EYES) continue;
         stf_task(stf_snc_eye_thd_set, stf_cam, robs[p], robs[p ^ 1u]);
-        /* Honey (15, player 2's 41): clip_medama's table puts her pupils
-         * off her eyes, so Sega's console build of StF zeroes her shifts
-         * (its emulator's hooks at snc_eye_thd_set+0x148 and +0x188,
-         * m2-hle2's sfight_console.h): her eyes are drawn still */
-        if (c == 15u || c == 41u)
-            for (e = from; e < RAM32(G_TPD_COUNT); e++) RW(q, e * 16u + 8u) = 0u;
     }
     for (n = RAM32(G_TPD_COUNT); n--; q += 16) {
         const short *v = (const short *)RW(q, 4u);

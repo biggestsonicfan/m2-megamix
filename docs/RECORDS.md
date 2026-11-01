@@ -61,7 +61,8 @@ is set, the collision block's +4..+0x23 becomes the hit sphere, and
 normally, slot B with bit 27 (L25040).
 
 Only Amy's set holds anything: slot B is unit 5, model 0x440, which is
-likely her hammer. The Megamix does not draw options yet.
+her hammer (and in the second half, under flag bit 6, unit 8 and model
+0x438). The board draws it (docs/BOARD.md, Options).
 
 ### The part lists
 
