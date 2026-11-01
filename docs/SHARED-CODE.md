@@ -809,7 +809,13 @@ Lifted lines are board/src/gen/stf_motion.s's. "rob" fields are StF's layout unl
 record pointer is `ld 0x200620C[rob+0x1B0*4]` (VF2 init_fix 0x13F10, kept at rob+0x190 as in StF).
 The board runs StF's game globals: gravity 0x50A000 = 0.0252222 (0x3CCE9ED5) where VF2 has 0.0027222
 (0x3B32674F), 9.27x, not SCALE (2.0271); 0x50A004 = 1.0, 0x50A008 = 10.0 in both. A VF2 guest's
-jump takes the difference in rob+0x5CC (B9), so it falls at 0x3B32674F × SCALE.
+jump takes the difference in rob+0x5CC (B9), so it falls at 0x3B32674F × SCALE. *#1941:* every store to
+rob+0x5CC (set_motion, the hop, set-motion op 9) is followed by `guest_gravity`, which makes it
+[0x50A000] - g + 0x5CC × g / [0x50A000] for a VF2 or FV guest (g its game's gravity × size), so
+any flight, not just the jump, falls at the guest's own gravity; gravity is [0x50A000] - 0x5CC
+everywhere. An attacker's launch (ACT_RC_DOWN, `loc_14BE8`) on a fighter of another game is
+scaled by sqrt(victim g / attacker g), which keeps the arc's shape and height. Before it a VF2
+jump rose ever faster (a ring out or a softlocked round) and StF launches flew 4.6× too long.
 
 ### set_coli_ball_data (StF 0x17C14, lifted 6278 / VF2 0x176A0)
 1. Sends each of a fighter's collision balls (list by player g0) through the coprocessor's transform.

@@ -134,10 +134,17 @@ NATIVE_TAIL = 'cmd_native_tail', 0x1EF48, 'ld      0x1A4(g7), r15  # unreachable
 # area_coli_618: area_coli's store of the copro's 0x618 word.
 # rsc_gra_vf2, rsc_gra_done: rob_spd_control's [0x50A004] x gravity and the
 # x 0.25 after it (StF 0x17F90..0x17F9C).
+# grav_sm, grav_hop, grav_op9: after set_motion_comm's, loc_145D4's and
+# set_motion op 9's stores of rob+0x5CC (guest_gravity below). grav_launch:
+# after ACT_RC_DOWN's takeoff stores the knock-down's speed (loc_14BE8).
 NAMED = {'coli_cont_cop_g4': ('coli_cont_cop', 'ld      (g11)[g12*1], g5'),
          'area_coli_618': ('area_coli', 'st      r6, 0x624(g7)'),
          'rsc_gra_vf2': ('rob_spd_control', 'mulr    r13, r14, r5'),
          'rsc_gra_done': ('rob_spd_control', 'mulr    r13, r5, r5'),
+         'grav_sm': ('set_motion_comm', 'st      r15, 0x5CC(g7)'),
+         'grav_hop': ('loc_145D4', 'st      r15, 0x5CC(g7)'),
+         'grav_op9': ('sub_1B884', 'st      r3, 0x5CC(g7)'),
+         'grav_launch': ('loc_14BE8', 'st      r15, 0x34(g7)'),
          'damage_calc_vf2': ('damage_calculation', 'call    ketchup'),
          'pit_vf2_1': ('loc_1DC74', 'cmpible r4, r3, loc_1DC84'),
          'pit_vf2_2': ('loc_1DCD4', 'cmpible r4, r3, loc_1DCE4'),
@@ -288,8 +295,8 @@ INSERT_LIFTED = {
 # units (0x3B32674F * SCALE = 0x3BB4D327; StF's 0x50A000 is 9.27x VF2's, not
 # SCALE), an FV one under FV's (0x3BAB1F2D, 0.00522, F 0x7284) at his size
 # (* K, mahler-guest.mjs: 0x3C2EE9B2). Gravity each frame is 0x50A000 -
-# rob+0x5CC, so 0x5CC takes the difference; the next set_motion (landing, a
-# hit) clears it.
+# rob+0x5CC, so 0x5CC takes the difference (set_motion's guest_gravity has
+# already put it there; this keeps it if the jump's setup had op 9).
 # ACT_RC_JUMP's landing, r5 the jump's reach (r8 the wall ahead, r9 the
 # opponent): a VF2 fighter's as VF2's exec_action (V 0x15444) clamps it, short
 # of the wall by 0.6 and outside the opponent's +-0.9, in StF's units (* SCALE:
@@ -412,12 +419,28 @@ INSERT_LIFTED = {
 # most precede_inp_time frames of a fighter's pad history it has not read
 # yet; VF2's is 12 (StF's 8), so a press in a reaction's last 12 frames
 # still starts the next move.
-# rsc_normal_gravity: a VF2 fighter in the air falls by VF2's gravity (V
-# 0x17A88, [0x50A000] 0.00272, x 2.027 for its size on the board), with no
-# StF 0x1A4 bit 14 (hit in the air) x flt_1D290.
-# An FV fighter falls by FV's (F 0x1880C, 0.00522 * K = 0x3C2EE9B2), with
-# no bit 14 either; plus rob+0x5CC, which his jump's takeoff (loc_13E2C) sets
-# to StF's gravity less FV's, so that a jump still falls by FV's.
+# A fighter's gravity in the air is [0x50A000] less rob+0x5CC everywhere StF
+# reads it: rob_spd_control (rsc_normal_gravity), calc_land_time, op 9's
+# and the hops' takeoff speeds (sub_16A4C), the jump's (loc_13E2C), and the
+# turn's landing guess (rob_revise_yang, either fighter). A VF2 fighter's is
+# VF2's (V 0x17A88, [0x50A000] 0.00272, x 2.027 for its size on the board,
+# 0x3BB4D327), an FV fighter's FV's (F 0x1880C, 0.00522 * K = 0x3C2EE9B2),
+# so every store of 0x5CC is followed by guest_gravity: StF's gravity less
+# the guest's, plus what StF stored scaled from StF's gravity to his (set
+# motion op 9's -k x [0x50A000], gravity x (1 + k), becomes -k x his). Both
+# fall with no StF 0x1A4 bit 14 (hit in the air) x flt_1D290 (rsc_normal_
+# gravity, loc_19930). Before, rsc_normal_gravity used the guest's gravity
+# and still added 0x5CC: a VF2 jump (0x5CC StF's less VF2's) rose faster
+# every frame and never came down, and op 9's and the hops' flights, timed
+# for StF's gravity, flew 4.6 times too long.
+# grav_launch: a knock-down's speed (rob+0x5E0..0x5E8, ACT_RC_DOWN's
+# takeoff) is the attacker's game's (damage_calculation's, the opponent g8),
+# for a flight under its gravity. A fighter of another game falls by his own,
+# so the speed is scaled by sqrt(his gravity / the attacker's): the same arc,
+# as high and as far, in its own time. Without it, StF's launches on a VF2
+# fighter flew 4.6 times as high and 2.1 times as long (Akira 23.7 high and
+# 180 frames in the air from Sonic's, where Sonic's own peak at 4.6), and a
+# ring out came easily; on an FV fighter 2.4 and 1.5 times.
 # ACT_RC_TA_GUARD (V 0x14E78): a VF2 fighter crouched (0x1A4 bit 3) guards
 # by VF2's slot 12 (crouch to guard, the board's slot 52, vf2-guest.mjs) at
 # the frame left (sub_1CE94), or from its start on rob+0 bit 0 or 0x810 bit
@@ -816,12 +839,11 @@ def _fv_lift(at):
 
 
 FV_HIT = {
-    # calc_land_time (F 0x19C7C): FV's gravity, as rsc_normal_gravity's (FV
-    # has no bit 14 x flt_1D290); StF's 0x50A000 less 0x5CC is FV's only
-    # until the jump's next set_motion clears 0x5CC.
+    # calc_land_time (F 0x19C7C): a guest's gravity, [0x50A000] less 0x5CC
+    # as rsc_normal_gravity's (FV and VF2 have no bit 14 x flt_1D290).
     'loc_19930': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
-                  'cmpobne GAME_FV, r14, loc_19930_own', 'ld      0x5CC(g7), r3',
-                  'lda     0x3C2EE9B2, r13', 'addr    r13, r3, r3', 'loc_19930_own:'],
+                  'cmpobe  GAME_STF, r14, loc_19930_own', 'ld      stf_ram_50A000+0x0, r3',
+                  'loc_19930_own:'],
     # The landing's margin, 0.02 above the floor (F 0x18A4C, and
     # calc_land_time's), in FV's units: * K (0x3D277842).
     'land_fv': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
@@ -899,6 +921,37 @@ FV_HIT = {
                    'b       loc_2B898', 'kb_fv_lift_own:'],
 }
 
+def game_gravity(rob, game, dst):
+    """dst = the gravity of game (a register holding guest_char_game's
+    value for rob's character), as rsc_normal_gravity's."""
+    return [f'ld      stf_ram_50A000+0x0, {dst}', f'cmpobe  GAME_STF, {game}, grav_{rob}_{dst}',
+            f'lda     0x3BB4D327, {dst}', f'cmpobe  GAME_VF2, {game}, grav_{rob}_{dst}',
+            f'lda     0x3C2EE9B2, {dst}', f'grav_{rob}_{dst}:']
+
+
+GRAV_LAUNCH = ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+               'ldob    0x1B1(g8), r15', 'ldob    guest_char_game[r15], r15',
+               'cmpobe  r14, r15, grav_launch_own', *game_gravity('g7', 'r14', 'r13'),
+               *game_gravity('g8', 'r15', 'r14'), 'divr    r14, r13, r13',
+               'lda     0xD001A1A, r15', 'st      r15, (g11)[g12*1]', 'st      r13, (g11)[g12*1]',
+               'ld      (g11)[g12*1], r13',
+               'ld      0x2C(g7), r14', 'mulr    r13, r14, r14', 'st      r14, 0x2C(g7)',
+               'ld      0x30(g7), r14', 'mulr    r13, r14, r14', 'st      r14, 0x30(g7)',
+               'ld      0x34(g7), r14', 'mulr    r13, r14, r14', 'st      r14, 0x34(g7)',
+               'grav_launch_own:']
+
+
+def guest_gravity(tag):
+    """rob+0x5CC (g7's) for a VF2 or FV fighter: [0x50A000] - g + 0x5CC x
+    g / [0x50A000], g his gravity (above, rsc_normal_gravity's note)."""
+    return ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
+            'lda     0x3BB4D327, r13', f'cmpobe  GAME_VF2, r14, {tag}_guest',
+            'lda     0x3C2EE9B2, r13', f'cmpobne GAME_FV, r14, {tag}_own', f'{tag}_guest:',
+            'ld      0x5CC(g7), r14', 'mulr    r13, r14, r14', 'ld      stf_ram_50A000+0x0, r15',
+            'divr    r15, r14, r14', 'subr    r13, r15, r15', 'addr    r15, r14, r14',
+            'st      r14, 0x5CC(g7)', f'{tag}_own:']
+
+
 INSERT = {
     **SUP_FV,
     **FV_HIT,
@@ -929,11 +982,12 @@ INSERT = {
                     'b       rsc_gra_guest', 'rsc_gra_fv:', 'lda     0x3C2EE9B2, r14', 'rsc_gra_guest:',
                     'mulr    r13, r14, r5', 'b       rsc_gra_done', 'rsc_gra_own:'],
     'rsc_normal_gravity': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
-                           'cmpobe  GAME_FV, r14, rsc_normal_gravity_fv',
-                           'cmpobne GAME_VF2, r14, rsc_normal_gravity_own',
-                           'lda     0x3BB4D327, r3', 'b       rsc_normal_gravity_own', 'rsc_normal_gravity_fv:',
-                           'ld      0x5CC(g7), r3', 'lda     0x3C2EE9B2, r13', 'addr    r13, r3, r3',
-                           'rsc_normal_gravity_own:'],
+                           'cmpobe  GAME_STF, r14, rsc_normal_gravity_own',
+                           'ld      stf_ram_50A000+0x0, r3', 'rsc_normal_gravity_own:'],
+    'grav_sm': guest_gravity('grav_sm'),
+    'grav_hop': guest_gravity('grav_hop'),
+    'grav_op9': guest_gravity('grav_op9'),
+    'grav_launch': GRAV_LAUNCH,
     'ACT_RC_TA_GUARD': ['ldob    0x1B1(g7), r14', 'ldob    guest_char_game[r14], r14',
                         'cmpobe  GAME_FV, r14, ta_guard_fv',
                         'cmpobne GAME_VF2, r14, ta_guard_own', 'ld      0x6D4(g8), r15',
