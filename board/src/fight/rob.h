@@ -49,6 +49,14 @@
 #define ROB_OUT_ON        0x624u   /* a collision ball outside the ring touches the ground */
 #define ROB_HIT_COMBO     0x6F4u   /* u8, counted on the fighter hit (VF2 +0x6D8, FV +0x708) */
 #define ROB_KIND2         0x70Cu   /* u32 mot_kind2: the MK2_ bits */
+#define ROB_OPTION        0x788u   /* the option's slot A (copy_option_data, docs/RECORDS.md); */
+#define ROB_OPTION_B      0x7A0u   /* slot B, drawn while ROB_F_OPTION is set. Each: */
+#define OPT_UNIT          0x00u    /* s16 the part it is drawn on, */
+#define OPT_MODEL         0x02u    /* u16 its model, */
+#define OPT_POS           0x04u    /* f32 x3 its place in the part, */
+#define OPT_ANG_X         0x10u    /* s16 x3 its angles */
+#define OPT_ANG_Y         0x12u
+#define OPT_ANG_Z         0x14u
 #define ROB_ARMOUR        0x7F0u   /* u32 parts_flag, FV's armour: ARMOUR_ bits */
 #define ROB_MOTD_LENG     0x800u   /* the motion's setup record from here: its length */
 #define ROB_MOTD_NEXT     0x802u   /* the next motion */
@@ -96,6 +104,7 @@
 #define ROB_F_LAND           (1u << 13)
 #define ROB_F_NO_EYES        (1u << 20)  /* no eye tracking (camera_init), eyes drawn as they are (rob_disp) */
 #define ROB_F_SMOOTH_SWITCH  (1u << 26)
+#define ROB_F_OPTION         (1u << 27)  /* the option is out (play_motion; delete_option clears it) */
 #define ROB_F_NAKED          (1u << 28)  /* both armour pieces broken (damage_unit) */
 
 /* ROB_MOT_KIND's and ROB_MOTD_KIND's bits (mot_kind's table, StF 0x44294) */

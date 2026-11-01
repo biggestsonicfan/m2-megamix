@@ -317,6 +317,11 @@ async function importStf(R) {
         /* the spin attack's ball and its blur (sub_81038), which rob_disp
          * draws in place of the body while +0x2068 is 1 */
         for (let i = 0; i < 2; i++) model(program.u16(SPIN_MODELS + ch * 0x20 + i * 2));
+        /* the option (Amy's hammer, docs/RECORDS.md): +0x18's first set,
+         * slot A's and slot B's models in both halves (only Amy's set holds
+         * any, and no motion picks a later set) */
+        const opt = program.u32(rec + 0x18);
+        for (let h = 0; h < 2; h++) for (const s of [4, 0x1c]) model(program.u16(opt + h * 0x38 + s + 2));
         /* the shadows: the table's parts, and the tail's three (the extra
          * part at +0x78A, or the two at +0x7A2 on flag bit 27) */
         const shadow = program.u32(SHADOW_TABLES + ch * 4);
