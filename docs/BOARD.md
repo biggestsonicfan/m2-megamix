@@ -1117,6 +1117,19 @@ put in for Akira, and import-assets runs it after Akira's.
     Akira's throw nearest its length, its victim a motion of the guest's
     own (with the victim template's setup), and the copy StF's fighters
     play at their size (`THROWN`), as Akira's.
+  - *Where a move ends.* StF's `set_motion` moves a fighter to where his
+    motion took him (xpos = gxpos) only when the old motion's kind word
+    (rob+0x1A4) has bit 5. Many of Akira's templates lack it (kinds 0x101,
+    0x1A1, 0xA1), so Ryo and Chai snapped back to where such a move
+    started. Every move's setup sets bit 5, and a strike's block starts
+    its root's x and z at 0: the next motion's root is played from the
+    carried point, and Shenmue's string moves start where the last one
+    stopped (COMBO_JAB_BDY 0.4 ahead). A throw's root is kept, as its
+    victim's shares its origin.
+    Check: MAME, Ryo vs Akira (`battle.lua` logging rob+0x1F4/0x1FC): with
+    the old data his body jumps back 0.55 when K (1255) ends and 2.06 when
+    4K (1268) does; with the new, it never moves more than 0.1 in the two
+    frames after a motion change (P, P,P, P,K, K, 6P, 4P, 4K, 6K, P+K).
   - *Room.* The heap is full up to the skies, so the blocks go in
     main_data from 0x450000, below FV's stage pages (StF's data there is
     nothing the board keeps): Ryo's and Chai's to 0x4BA4A4. Setups and

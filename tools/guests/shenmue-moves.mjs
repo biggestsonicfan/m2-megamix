@@ -51,6 +51,12 @@ const STRIKE_PLAY = new Set([4, 9, 0x12]);
 /* the id convertSetup is told is a throw's victim (no VF2 id: 1360 is the
  * last) */
 const VICTIM = 0x1fff;
+/* VF2's channel types (js/shenmue.js), and the root's first channel (float
+ * object 12's x; z two on) */
+const CONST = 4, HERMITE = 6, ROOT = 36;
+/* the setup kind word's bit StF's set_motion carries the fighter to the
+ * motion's root by (xpos = gxpos), as Akira's moves that travel have it */
+const KIND_CARRY = 0x20;
 
 const u16 = (v) => [v & 0xff, (v >> 8) & 0xff];
 const u32 = (v) => [v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, v >>> 24];
@@ -165,12 +171,28 @@ export function shenmueMoves(R, ctx, games, { name, who, ms }) {
     const first = ctx.reserveIds(moves.length + 2 * victims.length, who);
     const newId = new Map(moves.map(([id], i) => [id, first + i]));
     const victimId = new Map(victims.map((id, i) => [id, first + moves.length + 2 * i]));
-    const blockOf = (m, k) => {
+    /* A move's block also starts its root (x, z) at 0: StF carries the
+     * fighter to where a move stops (kind bit 5) and plays the next motion's
+     * root from there, and Shenmue's string moves start where the last one
+     * ended (Ryo's COMBO_JAB_BDY 0.4 ahead). */
+    const blockOf = (m, k, rebase = false) => {
         const b = new Uint8Array(m.view.buffer.slice(m.view.byteOffset, m.view.byteOffset + m.end));
+        if (rebase) {
+            const v = new DataView(b.buffer), at1 = sampleMotion(f.rom, m, 1).targets;
+            for (const [i, d] of [[ROOT, at1[0]], [ROOT + 2, at1[2]]]) {
+                const c = m.channels[i];
+                if (!d || c.type < CONST) continue;
+                const n = c.type === CONST ? 1 : c.count, step = c.type === HERMITE ? 12 : 4;
+                for (let j = 0; j < n; j++) v.setFloat32(c.values + j * step, v.getFloat32(c.values + j * step, true) - d, true);
+            }
+        }
         return scaleMotion(b, k);
     };
 
     /* ---- motions and setups ---- */
+    /* a template's head with the carry: a move stops where its motion took
+     * him, not back where it started */
+    const carried = (h) => { const o = [...h]; o[0] |= KIND_CARRY; return o; };
     const keyOf = new Map();
     for (const es of f.moves.tables.values()) for (const e of es) if (!keyOf.has(e.motion)) keyOf.set(e.motion, e.key);
     const victimTemplate = new Map();
@@ -200,7 +222,7 @@ export function shenmueMoves(R, ctx, games, { name, who, ms }) {
                 b[1] = at & 0xff; b[2] = at >> 8;
                 return { op: o.op, b };
             }));
-            s = { head: tpl.head, setup, play, end: play.length ? 8 : 0 };
+            s = { head: carried(tpl.head), setup, play, end: play.length ? 8 : 0 };
             strikeCount++;
         } else {
             const tpl = throwTemplate(end).s;
@@ -218,12 +240,12 @@ export function shenmueMoves(R, ctx, games, { name, who, ms }) {
                 b[1] = at & 0xff; b[2] = at >> 8;
                 return { op: o.op, b };
             }));
-            s = { head: tpl.head, setup, play, end: play.length ? 8 : 0 };
+            s = { head: carried(tpl.head), setup, play, end: play.length ? 8 : 0 };
             const v = victimId.get(x.a.victim);
             mid = (y) => ((y & 0x1fff) === VICTIM ? (y & ~0x1fff) | v : gid(y));
             throwCount++;
         }
-        ctx.putMotion(newId.get(id), blockOf(x.m), ctx.convertSetup(-1, mid, s), who, `${x.m.name ?? id}`);
+        ctx.putMotion(newId.get(id), blockOf(x.m, undefined, !x.throw), ctx.convertSetup(-1, mid, s), who, `${x.m.name ?? id}`);
     }
     /* the victims: the template victim's setup, its play ops over the new frames */
     for (const id of victims) {
