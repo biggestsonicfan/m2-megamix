@@ -1124,12 +1124,20 @@ put in for Akira, and import-assets runs it after Akira's.
     started. Every move's setup sets bit 5, and a strike's block starts
     its root's x and z at 0: the next motion's root is played from the
     carried point, and Shenmue's string moves start where the last one
-    stopped (COMBO_JAB_BDY 0.4 ahead). A throw's root is kept, as its
-    victim's shares its origin.
+    stopped (COMBO_JAB_BDY 0.4 ahead). The other float objects (13..19,
+    the targets the hands, feet and head reach for) are in the motion's
+    space too, not the root's, and move with it: left behind, they pulled
+    his limbs ahead of him by the root's start, and KKK's last kick
+    (COMBO_MAWA_3, 1.41 ahead) laid him out flat until it ended, his feet
+    in the downed opponent's balls pushing him back. A throw's root is
+    kept, as its victim's shares its origin.
     Check: MAME, Ryo vs Akira (`battle.lua` logging rob+0x1F4/0x1FC): with
     the old data his body jumps back 0.55 when K (1255) ends and 2.06 when
     4K (1268) does; with the new, it never moves more than 0.1 in the two
     frames after a motion change (P, P,P, P,K, K, 6P, 4P, 4K, 6K, P+K).
+    With the targets moved too, K,K,K's last kick (1253) plays his body
+    along the same path as the data that didn't carry, and he stays at its
+    end (2.96, not pushed back to 2.30).
   - *Room.* The heap is full up to the skies, so the blocks go in
     main_data from 0x450000, below FV's stage pages (StF's data there is
     nothing the board keeps): Ryo's and Chai's to 0x4BA4A4. Setups and

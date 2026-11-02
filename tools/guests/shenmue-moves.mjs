@@ -51,9 +51,10 @@ const STRIKE_PLAY = new Set([4, 9, 0x12]);
 /* the id convertSetup is told is a throw's victim (no VF2 id: 1360 is the
  * last) */
 const VICTIM = 0x1fff;
-/* VF2's channel types (js/shenmue.js), and the root's first channel (float
- * object 12's x; z two on) */
-const CONST = 4, HERMITE = 6, ROOT = 36;
+/* VF2's channel types (js/shenmue.js), and the float objects' channels: 12
+ * the root, 13..19 the targets the limbs reach for (x, y, z each), all in
+ * the motion's space, not the root's */
+const CONST = 4, HERMITE = 6, FLOATS = 36, FLOAT_END = 60;
 /* the setup kind word's bit StF's set_motion carries the fighter to the
  * motion's root by (xpos = gxpos), as Akira's moves that travel have it */
 const KIND_CARRY = 0x20;
@@ -174,14 +175,16 @@ export function shenmueMoves(R, ctx, games, { name, who, ms }) {
     /* A move's block also starts its root (x, z) at 0: StF carries the
      * fighter to where a move stops (kind bit 5) and plays the next motion's
      * root from there, and Shenmue's string moves start where the last one
-     * ended (Ryo's COMBO_JAB_BDY 0.4 ahead). */
+     * ended (Ryo's COMBO_JAB_BDY 0.4 ahead). The limbs' targets move with
+     * it: left where they were, they pull his hands and feet ahead of him
+     * (KKK's last kick by 1.41). */
     const blockOf = (m, k, rebase = false) => {
         const b = new Uint8Array(m.view.buffer.slice(m.view.byteOffset, m.view.byteOffset + m.end));
         if (rebase) {
             const v = new DataView(b.buffer), at1 = sampleMotion(f.rom, m, 1).targets;
-            for (const [i, d] of [[ROOT, at1[0]], [ROOT + 2, at1[2]]]) {
-                const c = m.channels[i];
-                if (!d || c.type < CONST) continue;
+            for (let i = FLOATS; i < FLOAT_END; i++) {
+                const a = (i - FLOATS) % 3, d = at1[a], c = m.channels[i];
+                if (a === 1 || !d || c.type < CONST) continue;
                 const n = c.type === CONST ? 1 : c.count, step = c.type === HERMITE ? 12 : 4;
                 for (let j = 0; j < n; j++) v.setFloat32(c.values + j * step, v.getFloat32(c.values + j * step, true) - d, true);
             }
